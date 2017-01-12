@@ -1,0 +1,15 @@
+telegram-desktop for Debian
+---------------------------
+
+Telegram is secure messenger from Pavel Durov. The package contains dynamically
+linked Telegram Desktop client.
+
+This package has known issue:
+ * No bold font
+
+TODO List:
+ * Build for i386 architecture
+ * Man page
+ * Sort out dpkg-shlibdeps warnings
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Fri, 13 Jan 2017 17:39:25 +0300
