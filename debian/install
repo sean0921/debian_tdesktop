@@ -1,3 +1,1 @@
-debian/icons usr/share
 debian/telegramdesktop.desktop usr/share/applications
-debian/telegram.xpm usr/share/pixmaps
