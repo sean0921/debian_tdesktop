@@ -50,9 +50,6 @@
       '<(linux_path_breakpad)/lib',
     ],
     'libraries': [
-      'composeplatforminputcontextplugin',
-      'ibusplatforminputcontextplugin',
-      'fcitxplatforminputcontextplugin',
       'lzma',
       'openal',
       'avformat',

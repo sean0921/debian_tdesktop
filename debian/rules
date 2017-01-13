@@ -36,17 +36,15 @@ endif
 	dh $@
 
 override_dh_auto_configure:
-	# Generate CMakeLists.txt
+	@# Generate CMakeLists.txt
 	cd Telegram/gyp && \
 	  gyp --depth=. --generator-output=../.. -Goutput_dir=out Telegram.gyp --format=cmake
-	# This makes up for patch of gyp utility. Supporting precompiled headers.
-	# $NUMBER is the number of the penultimate line in the generated CMakeLists.txt file.
-	# The follow sed script inserts two lines into this file before the penultimate line.
-	NUMBER=$$((`cat out/$(BUILD_MODE)/CMakeLists.txt | wc -l` - 1)); \
-	  LINE_ONE='include($${CMAKE_SOURCE_DIR}/../../Telegram/gyp/PrecompiledHeader.cmake)'; \
-	  LINE_TWO='add_precompiled_header(Telegram ../../Telegram/SourceFiles/stdafx.h)'; \
-	  sed -i "$${NUMBER}i$${LINE_ONE}\n$${LINE_TWO}" out/$(BUILD_MODE)/CMakeLists.txt
-	# Configure with CMake
+	@# Patch CMakeLists.txt instead gyp utility. $NUM is the number of the line
+	@# before penultimate one in the generated CMakeLists.txt file. The follow
+	@# sed script inserts all lines from debian/CMakeLists.injection file.
+	NUM=$$((`wc -l < out/$(BUILD_MODE)/CMakeLists.txt` - 2)); \
+	  sed -i "$$NUM r debian/CMakeLists.injection" out/$(BUILD_MODE)/CMakeLists.txt
+	@# Configure with CMake
 	cd out/$(BUILD_MODE) && cmake .
 
 override_dh_auto_build:

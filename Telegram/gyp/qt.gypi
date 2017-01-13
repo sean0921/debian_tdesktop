@@ -32,7 +32,6 @@
             ],
           },
           'qt_libs': [
-            'qwebp',
             'Qt5PrintSupport',
             'Qt5PlatformSupport',
             'Qt5Network',
@@ -82,11 +81,7 @@
             'qt_lib_debug_postfix': '',
             'qt_lib_release_postfix': '',
             'qt_libs': [
-              'qxcb',
               'Qt5XcbQpa',
-              'qconnmanbearer',
-              'qgenericbearer',
-              'qnmbearer',
               '<@(qt_libs)',
               'Qt5DBus',
               'Qt5Core',
