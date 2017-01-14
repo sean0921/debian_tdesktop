@@ -1,3 +1,10 @@
+telegram-desktop (1.0.0-2~rc1) unstable; urgency=low
+
+  * Solve command-in-menu-file-and-desktop-file problem, fix icon links
+  * Solve binary-or-shlib-defines-rpath lintian error
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sat, 14 Jan 2017 09:18:18 +0000
+
 telegram-desktop (1.0.0-1) unstable; urgency=low
 
   * Initial build (Closes: #767418)

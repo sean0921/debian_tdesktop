@@ -2,10 +2,10 @@ Description: Eliminates dependencies from static Qt
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Bug-Debian: https://bugs.debian.org/767418
 Bug-Ubuntu: https://launchpad.net/bugs/1499516
-Last-Update: 2017-01-12
+Last-Update: 2017-01-14
 
 diff --git a/Telegram/SourceFiles/historywidget.cpp b/Telegram/SourceFiles/historywidget.cpp
-index 75433a9..5ebebbb 100644
+index 580cffe..e807c43 100644
 --- a/Telegram/SourceFiles/historywidget.cpp
 +++ b/Telegram/SourceFiles/historywidget.cpp
 @@ -189,7 +189,7 @@ namespace {
@@ -18,7 +18,7 @@ index 75433a9..5ebebbb 100644
  		auto middle = (start + end) / 2;
  		auto top = list[middle]->y;
 diff --git a/Telegram/SourceFiles/main.cpp b/Telegram/SourceFiles/main.cpp
-index 7343a0f..884080e 100644
+index 0c31e9b..bd2230b 100644
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
 @@ -45,6 +45,11 @@ int main(int argc, char *argv[]) {
@@ -34,10 +34,10 @@ index 7343a0f..884080e 100644
  	{
  		Application app(argc, argv);
 diff --git a/Telegram/SourceFiles/platform/linux/file_dialog_linux.cpp b/Telegram/SourceFiles/platform/linux/file_dialog_linux.cpp
-index 9849038..32fdef4 100644
+index 6e91d71..06d8cea 100644
 --- a/Telegram/SourceFiles/platform/linux/file_dialog_linux.cpp
 +++ b/Telegram/SourceFiles/platform/linux/file_dialog_linux.cpp
-@@ -27,7 +27,26 @@ Copyright (c) 2014-2016 John Preston, https://desktop.telegram.org
+@@ -27,7 +27,26 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
  #include "mainwindow.h"
  #include "localstorage.h"
  
@@ -66,7 +66,7 @@ index 9849038..32fdef4 100644
  namespace Platform {
  namespace FileDialog {
 diff --git a/Telegram/SourceFiles/platform/linux/linux_libs.h b/Telegram/SourceFiles/platform/linux/linux_libs.h
-index bc3dce6..6315d45 100644
+index 1ecae70..e835c31 100644
 --- a/Telegram/SourceFiles/platform/linux/linux_libs.h
 +++ b/Telegram/SourceFiles/platform/linux/linux_libs.h
 @@ -29,7 +29,7 @@ extern "C" {
@@ -79,7 +79,7 @@ index bc3dce6..6315d45 100644
  
  namespace Platform {
 diff --git a/Telegram/SourceFiles/stdafx.cpp b/Telegram/SourceFiles/stdafx.cpp
-index 06bd4af..a6d0620 100644
+index 3cc98b8..e1bdc93 100644
 --- a/Telegram/SourceFiles/stdafx.cpp
 +++ b/Telegram/SourceFiles/stdafx.cpp
 @@ -32,12 +32,12 @@ Q_IMPORT_PLUGIN(QWebpPlugin)
@@ -104,10 +104,10 @@ index 06bd4af..a6d0620 100644
 +//Q_IMPORT_PLUGIN(QFcitxPlatformInputContextPlugin)
  #endif
 diff --git a/Telegram/SourceFiles/ui/text/text.cpp b/Telegram/SourceFiles/ui/text/text.cpp
-index 3a46416..81d36fe 100644
+index 00df3b2..b73606e 100644
 --- a/Telegram/SourceFiles/ui/text/text.cpp
 +++ b/Telegram/SourceFiles/ui/text/text.cpp
-@@ -30,6 +30,43 @@ Copyright (c) 2014-2016 John Preston, https://desktop.telegram.org
+@@ -30,6 +30,43 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
  #include "boxes/confirmbox.h"
  #include "mainwindow.h"
  
@@ -152,7 +152,7 @@ index 3a46416..81d36fe 100644
  
  inline int32 countBlockHeight(const ITextBlock *b, const style::TextStyle *st) {
 diff --git a/Telegram/SourceFiles/ui/text/text_block.cpp b/Telegram/SourceFiles/ui/text/text_block.cpp
-index 8befbc9..36acc1b 100644
+index 65c010f..beb3ec3 100644
 --- a/Telegram/SourceFiles/ui/text/text_block.cpp
 +++ b/Telegram/SourceFiles/ui/text/text_block.cpp
 @@ -333,7 +333,7 @@ TextBlock::TextBlock(const style::font &font, const QString &str, QFixed minResi
@@ -178,7 +178,7 @@ index fc189e4..efee2a6 100644
    set(_include_directories "$<$<BOOL:${_include_directories}>:-I$<JOIN:${_include_directories},\n-I>\n>")
    set(_compile_definitions "$<$<BOOL:${_compile_definitions}>:-D$<JOIN:${_compile_definitions},\n-D>\n>")
 diff --git a/Telegram/gyp/Telegram.gyp b/Telegram/gyp/Telegram.gyp
-index 28d1128..7973f1c 100644
+index 2503f1e..5f15014 100644
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
 @@ -79,20 +79,16 @@
@@ -206,7 +206,7 @@ index 28d1128..7973f1c 100644
        '<(sp_media_key_tap_loc)',
      ],
      'sources': [
-@@ -627,13 +623,6 @@
+@@ -631,13 +627,6 @@
        }],
        [ '"<(build_win)" != "1"', {
          'sources': [
@@ -244,10 +244,10 @@ index a050623..f32ea0a 100644
      'Release': {
        'defines': [
 diff --git a/Telegram/gyp/qt.gypi b/Telegram/gyp/qt.gypi
-index 24ededb..a61b4b4 100644
+index 24ededb..b10439d 100644
 --- a/Telegram/gyp/qt.gypi
 +++ b/Telegram/gyp/qt.gypi
-@@ -27,7 +27,7 @@
+@@ -27,21 +27,19 @@
                [ 'build_macold', {
                  'qt_version%': '5.3.2',
                }, {
@@ -256,7 +256,10 @@ index 24ededb..a61b4b4 100644
                }]
              ],
            },
-@@ -38,10 +38,9 @@
+           'qt_libs': [
+-            'qwebp',
+             'Qt5PrintSupport',
+             'Qt5PlatformSupport',
              'Qt5Network',
              'Qt5Widgets',
              'Qt5Gui',
@@ -268,7 +271,7 @@ index 24ededb..a61b4b4 100644
          },
          'qt_version%': '<(qt_version)',
          'qt_loc_unix': '<(linux_path_qt)',
-@@ -79,9 +78,9 @@
+@@ -79,19 +77,14 @@
              ],
            }],
            [ 'build_linux', {
@@ -279,9 +282,11 @@ index 24ededb..a61b4b4 100644
 +            'qt_lib_debug_postfix': '',
 +            'qt_lib_release_postfix': '',
              'qt_libs': [
-               'qxcb',
+-              'qxcb',
                'Qt5XcbQpa',
-@@ -91,7 +90,6 @@
+-              'qconnmanbearer',
+-              'qgenericbearer',
+-              'qnmbearer',
                '<@(qt_libs)',
                'Qt5DBus',
                'Qt5Core',
@@ -289,7 +294,7 @@ index 24ededb..a61b4b4 100644
                'Xi',
                'Xext',
                'Xfixes',
-@@ -103,7 +101,6 @@
+@@ -103,7 +96,6 @@
                'xcb-shm',
                'xcb-xfixes',
                'xcb-render',
@@ -297,7 +302,7 @@ index 24ededb..a61b4b4 100644
              ],
            }],
          ],
-@@ -130,9 +127,9 @@
+@@ -130,9 +122,9 @@
      ],
  
      'linux_path_xkbcommon%': '/usr/local',
@@ -310,7 +315,7 @@ index 24ededb..a61b4b4 100644
    },
  
    'configurations': {
-@@ -181,13 +178,13 @@
+@@ -181,13 +173,13 @@
    },
  
    'include_dirs': [
@@ -331,7 +336,7 @@ index 24ededb..a61b4b4 100644
    ],
    'library_dirs': [
      '<(qt_loc)/lib',
-@@ -208,7 +205,7 @@
+@@ -208,7 +200,7 @@
          '<(qt_loc)/plugins/platforminputcontexts',
        ],
        'libraries': [
@@ -340,7 +345,7 @@ index 24ededb..a61b4b4 100644
          '<@(qt_libs_release)',
          '<(linux_lib_ssl)',
          '<(linux_lib_crypto)',
-@@ -226,7 +223,6 @@
+@@ -226,7 +218,6 @@
          '<(qt_loc)/mkspecs/linux-g++',
        ],
        'ldflags': [
@@ -361,17 +366,17 @@ index 3356b97..cc6cc7d 100644
        ],
        'cflags': [
 diff --git a/Telegram/gyp/telegram_linux.gypi b/Telegram/gyp/telegram_linux.gypi
-index f4a4022..c2391da 100644
+index b42e744..29386a9 100644
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -48,24 +48,24 @@
+@@ -50,24 +50,21 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
 -      'breakpad_client',
-       'composeplatforminputcontextplugin',
-       'ibusplatforminputcontextplugin',
-       'fcitxplatforminputcontextplugin',
+-      'composeplatforminputcontextplugin',
+-      'ibusplatforminputcontextplugin',
+-      'fcitxplatforminputcontextplugin',
 -      'liblzma.a',
 -      'libopenal.a',
 -      'libavformat.a',
