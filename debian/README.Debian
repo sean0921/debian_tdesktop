@@ -5,7 +5,7 @@ Telegram is secure messenger from Pavel Durov. The package contains dynamically
 linked Telegram Desktop client.
 
 This package has known issue:
- * No bold font
+ * No Open Sans Semibold font
 
 TODO List:
  * Build for i386 architecture
