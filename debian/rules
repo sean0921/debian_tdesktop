@@ -7,6 +7,7 @@
 #  * Telegram/Patches/gyp.diff
 # Please recheck this file if they are changed in future versions.
 
+# Uncomment these to enable verbose mode in CMake and debhelper
 #export VERBOSE = 1
 #export DH_VERBOSE = 1
 
@@ -19,6 +20,7 @@ INSTALL_PROGRAM = $(INSTALL) -p    -o root -g root  -m 755
 INSTALL_SCRIPT  = $(INSTALL) -p    -o root -g root  -m 755
 INSTALL_DIR     = $(INSTALL) -p -d -o root -g root  -m 755
 
+# Implement of standard behaviour of DEB_BUILD_OPTIONS variable
 ifeq (,$(filter noopt,$(DEB_BUILD_OPTIONS)))
  BUILD_MODE = Release
 else
@@ -32,6 +34,7 @@ ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
  MAKEFLAGS += -j$(NUMJOBS)
 endif
 
+# Supporting multi architecture by pkgconfig
 export PKG_CONFIG_PATH=/usr/lib/$(DEB_HOST_MULTIARCH)/pkgconfig
 
 %:
@@ -48,7 +51,7 @@ override_dh_auto_configure:
 	  sed -i "$$NUM r debian/CMakeLists.injection" out/$(BUILD_MODE)/CMakeLists.txt
 	@# Configure with CMake
 	cd out/$(BUILD_MODE) && cmake .
-	@# I don't get how to escape quotes using CMake
+	@# I didn't know how to escape quotes using CMake
 	sed -i s/"[\"']"/'\\\0'/g out/$(BUILD_MODE)/Telegram_pch/compile_flags_cpp.rsp
 
 override_dh_auto_build:
@@ -67,5 +70,3 @@ override_dh_auto_install:
 
 override_dh_auto_clean:
 	$(RMDIR) out
-
-.PHONY: %

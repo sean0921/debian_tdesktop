@@ -1,15 +1,17 @@
-telegram-desktop for Debian
+Telegram Desktop for Debian
 ---------------------------
 
 Telegram is secure messenger from Pavel Durov. The package contains dynamically
-linked Telegram Desktop client.
+linked Telegram Desktop client. For this reason there are some differences from
+the original client:
+ * Behaviour of text input fields. When you press Ctrl+Right_Arrow, a cursor
+   moves to start of next word instead of to end of current word.
+ * Problems with bold font. Open Sans Semibold is not displayed correctly. So
+   for now, the package does not contain Open Sans font family.
 
-This package has known issue:
- * No Open Sans Semibold font
-
-TODO List:
- * Build for i386 architecture
+TODO List for this package:
  * Man page
  * Sort out dpkg-shlibdeps warnings
-
- -- Nicholas Guriev <guriev-ns@ya.ru>  Fri, 13 Jan 2017 17:39:25 +0300
+ * Eliminate redundant GCC flags
+ * Fix Open Sans Semibold
+ * Make a button for autorestart when new version is available
