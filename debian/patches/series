@@ -1,1 +1,2 @@
-0001-Fix-depending-on-static-Qt.patch
+Avoid-depending-on-static-libraries.patch
+Fix-autorestart-when-new-language-is-selected.patch

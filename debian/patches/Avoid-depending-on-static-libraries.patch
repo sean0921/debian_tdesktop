@@ -1,8 +1,8 @@
-Description: Eliminates dependencies from static Qt
+Description: Eliminates dependencies from static Qt and other libraries
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Bug-Debian: https://bugs.debian.org/767418
 Bug-Ubuntu: https://launchpad.net/bugs/1499516
-Last-Update: 2017-01-14
+Last-Update: 2017-01-18
 
 diff --git a/Telegram/SourceFiles/historywidget.cpp b/Telegram/SourceFiles/historywidget.cpp
 index 580cffe..e807c43 100644
@@ -18,7 +18,7 @@ index 580cffe..e807c43 100644
  		auto middle = (start + end) / 2;
  		auto top = list[middle]->y;
 diff --git a/Telegram/SourceFiles/main.cpp b/Telegram/SourceFiles/main.cpp
-index 0c31e9b..bd2230b 100644
+index 0c31e9b..3f9c0e4 100644
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
 @@ -45,6 +45,11 @@ int main(int argc, char *argv[]) {
@@ -26,7 +26,7 @@ index 0c31e9b..bd2230b 100644
  	Platform::start(); // must be started before QApplication is created
  
 +	// I don't know why path is not in QT_PLUGIN_PATH by default
-+	QCoreApplication::addLibraryPath("/usr/lib/x86_64-linux-gnu/qt5/plugins");
++	QCoreApplication::addLibraryPath("/usr/lib/" DEB_HOST_MULTIARCH "/qt5/plugins");
 +	// without this Telegram doesn't start on Ubuntu 17.04 due GTK errors
 +	setenv("QT_STYLE_OVERRIDE", "qwerty", false);
 +
@@ -165,10 +165,10 @@ index 65c010f..beb3ec3 100644
  		layout.createLine();
  
 diff --git a/Telegram/gyp/PrecompiledHeader.cmake b/Telegram/gyp/PrecompiledHeader.cmake
-index fc189e4..efee2a6 100644
+index fc189e4..28ef22e 100644
 --- a/Telegram/gyp/PrecompiledHeader.cmake
 +++ b/Telegram/gyp/PrecompiledHeader.cmake
-@@ -69,7 +69,7 @@ endmacro()
+@@ -69,13 +69,13 @@ endmacro()
  function(export_all_flags _filename _source_name_for_flags)
    set(_include_directories "$<TARGET_PROPERTY:${_target},INCLUDE_DIRECTORIES>")
    set(_compile_definitions "$<TARGET_PROPERTY:${_target},COMPILE_DEFINITIONS>")
@@ -177,11 +177,26 @@ index fc189e4..efee2a6 100644
    set(_compile_options "$<TARGET_PROPERTY:${_target},COMPILE_OPTIONS>")
    set(_include_directories "$<$<BOOL:${_include_directories}>:-I$<JOIN:${_include_directories},\n-I>\n>")
    set(_compile_definitions "$<$<BOOL:${_compile_definitions}>:-D$<JOIN:${_compile_definitions},\n-D>\n>")
+   set(_compile_flags "$<$<BOOL:${_compile_flags}>:$<JOIN:${_compile_flags},\n>\n>")
+   set(_compile_options "$<$<BOOL:${_compile_options}>:$<JOIN:${_compile_options},\n>\n>")
+-  file(GENERATE OUTPUT "${_filename}" CONTENT "${_source_name_for_flags}\n${_compile_definitions}${_include_directories}${_compile_flags}${_compile_options}\n")
++  file(GENERATE OUTPUT "${_filename}" CONTENT "${_compile_definitions}${_include_directories}${_compile_flags}${_compile_options}\n")
+ endfunction()
+ 
+ function(add_precompiled_header _target _input)
 diff --git a/Telegram/gyp/Telegram.gyp b/Telegram/gyp/Telegram.gyp
-index 2503f1e..5f15014 100644
+index 2503f1e..18ce36e 100644
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
-@@ -79,20 +79,16 @@
+@@ -30,6 +30,7 @@
+       'libs_loc': '<(libs_loc)',
+       'src_loc': '../SourceFiles',
+       'res_loc': '../Resources',
++      'triplet': '<!(dpkg-architecture -q DEB_HOST_MULTIARCH)',
+       'third_party_loc': '../ThirdParty',
+       'minizip_loc': '<(third_party_loc)/minizip',
+       'sp_media_key_tap_loc': '<(third_party_loc)/SPMediaKeyTap',
+@@ -79,20 +80,16 @@
      ],
  
      'defines': [
@@ -206,7 +221,7 @@ index 2503f1e..5f15014 100644
        '<(sp_media_key_tap_loc)',
      ],
      'sources': [
-@@ -631,13 +627,6 @@
+@@ -631,13 +628,6 @@
        }],
        [ '"<(build_win)" != "1"', {
          'sources': [
@@ -220,6 +235,34 @@ index 2503f1e..5f15014 100644
          ],
          'sources!': [
            '<(src_loc)/pspecific_win.cpp',
+diff --git a/Telegram/gyp/codegen.gyp b/Telegram/gyp/codegen.gyp
+index 04f6249..51faf63 100644
+--- a/Telegram/gyp/codegen.gyp
++++ b/Telegram/gyp/codegen.gyp
+@@ -28,6 +28,7 @@
+       'src_loc': '../SourceFiles',
+       'gen_loc': '../GeneratedFiles',
+       'mac_target': '10.10',
++      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
+     },
+     'includes': [
+       'common_executable.gypi',
+@@ -50,6 +51,7 @@
+       'libs_loc': '../../../Libraries',
+       'src_loc': '../SourceFiles',
+       'mac_target': '10.10',
++      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
+     },
+     'includes': [
+       'common_executable.gypi',
+@@ -92,6 +94,7 @@
+       'libs_loc': '../../../Libraries',
+       'src_loc': '../SourceFiles',
+       'mac_target': '10.10',
++      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
+     },
+     'includes': [
+       'common_executable.gypi',
 diff --git a/Telegram/gyp/common.gypi b/Telegram/gyp/common.gypi
 index a050623..f32ea0a 100644
 --- a/Telegram/gyp/common.gypi
@@ -244,7 +287,7 @@ index a050623..f32ea0a 100644
      'Release': {
        'defines': [
 diff --git a/Telegram/gyp/qt.gypi b/Telegram/gyp/qt.gypi
-index 24ededb..b10439d 100644
+index 24ededb..53710c2 100644
 --- a/Telegram/gyp/qt.gypi
 +++ b/Telegram/gyp/qt.gypi
 @@ -27,21 +27,19 @@
@@ -252,7 +295,7 @@ index 24ededb..b10439d 100644
                  'qt_version%': '5.3.2',
                }, {
 -                'qt_version%': '5.6.2',
-+                'qt_version%': '<!(echo /usr/include/x86_64-linux-gnu/qt5/QtCore/*/ | grep -Po "\d+\.\d+\.\d+")',
++                'qt_version%': '<!(echo /usr/include/<(triplet)/qt5/QtCore/*/ | grep -Po "\d+\.\d+\.\d+")',
                }]
              ],
            },
@@ -267,7 +310,7 @@ index 24ededb..b10439d 100644
            ],
            'qt_version%': '<(qt_version)',
 -          'linux_path_qt%': '/usr/local/tdesktop/Qt-<(qt_version)',
-+          'linux_path_qt%': '/usr/lib/x86_64-linux-gnu/qt5',
++          'linux_path_qt%': '/usr/lib/<(triplet)/qt5',
          },
          'qt_version%': '<(qt_version)',
          'qt_loc_unix': '<(linux_path_qt)',
@@ -309,9 +352,9 @@ index 24ededb..b10439d 100644
 -    'linux_lib_ssl%': '/usr/local/ssl/lib/libssl.a',
 -    'linux_lib_crypto%': '/usr/local/ssl/lib/libcrypto.a',
 -    'linux_lib_icu%': '/usr/lib/libicutu.a /usr/lib/libicui18n.a /usr/lib/libicuuc.a /usr/lib/libicudata.a',
-+    'linux_lib_ssl%': '/usr/lib/x86_64-linux-gnu/libssl.so',
-+    'linux_lib_crypto%': '/usr/lib/x86_64-linux-gnu/libcrypto.so',
-+    'linux_lib_icu%': '/usr/lib/x86_64-linux-gnu/libicutu.so /usr/lib/x86_64-linux-gnu/libicui18n.so /usr/lib/x86_64-linux-gnu/libicuuc.so /usr/lib/x86_64-linux-gnu/libicudata.so',
++    'linux_lib_ssl%': 'ssl',
++    'linux_lib_crypto%': 'crypto',
++    'linux_lib_icu%': 'icutu icui18n icuuc icudata',
    },
  
    'configurations': {
@@ -326,13 +369,13 @@ index 24ededb..b10439d 100644
 -    '<(qt_loc)/include/QtGui/<(qt_version)',
 -    '<(qt_loc)/include/QtCore/<(qt_version)/QtCore',
 -    '<(qt_loc)/include/QtGui/<(qt_version)/QtGui',
-+    '/usr/include/x86_64-linux-gnu/qt5',
-+    '/usr/include/x86_64-linux-gnu/qt5/QtCore',
-+    '/usr/include/x86_64-linux-gnu/qt5/QtGui',
-+    '/usr/include/x86_64-linux-gnu/qt5/QtCore/<(qt_version)/',
-+    '/usr/include/x86_64-linux-gnu/qt5/QtGui/<(qt_version)/',
-+    '/usr/include/x86_64-linux-gnu/qt5/QtCore/<(qt_version)/QtCore',
-+    '/usr/include/x86_64-linux-gnu/qt5/QtGui/<(qt_version)/QtGui',
++    '/usr/include/<(triplet)/qt5',
++    '/usr/include/<(triplet)/qt5/QtCore',
++    '/usr/include/<(triplet)/qt5/QtGui',
++    '/usr/include/<(triplet)/qt5/QtCore/<(qt_version)/',
++    '/usr/include/<(triplet)/qt5/QtGui/<(qt_version)/',
++    '/usr/include/<(triplet)/qt5/QtCore/<(qt_version)/QtCore',
++    '/usr/include/<(triplet)/qt5/QtGui/<(qt_version)/QtGui',
    ],
    'library_dirs': [
      '<(qt_loc)/lib',
@@ -341,7 +384,7 @@ index 24ededb..b10439d 100644
        ],
        'libraries': [
 -        '<(linux_path_xkbcommon)/lib/libxkbcommon.a',
-+        '/usr/lib/x86_64-linux-gnu/libxkbcommon.so',
++        'xkbcommon',
          '<@(qt_libs_release)',
          '<(linux_lib_ssl)',
          '<(linux_lib_crypto)',
@@ -354,17 +397,28 @@ index 24ededb..b10439d 100644
          '-g',
          '-rdynamic',
 diff --git a/Telegram/gyp/settings_linux.gypi b/Telegram/gyp/settings_linux.gypi
-index 3356b97..cc6cc7d 100644
+index 3356b97..6a2b0a1 100644
 --- a/Telegram/gyp/settings_linux.gypi
 +++ b/Telegram/gyp/settings_linux.gypi
-@@ -60,7 +60,6 @@
+@@ -38,7 +38,7 @@
+         ],
+       },
+       'conditions': [
+-        [ '"<!(uname -p)" == "x86_64"', {
++        [ '"<!(dpkg-architecture -q DEB_HOST_GNU_CPU)" == "x86_64"', {
+           'defines': [
+             'Q_OS_LINUX64',
+           ],
+@@ -60,8 +60,8 @@
        ],
        'defines': [
          '_REENTRANT',
 -        'QT_STATICPLUGIN',
          'QT_PLUGIN',
++        'DEB_HOST_MULTIARCH="<!(dpkg-architecture -q DEB_HOST_MULTIARCH)"',
        ],
        'cflags': [
+         '<@(linux_common_flags)',
 diff --git a/Telegram/gyp/telegram_linux.gypi b/Telegram/gyp/telegram_linux.gypi
 index b42e744..29386a9 100644
 --- a/Telegram/gyp/telegram_linux.gypi
@@ -409,3 +463,15 @@ index b42e744..29386a9 100644
  #      '<!(pkg-config 2> /dev/null --libs <@(pkgconfig_libs))',
      ],
      'cflags_cc': [
+diff --git a/Telegram/gyp/utils.gyp b/Telegram/gyp/utils.gyp
+index 209c737..2b0ecd0 100644
+--- a/Telegram/gyp/utils.gyp
++++ b/Telegram/gyp/utils.gyp
+@@ -69,6 +69,7 @@
+       'libs_loc': '../../../Libraries',
+       'src_loc': '../SourceFiles',
+       'mac_target': '10.10',
++      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
+     },
+     'includes': [
+       'common_executable.gypi',

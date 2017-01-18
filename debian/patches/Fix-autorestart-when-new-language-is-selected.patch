@@ -1,0 +1,15 @@
+Description: Fixed restart when choosing language
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Last-Update: 2017-01-18
+
+--- telegram-desktop-1.0.0.orig/Telegram/SourceFiles/pspecific_linux.cpp
++++ telegram-desktop-1.0.0/Telegram/SourceFiles/pspecific_linux.cpp
+@@ -572,7 +572,7 @@ bool _execUpdater(bool update = true, co
+ 	static const int MaxLen = 65536, MaxArgsCount = 128;
+ 
+ 	char path[MaxLen] = {0};
+-	QByteArray data(QFile::encodeName(cExeDir() + "Updater"));
++	QByteArray data(QFile::encodeName(cExeDir() + (update ? "Updater" : gExeName)));
+ 	memcpy(path, data.constData(), data.size());
+ 
+ 	char *args[MaxArgsCount] = {0}, p_noupdate[] = "-noupdate", p_autostart[] = "-autostart", p_debug[] = "-debug", p_tosettings[] = "-tosettings", p_key[] = "-key", p_path[] = "-workpath", p_startintray[] = "-startintray", p_testmode[] = "-testmode", p_crashreport[] = "-crashreport";
