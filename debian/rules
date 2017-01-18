@@ -32,6 +32,8 @@ ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
  MAKEFLAGS += -j$(NUMJOBS)
 endif
 
+export PKG_CONFIG_PATH=/usr/lib/$(DEB_HOST_MULTIARCH)/pkgconfig
+
 %:
 	dh $@
 
@@ -46,6 +48,8 @@ override_dh_auto_configure:
 	  sed -i "$$NUM r debian/CMakeLists.injection" out/$(BUILD_MODE)/CMakeLists.txt
 	@# Configure with CMake
 	cd out/$(BUILD_MODE) && cmake .
+	@# I don't get how to escape quotes using CMake
+	sed -i s/"[\"']"/'\\\0'/g out/$(BUILD_MODE)/Telegram_pch/compile_flags_cpp.rsp
 
 override_dh_auto_build:
 	$(MAKE) -C out/$(BUILD_MODE)

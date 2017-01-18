@@ -28,6 +28,7 @@
       'src_loc': '../SourceFiles',
       'gen_loc': '../GeneratedFiles',
       'mac_target': '10.10',
+      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
     },
     'includes': [
       'common_executable.gypi',
@@ -50,6 +51,7 @@
       'libs_loc': '../../../Libraries',
       'src_loc': '../SourceFiles',
       'mac_target': '10.10',
+      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
     },
     'includes': [
       'common_executable.gypi',
@@ -92,6 +94,7 @@
       'libs_loc': '../../../Libraries',
       'src_loc': '../SourceFiles',
       'mac_target': '10.10',
+      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
     },
     'includes': [
       'common_executable.gypi',

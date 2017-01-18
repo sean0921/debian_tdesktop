@@ -30,6 +30,7 @@
       'libs_loc': '<(libs_loc)',
       'src_loc': '../SourceFiles',
       'res_loc': '../Resources',
+      'triplet': '<!(dpkg-architecture -q DEB_HOST_MULTIARCH)',
       'third_party_loc': '../ThirdParty',
       'minizip_loc': '<(third_party_loc)/minizip',
       'sp_media_key_tap_loc': '<(third_party_loc)/SPMediaKeyTap',

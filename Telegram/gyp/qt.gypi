@@ -27,7 +27,7 @@
               [ 'build_macold', {
                 'qt_version%': '5.3.2',
               }, {
-                'qt_version%': '<!(echo /usr/include/x86_64-linux-gnu/qt5/QtCore/*/ | grep -Po "\d+\.\d+\.\d+")',
+                'qt_version%': '<!(echo /usr/include/<(triplet)/qt5/QtCore/*/ | grep -Po "\d+\.\d+\.\d+")',
               }]
             ],
           },
@@ -39,7 +39,7 @@
             'Qt5Gui',
           ],
           'qt_version%': '<(qt_version)',
-          'linux_path_qt%': '/usr/lib/x86_64-linux-gnu/qt5',
+          'linux_path_qt%': '/usr/lib/<(triplet)/qt5',
         },
         'qt_version%': '<(qt_version)',
         'qt_loc_unix': '<(linux_path_qt)',
@@ -122,9 +122,9 @@
     ],
 
     'linux_path_xkbcommon%': '/usr/local',
-    'linux_lib_ssl%': '/usr/lib/x86_64-linux-gnu/libssl.so',
-    'linux_lib_crypto%': '/usr/lib/x86_64-linux-gnu/libcrypto.so',
-    'linux_lib_icu%': '/usr/lib/x86_64-linux-gnu/libicutu.so /usr/lib/x86_64-linux-gnu/libicui18n.so /usr/lib/x86_64-linux-gnu/libicuuc.so /usr/lib/x86_64-linux-gnu/libicudata.so',
+    'linux_lib_ssl%': 'ssl',
+    'linux_lib_crypto%': 'crypto',
+    'linux_lib_icu%': 'icutu icui18n icuuc icudata',
   },
 
   'configurations': {
@@ -173,13 +173,13 @@
   },
 
   'include_dirs': [
-    '/usr/include/x86_64-linux-gnu/qt5',
-    '/usr/include/x86_64-linux-gnu/qt5/QtCore',
-    '/usr/include/x86_64-linux-gnu/qt5/QtGui',
-    '/usr/include/x86_64-linux-gnu/qt5/QtCore/<(qt_version)/',
-    '/usr/include/x86_64-linux-gnu/qt5/QtGui/<(qt_version)/',
-    '/usr/include/x86_64-linux-gnu/qt5/QtCore/<(qt_version)/QtCore',
-    '/usr/include/x86_64-linux-gnu/qt5/QtGui/<(qt_version)/QtGui',
+    '/usr/include/<(triplet)/qt5',
+    '/usr/include/<(triplet)/qt5/QtCore',
+    '/usr/include/<(triplet)/qt5/QtGui',
+    '/usr/include/<(triplet)/qt5/QtCore/<(qt_version)/',
+    '/usr/include/<(triplet)/qt5/QtGui/<(qt_version)/',
+    '/usr/include/<(triplet)/qt5/QtCore/<(qt_version)/QtCore',
+    '/usr/include/<(triplet)/qt5/QtGui/<(qt_version)/QtGui',
   ],
   'library_dirs': [
     '<(qt_loc)/lib',
@@ -200,7 +200,7 @@
         '<(qt_loc)/plugins/platforminputcontexts',
       ],
       'libraries': [
-        '/usr/lib/x86_64-linux-gnu/libxkbcommon.so',
+        'xkbcommon',
         '<@(qt_libs_release)',
         '<(linux_lib_ssl)',
         '<(linux_lib_crypto)',

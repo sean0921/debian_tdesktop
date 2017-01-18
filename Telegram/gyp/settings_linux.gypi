@@ -38,7 +38,7 @@
         ],
       },
       'conditions': [
-        [ '"<!(uname -p)" == "x86_64"', {
+        [ '"<!(dpkg-architecture -q DEB_HOST_GNU_CPU)" == "x86_64"', {
           'defines': [
             'Q_OS_LINUX64',
           ],
@@ -61,6 +61,7 @@
       'defines': [
         '_REENTRANT',
         'QT_PLUGIN',
+        'DEB_HOST_MULTIARCH="<!(dpkg-architecture -q DEB_HOST_MULTIARCH)"',
       ],
       'cflags': [
         '<@(linux_common_flags)',
