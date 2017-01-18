@@ -1,21 +1,5 @@
-telegram-desktop (1.0.0-2~rc2) unstable; urgency=low
-
-  * Fixed restart when choosing language
-  * Made x32 build, but only inside chroot jail
-  * Updated README for Debian
-  * Renamed binary
-
- -- Nicholas Guriev <guriev-ns@ya.ru>  Wed, 18 Jan 2017 13:39:33 +0300
-
-telegram-desktop (1.0.0-2~rc1) unstable; urgency=low
-
-  * Solve command-in-menu-file-and-desktop-file problem, fix icon links
-  * Solve binary-or-shlib-defines-rpath lintian error
-
- -- Nicholas Guriev <guriev-ns@ya.ru>  Sat, 14 Jan 2017 09:18:18 +0000
-
 telegram-desktop (1.0.0-1) unstable; urgency=low
 
-  * Initial build (Closes: #767418)
+  * Initial upload (Closes: #767418)
 
- -- Nicholas Guriev <guriev-ns@ya.ru>  Fri, 13 Jan 2017 17:33:14 +0300
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Wed, 18 Jan 2017 19:28:37 +0300
