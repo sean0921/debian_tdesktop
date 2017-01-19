@@ -236,19 +236,30 @@ void HistoryInner::enumerateItemsInHistory(History *history, int historytop, Met
 			if (TopToBottom) {
 				if (itembottom <= _visibleAreaTop && (cAlphaVersion() || cBetaVersion())) {
 					// Debugging a crash
-					auto fields = QStringList();
-					fields.append(QString::number(historytop));
-					fields.append(QString::number(history->height));
-					fields.append(QString::number(_visibleAreaTop));
-					fields.append(QString::number(_visibleAreaBottom));
-					fields.append(QString::number(blocktop));
-					fields.append(QString::number(block->height));
-					fields.append(QString::number(itemtop));
-					fields.append(QString::number(item->height()));
-					fields.append(QString::number(itembottom));
-					fields.append(QString::number(history->blocks.size()));
-					fields.append(QString::number(block->items.size()));
-					SignalHandlers::setCrashAnnotation("ItemInfo1", fields.join(','));
+					auto debugInfo = QStringList();
+					auto debugValue = [&debugInfo](const QString &name, int value) {
+						debugInfo.append(name + ":" + QString::number(value));
+					};
+					debugValue("historytop", historytop);
+					debugValue("history->height", history->height);
+					debugValue("blockIndex", blockIndex);
+					debugValue("history->blocks.size()", history->blocks.size());
+					debugValue("blocktop", blocktop);
+					debugValue("block->height", block->height);
+					debugValue("itemIndex", itemIndex);
+					debugValue("block->items.size()", block->items.size());
+					debugValue("itemtop", itemtop);
+					debugValue("item->height()", item->height());
+					debugValue("itembottom", itembottom);
+					debugValue("_visibleAreaTop", _visibleAreaTop);
+					debugValue("_visibleAreaBottom", _visibleAreaBottom);
+					for (int i = 0; i != qMin(history->blocks.size(), 10); ++i) {
+						for (int j = 0; j != qMin(history->blocks[i]->items.size(), 10); ++j) {
+							debugValue("y[" + QString::number(i) + "][" + QString::number(j) + "]", history->blocks[i]->items[j]->y);
+							debugValue("h[" + QString::number(i) + "][" + QString::number(j) + "]", history->blocks[i]->items[j]->height());
+						}
+					}
+					SignalHandlers::setCrashAnnotation("DebugInfo", debugInfo.join(','));
 				}
 				t_assert(itembottom > _visibleAreaTop);
 			} else {
@@ -1630,7 +1641,7 @@ void HistoryInner::recountHeight() {
 
 		int32 descH = st::msgMargin.top() + st::msgPadding.top() + st::msgNameFont->height + st::botDescSkip + _botAbout->height + st::msgPadding.bottom() + st::msgMargin.bottom();
 		int32 descMaxWidth = _scroll->width();
-		if (Adaptive::Wide()) {
+		if (Adaptive::ChatWide()) {
 			descMaxWidth = qMin(descMaxWidth, int32(st::msgMaxWidth + 2 * st::msgPhotoSkip + 2 * st::msgMargin.left()));
 		}
 		int32 descAtX = (descMaxWidth - _botAbout->width) / 2 - st::msgPadding.left();
@@ -1796,7 +1807,7 @@ void HistoryInner::updateSize() {
 	if (_botAbout && _botAbout->height > 0) {
 		int32 descH = st::msgMargin.top() + st::msgPadding.top() + st::msgNameFont->height + st::botDescSkip + _botAbout->height + st::msgPadding.bottom() + st::msgMargin.bottom();
 		int32 descMaxWidth = _scroll->width();
-		if (Adaptive::Wide()) {
+		if (Adaptive::ChatWide()) {
 			descMaxWidth = qMin(descMaxWidth, int32(st::msgMaxWidth + 2 * st::msgPhotoSkip + 2 * st::msgMargin.left()));
 		}
 		int32 descAtX = (descMaxWidth - _botAbout->width) / 2 - st::msgPadding.left();
@@ -6532,7 +6543,7 @@ bool HistoryWidget::confirmSendingFiles(const SendingFilesLists &lists, Compress
 	return validateSendingFiles(lists, [this, &lists, compressed, addedComment](const QStringList &files) {
 		auto image = QImage();
 		auto insertTextOnCancel = QString();
-		auto prepareBox = [this, &files, &lists, compressed, &image] {
+		auto box = ([this, &files, &lists, compressed, &image] {
 			if (files.size() > 1) {
 				return Box<SendFilesBox>(files, lists.allFilesForCompress ? compressed : CompressConfirm::None);
 			}
@@ -6540,12 +6551,12 @@ bool HistoryWidget::confirmSendingFiles(const SendingFilesLists &lists, Compress
 			auto animated = false;
 			image = App::readImage(filepath, nullptr, false, &animated);
 			return Box<SendFilesBox>(filepath, image, imageCompressConfirm(image, compressed, animated), animated);
-		};
+		})();
 		auto sendCallback = [this, image](const QStringList &files, bool compressed, const QString &caption, MsgId replyTo) {
 			auto type = compressed ? SendMediaType::Photo : SendMediaType::File;
 			uploadFilesAfterConfirmation(files, image, QByteArray(), type, caption);
 		};
-		return showSendFilesBox(prepareBox(), insertTextOnCancel, addedComment, std_::move(sendCallback));
+		return showSendFilesBox(std_::move(box), insertTextOnCancel, addedComment, std_::move(sendCallback));
 	});
 }
 
@@ -6686,7 +6697,7 @@ void HistoryWidget::uploadFilesAfterConfirmation(const QStringList &files, const
 		if (filepath.isEmpty() && (!image.isNull() || !content.isNull())) {
 			tasks.push_back(MakeShared<FileLoadTask>(content, image, type, to, caption));
 		} else {
-			tasks.push_back(MakeShared<FileLoadTask>(filepath, type, to, caption));
+			tasks.push_back(MakeShared<FileLoadTask>(filepath, image, type, to, caption));
 		}
 	}
 	_fileLoader.addTasks(tasks);
@@ -6699,7 +6710,7 @@ void HistoryWidget::uploadFile(const QByteArray &fileContent, SendMediaType type
 
 	auto to = FileLoadTo(_peer->id, _silent->checked(), replyToId());
 	auto caption = QString();
-	_fileLoader.addTask(MakeShared<FileLoadTask>(fileContent, type, to, caption));
+	_fileLoader.addTask(MakeShared<FileLoadTask>(fileContent, QImage(), type, to, caption));
 
 	cancelReplyAfterMediaSend(lastForceReplyReplied());
 }
@@ -7071,6 +7082,11 @@ void HistoryWidget::notify_handlePendingHistoryUpdate() {
 }
 
 void HistoryWidget::resizeEvent(QResizeEvent *e) {
+	auto layout = (width() < st::adaptiveChatWideWidth) ? Adaptive::ChatLayout::Normal : Adaptive::ChatLayout::Wide;
+	if (layout != Global::AdaptiveChatLayout()) {
+		Global::SetAdaptiveChatLayout(layout);
+		Adaptive::Changed().notify(true);
+	}
 	updateControlsGeometry();
 }
 

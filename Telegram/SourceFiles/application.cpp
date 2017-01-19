@@ -1069,9 +1069,9 @@ void AppClass::checkMapVersion() {
     if (Local::oldMapVersion() < AppVersion) {
 		if (Local::oldMapVersion()) {
 			QString versionFeatures;
-			if ((cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000000) {
-				versionFeatures = langNewVersionText();//QString::fromUtf8("\xe2\x80\x94 Appoint admins in your supergroups from members list context menu\n\xe2\x80\x94 Bug fixes and other minor improvements");
-			} else if (!(cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000000) {
+			if ((cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000001) {
+				versionFeatures = QString::fromUtf8("\xe2\x80\x94 Resize chats list with mouse press-and-drag\n\xe2\x80\x94 Drag-n-drop images from Firefox fixed in Windows\n\xe2\x80\x94 Bug fixes and other minor improvements");
+			} else if (!(cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000002) {
 				versionFeatures = langNewVersionText();
 			} else {
 				versionFeatures = lang(lng_new_version_minor).trimmed();
