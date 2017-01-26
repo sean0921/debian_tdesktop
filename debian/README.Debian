@@ -8,10 +8,3 @@ the original client:
    moves to start of next word instead of to end of current word.
  * Problems with bold font. Open Sans Semibold is not displayed correctly. So
    for now, the package does not contain Open Sans font family.
-
-TODO List for this package:
- * Man page
- * Sort out dpkg-shlibdeps warnings
- * Eliminate redundant GCC flags
- * Fix Open Sans Semibold
- * Make a button for autorestart when new version is available

@@ -505,7 +505,7 @@ void psRegisterCustomScheme() {
 			s << "Exec=" << escapeShell(QFile::encodeName(cExeDir() + cExeName())) << " -- %u\n";
 			s << "Icon=telegram\n";
 			s << "Terminal=false\n";
-			s << "StartupWMClass=Telegram\n";
+			s << "StartupWMClass=TelegramDesktop\n";
 			s << "Type=Application\n";
 			s << "Categories=Network;\n";
 			s << "MimeType=x-scheme-handler/tg;\n";

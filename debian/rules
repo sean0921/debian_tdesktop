@@ -7,66 +7,37 @@
 #  * Telegram/Patches/gyp.diff
 # Please recheck this file if they are changed in future versions.
 
-# Uncomment these to enable verbose mode in CMake and debhelper
-#export VERBOSE = 1
+include /usr/share/dpkg/default.mk
 #export DH_VERBOSE = 1
 
-DESTDIR = debian/telegram-desktop
-MKDIR = mkdir -p
-RMDIR = $(RM) -r
-INSTALL = install
-INSTALL_FILE    = $(INSTALL) -p    -o root -g root  -m 644
-INSTALL_PROGRAM = $(INSTALL) -p    -o root -g root  -m 755
-INSTALL_SCRIPT  = $(INSTALL) -p    -o root -g root  -m 755
-INSTALL_DIR     = $(INSTALL) -p -d -o root -g root  -m 755
-
-# Implement of standard behaviour of DEB_BUILD_OPTIONS variable
 ifeq (,$(filter noopt,$(DEB_BUILD_OPTIONS)))
  BUILD_MODE = Release
 else
  BUILD_MODE = Debug
 endif
-ifeq (,$(filter nostrip,$(DEB_BUILD_OPTIONS)))
- INSTALL_PROGRAM += -s
-endif
-ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
- NUMJOBS = $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
- MAKEFLAGS += -j$(NUMJOBS)
-endif
 
-# Supporting multi architecture by pkgconfig
-export PKG_CONFIG_PATH=/usr/lib/$(DEB_HOST_MULTIARCH)/pkgconfig
+DEFINITIONS += \
+	TDESKTOP_DISABLE_AUTOUPDATE \
+	TDESKTOP_DISABLE_CRASH_REPORTS \
+	TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME \
+	DEB_HOST_MULTIARCH=\"$(DEB_HOST_MULTIARCH)\"
+
+export PKG_CONFIG_PATH = /usr/lib/$(DEB_HOST_MULTIARCH)/pkgconfig
+export CPPFLAGS += $(DEFINITIONS:%=-D%)
 
 %:
-	dh $@
+	dh $@ --sourcedirectory=out/$(BUILD_MODE)
 
 override_dh_auto_configure:
-	@# Generate CMakeLists.txt
-	cd Telegram/gyp && \
-	  gyp --depth=. --generator-output=../.. -Goutput_dir=out Telegram.gyp --format=cmake
+	gyp --format=cmake --depth=Telegram/gyp --generator-output=../.. \
+	  -Goutput_dir=out -Gconfig=$(BUILD_MODE) Telegram/gyp/Telegram.gyp
 	@# Patch CMakeLists.txt instead gyp utility. $NUM is the number of the line
 	@# before penultimate one in the generated CMakeLists.txt file. The follow
-	@# sed script inserts all lines from debian/CMakeLists.injection file.
+	@# sed script inserts all lines from debian/CMakeLists.inj file.
 	NUM=$$((`wc -l < out/$(BUILD_MODE)/CMakeLists.txt` - 2)); \
-	  sed -i "$$NUM r debian/CMakeLists.injection" out/$(BUILD_MODE)/CMakeLists.txt
-	@# Configure with CMake
-	cd out/$(BUILD_MODE) && cmake .
-	@# I didn't know how to escape quotes using CMake
-	sed -i s/"[\"']"/'\\\0'/g out/$(BUILD_MODE)/Telegram_pch/compile_flags_cpp.rsp
-
-override_dh_auto_build:
-	$(MAKE) -C out/$(BUILD_MODE)
-
-override_dh_auto_install:
-	@# Install binary
-	$(INSTALL_DIR) $(DESTDIR)/usr/bin
-	$(INSTALL_PROGRAM) out/$(BUILD_MODE)/Telegram $(DESTDIR)/usr/bin/telegram-desktop
-	@# Copy icons
-	for size in 16 32 64 128 256 512; do \
-	  $(INSTALL_DIR) $(DESTDIR)/usr/share/icons/hicolor/$${size}x$${size}/apps; \
-	  $(INSTALL_FILE) Telegram/Resources/art/icon$${size}.png \
-	    $(DESTDIR)/usr/share/icons/hicolor/$${size}x$${size}/apps/telegram.png; \
-	done
+	  sed -i "$$NUM r debian/CMakeLists.inj" out/$(BUILD_MODE)/CMakeLists.txt
+	dh_auto_configure
 
 override_dh_auto_clean:
-	$(RMDIR) out
+	dh_auto_clean || dh_auto_clean --sourcedirectory=$(CURDIR)
+	rm -rf out

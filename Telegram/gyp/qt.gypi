@@ -237,6 +237,7 @@
       # Silence "Note: No relevant classes found. No output generated."
       '--no-notes',
 
+      '<!@(echo $CPPFLAGS | grep -Po "[-]([IDU]\s*\S*|E)")',
       '<!@(python -c "for s in \'<@(_defines)\'.split(\' \'): print(\'-D\' + s)")',
       # '<!@(python -c "for s in \'<@(_include_dirs)\'.split(\' \'): print(\'-I\' + s)")',
       '<(RULE_INPUT_PATH)',

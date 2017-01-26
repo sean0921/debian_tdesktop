@@ -1,22 +1,7 @@
 Description: Eliminates dependencies from static Qt and other libraries
 Author: Nicholas Guriev <guriev-ns@ya.ru>
-Bug-Debian: https://bugs.debian.org/767418
-Bug-Ubuntu: https://launchpad.net/bugs/1499516
-Last-Update: 2017-01-18
+Last-Update: 2017-01-26
 
-diff --git a/Telegram/SourceFiles/historywidget.cpp b/Telegram/SourceFiles/historywidget.cpp
-index 580cffe..e807c43 100644
---- a/Telegram/SourceFiles/historywidget.cpp
-+++ b/Telegram/SourceFiles/historywidget.cpp
-@@ -189,7 +189,7 @@ namespace {
- // is applied once for blocks list in a history and once for items list in the found block
- template <bool TopToBottom, typename T>
- int binarySearchBlocksOrItems(const T &list, int edge) {
--	auto start = 0, end = list.size();
-+	size_t start = 0, end = list.size();
- 	while (end - start > 1) {
- 		auto middle = (start + end) / 2;
- 		auto top = list[middle]->y;
 diff --git a/Telegram/SourceFiles/main.cpp b/Telegram/SourceFiles/main.cpp
 index 0c31e9b..3f9c0e4 100644
 --- a/Telegram/SourceFiles/main.cpp
@@ -33,38 +18,6 @@ index 0c31e9b..3f9c0e4 100644
  	int result = 0;
  	{
  		Application app(argc, argv);
-diff --git a/Telegram/SourceFiles/platform/linux/file_dialog_linux.cpp b/Telegram/SourceFiles/platform/linux/file_dialog_linux.cpp
-index 6e91d71..06d8cea 100644
---- a/Telegram/SourceFiles/platform/linux/file_dialog_linux.cpp
-+++ b/Telegram/SourceFiles/platform/linux/file_dialog_linux.cpp
-@@ -27,7 +27,26 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
- #include "mainwindow.h"
- #include "localstorage.h"
- 
--QStringList qt_make_filter_list(const QString &filter);
-+// Copy & paste from qfiledialog.cpp
-+// Makes a list of filters from ;;-separated text.
-+QStringList qt_make_filter_list(const QString &filter)
-+{
-+    QString f(filter);
-+
-+    if (f.isEmpty())
-+        return QStringList();
-+
-+    QString sep(";;");
-+    int i = f.indexOf(sep, 0);
-+    if (i == -1) {
-+        if (f.indexOf("\n", 0) != -1) {
-+            sep = "\n";
-+            i = f.indexOf(sep, 0);
-+        }
-+    }
-+
-+    return f.split(sep);
-+}
- 
- namespace Platform {
- namespace FileDialog {
 diff --git a/Telegram/SourceFiles/platform/linux/linux_libs.h b/Telegram/SourceFiles/platform/linux/linux_libs.h
 index 1ecae70..e835c31 100644
 --- a/Telegram/SourceFiles/platform/linux/linux_libs.h
@@ -79,13 +32,30 @@ index 1ecae70..e835c31 100644
  
  namespace Platform {
 diff --git a/Telegram/SourceFiles/stdafx.cpp b/Telegram/SourceFiles/stdafx.cpp
-index 3cc98b8..e1bdc93 100644
+index 3cc98b8..7afd662 100644
 --- a/Telegram/SourceFiles/stdafx.cpp
 +++ b/Telegram/SourceFiles/stdafx.cpp
-@@ -32,12 +32,12 @@ Q_IMPORT_PLUGIN(QWebpPlugin)
- Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin)
- Q_IMPORT_PLUGIN(QGenericEnginePlugin)
- #elif defined Q_OS_LINUX // Q_OS_LINUX
+@@ -16,28 +16,70 @@ In addition, as a special exception, the copyright holders give permission
+ to link the code of portions of this program with the OpenSSL library.
+ 
+ Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
+-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
++Copyright (c) 2009-2017 Various Qt Authors
+ */
+ #include "stdafx.h"
+-#include <QtCore/QtPlugin>
+-
+-#ifdef Q_OS_WINRT
+-//Q_IMPORT_PLUGIN(QWinRTIntegrationPlugin)
+-//Q_IMPORT_PLUGIN(QWbmpPlugin)
+-#elif defined Q_OS_WIN // Q_OS_WINRT
+-Q_IMPORT_PLUGIN(QWebpPlugin)
+-Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
+-#elif defined Q_OS_MAC // Q_OS_WIN
+-Q_IMPORT_PLUGIN(QWebpPlugin)
+-Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin)
+-Q_IMPORT_PLUGIN(QGenericEnginePlugin)
+-#elif defined Q_OS_LINUX // Q_OS_LINUX
 -Q_IMPORT_PLUGIN(QWebpPlugin)
 -Q_IMPORT_PLUGIN(QXcbIntegrationPlugin)
 -Q_IMPORT_PLUGIN(QConnmanEnginePlugin)
@@ -94,32 +64,44 @@ index 3cc98b8..e1bdc93 100644
 -Q_IMPORT_PLUGIN(QComposePlatformInputContextPlugin)
 -Q_IMPORT_PLUGIN(QIbusPlatformInputContextPlugin)
 -Q_IMPORT_PLUGIN(QFcitxPlatformInputContextPlugin)
-+//Q_IMPORT_PLUGIN(QWebpPlugin)
-+//Q_IMPORT_PLUGIN(QXcbIntegrationPlugin)
-+//Q_IMPORT_PLUGIN(QConnmanEnginePlugin)
-+//Q_IMPORT_PLUGIN(QGenericEnginePlugin)
-+//Q_IMPORT_PLUGIN(QNetworkManagerEnginePlugin)
-+//Q_IMPORT_PLUGIN(QComposePlatformInputContextPlugin)
-+//Q_IMPORT_PLUGIN(QIbusPlatformInputContextPlugin)
-+//Q_IMPORT_PLUGIN(QFcitxPlatformInputContextPlugin)
- #endif
-diff --git a/Telegram/SourceFiles/ui/text/text.cpp b/Telegram/SourceFiles/ui/text/text.cpp
-index 00df3b2..b73606e 100644
---- a/Telegram/SourceFiles/ui/text/text.cpp
-+++ b/Telegram/SourceFiles/ui/text/text.cpp
-@@ -30,6 +30,43 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
- #include "boxes/confirmbox.h"
- #include "mainwindow.h"
- 
-+// This is a copy from Qt source file qtextengine.cpp for TextPainter::drawLine.
-+// Temporary fix it here.
-+// TODO: find a dynamic library which contains this methods.
+-#endif
++
++/* This file contains some code from Qt source to ensure successful build.
++ * TODO: find a dynamic library with these symbols.
++ */
++
++/* Debian maintainer: this function is taken from qfiledialog.cpp */
++/*
++    Makes a list of filters from ;;-separated text.
++    Used by the mac and windows implementations
++*/
++QStringList qt_make_filter_list(const QString &filter)
++{
++    QString f(filter);
++
++    if (f.isEmpty())
++        return QStringList();
++
++    QString sep(QLatin1String(";;"));
++    int i = f.indexOf(sep, 0);
++    if (i == -1) {
++        if (f.indexOf(QLatin1Char('\n'), 0) != -1) {
++            sep = QLatin1Char('\n');
++            i = f.indexOf(sep, 0);
++        }
++    }
++
++    return f.split(sep);
++}
++
++/* Debian maintainer: this constructor is taken from qtextengine.cpp for TextPainter::drawLine */
 +QTextItemInt::QTextItemInt(const QGlyphLayout &g, QFont *font, const QChar *chars_, int numChars, QFontEngine *fe, const QTextCharFormat &format)
 +    : flags(0), justified(false), underlineStyle(QTextCharFormat::NoUnderline), charFormat(format),
 +      num_chars(numChars), chars(chars_), logClusters(0), f(font),  glyphs(g), fontEngine(fe)
 +{
 +}
 +
++/* Debian maintainer: this method is also taken from qtextengine.cpp */
 +// Fix up flags and underlineStyle with given info
 +void QTextItemInt::initWithScriptItem(const QScriptItem &si)
 +{
@@ -147,15 +129,11 @@ index 00df3b2..b73606e 100644
 +    if (f->d->strikeOut || charFormat.fontStrikeOut())
 +        flags |= QTextItem::StrikeOut;
 +}
-+
- namespace {
- 
- inline int32 countBlockHeight(const ITextBlock *b, const style::TextStyle *st) {
 diff --git a/Telegram/SourceFiles/ui/text/text_block.cpp b/Telegram/SourceFiles/ui/text/text_block.cpp
-index 65c010f..beb3ec3 100644
+index b43bb05..8a75a25 100644
 --- a/Telegram/SourceFiles/ui/text/text_block.cpp
 +++ b/Telegram/SourceFiles/ui/text/text_block.cpp
-@@ -333,7 +333,7 @@ TextBlock::TextBlock(const style::font &font, const QString &str, QFixed minResi
+@@ -337,7 +337,7 @@ TextBlock::TextBlock(const style::font &font, const QString &str, QFixed minResi
  		QStackTextEngine engine(part, blockFont->f);
  		engine.itemize();
  
@@ -164,28 +142,8 @@ index 65c010f..beb3ec3 100644
  		layout.beginLayout();
  		layout.createLine();
  
-diff --git a/Telegram/gyp/PrecompiledHeader.cmake b/Telegram/gyp/PrecompiledHeader.cmake
-index fc189e4..28ef22e 100644
---- a/Telegram/gyp/PrecompiledHeader.cmake
-+++ b/Telegram/gyp/PrecompiledHeader.cmake
-@@ -69,13 +69,13 @@ endmacro()
- function(export_all_flags _filename _source_name_for_flags)
-   set(_include_directories "$<TARGET_PROPERTY:${_target},INCLUDE_DIRECTORIES>")
-   set(_compile_definitions "$<TARGET_PROPERTY:${_target},COMPILE_DEFINITIONS>")
--  get_source_file_property(_compile_flags "${_source_name_for_flags}" COMPILE_FLAGS)
-+  get_target_property(_compile_flags "${_target}" COMPILE_FLAGS)
-   set(_compile_options "$<TARGET_PROPERTY:${_target},COMPILE_OPTIONS>")
-   set(_include_directories "$<$<BOOL:${_include_directories}>:-I$<JOIN:${_include_directories},\n-I>\n>")
-   set(_compile_definitions "$<$<BOOL:${_compile_definitions}>:-D$<JOIN:${_compile_definitions},\n-D>\n>")
-   set(_compile_flags "$<$<BOOL:${_compile_flags}>:$<JOIN:${_compile_flags},\n>\n>")
-   set(_compile_options "$<$<BOOL:${_compile_options}>:$<JOIN:${_compile_options},\n>\n>")
--  file(GENERATE OUTPUT "${_filename}" CONTENT "${_source_name_for_flags}\n${_compile_definitions}${_include_directories}${_compile_flags}${_compile_options}\n")
-+  file(GENERATE OUTPUT "${_filename}" CONTENT "${_compile_definitions}${_include_directories}${_compile_flags}${_compile_options}\n")
- endfunction()
- 
- function(add_precompiled_header _target _input)
 diff --git a/Telegram/gyp/Telegram.gyp b/Telegram/gyp/Telegram.gyp
-index 2503f1e..18ce36e 100644
+index 2503f1e..92415ea 100644
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
 @@ -30,6 +30,7 @@
@@ -196,14 +154,11 @@ index 2503f1e..18ce36e 100644
        'third_party_loc': '../ThirdParty',
        'minizip_loc': '<(third_party_loc)/minizip',
        'sp_media_key_tap_loc': '<(third_party_loc)/SPMediaKeyTap',
-@@ -79,20 +80,16 @@
+@@ -79,20 +80,13 @@
      ],
  
      'defines': [
 -      'AL_LIBTYPE_STATIC',
-+      'TDESKTOP_DISABLE_CRASH_REPORTS',
-+      'TDESKTOP_DISABLE_AUTOUPDATE',
-+      'TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME',
        '<!@(python -c "for s in \'<(travis_defines)\'.split(\',\'): print(s)")',
      ],
  
@@ -221,7 +176,7 @@ index 2503f1e..18ce36e 100644
        '<(sp_media_key_tap_loc)',
      ],
      'sources': [
-@@ -631,13 +628,6 @@
+@@ -631,13 +625,6 @@
        }],
        [ '"<(build_win)" != "1"', {
          'sources': [
@@ -263,31 +218,8 @@ index 04f6249..51faf63 100644
      },
      'includes': [
        'common_executable.gypi',
-diff --git a/Telegram/gyp/common.gypi b/Telegram/gyp/common.gypi
-index a050623..f32ea0a 100644
---- a/Telegram/gyp/common.gypi
-+++ b/Telegram/gyp/common.gypi
-@@ -97,7 +97,7 @@
-     'ld_lib_postfix': '<(ld_lib_postfix)',
-     'exe_ext': '<(exe_ext)',
- 
--    'library%': 'static_library',
-+    'library%': 'shared_library',
- 
-   },
- 
-@@ -106,6 +106,9 @@
-       'defines': [
-         '_DEBUG',
-       ],
-+      'cflags': [
-+        '-fmax-errors=5',
-+      ],
-     },
-     'Release': {
-       'defines': [
 diff --git a/Telegram/gyp/qt.gypi b/Telegram/gyp/qt.gypi
-index 24ededb..53710c2 100644
+index 24ededb..0cfd178 100644
 --- a/Telegram/gyp/qt.gypi
 +++ b/Telegram/gyp/qt.gypi
 @@ -27,21 +27,19 @@
@@ -397,7 +329,7 @@ index 24ededb..53710c2 100644
          '-g',
          '-rdynamic',
 diff --git a/Telegram/gyp/settings_linux.gypi b/Telegram/gyp/settings_linux.gypi
-index 3356b97..6a2b0a1 100644
+index 3356b97..20b4732 100644
 --- a/Telegram/gyp/settings_linux.gypi
 +++ b/Telegram/gyp/settings_linux.gypi
 @@ -38,7 +38,7 @@
@@ -409,16 +341,14 @@ index 3356b97..6a2b0a1 100644
            'defines': [
              'Q_OS_LINUX64',
            ],
-@@ -60,8 +60,8 @@
+@@ -60,7 +60,6 @@
        ],
        'defines': [
          '_REENTRANT',
 -        'QT_STATICPLUGIN',
          'QT_PLUGIN',
-+        'DEB_HOST_MULTIARCH="<!(dpkg-architecture -q DEB_HOST_MULTIARCH)"',
        ],
        'cflags': [
-         '<@(linux_common_flags)',
 diff --git a/Telegram/gyp/telegram_linux.gypi b/Telegram/gyp/telegram_linux.gypi
 index b42e744..29386a9 100644
 --- a/Telegram/gyp/telegram_linux.gypi

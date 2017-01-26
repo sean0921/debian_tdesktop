@@ -1,11 +1,12 @@
 Source: telegram-desktop
-Section: contrib/net
+Section: net
 Priority: optional
 Maintainer: Nicholas Guriev <guriev-ns@ya.ru>
 Build-Depends: cmake (>=3.0),
-               debhelper (>=9.0),
+               debhelper (>=10.0),
+               dh-exec,
                fcitx-frontend-qt5,
-               gyp:all,
+               gyp,
                libappindicator-dev,
                libavcodec-dev (>=7:3.2),
                libavformat-dev (>=7:3.2),

@@ -97,7 +97,7 @@
     'ld_lib_postfix': '<(ld_lib_postfix)',
     'exe_ext': '<(exe_ext)',
 
-    'library%': 'shared_library',
+    'library%': 'static_library',
 
   },
 
@@ -105,9 +105,6 @@
     'Debug': {
       'defines': [
         '_DEBUG',
-      ],
-      'cflags': [
-        '-fmax-errors=5',
       ],
     },
     'Release': {

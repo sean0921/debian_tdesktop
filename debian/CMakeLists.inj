@@ -1,4 +1,4 @@
-# ---------- debian/CMakeLists.injection begin ----------
+# ------------- debian/CMakeLists.inj begin -------------
 # The text will be putted into the appropriate CMakeLists by debian/rules script
 
 # Avoid rpath compiler parameter
@@ -7,7 +7,8 @@ set_target_properties(Telegram PROPERTIES SKIP_BUILD_RPATH TRUE)
 # This makes up for patch of gyp utility, supporting precompiled headers. If
 # Telegram/Patches/gyp.diff file will be changed in future, please check these
 # lines.
-include(${CMAKE_SOURCE_DIR}/../../Telegram/gyp/PrecompiledHeader.cmake)
+include(../../Telegram/gyp/PrecompiledHeader.cmake)
 add_precompiled_header(Telegram ../../Telegram/SourceFiles/stdafx.h)
 
-# ----------- debian/CMakeLists.injection end -----------
+# vim: ft=cmake
+# -------------- debian/CMakeLists.inj end --------------

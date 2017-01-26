@@ -1,1 +1,16 @@
-debian/telegramdesktop.desktop usr/share/applications
+#!/usr/bin/dh-exec
+
+# Install binary
+obj-${DEB_HOST_MULTIARCH}/Telegram => /usr/bin/telegram-desktop
+
+# Install icons
+Telegram/Resources/art/icon16.png => /usr/share/icons/hicolor/16x16/apps/telegram.png
+Telegram/Resources/art/icon32.png => /usr/share/icons/hicolor/32x32/apps/telegram.png
+Telegram/Resources/art/icon64.png => /usr/share/icons/hicolor/64x64/apps/telegram.png
+Telegram/Resources/art/icon128.png => /usr/share/icons/hicolor/128x128/apps/telegram.png
+Telegram/Resources/art/icon256.png => /usr/share/icons/hicolor/256x256/apps/telegram.png
+Telegram/Resources/art/icon512.png => /usr/share/icons/hicolor/512x512/apps/telegram.png
+
+# Install menu
+lib/xdg/telegramdesktop.desktop /usr/share/applications
+lib/xdg/tg.protocol /usr/share/kde4/services

@@ -80,9 +80,6 @@
     ],
 
     'defines': [
-      'TDESKTOP_DISABLE_CRASH_REPORTS',
-      'TDESKTOP_DISABLE_AUTOUPDATE',
-      'TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME',
       '<!@(python -c "for s in \'<(travis_defines)\'.split(\',\'): print(s)")',
     ],
 
