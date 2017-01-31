@@ -1,6 +1,6 @@
 Description: Eliminates dependencies from static Qt and other libraries
 Author: Nicholas Guriev <guriev-ns@ya.ru>
-Last-Update: 2017-01-26
+Last-Update: 2017-01-31
 
 diff --git a/Telegram/SourceFiles/main.cpp b/Telegram/SourceFiles/main.cpp
 index 0c31e9b..3f9c0e4 100644
@@ -130,13 +130,13 @@ index 3cc98b8..7afd662 100644
 +        flags |= QTextItem::StrikeOut;
 +}
 diff --git a/Telegram/SourceFiles/ui/text/text_block.cpp b/Telegram/SourceFiles/ui/text/text_block.cpp
-index b43bb05..8a75a25 100644
+index d7597f8..3a50097 100644
 --- a/Telegram/SourceFiles/ui/text/text_block.cpp
 +++ b/Telegram/SourceFiles/ui/text/text_block.cpp
-@@ -337,7 +337,7 @@ TextBlock::TextBlock(const style::font &font, const QString &str, QFixed minResi
- 		QStackTextEngine engine(part, blockFont->f);
- 		engine.itemize();
+@@ -335,7 +335,7 @@ TextBlock::TextBlock(const style::font &font, const QString &str, QFixed minResi
+ 		SignalHandlers::setCrashAnnotationRef("CrashString", &part);
  
+ 		QStackTextEngine engine(part, blockFont->f);
 -		QTextLayout layout(&engine);
 +		QTextLayout layout(part, blockFont->f);
  		layout.beginLayout();
