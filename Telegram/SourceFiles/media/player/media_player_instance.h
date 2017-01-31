@@ -23,7 +23,6 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 namespace Notify {
 struct PeerUpdate;
 } // namespace Notify
-struct AudioPlaybackState;
 class AudioMsgId;
 
 namespace Media {
@@ -32,20 +31,10 @@ namespace Player {
 void start();
 void finish();
 
-// We use this method instead of checking for instance() != nullptr
-// because audioPlayer() can be destroyed at any time by an
-// error in audio playback, so we check it each time.
-bool exists();
-
 class Instance;
 Instance *instance();
 
-struct UpdatedEvent {
-	UpdatedEvent(const AudioMsgId *audioId, const AudioPlaybackState *playbackState) : audioId(audioId), playbackState(playbackState) {
-	}
-	const AudioMsgId *audioId;
-	const AudioPlaybackState *playbackState;
-};
+struct TrackState;
 
 class Instance : private base::Subscriber {
 public:
@@ -90,7 +79,7 @@ public:
 	base::Observable<bool> &playerWidgetOver() {
 		return _playerWidgetOver;
 	}
-	base::Observable<UpdatedEvent> &updatedNotifier() {
+	base::Observable<TrackState> &updatedNotifier() {
 		return _updatedNotifier;
 	}
 	base::Observable<void> &playlistChangedNotifier() {
@@ -136,7 +125,7 @@ private:
 	base::Observable<bool> _usePanelPlayer;
 	base::Observable<bool> _titleButtonOver;
 	base::Observable<bool> _playerWidgetOver;
-	base::Observable<UpdatedEvent> _updatedNotifier;
+	base::Observable<TrackState> _updatedNotifier;
 	base::Observable<void> _playlistChangedNotifier;
 	base::Observable<void> _songChangedNotifier;
 	base::Observable<void> _repeatChangedNotifier;

@@ -1215,7 +1215,7 @@ void OverviewInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				if (document->loading()) {
 					_menu->addAction(lang(lng_context_cancel_download), this, SLOT(cancelContextDownload()))->setEnabled(true);
 				} else {
-					if (document->filepath(DocumentData::FilePathResolveChecked).isEmpty()) {
+					if (!document->filepath(DocumentData::FilePathResolveChecked).isEmpty()) {
 						_menu->addAction(lang((cPlatform() == dbipMac || cPlatform() == dbipMacOld) ? lng_context_show_in_finder : lng_context_show_in_folder), this, SLOT(showContextInFolder()))->setEnabled(true);
 					}
 					_menu->addAction(lang(lnkIsVideo ? lng_context_save_video : (lnkIsAudio ? lng_context_save_audio : (lnkIsSong ? lng_context_save_audio_file : lng_context_save_file))), App::LambdaDelayed(st::defaultDropdownMenu.menu.ripple.hideDuration, this, [this, document] {
@@ -2091,11 +2091,10 @@ int32 OverviewWidget::lastScrollTop() const {
 }
 
 int32 OverviewWidget::countBestScroll() const {
-	if (type() == OverviewMusicFiles && audioPlayer()) {
-		AudioMsgId playing;
-		audioPlayer()->currentState(&playing, AudioMsgId::Type::Song);
-		if (playing) {
-			int32 top = _inner->itemTop(playing.contextId());
+	if (type() == OverviewMusicFiles) {
+		auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Song);
+		if (state.id) {
+			int32 top = _inner->itemTop(state.id.contextId());
 			if (top >= 0) {
 				return snap(top - int(_scroll->height() - (st::msgPadding.top() + st::mediaThumbSize + st::msgPadding.bottom())) / 2, 0, _scroll->scrollTopMax());
 			}

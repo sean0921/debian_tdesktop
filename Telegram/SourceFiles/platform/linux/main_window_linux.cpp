@@ -379,7 +379,7 @@ bool MainWindow::psHasNativeNotifications() {
 void MainWindow::LibsLoaded() {
 	QStringList cdesktop = QString(getenv("XDG_CURRENT_DESKTOP")).toLower().split(':');
 	noQtTrayIcon = (cdesktop.contains(qstr("pantheon"))) || (cdesktop.contains(qstr("gnome")));
-	tryAppIndicator = cdesktop.contains(qstr("xfce"));
+	tryAppIndicator = (cdesktop.contains(qstr("xfce")) || cdesktop.contains(qstr("unity")));
 
 	if (noQtTrayIcon) cSetSupportTray(false);
 
@@ -595,6 +595,16 @@ MainWindow::~MainWindow() {
 		Libs::g_object_unref(_trayMenu);
 		_trayMenu = nullptr;
 	}
+	if (_trayIndicator) {
+		Libs::g_object_unref(_trayIndicator);
+		_trayIndicator = nullptr;
+	}
+#ifndef TDESKTOP_DISABLE_UNITY_INTEGRATION
+	if (_psUnityLauncherEntry) {
+		Libs::g_object_unref(_psUnityLauncherEntry);
+		_psUnityLauncherEntry = nullptr;
+	}
+#endif
 }
 
 } // namespace Platform

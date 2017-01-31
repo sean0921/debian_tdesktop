@@ -649,14 +649,12 @@ bool Voice::updateStatusText() {
 		statusSize = FileStatusSizeFailed;
 	} else if (_data->loaded()) {
 		statusSize = FileStatusSizeLoaded;
-		if (audioPlayer()) {
-			AudioMsgId playing;
-			auto playbackState = audioPlayer()->currentState(&playing, AudioMsgId::Type::Voice);
-			if (playing == AudioMsgId(_data, _parent->fullId()) && !(playbackState.state & AudioPlayerStoppedMask) && playbackState.state != AudioPlayerFinishing) {
-				statusSize = -1 - (playbackState.position / (playbackState.frequency ? playbackState.frequency : AudioVoiceMsgFrequency));
-				realDuration = playbackState.duration / (playbackState.frequency ? playbackState.frequency : AudioVoiceMsgFrequency);
-				showPause = (playbackState.state == AudioPlayerPlaying || playbackState.state == AudioPlayerResuming || playbackState.state == AudioPlayerStarting);
-			}
+		using State = Media::Player::State;
+		auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Voice);
+		if (state.id == AudioMsgId(_data, _parent->fullId()) && !Media::Player::IsStopped(state.state) && state.state != State::Finishing) {
+			statusSize = -1 - (state.position / state.frequency);
+			realDuration = (state.duration / state.frequency);
+			showPause = (state.state == State::Playing || state.state == State::Resuming || state.state == State::Starting);
 		}
 	} else {
 		statusSize = FileStatusSizeReady;
@@ -935,17 +933,15 @@ bool Document::updateStatusText() {
 	} else if (_data->loaded()) {
 		if (_data->song()) {
 			statusSize = FileStatusSizeLoaded;
-			if (audioPlayer()) {
-				AudioMsgId playing;
-				auto playbackState = audioPlayer()->currentState(&playing, AudioMsgId::Type::Song);
-				if (playing == AudioMsgId(_data, _parent->fullId()) && !(playbackState.state & AudioPlayerStoppedMask) && playbackState.state != AudioPlayerFinishing) {
-					statusSize = -1 - (playbackState.position / (playbackState.frequency ? playbackState.frequency : AudioVoiceMsgFrequency));
-					realDuration = playbackState.duration / (playbackState.frequency ? playbackState.frequency : AudioVoiceMsgFrequency);
-					showPause = (playbackState.state == AudioPlayerPlaying || playbackState.state == AudioPlayerResuming || playbackState.state == AudioPlayerStarting);
-				}
-				if (!showPause && (playing == AudioMsgId(_data, _parent->fullId())) && Media::Player::exists() && Media::Player::instance()->isSeeking()) {
-					showPause = true;
-				}
+			using State = Media::Player::State;
+			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Song);
+			if (state.id == AudioMsgId(_data, _parent->fullId()) && !Media::Player::IsStopped(state.state) && state.state != State::Finishing) {
+				statusSize = -1 - (state.position / state.frequency);
+				realDuration = (state.duration / state.frequency);
+				showPause = (state.state == State::Playing || state.state == State::Resuming || state.state == State::Starting);
+			}
+			if (!showPause && (state.id == AudioMsgId(_data, _parent->fullId())) && Media::Player::instance()->isSeeking()) {
+				showPause = true;
 			}
 		} else {
 			statusSize = FileStatusSizeLoaded;
