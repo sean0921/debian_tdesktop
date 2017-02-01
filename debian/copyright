@@ -31,9 +31,9 @@ Files: debian/*
 Copyright: 2016-2017 Nicholas Guriev <guriev-ns@ya.ru>
 License: GPL-3.0+
 
-Files debian/patches/*
+Files: debian/patches/*
 Copyright: 2017 Nicholas Guriev <guriev-ns@ya.ru>
-License: public-domain
+License: Public-domain
 Comment: Contributing policy - see .github/CONTRIBUTING.md file
 
 License: Apache-2.0
@@ -124,6 +124,20 @@ License: GPL-3.0+ with OpenSSL exception
  .
  On Debian systems, the complete text of the GNU General Public License version
  3 can be found in "/usr/share/common-licenses/GPL-3".
+
+License: Public-domain
+ I certify that:
+ .
+ a) The contribution was created in whole by me or is based upon previous work
+    that, to the best of my knowledge, is in the public domain and I have the
+    right to put it in the public domain.
+ .
+ b) I understand and agree that this project and the contribution are public and
+    that a record of the contribution (including all metadata and personal
+    information I submit with it, including my sign-off) is maintained
+    indefinitely and may be redistributed.
+ .
+ c) I am granting this work into the public domain.
 
 License: Zlib
  This software is provided 'as-is', without any express or implied warranty.  In
