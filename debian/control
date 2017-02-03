@@ -5,7 +5,6 @@ Maintainer: Nicholas Guriev <guriev-ns@ya.ru>
 Build-Depends: cmake (>=3.0),
                debhelper (>=10.0),
                dh-exec,
-               fcitx-frontend-qt5,
                gyp,
                libappindicator-dev,
                libavcodec-dev (>=7:3.2),
@@ -17,9 +16,6 @@ Build-Depends: cmake (>=3.0),
                libopus-dev (>=1.1),
                libssl1.0-dev,
                libswscale-dev (>=7:3.2),
-               libva-dev,
-               libvdpau-dev,
-               qt5-image-formats-plugins (>=5.6),
                qtbase5-dev (>=5.6),
                qtbase5-private-dev (>=5.6),
                ruby-ronn,
@@ -31,8 +27,7 @@ Vcs-Browser: https://github.com/mymedia2/tdesktop
 
 Package: telegram-desktop
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends},
- qt5-image-formats-plugins, fcitx-frontend-qt5,
+Depends: ${shlibs:Depends}, ${misc:Depends}, qt5-image-formats-plugins (>=5.6)
 Description: official telegram messaging app
  Telegram is a messaging app with a focus on speed and security, it is
  super-fast, simple and free. You can use Telegram on all your devices at the

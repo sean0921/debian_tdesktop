@@ -1,8 +1,6 @@
 TODO List for for Debian package
 --------------------------------
 
- * Man page
- * Sort out dpkg-shlibdeps warnings
  * Eliminate redundant GCC flags
  * Fix Open Sans Semibold
  * Make a button for autorestart when new version is available

@@ -5,3 +5,4 @@ debhelper-build-stamp
 files
 telegram-desktop.postinst.debhelper
 telegram-desktop.postrm.debhelper
+telegram-desktop.1
