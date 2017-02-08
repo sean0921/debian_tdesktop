@@ -76,7 +76,6 @@
       'codegen.gyp:codegen_style',
       'codegen.gyp:codegen_numbers',
       'codegen.gyp:MetaLang',
-      'utils.gyp:Updater',
     ],
 
     'defines': [

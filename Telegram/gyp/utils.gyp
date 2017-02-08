@@ -87,6 +87,7 @@
       }],
       [ 'build_linux', {
         'libraries': [
+          'ssl',
           'crypto',
           'lzma',
         ],
