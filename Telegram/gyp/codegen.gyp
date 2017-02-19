@@ -133,6 +133,7 @@
       'libs_loc': '../../../Libraries',
       'src_loc': '../SourceFiles',
       'mac_target': '10.10',
+      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
     },
     'includes': [
       'common_executable.gypi',

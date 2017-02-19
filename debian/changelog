@@ -1,5 +1,5 @@
-telegram-desktop (1.0.6-1) unstable; urgency=low
+telegram-desktop (1.0.12-1) unstable; urgency=low
 
   * Initial upload (Closes: #767418)
 
- -- Nicholas Guriev <guriev-ns@ya.ru>  Wed, 18 Jan 2017 19:28:37 +0300
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sun, 19 Feb 2017 14:53:58 +0300

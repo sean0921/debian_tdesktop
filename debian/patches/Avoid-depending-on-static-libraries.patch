@@ -191,7 +191,7 @@ index 2503f1e..92415ea 100644
          'sources!': [
            '<(src_loc)/pspecific_win.cpp',
 diff --git a/Telegram/gyp/codegen.gyp b/Telegram/gyp/codegen.gyp
-index 04f6249..51faf63 100644
+index ab19d10..76e8657 100644
 --- a/Telegram/gyp/codegen.gyp
 +++ b/Telegram/gyp/codegen.gyp
 @@ -28,6 +28,7 @@
@@ -211,6 +211,14 @@ index 04f6249..51faf63 100644
      'includes': [
        'common_executable.gypi',
 @@ -92,6 +94,7 @@
+       'libs_loc': '../../../Libraries',
+       'src_loc': '../SourceFiles',
+       'mac_target': '10.10',
++      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
+     },
+     'includes': [
+       'common_executable.gypi',
+@@ -130,6 +133,7 @@
        'libs_loc': '../../../Libraries',
        'src_loc': '../SourceFiles',
        'mac_target': '10.10',
