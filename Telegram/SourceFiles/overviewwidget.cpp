@@ -33,7 +33,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
 #include "window/top_bar_widget.h"
-#include "window/window_theme.h"
+#include "window/themes/window_theme.h"
 #include "lang.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -1137,21 +1137,20 @@ void OverviewInner::keyPressEvent(QKeyEvent *e) {
 	}
 }
 
-void OverviewInner::enterEvent(QEvent *e) {
-	return QWidget::enterEvent(e);
+void OverviewInner::enterEventHook(QEvent *e) {
+	return TWidget::enterEventHook(e);
 }
 
-void OverviewInner::leaveEvent(QEvent *e) {
-	if (_selectedMsgId) {
-		repaintItem(_selectedMsgId, -1);
-		_selectedMsgId = 0;
+void OverviewInner::leaveEventHook(QEvent *e) {
+	if (auto selectedMsgId = base::take(_selectedMsgId)) {
+		repaintItem(selectedMsgId, -1);
 	}
 	ClickHandler::clearActive();
 	if (!ClickHandler::getPressed() && _cursor != style::cur_default) {
 		_cursor = style::cur_default;
 		setCursor(_cursor);
 	}
-	return QWidget::leaveEvent(e);
+	return TWidget::leaveEventHook(e);
 }
 
 void OverviewInner::resizeEvent(QResizeEvent *e) {
@@ -1406,8 +1405,8 @@ void OverviewInner::goToMessage() {
 }
 
 void OverviewInner::forwardMessage() {
-	HistoryItem *item = App::contextItem();
-	if (!item || item->type() != HistoryItemMsg || item->serviceMsg()) return;
+	auto item = App::contextItem();
+	if (!item || item->id < 0) return;
 
 	App::main()->forwardLayer();
 }
@@ -1417,8 +1416,8 @@ MsgId OverviewInner::complexMsgId(const HistoryItem *item) const {
 }
 
 void OverviewInner::selectMessage() {
-	HistoryItem *item = App::contextItem();
-	if (!item || item->type() != HistoryItemMsg || item->serviceMsg()) return;
+	auto item = App::contextItem();
+	if (!item || item->id < 0) return;
 
 	if (!_selected.isEmpty() && _selected.cbegin().value() != FullSelection) {
 		_selected.clear();
@@ -2274,7 +2273,7 @@ void OverviewWidget::onForwardSelected() {
 
 void OverviewWidget::confirmDeleteContextItem() {
 	auto item = App::contextItem();
-	if (!item || item->type() != HistoryItemMsg) return;
+	if (!item) return;
 
 	if (auto message = item->toHistoryMessage()) {
 		if (message->uploading()) {
@@ -2297,7 +2296,7 @@ void OverviewWidget::deleteContextItem(bool forEveryone) {
 	Ui::hideLayer();
 
 	auto item = App::contextItem();
-	if (!item || item->type() != HistoryItemMsg) {
+	if (!item) {
 		return;
 	}
 

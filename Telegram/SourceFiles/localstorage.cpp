@@ -26,7 +26,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "serialize/serialize_document.h"
 #include "serialize/serialize_common.h"
 #include "data/data_drafts.h"
-#include "window/window_theme.h"
+#include "window/themes/window_theme.h"
 #include "observer_peer.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
@@ -522,7 +522,7 @@ enum {
 	dbiDownloadPathOld = 0x15,
 	dbiScale = 0x16,
 	dbiEmojiTabOld = 0x17,
-	dbiRecentEmojisOld = 0x18,
+	dbiRecentEmojiOldOld = 0x18,
 	dbiLoggedPhoneNumber = 0x19,
 	dbiMutedPeers = 0x1a,
 	// 0x1b reserved
@@ -534,8 +534,8 @@ enum {
 	dbiTileBackground = 0x21,
 	dbiAutoLock = 0x22,
 	dbiDialogLastPath = 0x23,
-	dbiRecentEmojis = 0x24,
-	dbiEmojiVariants = 0x25,
+	dbiRecentEmojiOld = 0x24,
+	dbiEmojiVariantsOld = 0x25,
 	dbiRecentStickers = 0x26,
 	dbiDcOption = 0x27,
 	dbiTryIPv6 = 0x28,
@@ -550,6 +550,8 @@ enum {
 	dbiAutoPlay = 0x37,
 	dbiAdaptiveForWide = 0x38,
 	dbiHiddenPinnedMessages = 0x39,
+	dbiRecentEmoji = 0x3a,
+	dbiEmojiVariants = 0x3b,
 	dbiDialogsMode = 0x40,
 	dbiModerateMode = 0x41,
 	dbiVideoVolume = 0x42,
@@ -559,6 +561,7 @@ enum {
 	dbiNotificationsCorner = 0x46,
 	dbiTheme = 0x47,
 	dbiDialogsWidthRatio = 0x48,
+	dbiUseExternalVideoPlayer = 0x49,
 
 	dbiEncryptedWithSalt = 333,
 	dbiEncrypted = 444,
@@ -601,6 +604,7 @@ bool _backgroundWasRead = false;
 bool _backgroundCanWrite = true;
 
 FileKey _themeKey = 0;
+QString _themePaletteAbsolutePath;
 
 bool _readingUserSettings = false;
 FileKey _userSettingsKey = 0;
@@ -926,6 +930,14 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version) {
 		if (!_checkStreamStatus(stream)) return false;
 
 		cSetSendToMenu(v == 1);
+	} break;
+
+	case dbiUseExternalVideoPlayer: {
+		qint32 v;
+		stream >> v;
+		if (!_checkStreamStatus(stream)) return false;
+
+		cSetUseExternalVideoPlayer(v == 1);
 	} break;
 
 	case dbiSoundNotify: {
@@ -1269,11 +1281,12 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version) {
 		QString v;
 		stream >> v;
 		if (!_checkStreamStatus(stream)) return false;
-
+#ifndef OS_WIN_STORE
 		if (!v.isEmpty() && v != qstr("tmp") && !v.endsWith('/')) v += '/';
 		Global::SetDownloadPath(v);
 		Global::SetDownloadPathBookmark(QByteArray());
 		Global::RefDownloadPathChanged().notify();
+#endif // OS_WIN_STORE
 	} break;
 
 	case dbiDownloadPath: {
@@ -1281,12 +1294,13 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version) {
 		QByteArray bookmark;
 		stream >> v >> bookmark;
 		if (!_checkStreamStatus(stream)) return false;
-
+#ifndef OS_WIN_STORE
 		if (!v.isEmpty() && v != qstr("tmp") && !v.endsWith('/')) v += '/';
 		Global::SetDownloadPath(v);
 		Global::SetDownloadPathBookmark(bookmark);
 		psDownloadPathEnableAccess();
 		Global::RefDownloadPathChanged().notify();
+#endif // OS_WIN_STORE
 	} break;
 
 	case dbiCompressPastedImage: {
@@ -1305,40 +1319,61 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version) {
 		// deprecated
 	} break;
 
-	case dbiRecentEmojisOld: {
-		RecentEmojisPreloadOld v;
+	case dbiRecentEmojiOldOld: {
+		RecentEmojiPreloadOldOld v;
 		stream >> v;
 		if (!_checkStreamStatus(stream)) return false;
 
 		if (!v.isEmpty()) {
-			RecentEmojisPreload p;
+			RecentEmojiPreload p;
 			p.reserve(v.size());
-			for (int i = 0; i < v.size(); ++i) {
-				uint64 e(v.at(i).first);
-				switch (e) {
-				case 0xD83CDDEFLLU: e = 0xD83CDDEFD83CDDF5LLU; break;
-				case 0xD83CDDF0LLU: e = 0xD83CDDF0D83CDDF7LLU; break;
-				case 0xD83CDDE9LLU: e = 0xD83CDDE9D83CDDEALLU; break;
-				case 0xD83CDDE8LLU: e = 0xD83CDDE8D83CDDF3LLU; break;
-				case 0xD83CDDFALLU: e = 0xD83CDDFAD83CDDF8LLU; break;
-				case 0xD83CDDEBLLU: e = 0xD83CDDEBD83CDDF7LLU; break;
-				case 0xD83CDDEALLU: e = 0xD83CDDEAD83CDDF8LLU; break;
-				case 0xD83CDDEELLU: e = 0xD83CDDEED83CDDF9LLU; break;
-				case 0xD83CDDF7LLU: e = 0xD83CDDF7D83CDDFALLU; break;
-				case 0xD83CDDECLLU: e = 0xD83CDDECD83CDDE7LLU; break;
+			for (auto &item : v) {
+				auto oldKey = uint64(item.first);
+				switch (oldKey) {
+				case 0xD83CDDEFLLU: oldKey = 0xD83CDDEFD83CDDF5LLU; break;
+				case 0xD83CDDF0LLU: oldKey = 0xD83CDDF0D83CDDF7LLU; break;
+				case 0xD83CDDE9LLU: oldKey = 0xD83CDDE9D83CDDEALLU; break;
+				case 0xD83CDDE8LLU: oldKey = 0xD83CDDE8D83CDDF3LLU; break;
+				case 0xD83CDDFALLU: oldKey = 0xD83CDDFAD83CDDF8LLU; break;
+				case 0xD83CDDEBLLU: oldKey = 0xD83CDDEBD83CDDF7LLU; break;
+				case 0xD83CDDEALLU: oldKey = 0xD83CDDEAD83CDDF8LLU; break;
+				case 0xD83CDDEELLU: oldKey = 0xD83CDDEED83CDDF9LLU; break;
+				case 0xD83CDDF7LLU: oldKey = 0xD83CDDF7D83CDDFALLU; break;
+				case 0xD83CDDECLLU: oldKey = 0xD83CDDECD83CDDE7LLU; break;
 				}
-				p.push_back(qMakePair(e, v.at(i).second));
+				auto id = Ui::Emoji::IdFromOldKey(oldKey);
+				if (!id.isEmpty()) {
+					p.push_back(qMakePair(id, item.second));
+				}
 			}
-			cSetRecentEmojisPreload(p);
+			cSetRecentEmojiPreload(p);
 		}
 	} break;
 
-	case dbiRecentEmojis: {
-		RecentEmojisPreload v;
+	case dbiRecentEmojiOld: {
+		RecentEmojiPreloadOld v;
 		stream >> v;
 		if (!_checkStreamStatus(stream)) return false;
 
-		cSetRecentEmojisPreload(v);
+		if (!v.isEmpty()) {
+			RecentEmojiPreload p;
+			p.reserve(v.size());
+			for (auto &item : v) {
+				auto id = Ui::Emoji::IdFromOldKey(item.first);
+				if (!id.isEmpty()) {
+					p.push_back(qMakePair(id, item.second));
+				}
+			}
+			cSetRecentEmojiPreload(p);
+		}
+	} break;
+
+	case dbiRecentEmoji: {
+		RecentEmojiPreload v;
+		stream >> v;
+		if (!_checkStreamStatus(stream)) return false;
+
+		cSetRecentEmojiPreload(v);
 	} break;
 
 	case dbiRecentStickers: {
@@ -1349,6 +1384,24 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version) {
 		cSetRecentStickersPreload(v);
 	} break;
 
+	case dbiEmojiVariantsOld: {
+		EmojiColorVariantsOld v;
+		stream >> v;
+		if (!_checkStreamStatus(stream)) return false;
+
+		EmojiColorVariants variants;
+		for (auto i = v.cbegin(), e = v.cend(); i != e; ++i) {
+			auto id = Ui::Emoji::IdFromOldKey(static_cast<uint64>(i.key()));
+			if (!id.isEmpty()) {
+				auto index = Ui::Emoji::ColorIndexFromOldKey(i.value());
+				if (index >= 0) {
+					variants.insert(id, index);
+				}
+			}
+		}
+		cSetEmojiVariants(variants);
+	} break;
+
 	case dbiEmojiVariants: {
 		EmojiColorVariants v;
 		stream >> v;
@@ -1356,7 +1409,6 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version) {
 
 		cSetEmojiVariants(v);
 	} break;
-
 
 	case dbiHiddenPinnedMessages: {
 		Global::HiddenPinnedMessagesMap v;
@@ -1617,9 +1669,22 @@ void _writeUserSettings() {
 		_writeMap(WriteMapFast);
 	}
 
+	auto recentEmojiPreloadData = cRecentEmojiPreload();
+	if (recentEmojiPreloadData.isEmpty()) {
+		recentEmojiPreloadData.reserve(cGetRecentEmoji().size());
+		for (auto &item : cGetRecentEmoji()) {
+			recentEmojiPreloadData.push_back(qMakePair(item.first->id(), item.second));
+		}
+	}
+
 	uint32 size = 21 * (sizeof(quint32) + sizeof(qint32));
 	size += sizeof(quint32) + Serialize::stringSize(Global::AskDownloadPath() ? QString() : Global::DownloadPath()) + Serialize::bytearraySize(Global::AskDownloadPath() ? QByteArray() : Global::DownloadPathBookmark());
-	size += sizeof(quint32) + sizeof(qint32) + (cRecentEmojisPreload().isEmpty() ? cGetRecentEmojis().size() : cRecentEmojisPreload().size()) * (sizeof(uint64) + sizeof(ushort));
+
+	size += sizeof(quint32) + sizeof(qint32);
+	for (auto &item : recentEmojiPreloadData) {
+		size += Serialize::stringSize(item.first) + sizeof(item.second);
+	}
+
 	size += sizeof(quint32) + sizeof(qint32) + cEmojiVariants().size() * (sizeof(uint32) + sizeof(uint64));
 	size += sizeof(quint32) + sizeof(qint32) + (cRecentStickersPreload().isEmpty() ? cGetRecentStickers().size() : cRecentStickersPreload().size()) * (sizeof(uint64) + sizeof(ushort));
 	size += sizeof(quint32) + Serialize::stringSize(cDialogLastPath());
@@ -1654,16 +1719,10 @@ void _writeUserSettings() {
 	data.stream << quint32(dbiModerateMode) << qint32(Global::ModerateModeEnabled() ? 1 : 0);
 	data.stream << quint32(dbiAutoPlay) << qint32(cAutoPlayGif() ? 1 : 0);
 	data.stream << quint32(dbiDialogsWidthRatio) << qint32(snap(qRound(Global::DialogsWidthRatio() * 1000000), 0, 1000000));
+	data.stream << quint32(dbiUseExternalVideoPlayer) << qint32(cUseExternalVideoPlayer());
 
 	{
-		RecentEmojisPreload v(cRecentEmojisPreload());
-		if (v.isEmpty()) {
-			v.reserve(cGetRecentEmojis().size());
-			for (RecentEmojiPack::const_iterator i = cGetRecentEmojis().cbegin(), e = cGetRecentEmojis().cend(); i != e; ++i) {
-				v.push_back(qMakePair(emojiKey(i->first), i->second));
-			}
-		}
-		data.stream << quint32(dbiRecentEmojis) << v;
+		data.stream << quint32(dbiRecentEmoji) << recentEmojiPreloadData;
 	}
 	data.stream << quint32(dbiEmojiVariants) << cEmojiVariants();
 	{
@@ -3094,8 +3153,8 @@ void _writeStickerSet(QDataStream &stream, const Stickers::Set &set) {
 
 	if (AppVersion > 9018) {
 		stream << qint32(set.emoji.size());
-		for (StickersByEmojiMap::const_iterator j = set.emoji.cbegin(), e = set.emoji.cend(); j != e; ++j) {
-			stream << emojiString(j.key()) << qint32(j->size());
+		for (auto j = set.emoji.cbegin(), e = set.emoji.cend(); j != e; ++j) {
+			stream << j.key()->id() << qint32(j->size());
 			for (int32 k = 0, l = j->size(); k < l; ++k) {
 				stream << quint64(j->at(k)->id);
 			}
@@ -3145,7 +3204,7 @@ void _writeStickerSets(FileKey &stickersKey, CheckSet checkSet, const Stickers::
 
 		size += sizeof(qint32); // emojiCount
 		for (auto j = set.emoji.cbegin(), e = set.emoji.cend(); j != e; ++j) {
-			size += Serialize::stringSize(emojiString(j.key())) + sizeof(qint32) + (j->size() * sizeof(quint64));
+			size += Serialize::stringSize(j.key()->id()) + sizeof(qint32) + (j->size() * sizeof(quint64));
 		}
 
 		++setsCount;
@@ -3301,8 +3360,9 @@ void _readStickerSets(FileKey &stickersKey, Stickers::Order *outOrder = nullptr,
 					pack.push_back(doc);
 				}
 				if (fillStickers) {
-					if (auto e = emojiGetNoColor(emojiFromText(emojiString))) {
-						set.emoji.insert(e, pack);
+					if (auto emoji = Ui::Emoji::Find(emojiString)) {
+						emoji = emoji->original();
+						set.emoji.insert(emoji, pack);
 					}
 				}
 			}
@@ -3715,6 +3775,9 @@ bool readThemeUsingKey(FileKey key) {
 	if (theme.stream.status() != QDataStream::Ok) {
 		return false;
 	}
+
+	_themePaletteAbsolutePath = Window::Theme::IsPaletteTestingPath(pathAbsolute) ? pathAbsolute : QString();
+
 	QFile file(pathRelative);
 	if (pathRelative.isEmpty() || !file.exists()) {
 		file.setFileName(pathAbsolute);
@@ -3746,6 +3809,7 @@ bool readThemeUsingKey(FileKey key) {
 
 void writeTheme(const QString &pathRelative, const QString &pathAbsolute, const QByteArray &content, const Window::Theme::Cached &cache) {
 	if (content.isEmpty()) {
+		_themePaletteAbsolutePath = QString();
 		if (_themeKey) {
 			clearKey(_themeKey);
 			_themeKey = 0;
@@ -3753,6 +3817,8 @@ void writeTheme(const QString &pathRelative, const QString &pathAbsolute, const 
 		}
 		return;
 	}
+
+	_themePaletteAbsolutePath = Window::Theme::IsPaletteTestingPath(pathAbsolute) ? pathAbsolute : QString();
 	if (!_themeKey) {
 		_themeKey = genKey();
 		writeSettings();
@@ -3783,6 +3849,29 @@ void readTheme() {
 
 bool hasTheme() {
 	return (_themeKey != 0);
+}
+
+QString themePaletteAbsolutePath() {
+	return _themePaletteAbsolutePath;
+}
+
+bool copyThemeColorsToPalette(const QString &path) {
+	if (!_themeKey) {
+		return false;
+	}
+
+	FileReadDescriptor theme;
+	if (!readEncryptedFile(theme, _themeKey, FileOption::Safe, _settingsKey)) {
+		return false;
+	}
+
+	QByteArray themeContent;
+	theme.stream >> themeContent;
+	if (theme.stream.status() != QDataStream::Ok) {
+		return false;
+	}
+
+	return Window::Theme::CopyColorsToPalette(path, themeContent);
 }
 
 uint32 _peerSize(PeerData *peer) {

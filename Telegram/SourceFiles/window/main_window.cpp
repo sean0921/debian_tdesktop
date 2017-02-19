@@ -24,7 +24,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "localstorage.h"
 #include "styles/style_window.h"
 #include "platform/platform_window_title.h"
-#include "window/window_theme.h"
+#include "window/themes/window_theme.h"
 #include "mediaview.h"
 #include "mainwindow.h"
 
@@ -99,10 +99,14 @@ void MainWindow::showPhoto(PhotoData *photo, PeerData *peer) {
 }
 
 void MainWindow::showDocument(DocumentData *doc, HistoryItem *item) {
-	if (_mediaView->isHidden()) Ui::hideLayer(true);
-	_mediaView->showDocument(doc, item);
-	_mediaView->activateWindow();
-	_mediaView->setFocus();
+	if (cUseExternalVideoPlayer() && doc->isVideo()) {
+		QDesktopServices::openUrl(QUrl("file:///" + doc->location(false).fname));
+	} else {
+		if (_mediaView->isHidden()) Ui::hideLayer(true);
+		_mediaView->showDocument(doc, item);
+		_mediaView->activateWindow();
+		_mediaView->setFocus();
+	}
 }
 
 bool MainWindow::ui_isMediaViewShown() {
@@ -248,11 +252,16 @@ void MainWindow::resizeEvent(QResizeEvent *e) {
 
 void MainWindow::updateControlsGeometry() {
 	auto bodyTop = 0;
+	auto bodyWidth = width();
 	if (_title && !_title->isHidden()) {
 		_title->setGeometry(0, bodyTop, width(), _title->height());
 		bodyTop += _title->height();
 	}
-	_body->setGeometry(0, bodyTop, width(), height() - bodyTop);
+	if (_rightColumn) {
+		bodyWidth -= _rightColumn->width();
+		_rightColumn->setGeometry(bodyWidth, bodyTop, width() - bodyWidth, height() - bodyTop);
+	}
+	_body->setGeometry(0, bodyTop, bodyWidth, height() - bodyTop);
 }
 
 void MainWindow::updateUnreadCounter() {
@@ -276,7 +285,7 @@ void MainWindow::savePosition(Qt::WindowState state) {
 		auto r = geometry();
 		curPos.x = r.x();
 		curPos.y = r.y();
-		curPos.w = r.width();
+		curPos.w = r.width() - (_rightColumn ? _rightColumn->width() : 0);
 		curPos.h = r.height();
 		curPos.maximized = 0;
 	}
@@ -315,6 +324,35 @@ bool MainWindow::minimizeToTray() {
 	updateGlobalMenu();
 	showTrayTooltip();
 	return true;
+}
+
+void MainWindow::showRightColumn(object_ptr<TWidget> widget) {
+	auto wasWidth = width();
+	auto wasRightWidth = _rightColumn ? _rightColumn->width() : 0;
+	_rightColumn = std_::move(widget);
+	if (_rightColumn) {
+		_rightColumn->setParent(this);
+		_rightColumn->show();
+		_rightColumn->setFocus();
+	} else if (App::wnd()) {
+		App::wnd()->setInnerFocus();
+	}
+	auto nowRightWidth = _rightColumn ? _rightColumn->width() : 0;
+	setMinimumWidth(st::windowMinWidth + nowRightWidth);
+	auto nowWidth = width();
+
+	if (!isMaximized()) {
+		auto desktop = QDesktopWidget().availableGeometry(this);
+		auto newWidth = qMin(wasWidth + nowRightWidth - wasRightWidth, desktop.width());
+		auto newLeft = qMin(x(), desktop.x() + desktop.width() - newWidth);
+		if (x() != newLeft || width() != newWidth) {
+			setGeometry(newLeft, y(), newWidth, height());
+		} else {
+			updateControlsGeometry();
+		}
+	} else {
+		updateControlsGeometry();
+	}
 }
 
 void MainWindow::documentUpdated(DocumentData *doc) {

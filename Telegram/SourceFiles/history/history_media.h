@@ -66,6 +66,8 @@ public:
 	}
 	virtual void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const = 0;
 	virtual HistoryTextState getState(int x, int y, HistoryStateRequest request) const = 0;
+	virtual void updatePressed(int x, int y) {
+	}
 
 	// if we are in selecting items mode perhaps we want to
 	// toggle selection instead of activating the pressed link
@@ -144,9 +146,6 @@ public:
 	virtual bool customInfoLayout() const = 0;
 	virtual QMargins bubbleMargins() const {
 		return QMargins();
-	}
-	virtual bool hideFromName() const {
-		return false;
 	}
 	virtual bool hideForwardedFrom() const {
 		return false;

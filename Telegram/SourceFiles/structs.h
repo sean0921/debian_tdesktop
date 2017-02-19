@@ -203,8 +203,6 @@ static constexpr int kUserColorsCount = 8;
 static constexpr int kChatColorsCount = 4;
 static constexpr int kChannelColorsCount = 4;
 
-style::color peerColor(int index);
-
 class EmptyUserpic {
 public:
 	EmptyUserpic();
@@ -311,9 +309,9 @@ public:
 	LoadedStatus loadedStatus = NotLoaded;
 	MTPinputPeer input;
 
-	int colorIndex;
-	style::color color;
-
+	int colorIndex() const {
+		return _colorIndex;
+	}
 	void setUserpic(ImagePtr userpic);
 	void paintUserpic(Painter &p, int x, int y, int size) const;
 	void paintUserpicLeft(Painter &p, int x, int y, int w, int size) const {
@@ -363,6 +361,8 @@ private:
 	void fillNames();
 
 	ClickHandlerPtr _openLink;
+
+	int _colorIndex = 0;
 
 };
 
@@ -1076,12 +1076,11 @@ struct SongData : public DocumentAdditionalData {
 
 typedef QVector<char> VoiceWaveform; // [0] == -1 -- counting, [0] == -2 -- could not count
 struct VoiceData : public DocumentAdditionalData {
-	VoiceData() : duration(0), wavemax(0) {
-	}
 	~VoiceData();
-	int32 duration;
+
+	int duration = 0;
 	VoiceWaveform waveform;
-	char wavemax;
+	char wavemax = 0;
 };
 
 bool fileIsImage(const QString &name, const QString &mime);
@@ -1169,7 +1168,7 @@ public:
 		return (type == AnimatedDocument) && !mime.compare(qstr("video/mp4"), Qt::CaseInsensitive);
 	}
 	bool isTheme() const {
-		return name.endsWith(qstr(".tdesktop-theme"), Qt::CaseInsensitive);
+		return name.endsWith(qstr(".tdesktop-theme"), Qt::CaseInsensitive) || name.endsWith(qstr(".tdesktop-palette"), Qt::CaseInsensitive);
 	}
 	bool isMusic() const {
 		if (auto s = song()) {
@@ -1360,6 +1359,14 @@ public:
 	using DocumentOpenClickHandler::DocumentOpenClickHandler;
 protected:
 	void onClickImpl() const override;
+};
+
+class VoiceSeekClickHandler : public DocumentOpenClickHandler {
+public:
+	using DocumentOpenClickHandler::DocumentOpenClickHandler;
+protected:
+	void onClickImpl() const override {
+	}
 };
 
 class DocumentCancelClickHandler : public DocumentClickHandler {

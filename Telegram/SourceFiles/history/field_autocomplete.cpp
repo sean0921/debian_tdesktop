@@ -77,7 +77,7 @@ void FieldAutocomplete::showFiltered(PeerData *peer, QString query, bool addInli
 		return;
 	}
 
-	_emoji = EmojiPtr();
+	_emoji = nullptr;
 
 	query = query.toLower();
 	auto type = Type::Stickers;
@@ -147,17 +147,18 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 	internal::BotCommandRows brows;
 	StickerPack srows;
 	if (_emoji) {
+		auto original = _emoji->original();
 		QMap<uint64, uint64> setsToRequest;
 		auto &sets = Global::RefStickerSets();
 		auto &order = Global::StickerSetsOrder();
-		for (int i = 0, l = order.size(); i < l; ++i) {
-			auto it = sets.find(order.at(i));
+		for (auto i = 0, l = order.size(); i != l; ++i) {
+			auto it = sets.find(order[i]);
 			if (it != sets.cend()) {
 				if (it->emoji.isEmpty()) {
 					setsToRequest.insert(it->id, it->access);
 					it->flags |= MTPDstickerSet_ClientFlag::f_not_loaded;
 				} else if (!(it->flags & MTPDstickerSet::Flag::f_archived)) {
-					StickersByEmojiMap::const_iterator i = it->emoji.constFind(emojiGetNoColor(_emoji));
+					auto i = it->emoji.constFind(original);
 					if (i != it->emoji.cend()) {
 						srows += *i;
 					}
@@ -836,13 +837,13 @@ void FieldAutocompleteInner::mouseReleaseEvent(QMouseEvent *e) {
 	chooseSelected(FieldAutocomplete::ChooseMethod::ByClick);
 }
 
-void FieldAutocompleteInner::enterEvent(QEvent *e) {
+void FieldAutocompleteInner::enterEventHook(QEvent *e) {
 	setMouseTracking(true);
 	_mousePos = QCursor::pos();
 	onUpdateSelected(true);
 }
 
-void FieldAutocompleteInner::leaveEvent(QEvent *e) {
+void FieldAutocompleteInner::leaveEventHook(QEvent *e) {
 	setMouseTracking(false);
 	if (_sel >= 0) {
 		setSel(-1);

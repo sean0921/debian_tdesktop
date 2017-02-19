@@ -56,7 +56,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "localstorage.h"
 #include "apiwrap.h"
 #include "window/top_bar_widget.h"
-#include "window/window_theme.h"
+#include "window/themes/window_theme.h"
 #include "observer_peer.h"
 #include "core/qthelp_regex.h"
 #include "ui/widgets/popup_menu.h"
@@ -131,11 +131,6 @@ HistoryInner::HistoryInner(HistoryWidget *historyWidget, Ui::ScrollArea *scroll,
 	_touchSelectTimer.setSingleShot(true);
 	connect(&_touchSelectTimer, SIGNAL(timeout()), this, SLOT(onTouchSelect()));
 
-	auto tmp = App::LambdaDelayed(200, this, [this] {
-		int a = 0;
-	});
-	tmp();
-
 	setAttribute(Qt::WA_AcceptTouchEvents);
 	connect(&_touchScrollTimer, SIGNAL(timeout()), this, SLOT(onTouchScrollTimer()));
 
@@ -190,7 +185,8 @@ namespace {
 // is applied once for blocks list in a history and once for items list in the found block
 template <bool TopToBottom, typename T>
 int binarySearchBlocksOrItems(const T &list, int edge) {
-	size_t start = 0, end = list.size();
+	// static_cast to work around GCC bug #78693
+	auto start = 0, end = static_cast<int>(list.size());
 	while (end - start > 1) {
 		auto middle = (start + end) / 2;
 		auto top = list[middle]->y;
@@ -989,7 +985,12 @@ void HistoryInner::onDragExec() {
 			}
 		}
 	}
-	ClickHandlerPtr pressedHandler = ClickHandler::getPressed();
+	auto pressedHandler = ClickHandler::getPressed();
+
+	if (dynamic_cast<VoiceSeekClickHandler*>(pressedHandler.data())) {
+		return;
+	}
+
 	TextWithEntities sel;
 	QList<QUrl> urls;
 	if (uponSelected) {
@@ -1004,7 +1005,7 @@ void HistoryInner::onDragExec() {
 		updateDragSelection(0, 0, false);
 		_widget->noSelectingScroll();
 
-		QDrag *drag = new QDrag(App::wnd());
+		auto drag = std_::make_unique<QDrag>(App::wnd());
 		if (!urls.isEmpty()) mimeData->setUrls(urls);
 		if (uponSelected && !_selected.isEmpty() && _selected.cbegin().value() == FullSelection && !Adaptive::OneColumn()) {
 			mimeData->setData(qsl("application/x-td-forward-selected"), "1");
@@ -1017,15 +1018,15 @@ void HistoryInner::onDragExec() {
 		if (App::main()) App::main()->updateAfterDrag();
 		return;
 	} else {
-		QString forwardMimeType;
-		HistoryMedia *pressedMedia = nullptr;
-		if (HistoryItem *pressedItem = App::pressedItem()) {
+		auto forwardMimeType = QString();
+		auto pressedMedia = static_cast<HistoryMedia*>(nullptr);
+		if (auto pressedItem = App::pressedItem()) {
 			pressedMedia = pressedItem->getMedia();
 			if (_dragCursorState == HistoryInDateCursorState || (pressedMedia && pressedMedia->dragItem())) {
 				forwardMimeType = qsl("application/x-td-forward-pressed");
 			}
 		}
-		if (HistoryItem *pressedLnkItem = App::pressedLinkItem()) {
+		if (auto pressedLnkItem = App::pressedLinkItem()) {
 			if ((pressedMedia = pressedLnkItem->getMedia())) {
 				if (forwardMimeType.isEmpty() && pressedMedia->dragItemByHandler(pressedHandler)) {
 					forwardMimeType = qsl("application/x-td-forward-pressed-link");
@@ -1033,12 +1034,12 @@ void HistoryInner::onDragExec() {
 			}
 		}
 		if (!forwardMimeType.isEmpty()) {
-			QDrag *drag = new QDrag(App::wnd());
-			QMimeData *mimeData = new QMimeData();
+			auto drag = std_::make_unique<QDrag>(App::wnd());
+			auto mimeData = std_::make_unique<QMimeData>();
 
 			mimeData->setData(forwardMimeType, "1");
-			if (DocumentData *document = (pressedMedia ? pressedMedia->getDocument() : nullptr)) {
-				QString filepath = document->filepath(DocumentData::FilePathResolveChecked);
+			if (auto document = (pressedMedia ? pressedMedia->getDocument() : nullptr)) {
+				auto filepath = document->filepath(DocumentData::FilePathResolveChecked);
 				if (!filepath.isEmpty()) {
 					QList<QUrl> urls;
 					urls.push_back(QUrl::fromLocalFile(filepath));
@@ -1046,7 +1047,7 @@ void HistoryInner::onDragExec() {
 				}
 			}
 
-			drag->setMimeData(mimeData);
+			drag->setMimeData(mimeData.release());
 			drag->exec(Qt::CopyAction);
 
 			// We don't receive mouseReleaseEvent when drag is finished.
@@ -1315,8 +1316,8 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			App::contextItem(App::hoveredLinkItem());
 		}
 	} else { // maybe cursor on some text history item?
-		bool canDelete = (item && item->type() == HistoryItemMsg) && item->canDelete();
-		bool canForward = (item && item->type() == HistoryItemMsg) && (item->id > 0) && !item->serviceMsg();
+		bool canDelete = item && item->canDelete() && (item->id > 0 || !item->serviceMsg());
+		bool canForward = item && (item->id > 0) && !item->serviceMsg();
 
 		HistoryMessage *msg = dynamic_cast<HistoryMessage*>(item);
 		if (isUponSelected > 0) {
@@ -1829,13 +1830,13 @@ void HistoryInner::updateSize() {
 	}
 }
 
-void HistoryInner::enterEvent(QEvent *e) {
+void HistoryInner::enterEventHook(QEvent *e) {
 	dragActionUpdate(QCursor::pos());
-//	return QWidget::enterEvent(e);
+	return TWidget::enterEventHook(e);
 }
 
-void HistoryInner::leaveEvent(QEvent *e) {
-	if (HistoryItem *item = App::hoveredItem()) {
+void HistoryInner::leaveEventHook(QEvent *e) {
+	if (auto item = App::hoveredItem()) {
 		repaintItem(item);
 		App::hoveredItem(nullptr);
 	}
@@ -1845,7 +1846,7 @@ void HistoryInner::leaveEvent(QEvent *e) {
 		_cursor = style::cur_default;
 		setCursor(_cursor);
 	}
-	return QWidget::leaveEvent(e);
+	return TWidget::leaveEventHook(e);
 }
 
 HistoryInner::~HistoryInner() {
@@ -1948,8 +1949,8 @@ bool HistoryInner::canDeleteSelected() const {
 
 void HistoryInner::getSelectionState(int32 &selectedForForward, int32 &selectedForDelete) const {
 	selectedForForward = selectedForDelete = 0;
-	for (SelectedItems::const_iterator i = _selected.cbegin(), e = _selected.cend(); i != e; ++i) {
-		if (i.key()->type() == HistoryItemMsg && i.value() == FullSelection) {
+	for (auto i = _selected.cbegin(), e = _selected.cend(); i != e; ++i) {
+		if (i.value() == FullSelection) {
 			if (i.key()->canDelete()) {
 				++selectedForDelete;
 			}
@@ -2005,8 +2006,8 @@ void HistoryInner::onUpdateSelected() {
 		return;
 	}
 
-	QPoint mousePos(mapFromGlobal(_dragPos));
-	QPoint point(_widget->clampMousePosition(mousePos));
+	auto mousePos = mapFromGlobal(_dragPos);
+	auto point = _widget->clampMousePosition(mousePos);
 
 	HistoryBlock *block = 0;
 	HistoryItem *item = 0;
@@ -2081,7 +2082,7 @@ void HistoryInner::onUpdateSelected() {
 			}
 		}
 	}
-	bool lnkChanged = ClickHandler::setActive(dragState.link, lnkhost);
+	auto lnkChanged = ClickHandler::setActive(dragState.link, lnkhost);
 	if (lnkChanged || dragState.cursor != _dragCursorState) {
 		Ui::Tooltip::Hide();
 	}
@@ -2101,7 +2102,7 @@ void HistoryInner::onUpdateSelected() {
 		}
 	} else if (item) {
 		if (_dragAction == Selecting) {
-			bool canSelectMany = (_history != nullptr);
+			auto canSelectMany = (_history != nullptr);
 			if (selectingText) {
 				uint16 second = dragState.symbol;
 				if (dragState.afterSymbol && _dragSelType == TextSelectType::Letters) {
@@ -2118,8 +2119,8 @@ void HistoryInner::onUpdateSelected() {
 				}
 				updateDragSelection(0, 0, false);
 			} else if (canSelectMany) {
-				bool selectingDown = (itemTop(_dragItem) < itemTop(item)) || (_dragItem == item && _dragStartPos.y() < m.y());
-				HistoryItem *dragSelFrom = _dragItem, *dragSelTo = item;
+				auto selectingDown = (itemTop(_dragItem) < itemTop(item)) || (_dragItem == item && _dragStartPos.y() < m.y());
+				auto dragSelFrom = _dragItem, dragSelTo = item;
 				if (!dragSelFrom->hasPoint(_dragStartPos.x(), _dragStartPos.y())) { // maybe exclude dragSelFrom
 					if (selectingDown) {
 						if (_dragStartPos.y() >= dragSelFrom->height() - dragSelFrom->marginBottom() || ((item == dragSelFrom) && (m.y() < _dragStartPos.y() + QApplication::startDragDistance() || m.y() < dragSelFrom->marginTop()))) {
@@ -2142,13 +2143,13 @@ void HistoryInner::onUpdateSelected() {
 						}
 					}
 				}
-				bool dragSelecting = false;
-				HistoryItem *dragFirstAffected = dragSelFrom;
+				auto dragSelecting = false;
+				auto dragFirstAffected = dragSelFrom;
 				while (dragFirstAffected && (dragFirstAffected->id < 0 || dragFirstAffected->serviceMsg())) {
 					dragFirstAffected = (dragFirstAffected == dragSelTo) ? 0 : (selectingDown ? nextItem(dragFirstAffected) : prevItem(dragFirstAffected));
 				}
 				if (dragFirstAffected) {
-					SelectedItems::const_iterator i = _selected.constFind(dragFirstAffected);
+					auto i = _selected.constFind(dragFirstAffected);
 					dragSelecting = (i == _selected.cend() || i.value() != FullSelection);
 				}
 				updateDragSelection(dragSelFrom, dragSelTo, dragSelecting);
@@ -2164,6 +2165,17 @@ void HistoryInner::onUpdateSelected() {
 			}
 		}
 	}
+
+	// Voice message seek support.
+	if (auto pressedItem = App::pressedLinkItem()) {
+		if (!pressedItem->detached()) {
+			if (pressedItem->history() == _history || pressedItem->history() == _migrated) {
+				auto adjustedPoint = mapMouseToItem(point, pressedItem);
+				pressedItem->updatePressed(adjustedPoint.x(), adjustedPoint.y());
+			}
+		}
+	}
+
 	if (_dragAction == Selecting) {
 		_widget->checkSelectingScroll(mousePos);
 	} else {
@@ -2561,12 +2573,12 @@ void BotKeyboard::mouseReleaseEvent(QMouseEvent *e) {
 	}
 }
 
-void BotKeyboard::enterEvent(QEvent *e) {
+void BotKeyboard::enterEventHook(QEvent *e) {
 	_lastMousePos = QCursor::pos();
 	updateSelected();
 }
 
-void BotKeyboard::leaveEvent(QEvent *e) {
+void BotKeyboard::leaveEventHook(QEvent *e) {
 	clearSelection();
 }
 
@@ -2972,7 +2984,7 @@ public:
 protected:
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
-	void leaveEvent(QEvent *e) override;
+	void leaveEventHook(QEvent *e) override;
 
 private:
 	bool _checked = false;
@@ -2999,8 +3011,8 @@ void SilentToggle::setChecked(bool checked) {
 	}
 }
 
-void SilentToggle::leaveEvent(QEvent *e) {
-	IconButton::leaveEvent(e);
+void SilentToggle::leaveEventHook(QEvent *e) {
+	IconButton::leaveEventHook(e);
 	Ui::Tooltip::Hide();
 }
 
@@ -3303,7 +3315,7 @@ void HistoryWidget::updateStickersByEmoji() {
 	int len = 0;
 	if (!_editMsgId) {
 		auto &text = _field->getTextWithTags().text;
-		if (auto emoji = emojiFromText(text, &len)) {
+		if (auto emoji = Ui::Emoji::Find(text, &len)) {
 			if (text.size() > len) {
 				len = 0;
 			} else {
@@ -5611,7 +5623,7 @@ void HistoryWidget::dragLeaveEvent(QDragLeaveEvent *e) {
 	}
 }
 
-void HistoryWidget::leaveEvent(QEvent *e) {
+void HistoryWidget::leaveEventHook(QEvent *e) {
 	if (_attachDrag != DragStateNone || !_attachDragPhoto->isHidden() || !_attachDragDocument->isHidden()) {
 		_attachDrag = DragStateNone;
 		updateDragAreas();
@@ -5802,10 +5814,8 @@ void HistoryWidget::botCallbackDone(BotCallbackInfo info, const MTPmessages_BotC
 		if (answerData.has_message()) {
 			if (answerData.is_alert()) {
 				Ui::show(Box<InformBox>(qs(answerData.vmessage)));
-			} else if (App::wnd()) {
-				Ui::Toast::Config toast;
-				toast.text = qs(answerData.vmessage);
-				Ui::Toast::Show(App::wnd(), toast);
+			} else {
+				Ui::Toast::Show(qs(answerData.vmessage));
 			}
 		} else if (answerData.has_url()) {
 			auto url = qs(answerData.vurl);
@@ -6182,15 +6192,15 @@ void HistoryWidget::contextMenuEvent(QContextMenuEvent *e) {
 }
 
 void HistoryWidget::forwardMessage() {
-	HistoryItem *item = App::contextItem();
-	if (!item || item->type() != HistoryItemMsg || item->serviceMsg()) return;
+	auto item = App::contextItem();
+	if (!item || item->id < 0 || item->serviceMsg()) return;
 
 	App::main()->forwardLayer();
 }
 
 void HistoryWidget::selectMessage() {
-	HistoryItem *item = App::contextItem();
-	if (!item || item->type() != HistoryItemMsg || item->serviceMsg()) return;
+	auto item = App::contextItem();
+	if (!item || item->id < 0 || item->serviceMsg()) return;
 
 	if (_list) _list->selectItem(item);
 }
@@ -7863,12 +7873,12 @@ void HistoryWidget::onReplyToMessage() {
 			onReplyToMessage();
 			App::contextItem(to);
 		} else {
-			if (to->type() != HistoryItemMsg || to->serviceMsg()) {
+			if (to->id < 0 || to->serviceMsg()) {
 				Ui::show(Box<InformBox>(lang(lng_reply_cant)));
 			} else {
 				Ui::show(Box<ConfirmBox>(lang(lng_reply_cant_forward), lang(lng_selected_forward), base::lambda_guarded(this, [this] {
 					auto item = App::contextItem();
-					if (!item || item->type() != HistoryItemMsg || item->serviceMsg()) return;
+					if (!item || item->id < 0 || item->serviceMsg()) return;
 
 					App::forward(_peer->id, ForwardContextMessage);
 				})));
@@ -8383,7 +8393,7 @@ void HistoryWidget::onForwardSelected() {
 
 void HistoryWidget::confirmDeleteContextItem() {
 	auto item = App::contextItem();
-	if (!item || item->type() != HistoryItemMsg) return;
+	if (!item) return;
 
 	if (auto message = item->toHistoryMessage()) {
 		if (message->uploading()) {
@@ -8408,7 +8418,7 @@ void HistoryWidget::deleteContextItem(bool forEveryone) {
 	Ui::hideLayer();
 
 	auto item = App::contextItem();
-	if (!item || item->type() != HistoryItemMsg) {
+	if (!item) {
 		return;
 	}
 

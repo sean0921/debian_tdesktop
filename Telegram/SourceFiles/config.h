@@ -87,7 +87,6 @@ enum {
 
 	AVBlockSize = 4096, // 4Kb for ffmpeg blocksize
 
-	SaveRecentEmojisTimeout = 3000, // 3 secs
 	SaveWindowPositionTimeout = 1000, // 1 sec
 
 	AutoSearchTimeout = 900, // 0.9 secs
@@ -102,8 +101,6 @@ enum {
 	AudioVoiceMsgChannels = 2, // stereo
 	AudioVoiceMsgBufferSize = 256 * 1024, // 256 Kb buffers (1.3 - 3.0 secs)
 	AudioVoiceMsgInMemory = 2 * 1024 * 1024, // 2 Mb audio is hold in memory and auto loaded
-
-	WaveformSamplesCount = 100,
 
 	StickerInMemory = 2 * 1024 * 1024, // 2 Mb stickers hold in memory, auto loaded and displayed inline
 	StickerMaxSize = 2048, // 2048x2048 is a max image size for sticker

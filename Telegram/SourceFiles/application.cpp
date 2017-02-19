@@ -34,7 +34,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "autoupdater.h"
 #include "core/observer.h"
 #include "observer_peer.h"
-#include "window/window_theme.h"
+#include "window/themes/window_theme.h"
 #include "media/player/media_player_instance.h"
 #include "window/notifications_manager.h"
 #include "history/history_location_manager.h"
@@ -699,7 +699,7 @@ AppClass::AppClass() : QObject() {
 
 	if (cLaunchMode() == LaunchModeAutoStart && !cAutoStart()) {
 		psAutoStart(false, true);
-		application()->quit();
+		App::quit();
 		return;
 	}
 
@@ -912,13 +912,28 @@ void AppClass::checkLocalTime() {
 }
 
 void AppClass::onAppStateChanged(Qt::ApplicationState state) {
+	if (state == Qt::ApplicationActive) {
+		handleAppActivated();
+	} else {
+		handleAppDeactivated();
+	}
+}
+
+void AppClass::handleAppActivated() {
 	checkLocalTime();
 	if (_window) {
-		_window->updateIsActive((state == Qt::ApplicationActive) ? Global::OnlineFocusTimeout() : Global::OfflineBlurTimeout());
+		if (_window->isHidden()) {
+			_window->showFromTray();
+		}
+		_window->updateIsActive(Global::OnlineFocusTimeout());
 	}
-	if (state != Qt::ApplicationActive) {
-		Ui::Tooltip::Hide();
+}
+
+void AppClass::handleAppDeactivated() {
+	if (_window) {
+		_window->updateIsActive(Global::OfflineBlurTimeout());
 	}
+	Ui::Tooltip::Hide();
 }
 
 void AppClass::call_handleHistoryUpdate() {
@@ -1069,9 +1084,9 @@ void AppClass::checkMapVersion() {
     if (Local::oldMapVersion() < AppVersion) {
 		if (Local::oldMapVersion()) {
 			QString versionFeatures;
-			if ((cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000004) {
-				versionFeatures = QString::fromUtf8("\xe2\x80\x94 Click and drag to reorder pinned chats.");
-			} else if (!(cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000005) {
+			if ((cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000010) {
+				versionFeatures = QString::fromUtf8("\xe2\x80\x94 Support for more emoji.\n\xe2\x80\x94 Bug fixes and other minor improvements.");
+			} else if (!(cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000012) {
 				versionFeatures = langNewVersionText();
 			} else {
 				versionFeatures = lang(lng_new_version_minor).trimmed();

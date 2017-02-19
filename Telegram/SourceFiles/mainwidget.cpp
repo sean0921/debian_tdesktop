@@ -57,7 +57,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "media/player/media_player_instance.h"
 #include "core/qthelp_regex.h"
 #include "core/qthelp_url.h"
-#include "window/window_theme.h"
+#include "window/themes/window_theme.h"
 #include "window/player_wrap_widget.h"
 #include "styles/style_boxes.h"
 
@@ -881,16 +881,16 @@ void MainWidget::deleteAllFromUser(ChannelData *channel, UserData *from) {
 	t_assert(channel != nullptr && from != nullptr);
 
 	QVector<MsgId> toDestroy;
-	if (History *history = App::historyLoaded(channel->id)) {
-		for (HistoryBlock *block : history->blocks) {
-			for (HistoryItem *item : block->items) {
-				if (item->from() == from && item->type() == HistoryItemMsg && item->canDelete()) {
+	if (auto history = App::historyLoaded(channel->id)) {
+		for_const (auto block, history->blocks) {
+			for_const (auto item, block->items) {
+				if (item->from() == from && item->canDelete()) {
 					toDestroy.push_back(item->id);
 				}
 			}
 		}
-		for (const MsgId &msgId : toDestroy) {
-			if (HistoryItem *item = App::histItemById(peerToChannel(channel->id), msgId)) {
+		for_const (auto &msgId, toDestroy) {
+			if (auto item = App::histItemById(peerToChannel(channel->id), msgId)) {
 				item->destroy();
 			}
 		}
@@ -1184,7 +1184,7 @@ void executeParsedCommand(const QString &command) {
 
 void MainWidget::sendMessage(const MessageToSend &message) {
 	auto history = message.history;
-	const auto &textWithTags = message.textWithTags;
+	auto &textWithTags = message.textWithTags;
 
 	readServerHistory(history);
 	_history->fastShowAtEnd(history);
@@ -1976,7 +1976,25 @@ void MainWidget::fillPeerMenu(PeerData *peer, base::lambda<QAction*(const QStrin
 			auto history = App::history(peer);
 			auto isPinned = !history->isPinnedDialog();
 			if (isPinned && App::histories().pinnedCount() >= Global::PinnedDialogsCountMax()) {
-				Ui::show(Box<InformBox>(lng_error_pinned_max(lt_count, Global::PinnedDialogsCountMax())));
+				// Some old chat, that was converted to supergroup, maybe is still pinned.
+				auto findWastedPin = []() -> History* {
+					auto order = App::histories().getPinnedOrder();
+					for_const (auto pinned, order) {
+						if (pinned->peer->isChat()
+							&& pinned->peer->asChat()->isDeactivated()
+							&& !pinned->inChatList(Dialogs::Mode::All)) {
+							return pinned;
+						}
+					}
+					return nullptr;
+				};
+				if (auto wasted = findWastedPin()) {
+					wasted->setPinnedDialog(false);
+					history->setPinnedDialog(isPinned);
+					App::histories().savePinnedToServer();
+				} else {
+					Ui::show(Box<InformBox>(lng_error_pinned_max(lt_count, Global::PinnedDialogsCountMax())));
+				}
 				return;
 			}
 
@@ -3067,6 +3085,11 @@ bool MainWidget::eventFilter(QObject *o, QEvent *e) {
 				Global::RefDialogsListFocused().set(true, false);
 			}
 		}
+	} else if (e->type() == QEvent::MouseButtonPress) {
+		if (static_cast<QMouseEvent*>(e)->button() == Qt::BackButton) {
+			showBackFromStack();
+			return true;
+		}
 	}
 	return TWidget::eventFilter(o, e);
 }
@@ -3862,17 +3885,17 @@ void MainWidget::onFullPeerUpdated(PeerData *peer) {
 }
 
 void MainWidget::onSelfParticipantUpdated(ChannelData *channel) {
-	History *h = App::historyLoaded(channel->id);
+	auto history = App::historyLoaded(channel->id);
 	if (_updatedChannels.contains(channel)) {
 		_updatedChannels.remove(channel);
-		if ((h ? h : App::history(channel->id))->isEmpty()) {
+		if ((history ? history : App::history(channel->id))->isEmpty()) {
 			checkPeerHistory(channel);
 		} else {
-			h->asChannelHistory()->checkJoinedMessage(true);
+			history->asChannelHistory()->checkJoinedMessage(true);
 			_history->peerMessagesUpdated(channel->id);
 		}
-	} else if (h) {
-		h->asChannelHistory()->checkJoinedMessage();
+	} else if (history) {
+		history->asChannelHistory()->checkJoinedMessage();
 		_history->peerMessagesUpdated(channel->id);
 	}
 }
@@ -5198,20 +5221,22 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 					}
 					it->emoji.clear();
 					auto &packs = set.vpacks.c_vector().v;
-					for (int i = 0, l = packs.size(); i < l; ++i) {
-						if (packs.at(i).type() != mtpc_stickerPack) continue;
+					for (auto i = 0, l = packs.size(); i != l; ++i) {
+						if (packs[i].type() != mtpc_stickerPack) continue;
 						auto &pack = packs.at(i).c_stickerPack();
-						if (auto e = emojiGetNoColor(emojiFromText(qs(pack.vemoticon)))) {
+						if (auto emoji = Ui::Emoji::Find(qs(pack.vemoticon))) {
+							emoji = emoji->original();
 							auto &stickers = pack.vdocuments.c_vector().v;
+
 							StickerPack p;
 							p.reserve(stickers.size());
-							for (int j = 0, c = stickers.size(); j < c; ++j) {
-								auto doc = App::document(stickers.at(j).v);
+							for (auto j = 0, c = stickers.size(); j != c; ++j) {
+								auto doc = App::document(stickers[j].v);
 								if (!doc || !doc->sticker()) continue;
 
 								p.push_back(doc);
 							}
-							it->emoji.insert(e, p);
+							it->emoji.insert(emoji, p);
 						}
 					}
 

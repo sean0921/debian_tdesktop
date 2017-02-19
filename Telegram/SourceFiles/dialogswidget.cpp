@@ -42,7 +42,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "apiwrap.h"
 #include "ui/widgets/dropdown_menu.h"
 #include "ui/widgets/input_fields.h"
-#include "window/window_theme.h"
+#include "window/themes/window_theme.h"
 #include "autoupdater.h"
 #include "observer_peer.h"
 
@@ -78,6 +78,12 @@ DialogsInner::DialogsInner(QWidget *parent, QWidget *main) : SplittedWidget(pare
 , _a_pinnedShifting(animation(this, &DialogsInner::step_pinnedShifting))
 , _addContactLnk(this, lang(lng_add_contact_button))
 , _cancelSearchInPeer(this, st::dialogsCancelSearchInPeer) {
+
+#ifdef OS_MAC_OLD
+	// Qt 5.3.2 build is working with glitches otherwise.
+	setAttribute(Qt::WA_OpaquePaintEvent, false);
+#endif // OS_MAC_OLD
+
 	if (Global::DialogsModeEnabled()) {
 		_dialogsImportant = std_::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Date);
 		_importantSwitch = std_::make_unique<ImportantSwitch>();
@@ -643,17 +649,12 @@ void DialogsInner::savePinnedOrder() {
 	if (newOrder.size() != _pinnedOrder.size()) {
 		return; // Something has changed in the set of pinned chats.
 	}
-
-	auto peers = QVector<MTPInputPeer>();
-	peers.reserve(newOrder.size());
 	for_const (auto history, newOrder) {
 		if (_pinnedOrder.indexOf(history) < 0) {
 			return; // Something has changed in the set of pinned chats.
 		}
-		peers.push_back(history->peer->input);
 	}
-	auto flags = MTPmessages_ReorderPinnedDialogs::Flag::f_force;
-	MTP::send(MTPmessages_ReorderPinnedDialogs(MTP_flags(qFlags(flags)), MTP_vector(peers)));
+	App::histories().savePinnedToServer();
 }
 
 void DialogsInner::finishReorderPinned() {
@@ -1088,7 +1089,7 @@ void DialogsInner::updateDialogRow(PeerData *peer, MsgId msgId, QRect updateRect
 	}
 }
 
-void DialogsInner::enterEvent(QEvent *e) {
+void DialogsInner::enterEventHook(QEvent *e) {
 	setMouseTracking(true);
 	updateSelected();
 }
@@ -1131,7 +1132,7 @@ void DialogsInner::updateSelectedRow(PeerData *peer) {
 	}
 }
 
-void DialogsInner::leaveEvent(QEvent *e) {
+void DialogsInner::leaveEventHook(QEvent *e) {
 	setMouseTracking(false);
 	clearSelection();
 }

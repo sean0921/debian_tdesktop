@@ -161,16 +161,16 @@ public:
 		if (!_caption.isEmpty()) {
 			return true;
 		}
-		if (_parent->viaBot()) {
-			return true;
+		if (auto message = _parent->toHistoryMessage()) {
+			return message->viaBot()
+				|| message->Has<HistoryMessageForwarded>()
+				|| message->Has<HistoryMessageReply>()
+				|| message->displayFromName();
 		}
-		return (_parent->Has<HistoryMessageForwarded>() || _parent->Has<HistoryMessageReply>());
+		return false;
 	}
 	bool customInfoLayout() const override {
 		return _caption.isEmpty();
-	}
-	bool hideFromName() const override {
-		return true;
 	}
 	bool skipBubbleTail() const override {
 		return isBubbleBottom() && _caption.isEmpty();
@@ -251,16 +251,16 @@ public:
 		if (!_caption.isEmpty()) {
 			return true;
 		}
-		if (_parent->viaBot()) {
-			return true;
+		if (auto message = _parent->toHistoryMessage()) {
+			return message->viaBot()
+				|| message->Has<HistoryMessageForwarded>()
+				|| message->Has<HistoryMessageReply>()
+				|| message->displayFromName();
 		}
-		return (_parent->Has<HistoryMessageForwarded>() || _parent->Has<HistoryMessageReply>());
+		return false;
 	}
 	bool customInfoLayout() const override {
 		return _caption.isEmpty();
-	}
-	bool hideFromName() const override {
-		return true;
 	}
 	bool skipBubbleTail() const override {
 		return isBubbleBottom() && _caption.isEmpty();
@@ -311,17 +311,42 @@ struct HistoryDocumentVoicePlayback {
 	anim::value a_progress;
 	BasicAnimation _a_progress;
 };
-struct HistoryDocumentVoice : public RuntimeComponent<HistoryDocumentVoice> {
-	HistoryDocumentVoice &operator=(HistoryDocumentVoice &&other) {
-		std::swap(_playback, other._playback);
-		return *this;
-	}
-	~HistoryDocumentVoice() {
-		delete base::take(_playback);
-	}
+class HistoryDocumentVoice : public RuntimeComponent<HistoryDocumentVoice> {
+	// We don't use float64 because components should align to pointer even on 32bit systems.
+	static constexpr float64 kFloatToIntMultiplier = 65536.;
+
+public:
 	void ensurePlayback(const HistoryDocument *interfaces) const;
 	void checkPlaybackFinished() const;
-	mutable HistoryDocumentVoicePlayback *_playback = nullptr;
+
+	mutable std_::unique_ptr<HistoryDocumentVoicePlayback> _playback;
+	QSharedPointer<VoiceSeekClickHandler> _seekl;
+	mutable int _lastDurationMs = 0;
+
+	bool seeking() const {
+		return _seeking;
+	}
+	void startSeeking();
+	void stopSeeking();
+	float64 seekingStart() const {
+		return _seekingStart / kFloatToIntMultiplier;
+	}
+	void setSeekingStart(float64 seekingStart) const {
+		_seekingStart = qRound(seekingStart * kFloatToIntMultiplier);
+	}
+	float64 seekingCurrent() const {
+		return _seekingCurrent / kFloatToIntMultiplier;
+	}
+	void setSeekingCurrent(float64 seekingCurrent) {
+		_seekingCurrent = qRound(seekingCurrent * kFloatToIntMultiplier);
+	}
+
+private:
+	bool _seeking = false;
+
+	mutable int _seekingStart = 0;
+	mutable int _seekingCurrent = 0;
+
 };
 
 class HistoryDocument : public HistoryFileMedia, public RuntimeComposer {
@@ -340,6 +365,7 @@ public:
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
 	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+	void updatePressed(int x, int y) override;
 
 	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override {
 		if (auto captioned = Get<HistoryDocumentCaptioned>()) {
@@ -392,6 +418,8 @@ public:
 	}
 
 	void step_voiceProgress(float64 ms, bool timer);
+
+	void clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) override;
 
 protected:
 	float64 dataProgress() const override {
@@ -480,16 +508,16 @@ public:
 		if (!_caption.isEmpty()) {
 			return true;
 		}
-		if (_parent->viaBot()) {
-			return true;
+		if (auto message = _parent->toHistoryMessage()) {
+			return message->viaBot()
+				|| message->Has<HistoryMessageForwarded>()
+				|| message->Has<HistoryMessageReply>()
+				|| message->displayFromName();
 		}
-		return (_parent->Has<HistoryMessageForwarded>() || _parent->Has<HistoryMessageReply>());
+		return false;
 	}
 	bool customInfoLayout() const override {
 		return _caption.isEmpty();
-	}
-	bool hideFromName() const override {
-		return true;
 	}
 	bool skipBubbleTail() const override {
 		return isBubbleBottom() && _caption.isEmpty();
@@ -844,7 +872,7 @@ private:
 
 };
 
-struct LocationCoords;
+class LocationCoords;
 struct LocationData;
 
 class HistoryLocation : public HistoryMedia {
@@ -884,10 +912,13 @@ public:
 		if (!_title.isEmpty() || !_description.isEmpty()) {
 			return true;
 		}
-		if (_parent->viaBot()) {
-			return true;
+		if (auto message = _parent->toHistoryMessage()) {
+			return message->viaBot()
+				|| message->Has<HistoryMessageForwarded>()
+				|| message->Has<HistoryMessageReply>()
+				|| message->displayFromName();
 		}
-		return (_parent->Has<HistoryMessageForwarded>() || _parent->Has<HistoryMessageReply>());
+		return false;
 	}
 	bool customInfoLayout() const override {
 		return true;

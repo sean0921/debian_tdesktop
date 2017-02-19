@@ -83,6 +83,7 @@ public:
 	void clearPinned();
 	int pinnedCount() const;
 	QList<History*> getPinnedOrder() const;
+	void savePinnedToServer() const;
 
 	struct SendActionAnimationUpdate {
 		History *history;
@@ -240,7 +241,7 @@ public:
 	MsgId outboxRead(MsgId upTo);
 	MsgId outboxRead(HistoryItem *wasRead);
 
-	HistoryItem *lastImportantMessage() const;
+	HistoryItem *lastAvailableMessage() const;
 
 	int unreadCount() const {
 		return _unreadCount;
@@ -584,7 +585,7 @@ private:
 class HistoryJoined;
 class ChannelHistory : public History {
 public:
-	ChannelHistory(const PeerId &peer);
+	using History::History;
 
 	void messageDetached(HistoryItem *msg);
 
@@ -604,13 +605,11 @@ private:
 
 	void checkMaxReadMessageDate();
 
-	HistoryItem *findPrevItem(HistoryItem *item) const;
-
 	void cleared(bool leaveItems);
 
 	QDateTime _maxReadMessageDate;
 
-	HistoryJoined *_joinedMessage;
+	HistoryJoined *_joinedMessage = nullptr;
 
 	MsgId _rangeDifferenceFromId, _rangeDifferenceToId;
 	int32 _rangeDifferencePts;

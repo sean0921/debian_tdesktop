@@ -161,14 +161,14 @@ void ConfirmBox::mousePressEvent(QMouseEvent *e) {
 void ConfirmBox::mouseReleaseEvent(QMouseEvent *e) {
 	_lastMousePos = e->globalPos();
 	updateHover();
-	if (ClickHandlerPtr activated = ClickHandler::unpressed()) {
+	if (auto activated = ClickHandler::unpressed()) {
 		Ui::hideLayer();
 		App::activateClickHandler(activated, e->button());
 	}
 	return BoxContent::mouseReleaseEvent(e);
 }
 
-void ConfirmBox::leaveEvent(QEvent *e) {
+void ConfirmBox::leaveEventHook(QEvent *e) {
 	ClickHandler::clearActive(this);
 }
 
@@ -241,14 +241,11 @@ void MaxInviteBox::mousePressEvent(QMouseEvent *e) {
 	mouseMoveEvent(e);
 	if (_linkOver) {
 		Application::clipboard()->setText(_link);
-
-		Ui::Toast::Config toast;
-		toast.text = lang(lng_create_channel_link_copied);
-		Ui::Toast::Show(App::wnd(), toast);
+		Ui::Toast::Show(lang(lng_create_channel_link_copied));
 	}
 }
 
-void MaxInviteBox::leaveEvent(QEvent *e) {
+void MaxInviteBox::leaveEventHook(QEvent *e) {
 	updateSelected(QCursor::pos());
 }
 

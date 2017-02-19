@@ -35,7 +35,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "localstorage.h"
 #include "history/history_media_types.h"
 #include "styles/style_history.h"
-#include "window/window_theme.h"
+#include "window/themes/window_theme.h"
 
 namespace {
 
@@ -59,20 +59,6 @@ ImagePtr generateUserpicImage(const style::icon &icon) {
 }
 
 } // namespace
-
-style::color peerColor(int index) {
-	static style::color peerColors[kUserColorsCount] = {
-		st::historyPeer1NameFg,
-		st::historyPeer2NameFg,
-		st::historyPeer3NameFg,
-		st::historyPeer4NameFg,
-		st::historyPeer5NameFg,
-		st::historyPeer6NameFg,
-		st::historyPeer7NameFg,
-		st::historyPeer8NameFg,
-	};
-	return peerColors[index];
-}
 
 style::color peerUserpicColor(int index) {
 	static style::color peerColors[kUserColorsCount] = {
@@ -153,7 +139,7 @@ void EmptyUserpic::Impl::fillString(const QString &name) {
 	auto ch = name.constData(), end = ch + name.size();
 	while (ch != end) {
 		auto emojiLength = 0;
-		if (auto emoji = emojiFromText(ch, end, &emojiLength)) {
+		if (auto emoji = Ui::Emoji::Find(ch, end, &emojiLength)) {
 			ch += emojiLength;
 		} else if (ch->isHighSurrogate()) {
 			++ch;
@@ -248,11 +234,9 @@ using UpdateFlag = Notify::PeerUpdate::Flag;
 NotifySettings globalNotifyAll, globalNotifyUsers, globalNotifyChats;
 NotifySettingsPtr globalNotifyAllPtr = UnknownNotifySettings, globalNotifyUsersPtr = UnknownNotifySettings, globalNotifyChatsPtr = UnknownNotifySettings;
 
-PeerData::PeerData(const PeerId &id) : id(id)
-, colorIndex(peerColorIndex(id))
-, color(peerColor(colorIndex)) {
+PeerData::PeerData(const PeerId &id) : id(id), _colorIndex(peerColorIndex(id)) {
 	nameText.setText(st::msgNameStyle, QString(), _textNameOptions);
-	_userpicEmpty.set(colorIndex, QString());
+	_userpicEmpty.set(_colorIndex, QString());
 }
 
 void PeerData::updateNameDelayed(const QString &newName, const QString &newNameOrPhone, const QString &newUsername) {
@@ -274,7 +258,7 @@ void PeerData::updateNameDelayed(const QString &newName, const QString &newNameO
 	name = newName;
 	nameText.setText(st::msgNameStyle, name, _textNameOptions);
 	if (!_userpic) {
-		_userpicEmpty.set(colorIndex, name);
+		_userpicEmpty.set(_colorIndex, name);
 	}
 
 	Notify::PeerUpdate update(this);
@@ -309,7 +293,7 @@ void PeerData::updateNameDelayed(const QString &newName, const QString &newNameO
 void PeerData::setUserpic(ImagePtr userpic) {
 	_userpic = userpic;
 	if (!_userpic || !_userpic->loaded()) {
-		_userpicEmpty.set(colorIndex, name);
+		_userpicEmpty.set(_colorIndex, name);
 	} else {
 		_userpicEmpty.clear();
 	}
@@ -1675,20 +1659,54 @@ void DocumentData::notifyLayoutChanged() const {
 }
 
 VoiceWaveform documentWaveformDecode(const QByteArray &encoded5bit) {
-	VoiceWaveform result((encoded5bit.size() * 8) / 5, 0);
-	for (int32 i = 0, l = result.size(); i < l; ++i) { // read each 5 bit of encoded5bit as 0-31 unsigned char
-		int32 byte = (i * 5) / 8, shift = (i * 5) % 8;
-		result[i] = (((*(uint16*)(encoded5bit.constData() + byte)) >> shift) & 0x1F);
+	auto bitsCount = static_cast<int>(encoded5bit.size() * 8);
+	auto valuesCount = bitsCount / 5;
+	if (!valuesCount) {
+		return VoiceWaveform();
 	}
+
+	// Read each 5 bit of encoded5bit as 0-31 unsigned char.
+	// We count the index of the byte in which the desired 5-bit sequence starts.
+	// And then we read a uint16 starting from that byte to guarantee to get all of those 5 bits.
+	//
+	// BUT! if it is the last byte we have, we're not allowed to read a uint16 starting with it.
+	// Because it will be an overflow (we'll access one byte after the available memory).
+	// We see, that only the last 5 bits could start in the last available byte and be problematic.
+	// So we read in a general way all the entries in a general way except the last one.
+	auto result = VoiceWaveform(valuesCount, 0);
+	auto bitsData = encoded5bit.constData();
+	for (auto i = 0, l = valuesCount - 1; i != l; ++i) {
+		auto byteIndex = (i * 5) / 8;
+		auto bitShift = (i * 5) % 8;
+		auto value = *reinterpret_cast<const uint16*>(bitsData + byteIndex);
+		result[i] = static_cast<char>((value >> bitShift) & 0x1F);
+	}
+	auto lastByteIndex = ((valuesCount - 1) * 5) / 8;
+	auto lastBitShift = ((valuesCount - 1) * 5) % 8;
+	auto lastValue = (lastByteIndex == encoded5bit.size() - 1)
+		? static_cast<uint16>(*reinterpret_cast<const uchar*>(bitsData + lastByteIndex))
+		: *reinterpret_cast<const uint16*>(bitsData + lastByteIndex);
+	result[valuesCount - 1] = static_cast<char>((lastValue >> lastBitShift) & 0x1F);
+
 	return result;
 }
 
 QByteArray documentWaveformEncode5bit(const VoiceWaveform &waveform) {
-	QByteArray result((waveform.size() * 5 + 7) / 8, 0);
-	for (int32 i = 0, l = waveform.size(); i < l; ++i) { // write each 0-31 unsigned char as 5 bit to result
-		int32 byte = (i * 5) / 8, shift = (i * 5) % 8;
-		(*(uint16*)(result.data() + byte)) |= (uint16(waveform.at(i) & 0x1F) << shift);
+	auto bitsCount = waveform.size() * 5;
+	auto bytesCount = (bitsCount + 7) / 8;
+	auto result = QByteArray(bytesCount + 1, 0);
+	auto bitsData = result.data();
+
+	// Write each 0-31 unsigned char as 5 bit to result.
+	// We reserve one extra byte to be able to dereference any of required bytes
+	// as a uint16 without overflowing, even the byte with index "bytesCount - 1".
+	for (auto i = 0, l = waveform.size(); i < l; ++i) {
+		auto byteIndex = (i * 5) / 8;
+		auto bitShift = (i * 5) % 8;
+		auto value = (static_cast<uint16>(waveform[i]) & 0x1F) << bitShift;
+		*reinterpret_cast<uint16*>(bitsData + byteIndex) |= value;
 	}
+	result.resize(bytesCount);
 	return result;
 }
 
@@ -1877,6 +1895,6 @@ ClickHandlerPtr peerOpenClickHandler(PeerData *peer) {
 
 MsgId clientMsgId() {
 	static MsgId currentClientMsgId = StartClientMsgId;
-	Q_ASSERT(currentClientMsgId < EndClientMsgId);
+	t_assert(currentClientMsgId < EndClientMsgId);
 	return currentClientMsgId++;
 }

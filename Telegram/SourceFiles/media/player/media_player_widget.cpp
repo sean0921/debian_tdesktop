@@ -195,7 +195,7 @@ void Widget::handleSeekProgress(float64 progress) {
 		_seekPositionMs = positionMs;
 		updateTimeLabel();
 
-		instance()->startSeeking();
+		instance()->startSeeking(AudioMsgId::Type::Song);
 	}
 }
 
@@ -211,7 +211,7 @@ void Widget::handleSeekFinished(float64 progress) {
 		mixer()->seek(type, qRound(progress * state.duration));
 	}
 
-	instance()->stopSeeking();
+	instance()->stopSeeking(AudioMsgId::Type::Song);
 }
 
 void Widget::resizeEvent(QResizeEvent *e) {
@@ -233,7 +233,7 @@ void Widget::paintEvent(QPaintEvent *e) {
 	}
 }
 
-void Widget::leaveEvent(QEvent *e) {
+void Widget::leaveEventHook(QEvent *e) {
 	updateOverLabelsState(false);
 }
 
@@ -300,7 +300,7 @@ void Widget::updateRepeatTrackIcon() {
 }
 
 void Widget::handleSongUpdate(const TrackState &state) {
-	if (!state.id || !state.id.audio()->song()) {
+	if (!state.id.audio() || !state.id.audio()->song()) {
 		return;
 	}
 
@@ -312,7 +312,7 @@ void Widget::handleSongUpdate(const TrackState &state) {
 
 	auto stopped = (IsStopped(state.state) || state.state == State::Finishing);
 	auto showPause = !stopped && (state.state == State::Playing || state.state == State::Resuming || state.state == State::Starting);
-	if (instance()->isSeeking()) {
+	if (instance()->isSeeking(AudioMsgId::Type::Song)) {
 		showPause = true;
 	}
 	auto buttonState = [audio = state.id.audio(), showPause] {

@@ -40,7 +40,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/effects/ripple_animation.h"
 #include "boxes/photocropbox.h"
 #include "boxes/confirmbox.h"
-#include "window/window_theme.h"
+#include "window/themes/window_theme.h"
 #include "observer_peer.h"
 #include "apiwrap.h"
 
@@ -1169,7 +1169,7 @@ void ContactsBox::Inner::paintEvent(QPaintEvent *e) {
 	}
 }
 
-void ContactsBox::Inner::enterEvent(QEvent *e) {
+void ContactsBox::Inner::enterEventHook(QEvent *e) {
 	setMouseTracking(true);
 }
 
@@ -1235,7 +1235,7 @@ void ContactsBox::Inner::updateRowWithPeer(PeerData *peer) {
 	}
 }
 
-void ContactsBox::Inner::leaveEvent(QEvent *e) {
+void ContactsBox::Inner::leaveEventHook(QEvent *e) {
 	_mouseSelection = false;
 	setMouseTracking(false);
 	if (_selected || _filteredSelected >= 0 || _searchedSelected >= 0) {

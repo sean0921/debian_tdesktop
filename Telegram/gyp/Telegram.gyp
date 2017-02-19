@@ -59,7 +59,7 @@
         'ko',
         'pt-BR',
       ],
-      'travis_defines%': '',
+      'build_defines%': '',
     },
     'includes': [
       'common_executable.gypi',
@@ -79,7 +79,7 @@
     ],
 
     'defines': [
-      '<!@(python -c "for s in \'<(travis_defines)\'.split(\',\'): print(s)")',
+      '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
     ],
 
     'include_dirs': [
@@ -166,6 +166,8 @@
       '<(src_loc)/boxes/contactsbox.h',
       '<(src_loc)/boxes/downloadpathbox.cpp',
       '<(src_loc)/boxes/downloadpathbox.h',
+      '<(src_loc)/boxes/editcolorbox.cpp',
+      '<(src_loc)/boxes/editcolorbox.h',
       '<(src_loc)/boxes/emojibox.cpp',
       '<(src_loc)/boxes/emojibox.h',
       '<(src_loc)/boxes/languagebox.cpp',
@@ -450,6 +452,8 @@
       '<(src_loc)/settings/settings_info_widget.h',
       '<(src_loc)/settings/settings_inner_widget.cpp',
       '<(src_loc)/settings/settings_inner_widget.h',
+      '<(src_loc)/settings/settings_layer.cpp',
+      '<(src_loc)/settings/settings_layer.h',
       '<(src_loc)/settings/settings_notifications_widget.cpp',
       '<(src_loc)/settings/settings_notifications_widget.h',
       '<(src_loc)/settings/settings_privacy_widget.cpp',
@@ -567,12 +571,16 @@
       '<(src_loc)/window/top_bar_widget.h',
       '<(src_loc)/window/window_main_menu.cpp',
       '<(src_loc)/window/window_main_menu.h',
-      '<(src_loc)/window/window_theme.cpp',
-      '<(src_loc)/window/window_theme.h',
-      '<(src_loc)/window/window_theme_preview.cpp',
-      '<(src_loc)/window/window_theme_preview.h',
-      '<(src_loc)/window/window_theme_warning.cpp',
-      '<(src_loc)/window/window_theme_warning.h',
+      '<(src_loc)/window/themes/window_theme.cpp',
+      '<(src_loc)/window/themes/window_theme.h',
+      '<(src_loc)/window/themes/window_theme_editor.cpp',
+      '<(src_loc)/window/themes/window_theme_editor.h',
+      '<(src_loc)/window/themes/window_theme_editor_block.cpp',
+      '<(src_loc)/window/themes/window_theme_editor_block.h',
+      '<(src_loc)/window/themes/window_theme_preview.cpp',
+      '<(src_loc)/window/themes/window_theme_preview.h',
+      '<(src_loc)/window/themes/window_theme_warning.cpp',
+      '<(src_loc)/window/themes/window_theme_warning.h',
       '<(src_loc)/window/window_title.h',
 
       '<(sp_media_key_tap_loc)/SPMediaKeyTap.m',
