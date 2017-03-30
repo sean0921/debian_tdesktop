@@ -25,9 +25,10 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "localstorage.h"
 
 int main(int argc, char *argv[]) {
-#ifndef Q_OS_MAC // Retina display support is working fine, others are not.
+#if !defined(Q_OS_MAC) && QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
+	// Retina display support is working fine, others are not.
 	QCoreApplication::setAttribute(Qt::AA_DisableHighDpiScaling, true);
-#endif // Q_OS_MAC
+#endif // not defined Q_OS_MAC and QT_VERSION >= 5.6.0
 	QCoreApplication::setApplicationName(qsl("TelegramDesktop"));
 
 	settingsParseArgs(argc, argv);
