@@ -156,6 +156,10 @@ private:
 
 	void setEmptyText();
 
+	// For an invoice button we replace the button text with a "Receipt" key.
+	// It should show the receipt for the payed invoice. Still let mobile apps do that.
+	void replaceBuyWithReceiptInMarkup();
+
 	void initDimensions() override;
 	int resizeGetHeight_(int width) override;
 	int performResizeGetHeight(int width);
@@ -250,6 +254,10 @@ struct HistoryServiceGameScore : public RuntimeComponent<HistoryServiceGameScore
 	int score = 0;
 };
 
+struct HistoryServicePayment : public RuntimeComponent<HistoryServicePayment>, public HistoryServiceDependentData {
+	QString amount;
+};
+
 namespace HistoryLayout {
 class ServiceMessagePainter;
 } // namespace HistoryLayout
@@ -323,8 +331,18 @@ protected:
 	void initDimensions() override;
 	int resizeGetHeight_(int width) override;
 
-	using Links = QList<ClickHandlerPtr>;
-	void setServiceText(const QString &text, const Links &links);
+	struct PreparedText {
+		QString text;
+		QList<ClickHandlerPtr> links;
+	};
+	void setServiceText(const PreparedText &prepared);
+
+	QString fromLinkText() const {
+		return textcmdLink(1, _from->name);
+	};
+	ClickHandlerPtr fromLink() const {
+		return peerOpenClickHandler(_from);
+	};
 
 	void removeMedia();
 
@@ -334,6 +352,8 @@ private:
 			return pinned;
 		} else if (auto gamescore = Get<HistoryServiceGameScore>()) {
 			return gamescore;
+		} else if (auto payment = Get<HistoryServicePayment>()) {
+			return payment;
 		}
 		return nullptr;
 	}
@@ -341,14 +361,15 @@ private:
 		return const_cast<HistoryService*>(this)->GetDependentData();
 	}
 	bool updateDependent(bool force = false);
-	bool updateDependentText();
+	void updateDependentText();
 	void clearDependency();
 
 	void createFromMtp(const MTPDmessageService &message);
 	void setMessageByAction(const MTPmessageAction &action);
 
-	bool preparePinnedText(const QString &from, QString *outText, Links *outLinks);
-	bool prepareGameScoreText(const QString &from, QString *outText, Links *outLinks);
+	PreparedText preparePinnedText();
+	PreparedText prepareGameScoreText();
+	PreparedText preparePaymentSentText();
 
 };
 

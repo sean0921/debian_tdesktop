@@ -207,7 +207,7 @@ if %BuildUWP% neq 0 (
   MakeAppx.exe pack /d "%ReleasePath%\AppX" /l /p ..\out\Release\%BinaryName%.appx
   if %errorlevel% neq 0 goto error
 
-  call "%SignAppxPath%" "..\out\Release\%BinaryName%.appx"
+  rem call "%SignAppxPath%" "..\out\Release\%BinaryName%.appx"
 
   xcopy "%ReleasePath%\%BinaryName%.pdb" "%ReleasePath%\AppX\"
   move "%ReleasePath%\%BinaryName%.exe.pdb" "%ReleasePath%\AppX\"
@@ -271,11 +271,6 @@ if %BuildUWP% equ 0 (
   ) else (
     xcopy "%DeployPath%\%BetaKeyFile%" "%FinalDeployPath%\" /Y
   )
-  xcopy "%DeployPath%\%BinaryName%.pdb" "%FinalDeployPath%\"
-  xcopy "%DeployPath%\%BinaryName%.exe.pdb" "%FinalDeployPath%\"
-  xcopy "%DeployPath%\Updater.exe" "%FinalDeployPath%\"
-  xcopy "%DeployPath%\Updater.pdb" "%FinalDeployPath%\"
-  xcopy "%DeployPath%\Updater.exe.pdb" "%FinalDeployPath%\"
 )
 
 echo Version %AppVersionStrFull% is ready!

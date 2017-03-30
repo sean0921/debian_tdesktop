@@ -38,7 +38,13 @@
             'Qt5Gui',
           ],
           'qt_version%': '<(qt_version)',
-          'linux_path_qt%': '/usr/lib/<(triplet)/qt5',
+          'conditions': [
+            [ 'build_macold', {
+              'linux_path_qt%': '/usr/local/macold/Qt-<(qt_version)',
+            }, {
+              'linux_path_qt%': '/usr/lib/<(triplet)/qt5',
+            }]
+          ]
         },
         'qt_version%': '<(qt_version)',
         'qt_loc_unix': '<(linux_path_qt)',
@@ -106,6 +112,11 @@
         'qt_loc': '<(qt_loc_unix)',
       }],
     ],
+
+    # If you need moc sources include a line in your 'sources':
+    # '<!@(python <(DEPTH)/list_sources.py [sources] <(qt_moc_list_sources_arg))'
+    # where [sources] contains all your source files
+    'qt_moc_list_sources_arg': '--moc-prefix SHARED_INTERMEDIATE_DIR/<(_target_name)/moc/moc_',
   },
 
   'configurations': {
@@ -224,6 +235,5 @@
       '-o', '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)/moc/moc_<(RULE_INPUT_ROOT).cpp',
     ],
     'message': 'Moc-ing <(RULE_INPUT_ROOT).h..',
-    'process_outputs_as_sources': 1,
   }],
 }

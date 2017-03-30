@@ -18,16 +18,16 @@ to link the code of portions of this program with the OpenSSL library.
 Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
 Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
-#include "stdafx.h"
 #include "history/history_location_manager.h"
 
 #include "mainwidget.h"
 #include "lang.h"
-#include "pspecific.h"
+#include "platform/platform_specific.h"
 
 namespace {
 
 constexpr auto kCoordPrecision = 8;
+constexpr auto kMaxHttpRedirects = 5;
 
 } // namespace
 
@@ -89,7 +89,7 @@ void LocationManager::init() {
 	auto data = QImage(cIntRetinaFactor(), cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
 	data.fill(st::imageBgTransparent->c);
 	data.setDevicePixelRatio(cRetinaFactor());
-	notLoadedPlaceholder = new ImagePtr(App::pixmapFromImageInPlace(std_::move(data)), "GIF");
+	notLoadedPlaceholder = new ImagePtr(App::pixmapFromImageInPlace(std::move(data)), "GIF");
 }
 
 void LocationManager::reinit() {
@@ -145,7 +145,7 @@ void LocationManager::onFinished(QNetworkReply *reply) {
 					LocationData *d = i.value();
 					if (serverRedirects.constFind(d) == serverRedirects.cend()) {
 						serverRedirects.insert(d, 1);
-					} else if (++serverRedirects[d] > MaxHttpRedirects) {
+					} else if (++serverRedirects[d] > kMaxHttpRedirects) {
 						DEBUG_LOG(("Network Error: Too many HTTP redirects in onFinished() for image link: %1").arg(loc));
 						return onFailed(reply);
 					}
@@ -156,7 +156,7 @@ void LocationManager::onFinished(QNetworkReply *reply) {
 					LocationData *d = i.value();
 					if (serverRedirects.constFind(d) == serverRedirects.cend()) {
 						serverRedirects.insert(d, 1);
-					} else if (++serverRedirects[d] > MaxHttpRedirects) {
+					} else if (++serverRedirects[d] > kMaxHttpRedirects) {
 						DEBUG_LOG(("Network Error: Too many HTTP redirects in onFinished() for image link: %1").arg(loc));
 						return onFailed(reply);
 					}

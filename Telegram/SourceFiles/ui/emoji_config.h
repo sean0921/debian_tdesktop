@@ -53,7 +53,21 @@ void Init();
 constexpr auto kPostfix = static_cast<ushort>(0xFE0F);
 
 class One {
+	struct CreationTag {
+	};
+
 public:
+	One(One &&other) = default;
+	One(const QString &id, uint16 x, uint16 y, bool hasPostfix, bool colorizable, EmojiPtr original, const CreationTag &)
+	: _id(id)
+	, _x(x)
+	, _y(y)
+	, _hasPostfix(hasPostfix)
+	, _colorizable(colorizable)
+	, _original(original) {
+		Expects(!_colorizable || !colored());
+	}
+
 	QString id() const {
 		return _id;
 	}
@@ -95,28 +109,14 @@ public:
 	}
 
 private:
-	One() = default; // For QVector<> to compile.
-	One(const One &other) = default;
-
-	One(const QString &id, uint16 x, uint16 y, bool hasPostfix, bool colorizable, EmojiPtr original)
-	: _id(id)
-	, _x(x)
-	, _y(y)
-	, _hasPostfix(hasPostfix)
-	, _colorizable(colorizable)
-	, _original(original) {
-		t_assert(!_colorizable || !colored());
-	}
-
-	QString _id;
-	uint16 _x = 0;
-	uint16 _y = 0;
-	bool _hasPostfix = false;
-	bool _colorizable = false;
-	EmojiPtr _original = nullptr;
+	const QString _id;
+	const uint16 _x = 0;
+	const uint16 _y = 0;
+	const bool _hasPostfix = false;
+	const bool _colorizable = false;
+	const EmojiPtr _original = nullptr;
 
 	friend void Init();
-	friend class QVector<One>;
 
 };
 

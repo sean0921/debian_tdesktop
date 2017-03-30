@@ -25,9 +25,9 @@
           '-pipe',
           '-g',
           '-Wall',
+          '-Werror',
           '-W',
           '-fPIC',
-          '-Wno-unused-result',
           '-Wno-unused-variable',
           '-Wno-unused-parameter',
           '-Wno-unused-function',
@@ -35,6 +35,7 @@
           '-Wno-comment',
           '-Wno-unused-but-set-variable',
           '-Wno-missing-field-initializers',
+          '-Wno-sign-compare',
         ],
       },
       'conditions': [
@@ -62,12 +63,13 @@
         '_REENTRANT',
         'QT_PLUGIN',
       ],
-      'cflags': [
+      'cflags_c': [
         '<@(linux_common_flags)',
+        '-std=gnu11',
       ],
       'cflags_cc': [
         '<@(linux_common_flags)',
-        '-std=gnu++1y',
+        '-std=gnu++14',
       ],
       'configurations': {
         'Debug': {

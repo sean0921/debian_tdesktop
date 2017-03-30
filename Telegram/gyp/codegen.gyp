@@ -29,6 +29,12 @@
       'gen_loc': '../GeneratedFiles',
       'mac_target': '10.10',
       'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
+      'sources': [
+        '<(src_loc)/_other/mlmain.cpp',
+        '<(src_loc)/_other/mlmain.h',
+        '<(src_loc)/_other/genlang.cpp',
+        '<(src_loc)/_other/genlang.h',
+      ],
     },
     'includes': [
       'common_executable.gypi',
@@ -40,10 +46,7 @@
       '<(gen_loc)',
     ],
     'sources': [
-      '<(src_loc)/_other/mlmain.cpp',
-      '<(src_loc)/_other/mlmain.h',
-      '<(src_loc)/_other/genlang.cpp',
-      '<(src_loc)/_other/genlang.h',
+      '<!@(python <(DEPTH)/list_sources.py <@(sources) <(qt_moc_list_sources_arg))',
     ],
   }, {
     'target_name': 'codegen_style',
