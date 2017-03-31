@@ -1,5 +1,6 @@
 Avoid-depending-on-static-libraries.patch
 Flags-for-precompiled-header-and-MOC.patch
-Fix-desktop-integration-issues.patch
 Debian-API-ID.patch
 Reduce-number-of-libraries.patch
+Remove-Werror-flag.patch
+Downgrade-Qt-version.patch

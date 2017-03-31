@@ -511,7 +511,7 @@
 <(src_loc)/structs.cpp
 <(src_loc)/structs.h
 
-<(src_loc)/qt_functions.cpp
+../../debian/source/qt_functions.cpp
 
 platforms: mac
 <(sp_media_key_tap_loc)/SPMediaKeyTap.m
