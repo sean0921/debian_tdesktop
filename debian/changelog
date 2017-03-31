@@ -1,3 +1,12 @@
+telegram-desktop (1.0.27-1) unstable; urgency=medium
+
+  * New upstream release
+  * Refresh patchs
+  * Add attribution info (closes: #859027)
+  * Fix build in i386 (closes: #859058)
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Fri, 31 Mar 2017 20:21:07 +0300
+
 telegram-desktop (1.0.14-1) unstable; urgency=low
 
   * Initial upload (Closes: #767418)
