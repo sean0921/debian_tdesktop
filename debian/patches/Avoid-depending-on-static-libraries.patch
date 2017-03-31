@@ -292,7 +292,7 @@ diff --git a/Telegram/gyp/telegram_sources.txt b/Telegram/gyp/telegram_sources.t
 -<(minizip_loc)/zip.h
 -<(minizip_loc)/unzip.c
 -<(minizip_loc)/unzip.h
-+../../debian/source/qt_functions.cpp
++../../debian/qt_functions.cpp
  
  platforms: mac
  <(sp_media_key_tap_loc)/SPMediaKeyTap.m
