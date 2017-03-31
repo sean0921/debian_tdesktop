@@ -25,7 +25,6 @@
           '-pipe',
           '-g',
           '-Wall',
-          '-Werror',
           '-W',
           '-fPIC',
           '-Wno-unused-variable',

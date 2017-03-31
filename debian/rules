@@ -24,7 +24,7 @@ DEFINITIONS += \
 	DEB_HOST_MULTIARCH=\"$(DEB_HOST_MULTIARCH)\"
 
 export PKG_CONFIG_PATH = /usr/lib/$(DEB_HOST_MULTIARCH)/pkgconfig
-export CPPFLAGS += $(DEFINITIONS:%=-D%)
+export CPPFLAGS += $(DEFINITIONS:%=-D%) -Winvalid-pch
 
 %:
 	dh $@ --sourcedirectory=out/$(BUILD_MODE)
