@@ -1,10 +1,37 @@
 Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: telegram-desktop
+Upstream-Name: Telegram Desktop
 Source: https://github.com/telegramdesktop/tdesktop
 
 Files: *
 Copyright: 2014-2017 John Preston <johnprestonmail@gmail.com>
 License: GPL-3.0+ with OpenSSL exception
+
+Files: Telegram/Patches/qtbase_5_6_2.diff
+Copyright: 2001 Ellis Whitehead <ellis@kde.org>
+           2004 Jaroslaw Staniek <js@iidea.pl>
+           2011-2012 CSSlayer
+License: GPL-2.0+
+
+Files: Telegram/Patches/qtbase_5_6_2.diff
+Copyright: 1991 Oracle and/or its affiliates
+           1985, 1987, 1990, 1998 The Open Group
+           2008 Dan Nicholson
+           2012 Intel Corporation
+           2012 Daniel Stone
+           2013 Ran Benita
+License: Expat
+
+Files: Telegram/Patches/qtbase_5_6_2.diff
+Copyright: 1987, 1994, 1998 The Open Group
+License: MIT1
+
+Files: Telegram/Patches/qtbase_5_6_2.diff
+Copyright: 1987 Digital Equipment Corporation, Maynard, Massachusetts
+License: MIT2
+
+Files: Telegram/Patches/qtbase_5_6_2.diff
+Copyright: 1993 Silicon Graphics Computer Systems, Inc.
+License: MIT3
 
 Files: Telegram/Resources/art/fonts/OpenSans-*.ttf
 Copyright: Steve Matteson
@@ -35,6 +62,10 @@ Files: debian/patches/*
 Copyright: 2017 Nicholas Guriev <guriev-ns@ya.ru>
 License: Public-domain
 Comment: Contributing policy - see .github/CONTRIBUTING.md file
+
+Files: debian/source/qt_functions.cpp
+Copyright: 2015 The Qt Company Ltd.
+License: LGPL-2.1-or-3 with Qt-1.1 exception
 
 License: Apache-2.0
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use
@@ -89,6 +120,45 @@ License: Expat
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
 
+License: LGPL-2.1-or-3 with Qt-1.1 exception
+ This file may be used under the terms of the GNU Lesser General Public License
+ version 2.1 or version 3 as published by the Free Software Foundation and
+ appearing in the file LICENSE.LGPLv21 and LICENSE.LGPLv3 included in the
+ packaging of this file. Please review the following information to ensure the
+ GNU Lesser General Public License requirements will be met:
+ https://www.gnu.org/licenses/lgpl.html.
+ .
+ In addition, as a special exception, The Qt Company gives you certain
+ additional rights. These rights are described in The Qt Company Qt LGPL
+ Exception version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+ .
+ On Debian systems, the complete text of the GNU Lesser General Public License
+ version 2.1 can be found in /usr/share/common-licenses/LGPL-2.1. The complete
+ text of the GNU Lesser General Public License version 3 can be found in
+ /usr/share/common-licenses/LGPL-3.
+ .
+ The Qt Company LGPL Exception version 1.1:
+ As an additional permission to the GNU Lesser General Public License version
+ 2.1, the object code form of a "work that uses the Library" may incorporate
+ material from a header file that is part of the Library.  You may distribute
+ such object code under terms of your choice, provided that:
+     (i)   the header files of the Library have not been modified; and
+     (ii)  the incorporated material is limited to numerical parameters, data
+           structure layouts, accessors, macros, inline functions and templates;
+           and
+     (iii) you comply with the terms of Section 6 of the GNU Lesser General
+           Public License version 2.1.
+ .
+ Moreover, you may apply this exception to a modified version of the Library,
+ provided that such modification does not involve copying material from the
+ Library into the modified Library's header files unless such material is
+ limited to (i) numerical parameters; (ii) data structure layouts; (iii)
+ accessors; and (iv) small macros, templates and inline functions of five lines
+ or less in length.
+ .
+ Furthermore, you are not required to apply this additional permission to a
+ modified version of the Library.
+
 License: GPL-3.0+
  This program is free software: you can redistribute it and/or modify it under
  the terms of the GNU General Public License as published by the Free Software
@@ -130,18 +200,69 @@ License: GPL-3.0+ with OpenSSL exception
  On Debian systems, the complete text of the GNU General Public License version
  3 can be found in "/usr/share/common-licenses/GPL-3".
 
+License: MIT1
+ Permission to use, copy, modify, distribute, and sell this software and its
+ documentation for any purpose is hereby granted without fee, provided that the
+ above copyright notice appear in all copies and that both that copyright notice
+ and this permission notice appear in supporting documentation.
+ .
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+ OPEN GROUP BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ .
+ Except as contained in this notice, the name of The Open Group shall not be
+ used in advertising or otherwise to promote the sale, use or other dealings in
+ this Software without prior written authorization from The Open Group.
+
+License: MIT2
+ Permission to use, copy, modify, and distribute this software and its
+ documentation for any purpose and without fee is hereby granted, provided that
+ the above copyright notice appear in all copies and that both that copyright
+ notice and this permission notice appear in supporting documentation, and that
+ the name of Digital not be used in advertising or publicity pertaining to
+ distribution of the software without specific, written prior permission.
+ .
+ DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING ALL
+ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL DIGITAL BE
+ LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
+ CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION
+ WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+License: MIT3
+ Permission to use, copy, modify, and distribute this software and its
+ documentation for any purpose and without fee is hereby granted, provided that
+ the above copyright notice appear in all copies and that both that copyright
+ notice and this permission notice appear in supporting documentation, and that
+ the name of Silicon Graphics not be used in advertising or publicity pertaining
+ to distribution of the software without specific prior written permission.
+ Silicon Graphics makes no representation about the suitability of this software
+ for any purpose. It is provided "as is" without any express or implied
+ warranty.
+ .
+ SILICON GRAPHICS DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+ INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ PARTICULAR PURPOSE. IN NO EVENT SHALL SILICON GRAPHICS BE LIABLE FOR ANY
+ SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING
+ FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
+ OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION  WITH THE USE OR
+ PERFORMANCE OF THIS SOFTWARE.
+
 License: Public-domain
  I certify that:
- .
  a) The contribution was created in whole by me or is based upon previous work
     that, to the best of my knowledge, is in the public domain and I have the
     right to put it in the public domain.
- .
  b) I understand and agree that this project and the contribution are public and
     that a record of the contribution (including all metadata and personal
     information I submit with it, including my sign-off) is maintained
     indefinitely and may be redistributed.
- .
  c) I am granting this work into the public domain.
 
 License: Zlib
