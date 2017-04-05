@@ -6,6 +6,8 @@ This is the complete source code and the build instructions for the alpha versio
 [![Build Status](https://travis-ci.org/telegramdesktop/tdesktop.svg?branch=dev)](https://travis-ci.org/telegramdesktop/tdesktop)
 [![Build status](https://ci.appveyor.com/api/projects/status/uiw2y768iy4i5bu8/branch/dev?svg=true)](https://ci.appveyor.com/project/telegramdesktop/tdesktop)
 
+[![Preview of Telegram Desktop][preview_image]][preview_image_url]
+
 The source code is published under GPLv3 with OpenSSL exception, the license is available [here][license].
 
 ## Supported systems
@@ -47,7 +49,9 @@ The source code is published under GPLv3 with OpenSSL exception, the license is 
 [telegram_api]: https://core.telegram.org
 [telegram_proto]: https://core.telegram.org/mtproto
 [license]: LICENSE
-[msvc]: doc/building-msvc.md
-[xcode]: doc/building-xcode.md
-[xcode_old]: doc/building-xcode-old.md
-[cmake]: doc/building-cmake.md
+[msvc]: docs/building-msvc.md
+[xcode]: docs/building-xcode.md
+[xcode_old]: docs/building-xcode-old.md
+[cmake]: docs/building-cmake.md
+[preview_image]: https://github.com/telegramdesktop/tdesktop/blob/dev/docs/assets/preview.png "Preview of Telegram Desktop"
+[preview_image_url]: https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/docs/assets/preview.png

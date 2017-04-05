@@ -65,6 +65,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "boxes/calendarbox.h"
 #include "auth_session.h"
 #include "window/notifications_manager.h"
+#include "window/window_controller.h"
 
 StackItemSection::StackItemSection(std::unique_ptr<Window::SectionMemento> &&memento) : StackItem(nullptr)
 , _memento(std::move(memento)) {
@@ -73,16 +74,15 @@ StackItemSection::StackItemSection(std::unique_ptr<Window::SectionMemento> &&mem
 StackItemSection::~StackItemSection() {
 }
 
-MainWidget::MainWidget(QWidget *parent) : TWidget(parent)
+MainWidget::MainWidget(QWidget *parent, std::unique_ptr<Window::Controller> controller) : TWidget(parent)
+, _controller(std::move(controller))
 , _dialogsWidth(st::dialogsWidthMin)
 , _sideShadow(this, st::shadowFg)
 , _sideResizeArea(this)
-, _dialogs(this)
-, _history(this)
-, _topBar(this)
+, _dialogs(this, _controller.get())
+, _history(this, _controller.get())
 , _playerPlaylist(this, Media::Player::Panel::Layout::OnlyPlaylist)
 , _playerPanel(this, Media::Player::Panel::Layout::Full)
-, _mediaType(this, st::defaultDropdownMenu)
 , _api(new ApiWrap(this)) {
 	Messenger::Instance().mtp()->setUpdatesHandler(rpcDone(&MainWidget::updateReceived));
 	Messenger::Instance().mtp()->setGlobalFailHandler(rpcFail(&MainWidget::updateFail));
@@ -104,7 +104,6 @@ MainWidget::MainWidget(QWidget *parent) : TWidget(parent)
 	connect(&_failDifferenceTimer, SIGNAL(timeout()), this, SLOT(onGetDifferenceTimeAfterFail()));
 	connect(_api.get(), SIGNAL(fullPeerUpdated(PeerData*)), this, SLOT(onFullPeerUpdated(PeerData*)));
 	connect(this, SIGNAL(peerUpdated(PeerData*)), _history, SLOT(peerUpdated(PeerData*)));
-	connect(_topBar, SIGNAL(clicked()), this, SLOT(onTopBarClick()));
 	connect(_history, SIGNAL(historyShown(History*,MsgId)), this, SLOT(onHistoryShown(History*,MsgId)));
 	connect(&updateNotifySettingTimer, SIGNAL(timeout()), this, SLOT(onUpdateNotifySettings()));
 	subscribe(Media::Player::Updated(), [this](const AudioMsgId &audioId) {
@@ -174,13 +173,9 @@ MainWidget::MainWidget(QWidget *parent) : TWidget(parent)
 	} else {
 		_history->show();
 	}
-	_topBar->hide();
 
 	orderWidgets();
 
-	_mediaType->hide();
-	_mediaType->setOrigin(Ui::PanelAnimation::Origin::TopRight);
-	_topBar->mediaTypeButton()->installEventFilter(_mediaType);
 	_sideResizeArea->installEventFilter(this);
 
 	_api->init();
@@ -545,10 +540,6 @@ void MainWidget::notify_migrateUpdated(PeerData *peer) {
 	_history->notify_migrateUpdated(peer);
 }
 
-void MainWidget::notify_clipStopperHidden(ClipStopperType type) {
-	_history->notify_clipStopperHidden(type);
-}
-
 void MainWidget::ui_repaintHistoryItem(const HistoryItem *item) {
 	_history->ui_repaintHistoryItem(item);
 	if (item->history()->lastMsg == item) {
@@ -559,25 +550,9 @@ void MainWidget::ui_repaintHistoryItem(const HistoryItem *item) {
 	if (_overview) _overview->ui_repaintHistoryItem(item);
 }
 
-void MainWidget::ui_repaintInlineItem(const InlineBots::Layout::ItemBase *layout) {
-	_history->ui_repaintInlineItem(layout);
-}
-
-bool MainWidget::ui_isInlineItemVisible(const InlineBots::Layout::ItemBase *layout) {
-	return _history->ui_isInlineItemVisible(layout);
-}
-
-bool MainWidget::ui_isInlineItemBeingChosen() {
-	return _history->ui_isInlineItemBeingChosen();
-}
-
 void MainWidget::notify_historyItemLayoutChanged(const HistoryItem *item) {
 	_history->notify_historyItemLayoutChanged(item);
 	if (_overview) _overview->notify_historyItemLayoutChanged(item);
-}
-
-void MainWidget::notify_inlineItemLayoutChanged(const InlineBots::Layout::ItemBase *layout) {
-	_history->notify_inlineItemLayoutChanged(layout);
 }
 
 void MainWidget::notify_historyMuteUpdated(History *history) {
@@ -1344,8 +1319,8 @@ void MainWidget::app_sendBotCallback(const HistoryMessageReplyMarkup::Button *bu
 	_history->app_sendBotCallback(button, msg, row, col);
 }
 
-bool MainWidget::insertBotCommand(const QString &cmd, bool specialGif) {
-	return _history->insertBotCommand(cmd, specialGif);
+bool MainWidget::insertBotCommand(const QString &cmd) {
+	return _history->insertBotCommand(cmd);
 }
 
 void MainWidget::searchMessages(const QString &query, PeerData *inPeer) {
@@ -1407,37 +1382,6 @@ void MainWidget::mediaOverviewUpdated(const Notify::PeerUpdate &update) {
 	auto peer = update.peer;
 	if (_overview && (_overview->peer() == peer || _overview->peer()->migrateFrom() == peer)) {
 		_overview->mediaOverviewUpdated(update);
-
-		int32 mask = 0;
-		History *h = peer ? App::historyLoaded((peer->migrateTo() ? peer->migrateTo() : peer)->id) : 0;
-		History *m = (peer && peer->migrateFrom()) ? App::historyLoaded(peer->migrateFrom()->id) : 0;
-		if (h) {
-			for (int32 i = 0; i < OverviewCount; ++i) {
-				if (!h->overview[i].isEmpty() || h->overviewCount(i) > 0 || i == _overview->type()) {
-					mask |= (1 << i);
-				} else if (m && (!m->overview[i].isEmpty() || m->overviewCount(i) > 0)) {
-					mask |= (1 << i);
-				}
-			}
-		}
-		if (mask != _mediaTypeMask) {
-			_mediaType->clearActions();
-			for (int32 i = 0; i < OverviewCount; ++i) {
-				if (mask & (1 << i)) {
-					switch (i) {
-					case OverviewPhotos: _mediaType->addAction(lang(lng_media_type_photos), this, SLOT(onPhotosSelect())); break;
-					case OverviewVideos: _mediaType->addAction(lang(lng_media_type_videos), this, SLOT(onVideosSelect())); break;
-					case OverviewMusicFiles: _mediaType->addAction(lang(lng_media_type_songs), this, SLOT(onSongsSelect())); break;
-					case OverviewFiles: _mediaType->addAction(lang(lng_media_type_files), this, SLOT(onDocumentsSelect())); break;
-					case OverviewVoiceFiles: _mediaType->addAction(lang(lng_media_type_audios), this, SLOT(onAudiosSelect())); break;
-					case OverviewLinks: _mediaType->addAction(lang(lng_media_type_links), this, SLOT(onLinksSelect())); break;
-					}
-				}
-			}
-			_mediaTypeMask = mask;
-			_mediaType->move(width() - _mediaType->width(), st::topBarHeight);
-			_overview->updateTopBarSelection();
-		}
 	}
 }
 
@@ -1600,7 +1544,7 @@ void MainWidget::handleAudioUpdate(const AudioMsgId &audioId) {
 	}
 	if (auto items = InlineBots::Layout::documentItems()) {
 		for (auto item : items->value(audioId.audio())) {
-			Ui::repaintInlineItem(item);
+			item->update();
 		}
 	}
 }
@@ -2298,7 +2242,6 @@ void MainWidget::ui_showPeerHistory(quint64 peerId, qint32 showAtMsgId, Ui::Show
 		}
 	}
 	if (onlyDialogs) {
-		_topBar->hide();
 		_history->hide();
 		if (!_a_show.animating()) {
 			if (animationParams) {
@@ -2310,7 +2253,6 @@ void MainWidget::ui_showPeerHistory(quint64 peerId, qint32 showAtMsgId, Ui::Show
 		}
 	} else {
 		if (noPeer) {
-			_topBar->hide();
 			updateControlsGeometry();
 		} else if (wasActivePeer != activePeer()) {
 			if (activePeer()->isChannel()) {
@@ -2340,7 +2282,6 @@ void MainWidget::ui_showPeerHistory(quint64 peerId, qint32 showAtMsgId, Ui::Show
 		}
 		_dialogs->update();
 	}
-	topBar()->showAll();
 }
 
 PeerData *MainWidget::ui_getPeerForMouseAction() {
@@ -2385,15 +2326,8 @@ PeerData *MainWidget::overviewPeer() {
 	return _overview ? _overview->peer() : 0;
 }
 
-bool MainWidget::mediaTypeSwitch() {
-	if (!_overview) return false;
-
-	for (int32 i = 0; i < OverviewCount; ++i) {
-		if (!(_mediaTypeMask & ~(1 << i))) {
-			return false;
-		}
-	}
-	return true;
+bool MainWidget::showMediaTypeSwitch() const {
+	return _overview ? _overview->showMediaTypeSwitch() : false;
 }
 
 void MainWidget::saveSectionInStack() {
@@ -2452,9 +2386,7 @@ void MainWidget::showMediaOverview(PeerData *peer, MediaOverviewType type, bool 
 		_wideSection->deleteLater();
 		_wideSection = nullptr;
 	}
-	_overview.create(this, peer, type);
-	_mediaTypeMask = 0;
-	_topBar->show();
+	_overview.create(this, _controller.get(), peer, type);
 	updateControlsGeometry();
 
 	// Send a fake update.
@@ -2609,7 +2541,6 @@ void MainWidget::showNewWideSection(const Window::SectionMemento *memento, bool 
 		_wideSection = nullptr;
 	}
 	_wideSection = std::move(newWideSection);
-	_topBar->hide();
 	updateControlsGeometry();
 	_history->finishAnimation();
 	_history->showHistory(0, 0);
@@ -2672,7 +2603,6 @@ void MainWidget::showBackFromStack() {
 }
 
 void MainWidget::orderWidgets() {
-	_topBar->raise();
 	_dialogs->raise();
 	if (_player) {
 		_player->raise();
@@ -2680,7 +2610,6 @@ void MainWidget::orderWidgets() {
 	if (_playerVolume) {
 		_playerVolume->raise();
 	}
-	_mediaType->raise();
 	_sideShadow->raise();
 	_sideResizeArea->raise();
 	_playerPlaylist->raise();
@@ -2696,7 +2625,6 @@ QRect MainWidget::historyRect() const {
 }
 
 QPixmap MainWidget::grabForShowAnimation(const Window::SectionSlideParams &params) {
-	_topBar->stopAnim();
 	QPixmap result;
 	if (_player) {
 		_player->hideShadow();
@@ -2954,8 +2882,6 @@ void MainWidget::hideAll() {
 		_overview->hide();
 	}
 	_sideShadow->hide();
-	_topBar->hide();
-	_mediaType->hide();
 	if (_player) {
 		_player->hide();
 		_playerHeight = 0;
@@ -2986,7 +2912,6 @@ void MainWidget::showAll() {
 			_history->hide();
 			if (_overview) _overview->hide();
 			if (_wideSection) _wideSection->hide();
-			_topBar->hide();
 		} else if (_overview) {
 			_overview->show();
 		} else if (_wideSection) {
@@ -3000,10 +2925,8 @@ void MainWidget::showAll() {
 		}
 		if (!selectingPeer()) {
 			if (_wideSection) {
-				_topBar->hide();
 				_dialogs->hide();
 			} else if (isSectionShown()) {
-				_topBar->show();
 				_dialogs->hide();
 			}
 		}
@@ -3028,11 +2951,6 @@ void MainWidget::showAll() {
 			_history->show();
 			_history->updateControlsGeometry();
 		}
-		if (_wideSection) {
-			_topBar->hide();
-		} else if (isSectionShown()) {
-			_topBar->show();
-		}
 	}
 	if (_player) {
 		_player->show();
@@ -3049,7 +2967,6 @@ void MainWidget::resizeEvent(QResizeEvent *e) {
 
 void MainWidget::updateControlsGeometry() {
 	updateWindowAdaptiveLayout();
-	auto topBarHeight = _topBar->isHidden() ? 0 : st::topBarHeight;
 	if (!Adaptive::SmallColumn()) {
 		_a_dialogsWidth.finish();
 	}
@@ -3063,8 +2980,7 @@ void MainWidget::updateControlsGeometry() {
 			_player->moveToLeft(0, 0);
 		}
 		_dialogs->setGeometry(0, _playerHeight, dialogsWidth, height() - _playerHeight);
-		_topBar->setGeometry(0, _playerHeight, dialogsWidth, st::topBarHeight);
-		_history->setGeometry(0, _playerHeight + topBarHeight, dialogsWidth, height() - _playerHeight - topBarHeight);
+		_history->setGeometry(0, _playerHeight, dialogsWidth, height() - _playerHeight);
 		if (_hider) _hider->setGeometry(0, 0, dialogsWidth, height());
 	} else {
 		accumulate_min(dialogsWidth, width() - st::windowMinWidth);
@@ -3076,8 +2992,7 @@ void MainWidget::updateControlsGeometry() {
 			_player->resizeToWidth(sectionWidth);
 			_player->moveToLeft(dialogsWidth, 0);
 		}
-		_topBar->setGeometryToLeft(dialogsWidth, _playerHeight, sectionWidth, st::topBarHeight);
-		_history->setGeometryToLeft(dialogsWidth, _playerHeight + topBarHeight, sectionWidth, height() - _playerHeight - topBarHeight);
+		_history->setGeometryToLeft(dialogsWidth, _playerHeight, sectionWidth, height() - _playerHeight);
 		if (_hider) {
 			_hider->setGeometryToLeft(dialogsWidth, 0, sectionWidth, height());
 		}
@@ -3093,9 +3008,8 @@ void MainWidget::updateControlsGeometry() {
 		return true;
 	};
 	_sideResizeArea->setVisible(isSideResizeAreaVisible());
-	_mediaType->moveToLeft(width() - _mediaType->width(), _playerHeight + st::topBarHeight);
 	if (_wideSection) {
-		QRect wideSectionGeometry(_history->x(), _playerHeight, _history->width(), height() - _playerHeight);
+		auto wideSectionGeometry = QRect(_history->x(), _playerHeight, _history->width(), height() - _playerHeight);
 		_wideSection->setGeometryWithTopMoved(wideSectionGeometry, _contentScrollAddToY);
 	}
 	if (_overview) _overview->setGeometry(_history->geometry());
@@ -3273,63 +3187,12 @@ void MainWidget::setMembersShowAreaActive(bool active) {
 	}
 }
 
-void MainWidget::onPhotosSelect() {
-	if (_overview) _overview->switchType(OverviewPhotos);
-	_mediaType->hideAnimated();
-}
-
-void MainWidget::onVideosSelect() {
-	if (_overview) _overview->switchType(OverviewVideos);
-	_mediaType->hideAnimated();
-}
-
-void MainWidget::onSongsSelect() {
-	if (_overview) _overview->switchType(OverviewMusicFiles);
-	_mediaType->hideAnimated();
-}
-
-void MainWidget::onDocumentsSelect() {
-	if (_overview) _overview->switchType(OverviewFiles);
-	_mediaType->hideAnimated();
-}
-
-void MainWidget::onAudiosSelect() {
-	if (_overview) _overview->switchType(OverviewVoiceFiles);
-	_mediaType->hideAnimated();
-}
-
-void MainWidget::onLinksSelect() {
-	if (_overview) _overview->switchType(OverviewLinks);
-	_mediaType->hideAnimated();
-}
-
-Window::TopBarWidget *MainWidget::topBar() {
-	return _topBar;
-}
-
 int MainWidget::backgroundFromY() const {
-	return (_topBar->isHidden() ? 0 : (-st::topBarHeight)) - _playerHeight;
-}
-
-void MainWidget::onTopBarClick() {
-	if (_overview) {
-		_overview->topBarClick();
-	} else if (!_wideSection) {
-		_history->topBarClick();
-	}
+	return -_playerHeight;
 }
 
 void MainWidget::onHistoryShown(History *history, MsgId atMsgId) {
-	if ((!Adaptive::OneColumn() || !selectingPeer()) && (_overview || history)) {
-		_topBar->show();
-	} else {
-		_topBar->hide();
-	}
 	updateControlsGeometry();
-	if (_a_show.animating()) {
-		_topBar->hide();
-	}
-
 	dlgUpdated(history ? history->peer : nullptr, atMsgId);
 }
 
@@ -3988,11 +3851,11 @@ void MainWidget::onSelfParticipantUpdated(ChannelData *channel) {
 }
 
 bool MainWidget::contentOverlapped(const QRect &globalRect) {
-	return (_history->contentOverlapped(globalRect) ||
-			_playerPanel->overlaps(globalRect) ||
-			_playerPlaylist->overlaps(globalRect) ||
-			(_playerVolume && _playerVolume->overlaps(globalRect)) ||
-			_mediaType->overlaps(globalRect));
+	return (_history->contentOverlapped(globalRect)
+			|| (_overview && _overview->contentOverlapped(globalRect))
+			|| _playerPanel->overlaps(globalRect)
+			|| _playerPlaylist->overlaps(globalRect)
+			|| (_playerVolume && _playerVolume->overlaps(globalRect)));
 }
 
 void MainWidget::usernameResolveDone(QPair<MsgId, QString> msgIdAndStartToken, const MTPcontacts_ResolvedPeer &result) {

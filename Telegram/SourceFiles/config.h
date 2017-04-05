@@ -45,7 +45,6 @@ enum {
 	MTPConnectionOldTimeout = 192000, // 192 seconds
 	MTPTcpConnectionWaitTimeout = 2000, // 2 seconds waiting for tcp, until we accept http
 	MTPIPv4ConnectionWaitTimeout = 1000, // 1 seconds waiting for ipv4, until we accept ipv6
-	MTPMillerRabinIterCount = 30, // 30 Miller-Rabin iterations for dh_prime primality check
 
 	MTPUploadSessionsCount = 2, // max 2 upload sessions is created
 	MTPDownloadSessionsCount = 2, // max 2 download sessions is created
@@ -79,7 +78,6 @@ enum {
 	ClipThreadsCount = 8,
 	AverageGifSize = 320 * 240,
 	WaitBeforeGifPause = 200, // wait 200ms for gif draw before pausing it
-	InlineBotRequestDelay = 400, // wait 400ms before context bot realtime request
 	RecentInlineBotsLimit = 10,
 
 	AVBlockSize = 4096, // 4Kb for ffmpeg blocksize
@@ -110,11 +108,6 @@ enum {
 	ShortcutsCountLimit = 256, // how many shortcuts can be in json file
 
 	PreloadHeightsCount = 3, // when 3 screens to scroll left make a preload request
-	EmojiPanPerRow = 7,
-	EmojiPanRowsPerPage = 6,
-	StickerPanPerRow = 5,
-	StickerPanRowsPerPage = 4,
-	StickersUpdateTimeout = 3600000, // update not more than once in an hour
 
 	SearchPeopleLimit = 5,
 	MinUsernameLength = 5,

@@ -195,9 +195,12 @@ QByteArray Messenger::serializeMtpAuthorization() const {
 			QDataStream stream(&buffer);
 			stream.setVersion(QDataStream::Qt_5_1);
 
-			stream << qint32(AuthSession::Exists() ? AuthSession::CurrentUserId() : 0) << qint32(mainDcId);
+			auto currentUserId = AuthSession::Exists() ? AuthSession::CurrentUserId() : 0;
+			stream << qint32(currentUserId) << qint32(mainDcId);
 			writeKeys(stream, keys);
 			writeKeys(stream, keysToDestroy);
+
+			DEBUG_LOG(("MTP Info: Keys written, userId: %1, dcId: %2").arg(currentUserId).arg(mainDcId));
 		}
 		return result;
 	};
@@ -674,9 +677,9 @@ void Messenger::checkMapVersion() {
 	if (Local::oldMapVersion() < AppVersion) {
 		if (Local::oldMapVersion()) {
 			QString versionFeatures;
-			if ((cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000025) {
-				versionFeatures = QString::fromUtf8("\xE2\x80\x94 Edit your account phone number in Settings.");
-			} else if (!(cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000026) {
+			if ((cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000028) {
+				versionFeatures = QString::fromUtf8("\xE2\x80\x94 Better Emoji & Stickers & Saved GIFs panel.\n\xE2\x80\x94 Bug fixes and other minor improvements.");
+			} else if (!(cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000029) {
 				versionFeatures = langNewVersionText();
 			} else {
 				versionFeatures = lang(lng_new_version_minor).trimmed();
@@ -694,8 +697,8 @@ void Messenger::prepareToDestroy() {
 
 	// Some MTP requests can be cancelled from data clearing.
 	App::clearHistories();
-	authSessionDestroy();
 	_delayedDestroyedLoaders.clear();
+	authSessionDestroy();
 
 	_mtproto.reset();
 	_mtprotoForKeysDestroy.reset();

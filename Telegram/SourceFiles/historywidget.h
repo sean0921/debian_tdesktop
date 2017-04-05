@@ -32,11 +32,13 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 namespace InlineBots {
 namespace Layout {
 class ItemBase;
+class Widget;
 } // namespace Layout
 class Result;
 } // namespace InlineBots
 
 namespace Ui {
+class AbstractButton;
 class InnerDropdown;
 class DropdownMenu;
 class PlainShadow;
@@ -50,8 +52,16 @@ class LinkButton;
 class RoundButton;
 } // namespace Ui
 
+namespace Window {
+class Controller;
+class TopBarWidget;
+} // namespace Window
+
+namespace ChatHelpers {
+class EmojiPanel;
+} // namespace ChatHelpers
+
 class DragArea;
-class EmojiPan;
 class SilentToggle;
 class SendFilesBox;
 
@@ -534,7 +544,7 @@ class HistoryWidget : public TWidget, public RPCSender, private base::Subscriber
 	Q_OBJECT
 
 public:
-	HistoryWidget(QWidget *parent);
+	HistoryWidget(QWidget *parent, gsl::not_null<Window::Controller*> controller);
 
 	void start();
 
@@ -554,7 +564,6 @@ public:
 	bool paintTopBar(Painter &p, int decreaseWidth, TimeMs ms);
 	QRect getMembersShowAreaGeometry() const;
 	void setMembersShowAreaActive(bool active);
-	void topBarClick();
 
 	void loadMessages();
 	void loadMessagesDown();
@@ -656,7 +665,7 @@ public:
 
 	void sendBotCommand(PeerData *peer, UserData *bot, const QString &cmd, MsgId replyTo);
 	void hideSingleUseKeyboard(PeerData *peer, MsgId replyTo);
-	bool insertBotCommand(const QString &cmd, bool specialGif);
+	bool insertBotCommand(const QString &cmd);
 
 	bool eventFilter(QObject *obj, QEvent *e) override;
 
@@ -707,13 +716,9 @@ public:
 	void app_sendBotCallback(const HistoryMessageReplyMarkup::Button *button, const HistoryItem *msg, int row, int col);
 
 	void ui_repaintHistoryItem(const HistoryItem *item);
-	void ui_repaintInlineItem(const InlineBots::Layout::ItemBase *gif);
-	bool ui_isInlineItemVisible(const InlineBots::Layout::ItemBase *layout);
-	bool ui_isInlineItemBeingChosen();
 	PeerData *ui_getPeerForMouseAction();
 
 	void notify_historyItemLayoutChanged(const HistoryItem *item);
-	void notify_inlineItemLayoutChanged(const InlineBots::Layout::ItemBase *layout);
 	void notify_botCommandsChanged(UserData *user);
 	void notify_inlineBotRequesting(bool requesting);
 	void notify_replyMarkupUpdated(const HistoryItem *item);
@@ -721,7 +726,6 @@ public:
 	bool notify_switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot, MsgId samePeerReplyTo);
 	void notify_userIsBotChanged(UserData *user);
 	void notify_migrateUpdated(PeerData *peer);
-	void notify_clipStopperHidden(ClipStopperType type);
 	void notify_handlePendingHistoryUpdate();
 
 	bool cmd_search();
@@ -843,14 +847,6 @@ private slots:
 	void updateField();
 
 private:
-	void animationCallback();
-	void updateOverStates(QPoint pos);
-	void recordStartCallback();
-	void recordStopCallback(bool active);
-	void recordUpdateCallback(QPoint globalPos);
-	void chooseAttach();
-	void historyDownAnimationFinish();
-	void sendButtonClicked();
 	struct SendingFilesLists {
 		QList<QUrl> nonLocalUrls;
 		QStringList directories;
@@ -859,6 +855,17 @@ private:
 		QStringList filesToSend;
 		bool allFilesForCompress = true;
 	};
+
+	void topBarClick();
+
+	void animationCallback();
+	void updateOverStates(QPoint pos);
+	void recordStartCallback();
+	void recordStopCallback(bool active);
+	void recordUpdateCallback(QPoint globalPos);
+	void chooseAttach();
+	void historyDownAnimationFinish();
+	void sendButtonClicked();
 	SendingFilesLists getSendingFilesLists(const QList<QUrl> &files);
 	SendingFilesLists getSendingFilesLists(const QStringList &files);
 	void getSendingLocalFileInfo(SendingFilesLists &result, const QString &filepath);
@@ -880,6 +887,7 @@ private:
 
 	bool historyHasNotFreezedUnreadBar(History *history) const;
 	bool canWriteMessage() const;
+	void orderWidgets();
 
 	void clearInlineBot();
 	void inlineBotChanged();
@@ -894,6 +902,8 @@ private:
 
 	void hideSelectorControlsAnimated();
 	int countMembersDropdownHeightMax() const;
+
+	gsl::not_null<Window::Controller*> _controller;
 
 	MsgId _replyToId = 0;
 	Text _replyToName;
@@ -1075,6 +1085,8 @@ private:
 
 	MsgId _activeAnimMsgId = 0;
 
+	object_ptr<Ui::AbstractButton> _backAnimationButton = { nullptr };
+	object_ptr<Window::TopBarWidget> _topBar;
 	object_ptr<Ui::ScrollArea> _scroll;
 	QPointer<HistoryInner> _list;
 	History *_migrated = nullptr;
@@ -1148,7 +1160,8 @@ private:
 	object_ptr<Ui::InnerDropdown> _membersDropdown = { nullptr };
 	QTimer _membersDropdownShowTimer;
 
-	object_ptr<EmojiPan> _emojiPan;
+	object_ptr<InlineBots::Layout::Widget> _inlineResults = { nullptr };
+	object_ptr<ChatHelpers::EmojiPanel> _emojiPanel;
 	DragState _attachDrag = DragStateNone;
 	object_ptr<DragArea> _attachDragDocument, _attachDragPhoto;
 

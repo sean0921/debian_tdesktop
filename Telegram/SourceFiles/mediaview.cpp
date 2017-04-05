@@ -785,7 +785,7 @@ void MediaView::onSaveAs() {
 
 		psBringToBack(this);
 		auto filter = qsl("JPEG Image (*.jpg);;") + FileDialog::AllFilesFilter();
-		FileDialog::GetWritePath(lang(lng_save_photo), filter, filedialogDefaultName(qsl("photo"), qsl(".jpg")), base::lambda_guarded(this, [this, photo = _photo](const QString &result) {
+		FileDialog::GetWritePath(lang(lng_save_photo), filter, filedialogDefaultName(qsl("photo"), qsl(".jpg"), QString(), false, _photo->date), base::lambda_guarded(this, [this, photo = _photo](const QString &result) {
 			if (!result.isEmpty() && _photo == photo && photo->loaded()) {
 				photo->full->pix().toImage().save(result, "JPG");
 			}
@@ -2662,7 +2662,6 @@ void MediaView::setVisible(bool visible) {
 		stopGif();
 		destroyThemePreview();
 		_radial.stop();
-		Notify::clipStopperHidden(ClipStopperMediaview);
 	}
 }
 
@@ -2903,6 +2902,6 @@ void MediaView::updateHeader() {
 }
 
 float64 MediaView::overLevel(OverState control) const {
-	ShowingOpacities::const_iterator i = _animOpacities.constFind(control);
+	auto i = _animOpacities.constFind(control);
 	return (i == _animOpacities.cend()) ? (_over == control ? 1 : 0) : i->current();
 }

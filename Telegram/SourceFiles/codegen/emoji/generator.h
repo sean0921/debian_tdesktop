@@ -39,18 +39,29 @@ public:
 	int generate();
 
 private:
+#ifdef SUPPORT_IMAGE_GENERATION
 	QImage generateImage(int variantIndex);
 	bool writeImages();
+#endif // SUPPORT_IMAGE_GENERATION
+
 	bool writeSource();
+	bool writeHeader();
+
+	template <typename Callback>
+	bool enumerateWholeList(Callback callback);
 
 	bool writeInitCode();
-	bool writePacks();
+	bool writeSections();
+	bool writeGetSections();
 	bool writeFindReplace();
 	bool writeFind();
 	bool writeFindFromDictionary(const std::map<QString, int, std::greater<QString>> &dictionary, bool skipPostfixes = false);
 
 	const common::ProjectInfo &project_;
 	int colorsCount_ = 0;
+#ifdef SUPPORT_IMAGE_GENERATION
+	bool writeImages_ = false;
+#endif // SUPPORT_IMAGE_GENERATION
 	QString outputPath_;
 	QString spritePath_;
 	std::unique_ptr<common::CppFile> source_;

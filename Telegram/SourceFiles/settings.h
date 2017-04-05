@@ -61,9 +61,6 @@ DeclareSetting(uint64, RealBetaVersion);
 DeclareSetting(QByteArray, BetaPrivateKey);
 
 DeclareSetting(bool, TestMode);
-inline QString cInlineGifBotUsername() {
-	return cTestMode() ? qstr("contextbot") : qstr("gif");
-}
 DeclareSetting(QString, LoggedPhoneNumber);
 DeclareSetting(bool, AutoStart);
 DeclareSetting(bool, StartMinimized);
@@ -159,8 +156,6 @@ DeclareRefSetting(RecentEmojiPack, RecentEmoji);
 DeclareSetting(RecentEmojiPreload, RecentEmojiPreload);
 DeclareRefSetting(EmojiColorVariants, EmojiVariants);
 
-RecentEmojiPack &cGetRecentEmoji();
-
 class DocumentData;
 typedef QVector<DocumentData*> StickerPack;
 
@@ -177,7 +172,6 @@ typedef QMap<EmojiPtr, StickerPack> StickersByEmojiMap;
 typedef QVector<DocumentData*> SavedGifs;
 DeclareRefSetting(SavedGifs, SavedGifs);
 DeclareSetting(TimeMs, LastSavedGifsUpdate);
-DeclareSetting(bool, ShowingSavedGifs);
 
 typedef QList<QPair<QString, ushort> > RecentHashtagPack;
 DeclareRefSetting(RecentHashtagPack, RecentWriteHashtags);

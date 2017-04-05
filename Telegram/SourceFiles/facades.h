@@ -67,7 +67,7 @@ inline base::lambda_once<void()> LambdaDelayedOnce(int duration, PointersAndLamb
 }
 
 void sendBotCommand(PeerData *peer, UserData *bot, const QString &cmd, MsgId replyTo = 0);
-bool insertBotCommand(const QString &cmd, bool specialGif = false);
+bool insertBotCommand(const QString &cmd);
 void activateBotCommand(const HistoryItem *msg, int row, int col);
 void searchByHashtag(const QString &tag, PeerData *inPeer);
 void openPeerByName(const QString &username, MsgId msgId = ShowAtUnreadMsgId, const QString &startToken = QString());
@@ -106,11 +106,8 @@ void hideLayer(bool fast = false);
 void hideSettingsAndLayer(bool fast = false);
 bool isLayerShown();
 bool isMediaViewShown();
-bool isInlineItemBeingChosen();
 
 void repaintHistoryItem(const HistoryItem *item);
-void repaintInlineItem(const InlineBots::Layout::ItemBase *layout);
-bool isInlineItemVisible(const InlineBots::Layout::ItemBase *reader);
 void autoplayMediaInlineAsync(const FullMsgId &msgId);
 
 void showPeerProfile(const PeerId &peer);
@@ -177,10 +174,7 @@ bool switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot =
 
 void migrateUpdated(PeerData *peer);
 
-void clipStopperHidden(ClipStopperType type);
-
 void historyItemLayoutChanged(const HistoryItem *item);
-void inlineItemLayoutChanged(const InlineBots::Layout::ItemBase *layout);
 void historyMuteUpdated(History *history);
 
 // handle pending resize() / paint() on history items
