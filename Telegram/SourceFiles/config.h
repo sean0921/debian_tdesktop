@@ -257,9 +257,6 @@ w/CVnbwQOw0g5GBwwFV3r0uTTvy44xx8XXxk+Qknu4eBCsmrAFNnAgMBAAE=\n\
 
 #ifdef CUSTOM_API_ID
 #include "../../../TelegramPrivate/custom_api_id.h" // Custom API id and API hash
-#elif defined DEBIAN_API_ID
-static const int32 ApiId = 50322; // API id and hash for Debian package
-static const char *ApiHash = "9ff1a639196c0779c86dd661af8522ba";
 #else
 static const int32 ApiId = 17349;
 static const char *ApiHash = "344583e45741c457fe1862106095a5eb";
@@ -298,7 +295,7 @@ inline const char *cApiSystemVersion() {
 #endif
 }
 inline QString cApiAppVersion() {
-	return AppVersionStr.c_str();
+	return QString::number(AppVersion);
 }
 
 extern QString gKeyFile;

@@ -522,7 +522,14 @@
 <(src_loc)/structs.cpp
 <(src_loc)/structs.h
 
-../../debian/qt_functions.cpp
+platforms: !win
+<(minizip_loc)/crypt.h
+<(minizip_loc)/ioapi.c
+<(minizip_loc)/ioapi.h
+<(minizip_loc)/zip.c
+<(minizip_loc)/zip.h
+<(minizip_loc)/unzip.c
+<(minizip_loc)/unzip.h
 
 platforms: mac
 <(sp_media_key_tap_loc)/SPMediaKeyTap.m

@@ -1692,11 +1692,11 @@ private:
 		if (item == -1)
 			return;
 
-#if defined(OS_MAC_OLD) || QT_VERSION < QT_VERSION_CHECK(5, 6, 0)
+#ifdef OS_MAC_OLD
 		auto end = _e->findItem(line.from + line.length - 1);
-#else
+#else // OS_MAC_OLD
 		auto end = _e->findItem(line.from + line.length - 1, item);
-#endif
+#endif // OS_MAC_OLD
 
 		int blockIndex = _lineStartBlock;
 		ITextBlock *currentBlock = _t->_blocks[blockIndex];

@@ -25,6 +25,7 @@
           '-pipe',
           '-g',
           '-Wall',
+          '-Werror',
           '-W',
           '-fPIC',
           '-Wno-unused-variable',
@@ -38,7 +39,7 @@
         ],
       },
       'conditions': [
-        [ '"<!(dpkg-architecture -q DEB_HOST_GNU_CPU)" == "x86_64"', {
+        [ '"<!(uname -p)" == "x86_64"', {
           'defines': [
             'Q_OS_LINUX64',
           ],
@@ -60,6 +61,7 @@
       ],
       'defines': [
         '_REENTRANT',
+        'QT_STATICPLUGIN',
         'QT_PLUGIN',
       ],
       'cflags_c': [

@@ -23,10 +23,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "storage/localstorage.h"
 
 int main(int argc, char *argv[]) {
-#if !defined(Q_OS_MAC) && QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
-	// Retina display support is working fine, others are not.
+#ifndef Q_OS_MAC // Retina display support is working fine, others are not.
 	QCoreApplication::setAttribute(Qt::AA_DisableHighDpiScaling, true);
-#endif // not defined Q_OS_MAC and QT_VERSION >= 5.6.0
+#endif // Q_OS_MAC
 	QCoreApplication::setApplicationName(qsl("TelegramDesktop"));
 
 	settingsParseArgs(argc, argv);
@@ -39,11 +38,6 @@ int main(int argc, char *argv[]) {
 	// both are finished in Application::closeApplication
 	Logs::start(); // must be started before Platform is started
 	Platform::start(); // must be started before QApplication is created
-
-	// I don't know why path is not in QT_PLUGIN_PATH by default
-	QCoreApplication::addLibraryPath("/usr/lib/" DEB_HOST_MULTIARCH "/qt5/plugins");
-	// without this Telegram doesn't start on Ubuntu 17.04 due GTK errors
-	setenv("QT_STYLE_OVERRIDE", "qwerty", false);
 
 	int result = 0;
 	{

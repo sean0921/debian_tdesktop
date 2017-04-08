@@ -29,7 +29,7 @@ extern "C" {
 } // extern "C"
 
 #ifndef TDESKTOP_DISABLE_UNITY_INTEGRATION
-typedef void UnityLauncherEntry;
+#include <unity/unity/unity.h>
 #endif // !TDESKTOP_DISABLE_UNITY_INTEGRATION
 
 namespace Platform {
