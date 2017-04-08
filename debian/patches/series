@@ -4,3 +4,4 @@ Debian-API-ID.patch
 Reduce-number-of-libraries.patch
 Remove-Werror-flag.patch
 Downgrade-Qt-version.patch
+Multi-architecture.patch

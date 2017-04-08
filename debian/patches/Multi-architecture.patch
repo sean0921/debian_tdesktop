@@ -1,0 +1,66 @@
+Description: Add multi-architecture support
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Bug: https://github.com/telegramdesktop/tdesktop/issues/3167
+Bug-Debian: https://bugs.debian.org/859057
+Last-Update: 2017-04-08
+
+Index: tdesktop/Telegram/SourceFiles/config.h
+===================================================================
+--- tdesktop.orig/Telegram/SourceFiles/config.h
++++ tdesktop/Telegram/SourceFiles/config.h
+@@ -266,7 +266,7 @@ static const char *ApiHash = "344583e457
+ #endif
+ 
+ #if Q_BYTE_ORDER == Q_BIG_ENDIAN
+-#error "Only little endian is supported!"
++#warning "Be aware, only little endian is supported!"
+ #endif // Q_BYTE_ORDER == Q_BIG_ENDIAN
+ 
+ #ifndef BETA_VERSION_MACRO
+Index: tdesktop/Telegram/SourceFiles/core/build_config.h
+===================================================================
+--- tdesktop.orig/Telegram/SourceFiles/core/build_config.h
++++ tdesktop/Telegram/SourceFiles/core/build_config.h
+@@ -60,6 +60,42 @@ Copyright (c) 2014-2017 John Preston, ht
+ #define ARCH_CPU_X86_FAMILY 1
+ #define ARCH_CPU_X86 1
+ #define ARCH_CPU_32_BITS 1
++#elif defined(_M_ALPHA) || defined(__alpha__)
++#define ARCH_CPU_ALPHA 1
++#define ARCH_CPU_64_BITS 1
++#elif defined(_M_ARM) || defined(__arm__)
++#define ARCH_CPU_ARM 1
++#define ARCH_CPU_32_BITS 1
++#elif defined(_M_ARM64) || defined(__aarch64__)
++#define ARCH_CPU_ARM 1
++#define ARCH_CPU_64_BITS 1
++#elif defined(__mips__)
++#define ARCH_CPU_MIPS 1
++#define ARCH_CPU_32_BITS 1
++#elif defined(__mips64__)
++#define ARCH_CPU_MIPS 1
++#define ARCH_CPU_64_BITS 1
++#elif defined(_M_PPC) || defined(__powerpc__)
++#define ARCH_CPU_POWERPC 1
++#define ARCH_CPU_32_BITS 1
++#elif defined(__powerpc64__)
++#define ARCH_CPU_POWERPC 1
++#define ARCH_CPU_64_BITS 1
++#elif defined(__sparc__)
++#define ARCH_CPU_SPARC 1
++#define ARCH_CPU_64_BITS 1
++#elif defined(__sh__)
++#define ARCH_CPU_SUPERH 1
++#define ARCH_CPU_32_BITS 1
++#elif defined(__s390__)
++#define ARCH_CPU_ZARCH 1
++#define ARCH_CPU_32_BITS 1
++#elif defined(__s390x__) || defined(__zarch__)
++#define ARCH_CPU_ZARCH 1
++#define ARCH_CPU_64_BITS 1
++#elif defined(__m68k__)
++#define ARCH_CPU_MOTOROLA_68K
++#define ARCH_CPU_32_BITS 1
+ #else
+ #error Please add support for your architecture in core/build_config.h
+ #endif
