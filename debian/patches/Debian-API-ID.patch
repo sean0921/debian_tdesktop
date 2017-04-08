@@ -3,6 +3,7 @@ Description: id and hash for Telegram API
  disassemble binary and extract these values. Moreover I should publish, in
  spite of a caution on application page, to guarantee reproducible build.
 Author: Nicholas Guriev <guriev-ns@ya.ru>
+Forwarded: not-needed
 Last-Update: 2017-03-31
 
 diff --git a/Telegram/SourceFiles/config.h b/Telegram/SourceFiles/config.h

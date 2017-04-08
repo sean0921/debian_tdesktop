@@ -1,5 +1,6 @@
 Description: Remove linking of unused libraries
 Author: Nicholas Guriev <guriev-ns@ya.ru>
+Forwarded: no
 Last-Update: 2017-04-05
 
 diff --git a/Telegram/gyp/Telegram.gyp b/Telegram/gyp/Telegram.gyp

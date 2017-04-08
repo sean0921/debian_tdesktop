@@ -1,5 +1,6 @@
 Description: Downgrade Qt version
 Author: Nicholas Guriev <guriev-ns@ya.ru>
+Forwarded: no
 Last-Update: 2017-03-31
 
 diff --git a/Telegram/SourceFiles/main.cpp b/Telegram/SourceFiles/main.cpp

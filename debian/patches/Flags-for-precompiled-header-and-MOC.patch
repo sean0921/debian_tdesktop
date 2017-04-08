@@ -1,5 +1,6 @@
 Description: Specify preprocessor and compiler flags for precompiled header and Qt object files
 Author: Nicholas Guriev <guriev-ns@ya.ru>
+Forwarded: no
 Last-Update: 2017-03-31
 
 diff --git a/Telegram/gyp/PrecompiledHeader.cmake b/Telegram/gyp/PrecompiledHeader.cmake

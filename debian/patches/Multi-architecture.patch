@@ -2,6 +2,7 @@ Description: Add multi-architecture support
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Bug: https://github.com/telegramdesktop/tdesktop/issues/3167
 Bug-Debian: https://bugs.debian.org/859057
+Forwarded: no
 Last-Update: 2017-04-08
 
 Index: tdesktop/Telegram/SourceFiles/config.h
