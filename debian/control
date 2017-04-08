@@ -3,7 +3,7 @@ Section: net
 Priority: optional
 Maintainer: Nicholas Guriev <guriev-ns@ya.ru>
 Build-Depends: cmake (>=3.0),
-               debhelper (>=9.0),
+               debhelper (>=10.0),
                dh-exec,
                gyp,
                libappindicator-dev,
@@ -12,8 +12,8 @@ Build-Depends: cmake (>=3.0),
                libdee-dev,
                liblzma-dev,
                libmapbox-variant-dev,
-               libmicrosoft-gsl-dev,
                libminizip-dev (>=1.1),
+               libmsgsl-dev,
                libopenal-dev,
                libopus-dev (>=1.1),
                libssl1.0-dev | libssl-dev (<<1.1),
