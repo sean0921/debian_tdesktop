@@ -24,8 +24,8 @@ Build-Depends: cmake (>=3.0),
                zlib1g-dev (>=1:1.2.8)
 Standards-Version: 3.9.8
 Homepage: https://desktop.telegram.org
-Vcs-Git: https://github.com/mymedia2/tdesktop
-Vcs-Browser: https://github.com/mymedia2/tdesktop
+Vcs-Git: https://anonscm.debian.org/git/collab-maint/telegram-desktop.git
+Vcs-Browser: https://anonscm.debian.org/git/collab-maint/telegram-desktop.git
 
 Package: telegram-desktop
 Architecture: any
