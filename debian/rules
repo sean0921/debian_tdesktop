@@ -26,12 +26,18 @@ DEFINITIONS += \
 export PKG_CONFIG_PATH = /usr/lib/$(DEB_HOST_MULTIARCH)/pkgconfig
 export CPPFLAGS += $(DEFINITIONS:%=-D%) -Winvalid-pch
 
+# Workaround for hurd, see bugs.debian.org/799356
+ifeq ($(DEB_HOST_ARCH),hurd-i386)
+ EXTRA_GYP_FLAGS += --no-parallel
+endif
+
 %:
 	dh $@ --sourcedirectory=out/$(BUILD_MODE)
 
 override_dh_auto_configure:
 	gyp --format=cmake --depth=Telegram/gyp --generator-output=../.. \
-	  -Goutput_dir=out -Gconfig=$(BUILD_MODE) Telegram/gyp/Telegram.gyp
+	  -Goutput_dir=out -Gconfig=$(BUILD_MODE) Telegram/gyp/Telegram.gyp \
+	  $(EXTRA_GYP_FLAGS)
 	@# Patch CMakeLists.txt instead gyp utility. $NUM is the number of the line
 	@# before penultimate one in the generated CMakeLists.txt file. The follow
 	@# sed script inserts all lines from debian/CMakeLists.inj file.
