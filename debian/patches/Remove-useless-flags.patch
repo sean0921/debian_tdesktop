@@ -1,0 +1,37 @@
+Description: Remove unwanted compiler flags
+ * -Werror flag is removed because of fatal warnings in Qt
+ * Debian packages are compiled with second optimization level
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Forwarded: no
+Last-Update: 2017-04-19
+
+--- a/Telegram/gyp/settings_linux.gypi
++++ b/Telegram/gyp/settings_linux.gypi
+@@ -25,7 +25,6 @@
+           '-pipe',
+           '-g',
+           '-Wall',
+-          '-Werror',
+           '-W',
+           '-fPIC',
+           '-Wno-unused-variable',
+--- a/Telegram/gyp/telegram_linux.gypi
++++ b/Telegram/gyp/telegram_linux.gypi
+@@ -69,17 +69,14 @@
+     'configurations': {
+       'Release': {
+         'cflags': [
+-          '-Ofast',
+           '-flto',
+           '-fno-strict-aliasing',
+         ],
+         'cflags_cc': [
+-          '-Ofast',
+           '-flto',
+           '-fno-strict-aliasing',
+         ],
+         'ldflags': [
+-          '-Ofast',
+           '-flto',
+         ],
+       },
