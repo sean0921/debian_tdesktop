@@ -1,9 +1,8 @@
 Description: Eliminates dependencies from static Qt and other libraries
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Forwarded: no
-Last-Update: 2017-03-31
+Last-Update: 2017-04-19
 
-diff --git a/Telegram/SourceFiles/main.cpp b/Telegram/SourceFiles/main.cpp
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
 @@ -39,6 +39,11 @@ int main(int argc, char *argv[]) {
@@ -18,7 +17,6 @@ diff --git a/Telegram/SourceFiles/main.cpp b/Telegram/SourceFiles/main.cpp
  	int result = 0;
  	{
  		Application app(argc, argv);
-diff --git a/Telegram/SourceFiles/platform/linux/linux_libs.h b/Telegram/SourceFiles/platform/linux/linux_libs.h
 --- a/Telegram/SourceFiles/platform/linux/linux_libs.h
 +++ b/Telegram/SourceFiles/platform/linux/linux_libs.h
 @@ -29,7 +29,7 @@ extern "C" {
@@ -30,26 +28,9 @@ diff --git a/Telegram/SourceFiles/platform/linux/linux_libs.h b/Telegram/SourceF
  #endif // !TDESKTOP_DISABLE_UNITY_INTEGRATION
  
  namespace Platform {
-diff --git a/Telegram/SourceFiles/qt_static_plugins.cpp b/Telegram/SourceFiles/qt_static_plugins.cpp
---- a/Telegram/SourceFiles/qt_static_plugins.cpp
-+++ b/Telegram/SourceFiles/qt_static_plugins.cpp
-@@ -28,12 +28,4 @@ Q_IMPORT_PLUGIN(QWebpPlugin)
- Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin)
- Q_IMPORT_PLUGIN(QGenericEnginePlugin)
- #elif defined Q_OS_LINUX // Q_OS_WIN | Q_OS_MAC
--Q_IMPORT_PLUGIN(QWebpPlugin)
--Q_IMPORT_PLUGIN(QXcbIntegrationPlugin)
--Q_IMPORT_PLUGIN(QConnmanEnginePlugin)
--Q_IMPORT_PLUGIN(QGenericEnginePlugin)
--Q_IMPORT_PLUGIN(QNetworkManagerEnginePlugin)
--Q_IMPORT_PLUGIN(QComposePlatformInputContextPlugin)
--Q_IMPORT_PLUGIN(QIbusPlatformInputContextPlugin)
--Q_IMPORT_PLUGIN(QFcitxPlatformInputContextPlugin)
- #endif // Q_OS_WIN | Q_OS_MAC | Q_OS_LINUX
-diff --git a/Telegram/SourceFiles/ui/text/text_block.cpp b/Telegram/SourceFiles/ui/text/text_block.cpp
 --- a/Telegram/SourceFiles/ui/text/text_block.cpp
 +++ b/Telegram/SourceFiles/ui/text/text_block.cpp
-@@ -330,7 +330,7 @@ TextBlock::TextBlock(const style::font &font, const QString &str, QFixed minResi
+@@ -330,7 +330,7 @@ TextBlock::TextBlock(const style::font &
  		SignalHandlers::setCrashAnnotationRef("CrashString", &part);
  
  		QStackTextEngine engine(part, blockFont->f);
@@ -58,7 +39,6 @@ diff --git a/Telegram/SourceFiles/ui/text/text_block.cpp b/Telegram/SourceFiles/
  		layout.beginLayout();
  		layout.createLine();
  
-diff --git a/Telegram/gyp/Telegram.gyp b/Telegram/gyp/Telegram.gyp
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
 @@ -34,6 +34,7 @@
@@ -69,7 +49,11 @@ diff --git a/Telegram/gyp/Telegram.gyp b/Telegram/gyp/Telegram.gyp
        'style_files': [
          '<(res_loc)/colors.palette',
          '<(res_loc)/basic.style',
-@@ -81,20 +82,13 @@
+@@ -78,24 +79,16 @@
+       'codegen.gyp:codegen_style',
+       'codegen.gyp:codegen_numbers',
+       'codegen.gyp:MetaLang',
+-      'utils.gyp:Updater',
      ],
  
      'defines': [
@@ -91,7 +75,6 @@ diff --git a/Telegram/gyp/Telegram.gyp b/Telegram/gyp/Telegram.gyp
        '<(sp_media_key_tap_loc)',
        '<(submodules_loc)/GSL/include',
        '<(submodules_loc)/variant/include',
-diff --git a/Telegram/gyp/codegen.gyp b/Telegram/gyp/codegen.gyp
 --- a/Telegram/gyp/codegen.gyp
 +++ b/Telegram/gyp/codegen.gyp
 @@ -28,6 +28,7 @@
@@ -126,10 +109,9 @@ diff --git a/Telegram/gyp/codegen.gyp b/Telegram/gyp/codegen.gyp
      },
      'includes': [
        'common_executable.gypi',
-diff --git a/Telegram/gyp/qt.gypi b/Telegram/gyp/qt.gypi
 --- a/Telegram/gyp/qt.gypi
 +++ b/Telegram/gyp/qt.gypi
-@@ -27,7 +27,7 @@
+@@ -27,25 +27,22 @@
                [ 'build_macold', {
                  'qt_version%': '5.3.2',
                }, {
@@ -138,7 +120,17 @@ diff --git a/Telegram/gyp/qt.gypi b/Telegram/gyp/qt.gypi
                }]
              ],
            },
-@@ -45,7 +45,7 @@
+           'qt_libs': [
+-            'qwebp',
+-            'Qt5PrintSupport',
+             'Qt5PlatformSupport',
+             'Qt5Network',
+             'Qt5Widgets',
+             'Qt5Gui',
+-            'qtharfbuzzng',
+           ],
+           'qt_version%': '<(qt_version)',
+           'conditions': [
              [ 'build_macold', {
                'linux_path_qt%': '/usr/local/macold/Qt-<(qt_version)',
              }, {
@@ -147,7 +139,7 @@ diff --git a/Telegram/gyp/qt.gypi b/Telegram/gyp/qt.gypi
              }]
            ]
          },
-@@ -85,9 +85,9 @@
+@@ -85,32 +82,12 @@
              ],
            }],
            [ 'build_linux', {
@@ -158,22 +150,44 @@ diff --git a/Telegram/gyp/qt.gypi b/Telegram/gyp/qt.gypi
 +            'qt_lib_debug_postfix': '',
 +            'qt_lib_release_postfix': '',
              'qt_libs': [
-               'qxcb',
-               'Qt5XcbQpa',
-@@ -141,9 +141,9 @@
+-              'qxcb',
+-              'Qt5XcbQpa',
+-              'qconnmanbearer',
+-              'qgenericbearer',
+-              'qnmbearer',
+               '<@(qt_libs)',
+-              'Qt5DBus',
+               'Qt5Core',
+-              'qtpcre',
+-              'Xi',
+-              'Xext',
+-              'Xfixes',
+-              'SM',
+-              'ICE',
+-              'fontconfig',
+-              'expat',
+-              'freetype',
+-              'z',
+-              'xcb-shm',
+-              'xcb-xfixes',
+-              'xcb-render',
+-              'xcb-static',
+             ],
+           }],
+         ],
+@@ -140,11 +117,6 @@
+     # '<!@(python <(DEPTH)/list_sources.py [sources] <(qt_moc_list_sources_arg))'
+     # where [sources] contains all your source files
      'qt_moc_list_sources_arg': '--moc-prefix SHARED_INTERMEDIATE_DIR/<(_target_name)/moc/moc_',
- 
-     'linux_path_xkbcommon%': '/usr/local',
+-
+-    'linux_path_xkbcommon%': '/usr/local',
 -    'linux_lib_ssl%': '/usr/local/ssl/lib/libssl.a',
 -    'linux_lib_crypto%': '/usr/local/ssl/lib/libcrypto.a',
 -    'linux_lib_icu%': '/usr/lib/libicutu.a /usr/lib/libicui18n.a /usr/lib/libicuuc.a /usr/lib/libicudata.a',
-+    'linux_lib_ssl%': 'ssl',
-+    'linux_lib_crypto%': 'crypto',
-+    'linux_lib_icu%': 'icutu icui18n icuuc icudata',
    },
  
    'configurations': {
-@@ -192,13 +192,13 @@
+@@ -193,13 +165,13 @@
    },
  
    'include_dirs': [
@@ -194,7 +208,7 @@ diff --git a/Telegram/gyp/qt.gypi b/Telegram/gyp/qt.gypi
    ],
    'library_dirs': [
      '<(qt_loc)/lib',
-@@ -219,11 +219,8 @@
+@@ -220,17 +192,9 @@
          '<(qt_loc)/plugins/platforminputcontexts',
        ],
        'libraries': [
@@ -203,11 +217,17 @@ diff --git a/Telegram/gyp/qt.gypi b/Telegram/gyp/qt.gypi
 -        '<(linux_lib_ssl)',
 -        '<(linux_lib_crypto)',
 -        '<!@(python -c "for s in \'<(linux_lib_icu)\'.split(\' \'): print(s)")',
+-        'xcb',
 +        'crypto',
-         'xcb',
          'X11',
-         'X11-xcb',
-@@ -237,7 +234,6 @@
+-        'X11-xcb',
+-        'dbus-1',
+-        'dl',
+-        'gthread-2.0',
+         'glib-2.0',
+         'pthread',
+       ],
+@@ -238,7 +202,6 @@
          '<(qt_loc)/mkspecs/linux-g++',
        ],
        'ldflags': [
@@ -215,7 +235,6 @@ diff --git a/Telegram/gyp/qt.gypi b/Telegram/gyp/qt.gypi
          '-pthread',
          '-g',
          '-rdynamic',
-diff --git a/Telegram/gyp/settings_linux.gypi b/Telegram/gyp/settings_linux.gypi
 --- a/Telegram/gyp/settings_linux.gypi
 +++ b/Telegram/gyp/settings_linux.gypi
 @@ -39,7 +39,7 @@
@@ -235,10 +254,9 @@ diff --git a/Telegram/gyp/settings_linux.gypi b/Telegram/gyp/settings_linux.gypi
          'QT_PLUGIN',
        ],
        'cflags_c': [
-diff --git a/Telegram/gyp/telegram_linux.gypi b/Telegram/gyp/telegram_linux.gypi
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -50,24 +50,21 @@
+@@ -50,24 +50,14 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
@@ -260,28 +278,28 @@ diff --git a/Telegram/gyp/telegram_linux.gypi b/Telegram/gyp/telegram_linux.gypi
 -      'libvdpau.a',
 -      'libdrm.a',
 -      'libz.a',
-+      'lzma',
 +      'openal',
 +      'avformat',
 +      'avcodec',
 +      'swresample',
 +      'swscale',
 +      'avutil',
-+      'opus',
-+      'va-x11',
-+      'va-drm',
-+      'va',
-+      'vdpau',
-+      'drm',
 +      'z',
 +      'minizip',
  #      '<!(pkg-config 2> /dev/null --libs <@(pkgconfig_libs))',
      ],
      'cflags_cc': [
-diff --git a/Telegram/gyp/telegram_sources.txt b/Telegram/gyp/telegram_sources.txt
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -511,14 +511,7 @@
+@@ -512,7 +512,6 @@
+ <(src_loc)/overviewwidget.h
+ <(src_loc)/passcodewidget.cpp
+ <(src_loc)/passcodewidget.h
+-<(src_loc)/qt_static_plugins.cpp
+ <(src_loc)/settings.cpp
+ <(src_loc)/settings.h
+ <(src_loc)/shortcuts.cpp
+@@ -522,14 +521,7 @@
  <(src_loc)/structs.cpp
  <(src_loc)/structs.h
  
@@ -297,7 +315,6 @@ diff --git a/Telegram/gyp/telegram_sources.txt b/Telegram/gyp/telegram_sources.t
  
  platforms: mac
  <(sp_media_key_tap_loc)/SPMediaKeyTap.m
-diff --git a/Telegram/gyp/utils.gyp b/Telegram/gyp/utils.gyp
 --- a/Telegram/gyp/utils.gyp
 +++ b/Telegram/gyp/utils.gyp
 @@ -69,6 +69,7 @@
