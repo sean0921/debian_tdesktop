@@ -4,7 +4,7 @@ telegram-desktop (1.0.29-1) unstable; urgency=medium
   * Refresh patchs
   * Add attribution info (closes: #859027)
   * Fix build in i386 (closes: #859058)
-  * Add multiarch support (closes: #859057)
+  * Fix FTBFS on various architectures (closes: #859057)
 
  -- Nicholas Guriev <guriev-ns@ya.ru>  Sat, 08 Apr 2017 22:10:01 +0300
 
