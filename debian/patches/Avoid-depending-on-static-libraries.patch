@@ -5,7 +5,7 @@ Last-Update: 2017-04-19
 
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
-@@ -39,6 +39,11 @@ int main(int argc, char *argv[]) {
+@@ -39,6 +39,13 @@ int main(int argc, char *argv[]) {
  	Logs::start(); // must be started before Platform is started
  	Platform::start(); // must be started before QApplication is created
  
@@ -13,6 +13,8 @@ Last-Update: 2017-04-19
 +	QCoreApplication::addLibraryPath("/usr/lib/" DEB_HOST_MULTIARCH "/qt5/plugins");
 +	// without this Telegram doesn't start on Ubuntu 17.04 due GTK errors
 +	setenv("QT_STYLE_OVERRIDE", "qwerty", false);
++	// Telegram doesn't start when extraordinary theme is set, see launchpad.net/bugs/1680943
++	unsetenv("QT_QPA_PLATFORMTHEME");
 +
  	int result = 0;
  	{
