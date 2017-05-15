@@ -43,26 +43,28 @@ Last-Update: 2017-04-19
  
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
-@@ -34,6 +34,7 @@
-       'third_party_loc': '../ThirdParty',
-       'minizip_loc': '<(third_party_loc)/minizip',
-       'sp_media_key_tap_loc': '<(third_party_loc)/SPMediaKeyTap',
+@@ -33,6 +33,7 @@
+       'submodules_loc': '../ThirdParty',
+       'minizip_loc': '<(submodules_loc)/minizip',
+       'sp_media_key_tap_loc': '<(submodules_loc)/SPMediaKeyTap',
 +      'triplet': '<!(dpkg-architecture -q DEB_HOST_MULTIARCH)',
        'style_files': [
          '<(res_loc)/colors.palette',
          '<(res_loc)/basic.style',
-@@ -78,24 +79,16 @@
-       'codegen.gyp:codegen_style',
+@@ -78,12 +79,9 @@
+       'codegen.gyp:codegen_lang',
        'codegen.gyp:codegen_numbers',
-       'codegen.gyp:MetaLang',
+       'codegen.gyp:codegen_style',
 -      'utils.gyp:Updater',
+-      '../ThirdParty/libtgvoip/libtgvoip.gyp:libtgvoip',
      ],
  
      'defines': [
 -      'AL_LIBTYPE_STATIC',
+       'AL_ALEXT_PROTOTYPES',
+       'TGVOIP_USE_CXX11_LIB',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-     ],
- 
+@@ -92,17 +90,9 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -72,39 +74,45 @@ Last-Update: 2017-04-19
 -      '<(libs_loc)/zlib-1.2.8',
 -      '<(libs_loc)/ffmpeg',
 -      '<(libs_loc)/openal-soft/include',
+-      '<(libs_loc)/opus/include',
 -      '<(minizip_loc)',
+-      '<(sp_media_key_tap_loc)',
+-      '<(submodules_loc)/GSL/include',
+-      '<(submodules_loc)/variant/include',
 +      '/usr/include/minizip',
-       '<(sp_media_key_tap_loc)',
-       '<(submodules_loc)/GSL/include',
-       '<(submodules_loc)/variant/include',
++      '/usr/include/libtgvoip',
++      '/usr/include/opus',
+     ],
+     'sources': [
+       '<@(qrc_files)',
 --- a/Telegram/gyp/codegen.gyp
 +++ b/Telegram/gyp/codegen.gyp
-@@ -28,6 +28,7 @@
-       'src_loc': '../SourceFiles',
-       'gen_loc': '../GeneratedFiles',
-       'mac_target': '10.10',
-+      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
-       'sources': [
-         '<(src_loc)/_other/mlmain.cpp',
-         '<(src_loc)/_other/mlmain.h',
-@@ -53,6 +54,7 @@
-       'libs_loc': '../../../Libraries',
+@@ -26,6 +26,7 @@
+     'variables': {
        'src_loc': '../SourceFiles',
        'mac_target': '10.10',
 +      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
      },
      'includes': [
        'common_executable.gypi',
-@@ -95,6 +97,7 @@
-       'libs_loc': '../../../Libraries',
+@@ -63,6 +64,7 @@
+     'variables': {
        'src_loc': '../SourceFiles',
        'mac_target': '10.10',
 +      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
      },
      'includes': [
        'common_executable.gypi',
-@@ -133,6 +136,7 @@
-       'libs_loc': '../../../Libraries',
+@@ -104,6 +106,7 @@
+     'variables': {
+       'src_loc': '../SourceFiles',
+       'mac_target': '10.10',
++      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
+     },
+     'includes': [
+       'common_executable.gypi',
+@@ -141,6 +144,7 @@
+     'variables': {
        'src_loc': '../SourceFiles',
        'mac_target': '10.10',
 +      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
@@ -258,7 +266,7 @@ Last-Update: 2017-04-19
        'cflags_c': [
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -50,24 +50,14 @@
+@@ -52,24 +52,15 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
@@ -288,12 +296,13 @@ Last-Update: 2017-04-19
 +      'avutil',
 +      'z',
 +      'minizip',
++      'tgvoip',
  #      '<!(pkg-config 2> /dev/null --libs <@(pkgconfig_libs))',
      ],
      'cflags_cc': [
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -512,7 +512,6 @@
+@@ -542,7 +542,6 @@
  <(src_loc)/overviewwidget.h
  <(src_loc)/passcodewidget.cpp
  <(src_loc)/passcodewidget.h
@@ -301,7 +310,7 @@ Last-Update: 2017-04-19
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -522,14 +521,7 @@
+@@ -552,14 +551,7 @@
  <(src_loc)/structs.cpp
  <(src_loc)/structs.h
  
