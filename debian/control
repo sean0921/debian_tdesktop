@@ -19,6 +19,7 @@ Build-Depends:
  libopus-dev (>=1.1),
  libssl1.0-dev | libssl-dev (<<1.1),
  libswscale-dev (>=7:3.2),
+ libtgvoip-dev,
  qtbase5-dev (>=5.5),
  qtbase5-private-dev (>=5.5),
  ruby-ronn,
