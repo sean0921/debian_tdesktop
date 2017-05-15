@@ -26,7 +26,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 #include "styles/style_overview.h"
 #include "styles/style_mediaview.h"
-#include "styles/style_stickers.h"
+#include "styles/style_chat_helpers.h"
 #include "styles/style_history.h"
 #include "styles/style_boxes.h"
 #include "lang.h"
@@ -191,7 +191,7 @@ namespace App {
 	}
 
 	ApiWrap *api() {
-		return main() ? main()->api() : 0;
+		return AuthSession::Exists() ? &AuthSession::Current().api() : nullptr;
 	}
 
 namespace {
@@ -2432,12 +2432,6 @@ namespace {
 		return i.value();
 	}
 
-	void playSound() {
-		if (Global::SoundNotify() && !Platform::Notifications::SkipAudio()) {
-			Media::Player::PlayNotify();
-		}
-	}
-
 	void checkImageCacheSize() {
 		int64 nowImageCacheSize = imageCacheSize();
 		if (nowImageCacheSize > serviceImageCacheSize + MemoryForImageCache) {
@@ -2463,24 +2457,11 @@ namespace {
 		if (auto mainwidget = main()) {
 			mainwidget->saveDraftToCloud();
 		}
-		if (auto apiwrap = api()) {
-			if (apiwrap->hasUnsavedDrafts()) {
-				apiwrap->saveDraftsToCloud();
-				QTimer::singleShot(SaveDraftBeforeQuitTimeout, QCoreApplication::instance(), SLOT(quit()));
-				return;
-			}
-		}
-		QCoreApplication::quit();
+		Messenger::QuitAttempt();
 	}
 
 	bool quitting() {
 		return _launchState != Launched;
-	}
-
-	void allDraftsSaved() {
-		if (quitting()) {
-			QCoreApplication::quit();
-		}
 	}
 
 	LaunchState launchState() {
@@ -2664,10 +2645,23 @@ namespace {
 
 	void stopGifItems() {
 		if (!::gifItems.isEmpty()) {
-			GifItems gifs = ::gifItems;
-			for (GifItems::const_iterator i = gifs.cbegin(), e = gifs.cend(); i != e; ++i) {
-				if (HistoryMedia *media = i.value()->getMedia()) {
+			auto gifs = ::gifItems;
+			for_const (auto item, gifs) {
+				if (auto media = item->getMedia()) {
 					media->stopInline();
+				}
+			}
+		}
+	}
+
+	void stopRoundVideoPlayback() {
+		if (!::gifItems.isEmpty()) {
+			auto gifs = ::gifItems;
+			for_const (auto item, gifs) {
+				if (auto media = item->getMedia()) {
+					if (media->isRoundVideoPlaying()) {
+						media->stopInline();
+					}
 				}
 			}
 		}
@@ -2762,12 +2756,19 @@ namespace {
 	}
 
 	void complexOverlayRect(Painter &p, QRect rect, ImageRoundRadius radius, ImageRoundCorners corners) {
-		auto overlayCorners = (radius == ImageRoundRadius::Small) ? SelectedOverlaySmallCorners : SelectedOverlayLargeCorners;
-		auto overlayParts = RectPart::Full | RectPart::None;
-		if (radius == ImageRoundRadius::Large) {
-			complexAdjustRect(corners, rect, overlayParts);
+		if (radius == ImageRoundRadius::Ellipse) {
+			PainterHighQualityEnabler hq(p);
+			p.setPen(Qt::NoPen);
+			p.setBrush(p.textPalette().selectOverlay);
+			p.drawEllipse(rect);
+		} else {
+			auto overlayCorners = (radius == ImageRoundRadius::Small) ? SelectedOverlaySmallCorners : SelectedOverlayLargeCorners;
+			auto overlayParts = RectPart::Full | RectPart::None;
+			if (radius == ImageRoundRadius::Large) {
+				complexAdjustRect(corners, rect, overlayParts);
+			}
+			roundRect(p, rect, p.textPalette().selectOverlay, overlayCorners, nullptr, overlayParts);
 		}
-		roundRect(p, rect, p.textPalette().selectOverlay, overlayCorners, nullptr, overlayParts);
 	}
 
 	void complexLocationRect(Painter &p, QRect rect, ImageRoundRadius radius, ImageRoundCorners corners) {

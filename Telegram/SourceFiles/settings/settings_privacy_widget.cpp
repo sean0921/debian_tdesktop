@@ -26,9 +26,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "lang.h"
 #include "application.h"
 #include "platform/platform_specific.h"
-#include "boxes/sessionsbox.h"
-#include "boxes/passcodebox.h"
-#include "boxes/autolockbox.h"
+#include "boxes/sessions_box.h"
+#include "boxes/passcode_box.h"
+#include "boxes/autolock_box.h"
 #include "boxes/peer_list_box.h"
 #include "boxes/edit_privacy_box.h"
 #include "boxes/self_destruction_box.h"
@@ -176,6 +176,7 @@ void PrivacyWidget::createControls() {
 
 	addChildRow(_blockedUsers, marginSmall, lang(lng_settings_blocked_users), SLOT(onBlockedUsers()));
 	addChildRow(_lastSeenPrivacy, marginSmall, lang(lng_settings_last_seen_privacy), SLOT(onLastSeenPrivacy()));
+	addChildRow(_callsPrivacy, marginSmall, lang(lng_settings_calls_privacy), SLOT(onCallsPrivacy()));
 	addChildRow(_groupsInvitePrivacy, marginSmall, lang(lng_settings_groups_invite_privacy), SLOT(onGroupsInvitePrivacy()));
 	addChildRow(_localPasscodeState, marginSmall);
 	auto label = lang(psIdleSupported() ? lng_passcode_autolock_away : lng_passcode_autolock_inactive);
@@ -204,6 +205,10 @@ void PrivacyWidget::onBlockedUsers() {
 
 void PrivacyWidget::onLastSeenPrivacy() {
 	Ui::show(Box<EditPrivacyBox>(std::make_unique<LastSeenPrivacyController>()));
+}
+
+void PrivacyWidget::onCallsPrivacy() {
+	Ui::show(Box<EditPrivacyBox>(std::make_unique<CallsPrivacyController>()));
 }
 
 void PrivacyWidget::onGroupsInvitePrivacy() {

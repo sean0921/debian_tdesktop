@@ -54,7 +54,10 @@ MediaOverviewType messageMediaToOverviewType(HistoryMedia *media) {
 	case MediaTypeFile: return OverviewFiles;
 	case MediaTypeMusicFile: return media->getDocument()->isMusic() ? OverviewMusicFiles : OverviewCount;
 	case MediaTypeVoiceFile: return OverviewVoiceFiles;
-	case MediaTypeGif: return media->getDocument()->isGifv() ? OverviewCount : OverviewFiles;
+	case MediaTypeGif: {
+		auto document = media->getDocument();
+		return (document->isGifv() || document->isRoundVideo()) ? OverviewCount : OverviewFiles;
+	} break;
 	default: break;
 	}
 	return OverviewCount;
@@ -420,6 +423,25 @@ HistoryMessage::HistoryMessage(History *history, const MTPDmessage &msg)
 	setText(textWithEntities);
 }
 
+HistoryMessage::HistoryMessage(History *history, const MTPDmessageService &msg)
+	: HistoryItem(history, msg.vid.v, mtpCastFlags(msg.vflags.v), ::date(msg.vdate), msg.has_from_id() ? msg.vfrom_id.v : 0) {
+	CreateConfig config;
+
+	if (msg.has_reply_to_msg_id()) config.replyTo = msg.vreply_to_msg_id.v;
+
+	createComponents(config);
+
+	switch (msg.vaction.type()) {
+	case mtpc_messageActionPhoneCall: {
+		_media = std::make_unique<HistoryCall>(this, msg.vaction.c_messageActionPhoneCall());
+	} break;
+
+	default: Unexpected("Service message action type in HistoryMessage.");
+	}
+
+	setText(TextWithEntities {});
+}
+
 namespace {
 
 MTPDmessage::Flags newForwardedFlags(PeerData *p, int32 from, HistoryMessage *fwd) {
@@ -434,8 +456,8 @@ MTPDmessage::Flags newForwardedFlags(PeerData *p, int32 from, HistoryMessage *fw
 		if (HistoryMedia *media = fwd->getMedia()) {
 			if (media->type() == MediaTypeVoiceFile) {
 				result |= MTPDmessage::Flag::f_media_unread;
-				//			} else if (media->type() == MediaTypeVideo) {
-				//				result |= MTPDmessage::flag_media_unread;
+//			} else if (media->type() == MediaTypeVideo) {
+//				result |= MTPDmessage::flag_media_unread;
 			}
 		}
 	}
@@ -451,10 +473,13 @@ HistoryMessage::HistoryMessage(History *history, MsgId id, MTPDmessage::Flags fl
 	: HistoryItem(history, id, newForwardedFlags(history->peer, from, fwd) | flags, date, from) {
 	CreateConfig config;
 
-	config.authorIdOriginal = fwd->authorOriginal()->id;
-	config.fromIdOriginal = fwd->fromOriginal()->id;
-	if (fwd->authorOriginal()->isChannel()) {
-		config.originalId = fwd->id;
+	if (fwd->Has<HistoryMessageForwarded>() || !fwd->history()->peer->isSelf()) {
+		// Server doesn't add "fwd_from" to non-forwarded messages from chat with yourself.
+		config.authorIdOriginal = fwd->authorOriginal()->id;
+		config.fromIdOriginal = fwd->fromOriginal()->id;
+		if (fwd->authorOriginal()->isChannel()) {
+			config.originalId = fwd->idOriginal();
+		}
 	}
 	auto fwdViaBot = fwd->viaBot();
 	if (fwdViaBot) config.viaBotId = peerToUser(fwdViaBot->id);
@@ -625,10 +650,10 @@ void HistoryMessage::createComponents(const CreateConfig &config) {
 	if (auto edited = Get<HistoryMessageEdited>()) {
 		edited->create(config.editDate, date);
 	}
-	if (auto fwd = Get<HistoryMessageForwarded>()) {
-		fwd->_authorOriginal = App::peer(config.authorIdOriginal);
-		fwd->_fromOriginal = App::peer(config.fromIdOriginal);
-		fwd->_originalId = config.originalId;
+	if (auto forwarded = Get<HistoryMessageForwarded>()) {
+		forwarded->_authorOriginal = App::peer(config.authorIdOriginal);
+		forwarded->_fromOriginal = App::peer(config.fromIdOriginal);
+		forwarded->_originalId = config.originalId;
 	}
 	if (auto markup = Get<HistoryMessageReplyMarkup>()) {
 		if (config.mtpMarkup) {
@@ -771,10 +796,10 @@ void HistoryMessage::initDimensions() {
 
 	updateMediaInBubbleState();
 	if (drawBubble()) {
-		auto fwd = Get<HistoryMessageForwarded>();
+		auto forwarded = Get<HistoryMessageForwarded>();
 		auto via = Get<HistoryMessageVia>();
-		if (fwd) {
-			fwd->create(via);
+		if (forwarded) {
+			forwarded->create(via);
 		}
 
 		auto mediaDisplayed = false;
@@ -810,17 +835,17 @@ void HistoryMessage::initDimensions() {
 			_minh += st::msgPadding.top() + st::msgPadding.bottom();
 			if (displayFromName()) {
 				auto namew = st::msgPadding.left() + author()->nameText.maxWidth() + st::msgPadding.right();
-				if (via && !fwd) {
+				if (via && !forwarded) {
 					namew += st::msgServiceFont->spacew + via->_maxWidth;
 				}
 				if (namew > _maxw) _maxw = namew;
-			} else if (via && !fwd) {
+			} else if (via && !forwarded) {
 				if (st::msgPadding.left() + via->_maxWidth + st::msgPadding.right() > _maxw) {
 					_maxw = st::msgPadding.left() + via->_maxWidth + st::msgPadding.right();
 				}
 			}
-			if (fwd) {
-				auto _namew = st::msgPadding.left() + fwd->_text.maxWidth() + st::msgPadding.right();
+			if (forwarded) {
+				auto _namew = st::msgPadding.left() + forwarded->_text.maxWidth() + st::msgPadding.right();
 				if (via) {
 					_namew += st::msgServiceFont->spacew + via->_maxWidth;
 				}
@@ -1009,10 +1034,10 @@ TextWithEntities HistoryMessage::selectedText(TextSelection selection) const {
 		result.entities = textResult.entities;
 		appendTextWithEntities(result, std::move(mediaResult));
 	}
-	if (auto fwd = Get<HistoryMessageForwarded>()) {
+	if (auto forwarded = Get<HistoryMessageForwarded>()) {
 		if (selection == FullSelection) {
-			auto fwdinfo = fwd->_text.originalTextWithEntities(AllTextSelection, ExpandLinksAll);
-			TextWithEntities wrapped;
+			auto fwdinfo = forwarded->_text.originalTextWithEntities(AllTextSelection, ExpandLinksAll);
+			auto wrapped = TextWithEntities();
 			wrapped.text.reserve(fwdinfo.text.size() + 4 + result.text.size());
 			wrapped.entities.reserve(fwdinfo.entities.size() + result.entities.size());
 			wrapped.text.append('[');
@@ -1408,9 +1433,9 @@ void HistoryMessage::paintFromName(Painter &p, QRect &trect, bool selected) cons
 		}
 		author()->nameText.drawElided(p, trect.left(), trect.top(), trect.width());
 
-		auto fwd = Get<HistoryMessageForwarded>();
+		auto forwarded = Get<HistoryMessageForwarded>();
 		auto via = Get<HistoryMessageVia>();
-		if (via && !fwd && trect.width() > author()->nameText.maxWidth() + st::msgServiceFont->spacew) {
+		if (via && !forwarded && trect.width() > author()->nameText.maxWidth() + st::msgServiceFont->spacew) {
 			bool outbg = out() && !isPost();
 			p.setPen(selected ? (outbg ? st::msgOutServiceFgSelected : st::msgInServiceFgSelected) : (outbg ? st::msgOutServiceFg : st::msgInServiceFg));
 			p.drawText(trect.left() + author()->nameText.maxWidth() + st::msgServiceFont->spacew, trect.top() + st::msgServiceFont->ascent, via->_text);
@@ -1427,13 +1452,13 @@ void HistoryMessage::paintForwardedInfo(Painter &p, QRect &trect, bool selected)
 		p.setPen(selected ? (outbg ? st::msgOutServiceFgSelected : st::msgInServiceFgSelected) : (outbg ? st::msgOutServiceFg : st::msgInServiceFg));
 		p.setFont(serviceFont);
 
-		auto fwd = Get<HistoryMessageForwarded>();
-		bool breakEverywhere = (fwd->_text.countHeight(trect.width()) > 2 * serviceFont->height);
+		auto forwarded = Get<HistoryMessageForwarded>();
+		auto breakEverywhere = (forwarded->_text.countHeight(trect.width()) > 2 * serviceFont->height);
 		p.setTextPalette(selected ? (outbg ? st::outFwdTextPaletteSelected : st::inFwdTextPaletteSelected) : (outbg ? st::outFwdTextPalette : st::inFwdTextPalette));
-		fwd->_text.drawElided(p, trect.x(), trect.y(), trect.width(), 2, style::al_left, 0, -1, 0, breakEverywhere);
+		forwarded->_text.drawElided(p, trect.x(), trect.y(), trect.width(), 2, style::al_left, 0, -1, 0, breakEverywhere);
 		p.setTextPalette(selected ? (outbg ? st::outTextPaletteSelected : st::inTextPaletteSelected) : (outbg ? st::outTextPalette : st::inTextPalette));
 
-		trect.setY(trect.y() + (((fwd->_text.maxWidth() > trect.width()) ? 2 : 1) * serviceFont->height));
+		trect.setY(trect.y() + (((forwarded->_text.maxWidth() > trect.width()) ? 2 : 1) * serviceFont->height));
 	}
 }
 
@@ -1507,7 +1532,7 @@ int HistoryMessage::performResizeGetHeight(int width) {
 		width = st::msgMaxWidth;
 	}
 	if (drawBubble()) {
-		auto fwd = Get<HistoryMessageForwarded>();
+		auto forwarded = Get<HistoryMessageForwarded>();
 		auto reply = Get<HistoryMessageReply>();
 		auto via = Get<HistoryMessageVia>();
 
@@ -1549,7 +1574,7 @@ int HistoryMessage::performResizeGetHeight(int width) {
 			countPositionAndSize(l, w);
 			fromNameUpdated(w);
 			_height += st::msgNameFont->height;
-		} else if (via && !fwd) {
+		} else if (via && !forwarded) {
 			int32 l = 0, w = 0;
 			countPositionAndSize(l, w);
 			via->resize(w - st::msgPadding.left() - st::msgPadding.right());
@@ -1559,7 +1584,7 @@ int HistoryMessage::performResizeGetHeight(int width) {
 		if (displayForwardedFrom()) {
 			int32 l = 0, w = 0;
 			countPositionAndSize(l, w);
-			int32 fwdheight = ((fwd->_text.maxWidth() > (w - st::msgPadding.left() - st::msgPadding.right())) ? 2 : 1) * st::semiboldFont->height;
+			int32 fwdheight = ((forwarded->_text.maxWidth() > (w - st::msgPadding.left() - st::msgPadding.right())) ? 2 : 1) * st::semiboldFont->height;
 			_height += fwdheight;
 		}
 
@@ -1716,8 +1741,8 @@ void HistoryMessage::updatePressed(int x, int y) {
 		} else {
 			if (displayFromName()) trect.setTop(trect.top() + st::msgNameFont->height);
 			if (displayForwardedFrom()) {
-				auto fwd = Get<HistoryMessageForwarded>();
-				auto fwdheight = ((fwd->_text.maxWidth() > trect.width()) ? 2 : 1) * st::semiboldFont->height;
+				auto forwarded = Get<HistoryMessageForwarded>();
+				auto fwdheight = ((forwarded->_text.maxWidth() > trect.width()) ? 2 : 1) * st::semiboldFont->height;
 				trect.setTop(trect.top() + fwdheight);
 			}
 			if (Get<HistoryMessageReply>()) {
@@ -1754,9 +1779,9 @@ bool HistoryMessage::getStateFromName(int x, int y, QRect &trect, HistoryTextSta
 				outResult->link = author()->openLink();
 				return true;
 			}
-			auto fwd = Get<HistoryMessageForwarded>();
+			auto forwarded = Get<HistoryMessageForwarded>();
 			auto via = Get<HistoryMessageVia>();
-			if (via && !fwd && x >= trect.left() + author()->nameText.maxWidth() + st::msgServiceFont->spacew && x < trect.left() + author()->nameText.maxWidth() + st::msgServiceFont->spacew + via->_width) {
+			if (via && !forwarded && x >= trect.left() + author()->nameText.maxWidth() + st::msgServiceFont->spacew && x < trect.left() + author()->nameText.maxWidth() + st::msgServiceFont->spacew + via->_width) {
 				outResult->link = via->_lnk;
 				return true;
 			}
@@ -1768,15 +1793,15 @@ bool HistoryMessage::getStateFromName(int x, int y, QRect &trect, HistoryTextSta
 
 bool HistoryMessage::getStateForwardedInfo(int x, int y, QRect &trect, HistoryTextState *outResult, const HistoryStateRequest &request) const {
 	if (displayForwardedFrom()) {
-		auto fwd = Get<HistoryMessageForwarded>();
-		int32 fwdheight = ((fwd->_text.maxWidth() > trect.width()) ? 2 : 1) * st::semiboldFont->height;
+		auto forwarded = Get<HistoryMessageForwarded>();
+		auto fwdheight = ((forwarded->_text.maxWidth() > trect.width()) ? 2 : 1) * st::semiboldFont->height;
 		if (y >= trect.top() && y < trect.top() + fwdheight) {
-			bool breakEverywhere = (fwd->_text.countHeight(trect.width()) > 2 * st::semiboldFont->height);
+			auto breakEverywhere = (forwarded->_text.countHeight(trect.width()) > 2 * st::semiboldFont->height);
 			auto textRequest = request.forText();
 			if (breakEverywhere) {
 				textRequest.flags |= Text::StateRequest::Flag::BreakEverywhere;
 			}
-			*outResult = fwd->_text.getState(x - trect.left(), y - trect.top(), trect.width(), textRequest);
+			*outResult = forwarded->_text.getState(x - trect.left(), y - trect.top(), trect.width(), textRequest);
 			outResult->symbol = 0;
 			outResult->afterSymbol = false;
 			if (breakEverywhere) {
@@ -1966,48 +1991,6 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 		return result;
 	};
 
-	auto preparePhoneCallText = [this](const MTPDmessageActionPhoneCall &action) {
-		auto result = PreparedText {};
-		auto timeText = date.toString(cTimeFormat());
-		auto duration = action.has_duration() ? qMax(action.vduration.v, 0) : 0;
-		auto durationText = ([duration]() -> QString {
-			if (!duration) {
-				return QString();
-			}
-			if (duration >= 60) {
-				auto minutes = duration / 60;
-				auto seconds = duration % 60;
-				return lng_duration_minutes_seconds(lt_count_minutes, minutes, lt_count_seconds, seconds);
-			}
-			return lng_duration_seconds(lt_count, duration);
-		})();
-		auto wasMissed = [&action] {
-			if (action.has_reason()) switch (action.vreason.type()) {
-			case mtpc_phoneCallDiscardReasonBusy:
-			case mtpc_phoneCallDiscardReasonMissed: return true;
-			}
-			return false;
-		};
-		if (out()) {
-			if (wasMissed()) {
-				result.text = lng_action_call_outgoing_missed(lt_time, timeText);
-			} else if (duration) {
-				result.text = lng_action_call_outgoing_duration(lt_duration, durationText, lt_time, timeText);
-			} else {
-				result.text = lng_action_call_outgoing(lt_time, timeText);
-			}
-		} else {
-			if (wasMissed()) {
-				result.text = lng_action_call_incoming_missed(lt_time, timeText);
-			} else if (duration) {
-				result.text = lng_action_call_incoming_duration(lt_duration, durationText, lt_time, timeText);
-			} else {
-				result.text = lng_action_call_incoming(lt_time, timeText);
-			}
-		}
-		return result;
-	};
-
 	auto messageText = PreparedText {};
 
 	switch (action.type()) {
@@ -2024,7 +2007,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 	case mtpc_messageActionChannelMigrateFrom: messageText.text = lang(lng_action_group_migrate); break;
 	case mtpc_messageActionPinMessage: messageText = preparePinnedText(); break;
 	case mtpc_messageActionGameScore: messageText = prepareGameScoreText(); break;
-	case mtpc_messageActionPhoneCall: messageText = preparePhoneCallText(action.c_messageActionPhoneCall()); break;
+	case mtpc_messageActionPhoneCall: Unexpected("PhoneCall type in HistoryService.");
 	case mtpc_messageActionPaymentSent: messageText = preparePaymentSentText(); break;
 	default: messageText.text = lang(lng_message_empty); break;
 	}
@@ -2112,7 +2095,14 @@ HistoryService::PreparedText HistoryService::preparePinnedText() {
 			case MediaTypeVideo: return lang(lng_action_pinned_media_video);
 			case MediaTypeContact: return lang(lng_action_pinned_media_contact);
 			case MediaTypeFile: return lang(lng_action_pinned_media_file);
-			case MediaTypeGif: return lang(lng_action_pinned_media_gif);
+			case MediaTypeGif: {
+				if (auto document = media->getDocument()) {
+					if (document->isRoundVideo()) {
+						return lang(lng_action_pinned_media_video_message);
+					}
+				}
+				return lang(lng_action_pinned_media_gif);
+			} break;
 			case MediaTypeSticker: {
 				auto emoji = static_cast<HistorySticker*>(media)->emoji();
 				if (emoji.isEmpty()) {

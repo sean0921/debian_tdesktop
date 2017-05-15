@@ -30,24 +30,25 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/top_bar_widget.h"
 #include "data/data_drafts.h"
 #include "ui/widgets/dropdown_menu.h"
+#include "chat_helpers/message_field.h"
 #include "observer_peer.h"
 #include "apiwrap.h"
 #include "dialogswidget.h"
 #include "historywidget.h"
 #include "overviewwidget.h"
 #include "lang.h"
-#include "boxes/addcontactbox.h"
+#include "boxes/add_contact_box.h"
 #include "storage/file_upload.h"
 #include "messenger.h"
 #include "application.h"
 #include "mainwindow.h"
 #include "inline_bots/inline_bot_layout_item.h"
-#include "boxes/confirmbox.h"
-#include "boxes/stickersetbox.h"
-#include "boxes/contactsbox.h"
-#include "boxes/downloadpathbox.h"
-#include "boxes/confirmphonebox.h"
-#include "boxes/sharebox.h"
+#include "boxes/confirm_box.h"
+#include "boxes/sticker_set_box.h"
+#include "boxes/contacts_box.h"
+#include "boxes/download_path_box.h"
+#include "boxes/confirm_phone_box.h"
+#include "boxes/share_box.h"
 #include "storage/localstorage.h"
 #include "shortcuts.h"
 #include "media/media_audio.h"
@@ -55,17 +56,19 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "media/player/media_player_widget.h"
 #include "media/player/media_player_volume_controller.h"
 #include "media/player/media_player_instance.h"
-#include "core/qthelp_regex.h"
-#include "core/qthelp_url.h"
+#include "base/qthelp_regex.h"
+#include "base/qthelp_url.h"
 #include "window/themes/window_theme.h"
 #include "window/player_wrap_widget.h"
 #include "styles/style_boxes.h"
 #include "mtproto/dc_options.h"
 #include "core/file_utilities.h"
-#include "boxes/calendarbox.h"
+#include "boxes/calendar_box.h"
 #include "auth_session.h"
 #include "window/notifications_manager.h"
 #include "window/window_controller.h"
+#include "calls/calls_instance.h"
+#include "calls/calls_top_bar.h"
 
 StackItemSection::StackItemSection(std::unique_ptr<Window::SectionMemento> &&memento) : StackItem(nullptr)
 , _memento(std::move(memento)) {
@@ -74,16 +77,15 @@ StackItemSection::StackItemSection(std::unique_ptr<Window::SectionMemento> &&mem
 StackItemSection::~StackItemSection() {
 }
 
-MainWidget::MainWidget(QWidget *parent, std::unique_ptr<Window::Controller> controller) : TWidget(parent)
-, _controller(std::move(controller))
+MainWidget::MainWidget(QWidget *parent, gsl::not_null<Window::Controller*> controller) : TWidget(parent)
+, _controller(controller)
 , _dialogsWidth(st::dialogsWidthMin)
 , _sideShadow(this, st::shadowFg)
 , _sideResizeArea(this)
-, _dialogs(this, _controller.get())
-, _history(this, _controller.get())
+, _dialogs(this, _controller)
+, _history(this, _controller)
 , _playerPlaylist(this, Media::Player::Panel::Layout::OnlyPlaylist)
-, _playerPanel(this, Media::Player::Panel::Layout::Full)
-, _api(new ApiWrap(this)) {
+, _playerPanel(this, Media::Player::Panel::Layout::Full) {
 	Messenger::Instance().mtp()->setUpdatesHandler(rpcDone(&MainWidget::updateReceived));
 	Messenger::Instance().mtp()->setGlobalFailHandler(rpcFail(&MainWidget::updateFail));
 
@@ -102,7 +104,6 @@ MainWidget::MainWidget(QWidget *parent, std::unique_ptr<Window::Controller> cont
 	connect(&_byPtsTimer, SIGNAL(timeout()), this, SLOT(onGetDifferenceTimeByPts()));
 	connect(&_byMinChannelTimer, SIGNAL(timeout()), this, SLOT(getDifference()));
 	connect(&_failDifferenceTimer, SIGNAL(timeout()), this, SLOT(onGetDifferenceTimeAfterFail()));
-	connect(_api.get(), SIGNAL(fullPeerUpdated(PeerData*)), this, SLOT(onFullPeerUpdated(PeerData*)));
 	connect(this, SIGNAL(peerUpdated(PeerData*)), _history, SLOT(peerUpdated(PeerData*)));
 	connect(_history, SIGNAL(historyShown(History*,MsgId)), this, SLOT(onHistoryShown(History*,MsgId)));
 	connect(&updateNotifySettingTimer, SIGNAL(timeout()), this, SLOT(onUpdateNotifySettings()));
@@ -111,12 +112,18 @@ MainWidget::MainWidget(QWidget *parent, std::unique_ptr<Window::Controller> cont
 			handleAudioUpdate(audioId);
 		}
 	});
-
-	subscribe(Global::RefDialogsListFocused(), [this](bool) {
+	subscribe(AuthSession::Current().calls().currentCallChanged(), [this](Calls::Call *call) { setCurrentCall(call); });
+	subscribe(AuthSession::Current().api().fullPeerUpdated(), [this](PeerData *peer) {
+		emit peerUpdated(peer);
+	});
+	subscribe(_controller->dialogsListFocused(), [this](bool) {
 		updateDialogsWidthAnimated();
 	});
-	subscribe(Global::RefDialogsListDisplayForced(), [this](bool) {
+	subscribe(_controller->dialogsListDisplayForced(), [this](bool) {
 		updateDialogsWidthAnimated();
+	});
+	subscribe(_controller->dialogsWidthRatio(), [this](float64) {
+		updateControlsGeometry();
 	});
 
 	QCoreApplication::instance()->installEventFilter(this);
@@ -177,8 +184,6 @@ MainWidget::MainWidget(QWidget *parent, std::unique_ptr<Window::Controller> cont
 	orderWidgets();
 
 	_sideResizeArea->installEventFilter(this);
-
-	_api->init();
 
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
 	Sandbox::startUpdateCheck();
@@ -477,14 +482,6 @@ void MainWidget::onFilesOrForwardDrop(const PeerId &peer, const QMimeData *data)
 		Ui::showPeerHistory(peer, ShowAtTheEndMsgId);
 		_history->confirmSendingFiles(data);
 	}
-}
-
-void MainWidget::rpcClear() {
-	_history->rpcClear();
-	_dialogs->rpcClear();
-	if (_overview) _overview->rpcClear();
-	if (_api) _api->rpcClear();
-	RPCSender::rpcClear();
 }
 
 bool MainWidget::isItemVisible(HistoryItem *item) {
@@ -1052,6 +1049,10 @@ bool MainWidget::sendMessageFail(const RPCError &error) {
 	if (error.type() == qstr("PEER_FLOOD")) {
 		Ui::show(Box<InformBox>(PeerFloodErrorText(PeerFloodType::Send)));
 		return true;
+	} else if (error.type() == qstr("USER_BANNED_IN_CHANNEL")) {
+		auto link = textcmdLink(Messenger::Instance().createInternalLinkFull(qsl("spambot")), lang(lng_cant_more_info));
+		Ui::show(Box<InformBox>(lng_error_public_groups_denied(lt_more_info, link)));
+		return true;
 	}
 	return false;
 }
@@ -1174,10 +1175,9 @@ void MainWidget::sendMessage(const MessageToSend &message) {
 	if (!history || !_history->canSendMessages(history->peer)) {
 		return;
 	}
-
 	saveRecentHashtags(textWithTags.text);
 
-	EntitiesInText sendingEntities, leftEntities = entitiesFromTextTags(textWithTags.tags);
+	EntitiesInText sendingEntities, leftEntities = ConvertTextTagsToEntities(textWithTags.tags);
 	auto prepareFlags = itemTextOptions(history, App::self()).flags;
 	QString sendingText, leftText = prepareTextWithEntities(textWithTags.text, prepareFlags, &leftEntities);
 
@@ -1633,6 +1633,56 @@ void MainWidget::playerHeightUpdated() {
 	}
 }
 
+void MainWidget::setCurrentCall(Calls::Call *call) {
+	_currentCall = call;
+	if (_currentCall) {
+		subscribe(_currentCall->stateChanged(), [this](Calls::Call::State state) {
+			using State = Calls::Call::State;
+			if (state == State::Established) {
+				createCallTopBar();
+			} else {
+				destroyCallTopBar();
+			}
+		});
+		App::stopRoundVideoPlayback();
+	} else {
+		destroyCallTopBar();
+	}
+}
+
+void MainWidget::createCallTopBar() {
+	Expects(_currentCall != nullptr);
+	_callTopBar.create(this, object_ptr<Calls::TopBar>(this, _currentCall), style::margins(0, 0, 0, 0), [this] { callTopBarHeightUpdated(); });
+	orderWidgets();
+	if (_a_show.animating()) {
+		_callTopBar->showFast();
+		_callTopBar->hide();
+	} else {
+		_callTopBar->hideFast();
+		_callTopBar->showAnimated();
+		_callTopBarHeight = _contentScrollAddToY = _callTopBar->height();
+		updateControlsGeometry();
+	}
+}
+
+void MainWidget::destroyCallTopBar() {
+	if (_callTopBar) {
+		_callTopBar->hideAnimated();
+	}
+}
+
+void MainWidget::callTopBarHeightUpdated() {
+	auto callTopBarHeight = _callTopBar ? _callTopBar->height() : 0;
+	if (!callTopBarHeight && !_currentCall) {
+		_callTopBar.destroyDelayed();
+	}
+	if (callTopBarHeight != _callTopBarHeight) {
+		_contentScrollAddToY += callTopBarHeight - _callTopBarHeight;
+		_callTopBarHeight = callTopBarHeight;
+		updateControlsGeometry();
+	}
+}
+
 void MainWidget::documentLoadProgress(FileLoader *loader) {
 	if (auto documentId = loader ? loader->objId() : 0) {
 		documentLoadProgress(App::document(documentId));
@@ -1862,10 +1912,6 @@ ImagePtr MainWidget::newBackgroundThumb() {
 	return _background ? _background->thumb : ImagePtr();
 }
 
-ApiWrap *MainWidget::api() {
-	return _api.get();
-}
-
 void MainWidget::messageDataReceived(ChannelData *channel, MsgId msgId) {
 	_history->messageDataReceived(channel, msgId);
 }
@@ -1886,6 +1932,8 @@ void MainWidget::setInnerFocus() {
 			_overview->activate();
 		} else if (!_hider && _wideSection) {
 			_wideSection->setInnerFocus();
+		} else if (!_hider && _thirdSection) {
+			_thirdSection->setInnerFocus();
 		} else {
 			dialogsActivate();
 		}
@@ -1893,6 +1941,8 @@ void MainWidget::setInnerFocus() {
 		_overview->activate();
 	} else if (_wideSection) {
 		_wideSection->setInnerFocus();
+	} else if (_thirdSection) {
+		_thirdSection->setInnerFocus();
 	} else {
 		_history->setInnerFocus();
 	}
@@ -2150,7 +2200,7 @@ void MainWidget::ui_showPeerHistory(quint64 peerId, qint32 showAtMsgId, Ui::Show
 		}
 	}
 
-	Global::RefDialogsListFocused().set(false, true);
+	_controller->dialogsListFocused().set(false, true);
 	_a_dialogsWidth.finish();
 
 	bool back = (way == Ui::ShowWay::Backward || !peerId);
@@ -2218,6 +2268,22 @@ void MainWidget::ui_showPeerHistory(quint64 peerId, qint32 showAtMsgId, Ui::Show
 		}
 		return false;
 	};
+
+	// Qt bug workaround: QWidget::render() for an arbitrary widget calls
+	// sendPendingMoveAndResizeEvents(true, true) for the whole window,
+	// which does something like:
+	//
+	// setAttribute(Qt::WA_UpdatesDisabled);
+	// sendEvent(QResizeEvent);
+	// setAttribute(Qt::WA_UpdatesDisabled, false);
+	//
+	// So if we create TabbedSection widget in HistoryWidget::resizeEvent()
+	// it will get an enabled Qt::WA_UpdatesDisabled from its parent and it
+	// will never be rendered, because no one will ever remove that attribute.
+	//
+	// So we force HistoryWidget::resizeEvent() here, without WA_UpdatesDisabled.
+	myEnsureResized(_history);
+
 	auto animationParams = animatedShow() ? prepareHistoryAnimation(peerId) : Window::SectionSlideParams();
 
 	if (_history->peer() && _history->peer()->id != peerId && way != Ui::ShowWay::Forward) {
@@ -2357,7 +2423,7 @@ void MainWidget::showMediaOverview(PeerData *peer, MediaOverviewType type, bool 
 		return;
 	}
 
-	Global::RefDialogsListFocused().set(false, true);
+	_controller->dialogsListFocused().set(false, true);
 	_a_dialogsWidth.finish();
 
 	auto animatedShow = [this] {
@@ -2386,7 +2452,7 @@ void MainWidget::showMediaOverview(PeerData *peer, MediaOverviewType type, bool 
 		_wideSection->deleteLater();
 		_wideSection = nullptr;
 	}
-	_overview.create(this, _controller.get(), peer, type);
+	_overview.create(this, _controller, peer, type);
 	updateControlsGeometry();
 
 	// Send a fake update.
@@ -2420,9 +2486,10 @@ void MainWidget::showWideSection(const Window::SectionMemento &memento) {
 	showNewWideSection(&memento, false, true);
 }
 
-Window::SectionSlideParams MainWidget::prepareShowAnimation(bool willHaveTopBarShadow) {
+Window::SectionSlideParams MainWidget::prepareShowAnimation(bool willHaveTopBarShadow, bool willHaveTabbedSection) {
 	Window::SectionSlideParams result;
 	result.withTopBarShadow = willHaveTopBarShadow;
+	result.withTabbedSection = willHaveTabbedSection;
 	if (selectingPeer() && Adaptive::OneColumn()) {
 		result.withTopBarShadow = false;
 	} else if (_wideSection) {
@@ -2431,6 +2498,9 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(bool willHaveTopBarS
 		}
 	} else if (!_overview && !_history->peer()) {
 		result.withTopBarShadow = false;
+	}
+	if ((selectingPeer() && Adaptive::OneColumn()) || !_history->peer()) {
+		result.withTabbedSection = false;
 	}
 
 	if (_player) {
@@ -2449,8 +2519,9 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(bool willHaveTopBarS
 		_playerPlaylist->hide();
 	}
 
+	auto sectionTop = getSectionTop();
 	if (selectingPeer() && Adaptive::OneColumn()) {
-		result.oldContentCache = myGrab(this, QRect(0, _playerHeight, _dialogsWidth, height() - _playerHeight));
+		result.oldContentCache = myGrab(this, QRect(0, sectionTop, _dialogsWidth, height() - sectionTop));
 	} else if (_wideSection) {
 		result.oldContentCache = _wideSection->grabForShowAnimation(result);
 	} else {
@@ -2462,10 +2533,10 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(bool willHaveTopBarS
 			_history->grabStart();
 		}
 		if (Adaptive::OneColumn()) {
-			result.oldContentCache = myGrab(this, QRect(0, _playerHeight, _dialogsWidth, height() - _playerHeight));
+			result.oldContentCache = myGrab(this, QRect(0, sectionTop, _dialogsWidth, height() - sectionTop));
 		} else {
 			_sideShadow->hide();
-			result.oldContentCache = myGrab(this, QRect(_dialogsWidth, _playerHeight, width() - _dialogsWidth, height() - _playerHeight));
+			result.oldContentCache = myGrab(this, QRect(_dialogsWidth, sectionTop, width() - _dialogsWidth, height() - sectionTop));
 			_sideShadow->show();
 		}
 		if (_overview) _overview->grabFinish();
@@ -2489,28 +2560,29 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(bool willHaveTopBarS
 }
 
 Window::SectionSlideParams MainWidget::prepareWideSectionAnimation(Window::SectionWidget *section) {
-	return prepareShowAnimation(section->hasTopBarShadow());
+	return prepareShowAnimation(section->hasTopBarShadow(), false);
 }
 
 Window::SectionSlideParams MainWidget::prepareHistoryAnimation(PeerId historyPeerId) {
-	return prepareShowAnimation(historyPeerId != 0);
+	return prepareShowAnimation(historyPeerId != 0, historyPeerId != 0);
 }
 
 Window::SectionSlideParams MainWidget::prepareOverviewAnimation() {
-	return prepareShowAnimation(true);
+	return prepareShowAnimation(true, false);
 }
 
 Window::SectionSlideParams MainWidget::prepareDialogsAnimation() {
-	return prepareShowAnimation(false);
+	return prepareShowAnimation(false, false);
 }
 
 void MainWidget::showNewWideSection(const Window::SectionMemento *memento, bool back, bool saveInStack) {
 	QPixmap animCache;
 
-	Global::RefDialogsListFocused().set(false, true);
+	_controller->dialogsListFocused().set(false, true);
 	_a_dialogsWidth.finish();
 
-	auto newWideGeometry = QRect(_history->x(), _playerHeight, _history->width(), height() - _playerHeight);
+	auto sectionTop = getSectionTop();
+	auto newWideGeometry = QRect(_history->x(), sectionTop, _history->width(), height() - sectionTop);
 	auto newWideSection = memento->createWidget(this, newWideGeometry);
 	auto animatedShow = [this] {
 		if (_a_show.animating() || App::passcoded()) {
@@ -2604,6 +2676,9 @@ void MainWidget::showBackFromStack() {
 
 void MainWidget::orderWidgets() {
 	_dialogs->raise();
+	if (_callTopBar) {
+		_callTopBar->raise();
+	}
 	if (_player) {
 		_player->raise();
 	}
@@ -2642,11 +2717,12 @@ QPixmap MainWidget::grabForShowAnimation(const Window::SectionSlideParams &param
 		_playerPlaylist->hide();
 	}
 
+	auto sectionTop = getSectionTop();
 	if (Adaptive::OneColumn()) {
-		result = myGrab(this, QRect(0, _playerHeight, _dialogsWidth, height() - _playerHeight));
+		result = myGrab(this, QRect(0, sectionTop, _dialogsWidth, height() - sectionTop));
 	} else {
 		_sideShadow->hide();
-		result = myGrab(this, QRect(_dialogsWidth, _playerHeight, width() - _dialogsWidth, height() - _playerHeight));
+		result = myGrab(this, QRect(_dialogsWidth, sectionTop, width() - _dialogsWidth, height() - sectionTop));
 		_sideShadow->show();
 	}
 	if (playerVolumeVisible) {
@@ -2767,10 +2843,9 @@ void MainWidget::jumpToDate(PeerData *peer, const QDate &date) {
 		if (auto list = getMessagesList()) {
 			App::feedMsgs(*list, NewMessageExisting);
 			for (auto &message : *list) {
-				if (auto id = idFromMessage(message)) {
-					Ui::showPeerHistory(peer, id);
-					return;
-				}
+				auto id = idFromMessage(message);
+				Ui::showPeerHistory(peer, id);
+				return;
 			}
 		}
 		Ui::showPeerHistory(peer, ShowAtUnreadMsgId);
@@ -2797,13 +2872,7 @@ bool MainWidget::deleteChannelFailed(const RPCError &error) {
 
 void MainWidget::inviteToChannelDone(ChannelData *channel, const MTPUpdates &updates) {
 	sentUpdatesReceived(updates);
-	QTimer::singleShot(ReloadChannelMembersTimeout, this, SLOT(onActiveChannelUpdateFull()));
-}
-
-void MainWidget::onActiveChannelUpdateFull() {
-	if (activePeer() && activePeer()->isChannel()) {
-		activePeer()->asChannel()->updateFull(true);
-	}
+	App::api()->requestParticipantsCountDelayed(channel);
 }
 
 void MainWidget::historyToDown(History *history) {
@@ -2870,6 +2939,10 @@ void MainWidget::paintEvent(QPaintEvent *e) {
 		p.setOpacity(shadow);
 		st::slideShadow.fill(p, QRect(coordOver - st::slideShadow.width(), 0, st::slideShadow.width(), height()));
 	}
+}
+
+int MainWidget::getSectionTop() const {
+	return _callTopBarHeight + _playerHeight;
 }
 
 void MainWidget::hideAll() {
@@ -2973,14 +3046,19 @@ void MainWidget::updateControlsGeometry() {
 	if (!_a_dialogsWidth.animating()) {
 		_dialogs->stopWidthAnimation();
 	}
+	auto sectionTop = getSectionTop();
 	auto dialogsWidth = qRound(_a_dialogsWidth.current(_dialogsWidth));
 	if (Adaptive::OneColumn()) {
+		if (_callTopBar) {
+			_callTopBar->resizeToWidth(dialogsWidth);
+			_callTopBar->moveToLeft(0, 0);
+		}
 		if (_player) {
 			_player->resizeToWidth(dialogsWidth);
-			_player->moveToLeft(0, 0);
+			_player->moveToLeft(0, _callTopBarHeight);
 		}
-		_dialogs->setGeometry(0, _playerHeight, dialogsWidth, height() - _playerHeight);
-		_history->setGeometry(0, _playerHeight, dialogsWidth, height() - _playerHeight);
+		_dialogs->setGeometry(0, sectionTop, dialogsWidth, height() - sectionTop);
+		_history->setGeometry(0, sectionTop, dialogsWidth, height() - sectionTop);
 		if (_hider) _hider->setGeometry(0, 0, dialogsWidth, height());
 	} else {
 		accumulate_min(dialogsWidth, width() - st::windowMinWidth);
@@ -2988,11 +3066,15 @@ void MainWidget::updateControlsGeometry() {
 
 		_dialogs->setGeometryToLeft(0, 0, dialogsWidth, height());
 		_sideShadow->setGeometryToLeft(dialogsWidth, 0, st::lineWidth, height());
+		if (_callTopBar) {
+			_callTopBar->resizeToWidth(sectionWidth);
+			_callTopBar->moveToLeft(dialogsWidth, 0);
+		}
 		if (_player) {
 			_player->resizeToWidth(sectionWidth);
-			_player->moveToLeft(dialogsWidth, 0);
+			_player->moveToLeft(dialogsWidth, _callTopBarHeight);
 		}
-		_history->setGeometryToLeft(dialogsWidth, _playerHeight, sectionWidth, height() - _playerHeight);
+		_history->setGeometryToLeft(dialogsWidth, sectionTop, sectionWidth, height() - sectionTop);
 		if (_hider) {
 			_hider->setGeometryToLeft(dialogsWidth, 0, sectionWidth, height());
 		}
@@ -3009,7 +3091,7 @@ void MainWidget::updateControlsGeometry() {
 	};
 	_sideResizeArea->setVisible(isSideResizeAreaVisible());
 	if (_wideSection) {
-		auto wideSectionGeometry = QRect(_history->x(), _playerHeight, _history->width(), height() - _playerHeight);
+		auto wideSectionGeometry = QRect(_history->x(), sectionTop, _history->width(), height() - sectionTop);
 		_wideSection->setGeometryWithTopMoved(wideSectionGeometry, _contentScrollAddToY);
 	}
 	if (_overview) _overview->setGeometry(_history->geometry());
@@ -3073,22 +3155,22 @@ bool MainWidget::eventFilter(QObject *o, QEvent *e) {
 		} else if (e->type() == QEvent::MouseButtonRelease) {
 			_resizingSide = false;
 			if (!Adaptive::OneColumn()) {
-				Global::SetDialogsWidthRatio(float64(_dialogsWidth) / width());
+				_controller->dialogsWidthRatio().set(float64(_dialogsWidth) / width(), true);
 			}
 			Local::writeUserSettings();
 		} else if (e->type() == QEvent::MouseMove && _resizingSide) {
 			auto newWidth = mouseLeft() - _resizingSideShift;
-			Global::SetDialogsWidthRatio(float64(newWidth) / width());
-			updateControlsGeometry();
+			accumulate_max(newWidth, _controller->dialogsSmallColumnWidth());
+			_controller->dialogsWidthRatio().set(float64(newWidth) / width(), true);
 		}
 	} else if (e->type() == QEvent::FocusIn) {
 		if (auto widget = qobject_cast<QWidget*>(o)) {
 			if (_history == widget || _history->isAncestorOf(widget)
 				|| (_overview && (_overview == widget || _overview->isAncestorOf(widget)))
 				|| (_wideSection && (_wideSection == widget || _wideSection->isAncestorOf(widget)))) {
-				Global::RefDialogsListFocused().set(false, false);
+				_controller->dialogsListFocused().set(false);
 			} else if (_dialogs == widget || _dialogs->isAncestorOf(widget)) {
-				Global::RefDialogsListFocused().set(true, false);
+				_controller->dialogsListFocused().set(true);
 			}
 		}
 	} else if (e->type() == QEvent::MouseButtonPress) {
@@ -3109,60 +3191,25 @@ void MainWidget::handleAdaptiveLayoutUpdate() {
 }
 
 void MainWidget::updateWindowAdaptiveLayout() {
-	auto layout = Adaptive::WindowLayout::OneColumn;
-
-	auto dialogsWidth = qRound(width() * Global::DialogsWidthRatio());
-	auto historyWidth = width() - dialogsWidth;
-	accumulate_max(historyWidth, st::windowMinWidth);
-	dialogsWidth = width() - historyWidth;
-
-	auto useOneColumnLayout = [this, dialogsWidth] {
-		auto someSectionShown = !selectingPeer() && isSectionShown();
-		if (dialogsWidth < st::dialogsPadding.x() && (Adaptive::OneColumn() || someSectionShown)) {
-			return true;
+	auto layout = _controller->computeColumnLayout();
+	if (layout.windowLayout == Adaptive::WindowLayout::OneColumn) {
+		auto chatWidth = layout.dialogsWidth;
+		if (AuthSession::Current().data().tabbedSelectorSectionEnabled()
+			&& chatWidth >= _history->minimalWidthForTabbedSelectorSection()) {
+			chatWidth -= _history->tabbedSelectorSectionWidth();
 		}
-		if (width() < st::windowMinWidth + st::dialogsWidthMin) {
-			return true;
+		if (chatWidth >= st::dialogsWidthMin + st::windowMinWidth) {
+			// Switch layout back to normal in a wide enough window.
+			layout.windowLayout = Adaptive::WindowLayout::Normal;
+			layout.dialogsWidth = st::dialogsWidthMin;
+			_controller->dialogsWidthRatio().set(float64(layout.dialogsWidth) / layout.bodyWidth, true);
 		}
-		return false;
-	};
-	auto useSmallColumnLayout = [this, dialogsWidth] {
-		// used if useOneColumnLayout() == false.
-		if (dialogsWidth < st::dialogsWidthMin / 2) {
-			return true;
-		}
-		return false;
-	};
-	if (useOneColumnLayout()) {
-		dialogsWidth = width();
-	} else if (useSmallColumnLayout()) {
-		layout = Adaptive::WindowLayout::SmallColumn;
-		auto forceWideDialogs = [this] {
-			if (Global::DialogsListDisplayForced().value()) {
-				return true;
-			} else if (Global::DialogsListFocused().value()) {
-				return true;
-			}
-			return !isSectionShown();
-		};
-		if (forceWideDialogs()) {
-			dialogsWidth = st::dialogsWidthMin;
-		} else {
-			dialogsWidth = st::dialogsPadding.x() + st::dialogsPhotoSize + st::dialogsPadding.x();
-		}
-	} else {
-		layout = Adaptive::WindowLayout::Normal;
-		accumulate_max(dialogsWidth, st::dialogsWidthMin);
 	}
-	_dialogsWidth = dialogsWidth;
-	if (layout != Global::AdaptiveWindowLayout()) {
-		Global::SetAdaptiveWindowLayout(layout);
+	_dialogsWidth = layout.dialogsWidth;
+	if (layout.windowLayout != Global::AdaptiveWindowLayout()) {
+		Global::SetAdaptiveWindowLayout(layout.windowLayout);
 		Adaptive::Changed().notify(true);
 	}
-}
-
-bool MainWidget::needBackButton() {
-	return isSectionShown();
 }
 
 bool MainWidget::paintTopBar(Painter &p, int decreaseWidth, TimeMs ms) {
@@ -3188,7 +3235,7 @@ void MainWidget::setMembersShowAreaActive(bool active) {
 }
 
 int MainWidget::backgroundFromY() const {
-	return -_playerHeight;
+	return -getSectionTop();
 }
 
 void MainWidget::onHistoryShown(History *history, MsgId atMsgId) {
@@ -3558,7 +3605,7 @@ void MainWidget::ptsApplySkippedUpdates() {
 }
 
 void MainWidget::feedDifference(const MTPVector<MTPUser> &users, const MTPVector<MTPChat> &chats, const MTPVector<MTPMessage> &msgs, const MTPVector<MTPUpdate> &other) {
-	App::wnd()->checkAutoLock();
+	AuthSession::Current().checkAutoLock();
 	App::feedUsers(users);
 	App::feedChats(chats);
 	feedMessageIds(other);
@@ -3830,10 +3877,6 @@ void MainWidget::onStickersInstalled(uint64 setId) {
 	_history->stickersInstalled(setId);
 }
 
-void MainWidget::onFullPeerUpdated(PeerData *peer) {
-	emit peerUpdated(peer);
-}
-
 void MainWidget::onSelfParticipantUpdated(ChannelData *channel) {
 	auto history = App::historyLoaded(channel->id);
 	if (_updatedChannels.contains(channel)) {
@@ -4077,7 +4120,9 @@ void MainWidget::updateNotifySetting(PeerData *peer, NotifySettingStatus notify,
 	}
 	if (peer->notify != EmptyNotifySettings && peer->notify != UnknownNotifySettings) {
 		if (notify != NotifySettingDontChange) {
-			peer->notify->sound = (notify == NotifySettingSetMuted) ? "" : "default";
+			if ((notify != NotifySettingSetMuted) && peer->notify->sound.isEmpty()) {
+				peer->notify->sound = qsl("default");
+			}
 			peer->notify->mute = (notify == NotifySettingSetMuted) ? (unixtime() + muteFor) : 0;
 		}
 		if (silent == SilentNotifiesSetSilent) {
@@ -4222,13 +4267,11 @@ MainWidget::~MainWidget() {
 		delete hider;
 	}
 	Messenger::Instance().mtp()->clearGlobalHandlers();
-
-	if (App::wnd()) App::wnd()->noMain(this);
 }
 
 void MainWidget::updateOnline(bool gotOtherOffline) {
 	if (this != App::main()) return;
-	App::wnd()->checkAutoLock();
+	AuthSession::Current().checkAutoLock();
 
 	bool isOnline = App::wnd()->isActive();
 	int updateIn = Global::OnlineUpdatePeriod();
@@ -4323,7 +4366,7 @@ void MainWidget::checkIdleFinish() {
 void MainWidget::updateReceived(const mtpPrime *from, const mtpPrime *end) {
 	if (end <= from) return;
 
-	App::wnd()->checkAutoLock();
+	AuthSession::Current().checkAutoLock();
 
 	if (mtpTypeId(*from) == mtpc_new_session_created) {
 		try {
@@ -4558,7 +4601,7 @@ void MainWidget::feedUpdates(const MTPUpdates &updates, uint64 randomId) {
 			if (peerId) {
 				if (auto item = App::histItemById(peerToChannel(peerId), d.vid.v)) {
 					if (d.has_entities() && !mentionUsersLoaded(d.ventities)) {
-						api()->requestMessageData(item->history()->peer->asChannel(), item->id, ApiWrap::RequestMessageDataCallback());
+						AuthSession::Current().api().requestMessageData(item->history()->peer->asChannel(), item->id, ApiWrap::RequestMessageDataCallback());
 					}
 					auto entities = d.has_entities() ? entitiesFromMTP(d.ventities.v) : EntitiesInText();
 					item->setText({ text, entities });
@@ -4865,6 +4908,10 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 		Messenger::Instance().dcOptions()->addFromList(d.vdc_options);
 	} break;
 
+	case mtpc_updateConfig: {
+		Messenger::Instance().mtp()->configLoadRequest();
+	} break;
+
 	case mtpc_updateUserPhone: {
 		auto &d = update.c_updateUserPhone();
 		if (auto user = App::userLoaded(d.vuser_id.v)) {
@@ -4896,7 +4943,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	} break;
 
 	case mtpc_updatePhoneCall: {
-		auto &d = update.c_updatePhoneCall();
+		Calls::Current().handleUpdate(update.c_updatePhoneCall());
 	} break;
 
 	case mtpc_updateUserBlocked: {
@@ -5062,7 +5109,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 			if (channel->isMegagroup()) {
 				channel->mgInfo->pinnedMsgId = d.vid.v;
 				if (App::api()) {
-					emit App::api()->fullPeerUpdated(channel);
+					App::api()->fullPeerUpdated().notify(channel);
 				}
 			}
 		}

@@ -25,10 +25,12 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "auth_session.h"
 #include "messenger.h"
 #include "mtproto/connection.h"
+#include "mtproto/sender.h"
+#include "mtproto/rsa_public_key.h"
 
 namespace MTP {
 
-class Instance::Private {
+class Instance::Private : public Sender {
 public:
 	Private(Instance *instance, DcOptions *options, Instance::Mode mode);
 
@@ -45,6 +47,7 @@ public:
 	DcOptions *dcOptions();
 
 	void configLoadRequest();
+	void cdnConfigLoadRequest();
 
 	void restart();
 	void restart(ShiftedDcId shiftedDcId);
@@ -116,6 +119,9 @@ private:
 	void configLoadDone(const MTPConfig &result);
 	bool configLoadFail(const RPCError &error);
 
+	void cdnConfigLoadDone(const MTPCdnConfig &result);
+	bool cdnConfigLoadFail(const RPCError &error);
+
 	void checkDelayedRequests();
 
 	Instance *_instance = nullptr;
@@ -133,6 +139,7 @@ private:
 	base::set_of_unique_ptr<internal::Connection> _quittingConnections;
 
 	std::unique_ptr<internal::ConfigLoader> _configLoader;
+	mtpRequestId _cdnConfigLoadRequestId = 0;
 
 	std::map<DcId, AuthKeyPtr> _keysForWrite;
 	mutable QReadWriteLock _keysForWriteLock;
@@ -174,7 +181,7 @@ private:
 
 };
 
-Instance::Private::Private(Instance *instance, DcOptions *options, Instance::Mode mode) : _instance(instance)
+Instance::Private::Private(Instance *instance, DcOptions *options, Instance::Mode mode) : Sender(instance), _instance(instance)
 , _dcOptions(options)
 , _mode(mode) {
 }
@@ -188,7 +195,6 @@ void Instance::Private::start(Config &&config) {
 
 	for (auto &key : config.keys) {
 		auto dcId = key->dcId();
-
 		auto shiftedDcId = dcId;
 		if (isKeysDestroyer()) {
 			shiftedDcId = MTP::destroyKeyNextDcId(shiftedDcId);
@@ -271,6 +277,22 @@ void Instance::Private::configLoadRequest() {
 		return configLoadFail(error);
 	}));
 	_configLoader->load();
+}
+
+void Instance::Private::cdnConfigLoadRequest() {
+	if (_cdnConfigLoadRequestId || _mainDcId == Config::kNoneMainDc) {
+		return;
+	}
+	_cdnConfigLoadRequestId = request(MTPhelp_GetCdnConfig()).done([this](const MTPCdnConfig &result) {
+		_cdnConfigLoadRequestId = 0;
+
+		Expects(result.type() == mtpc_cdnConfig);
+		dcOptions()->setCDNConfig(result.c_cdnConfig());
+
+		Local::writeSettings();
+
+		emit _instance->cdnConfigLoaded();
+	}).send();
 }
 
 void Instance::Private::restart() {
@@ -423,7 +445,7 @@ void Instance::Private::logout(RPCDoneHandlerPtr onDone, RPCFailHandlerPtr onFai
 		}
 	}
 	for (auto dcId : dcIds) {
-		if (dcId != mainDcId()) {
+		if (dcId != mainDcId() && dcOptions()->dcType(dcId) != DcType::Cdn) {
 			auto shiftedDcId = MTP::logoutDcId(dcId);
 			auto requestId = _instance->send(MTPauth_LogOut(), rpcDone([this](mtpRequestId requestId) {
 				logoutGuestDone(requestId);
@@ -553,14 +575,22 @@ void Instance::Private::configLoadDone(const MTPConfig &result) {
 	Global::SetOnlineCloudTimeout(data.vonline_cloud_timeout_ms.v);
 	Global::SetNotifyCloudDelay(data.vnotify_cloud_delay_ms.v);
 	Global::SetNotifyDefaultDelay(data.vnotify_default_delay_ms.v);
-	Global::SetChatBigSize(data.vchat_big_size.v); // ?
-	Global::SetPushChatPeriod(data.vpush_chat_period_ms.v); // ?
-	Global::SetPushChatLimit(data.vpush_chat_limit.v); // ?
+	Global::SetChatBigSize(data.vchat_big_size.v);
+	Global::SetPushChatPeriod(data.vpush_chat_period_ms.v);
+	Global::SetPushChatLimit(data.vpush_chat_limit.v);
 	Global::SetSavedGifsLimit(data.vsaved_gifs_limit.v);
-	Global::SetEditTimeLimit(data.vedit_time_limit.v); // ?
+	Global::SetEditTimeLimit(data.vedit_time_limit.v);
 	Global::SetStickersRecentLimit(data.vstickers_recent_limit.v);
 	Global::SetPinnedDialogsCountMax(data.vpinned_dialogs_count_max.v);
 	Messenger::Instance().setInternalLinkDomain(qs(data.vme_url_prefix));
+	Global::SetCallReceiveTimeoutMs(data.vcall_receive_timeout_ms.v);
+	Global::SetCallRingTimeoutMs(data.vcall_ring_timeout_ms.v);
+	Global::SetCallConnectTimeoutMs(data.vcall_connect_timeout_ms.v);
+	Global::SetCallPacketTimeoutMs(data.vcall_packet_timeout_ms.v);
+	if (Global::PhoneCallsEnabled() != data.is_phonecalls_enabled()) {
+		Global::SetPhoneCallsEnabled(data.is_phonecalls_enabled());
+		Global::RefPhoneCallsEnabledChanged().notify();
+	}
 
 	Local::writeSettings();
 
@@ -1204,6 +1234,8 @@ void Instance::Private::prepareToDestroy() {
 	// It accesses Instance in destructor, so it should be destroyed first.
 	_configLoader.reset();
 
+	requestCancellingDiscard();
+
 	for (auto &session : base::take(_sessions)) {
 		session.second->kill();
 	}
@@ -1231,6 +1263,10 @@ DcId Instance::mainDcId() const {
 
 void Instance::configLoadRequest() {
 	_private->configLoadRequest();
+}
+
+void Instance::cdnConfigLoadRequest() {
+	_private->cdnConfigLoadRequest();
 }
 
 void Instance::connectionFinished(internal::Connection *connection) {

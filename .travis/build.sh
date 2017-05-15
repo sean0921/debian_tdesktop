@@ -9,33 +9,35 @@ UPSTREAM="$REPO/upstream"
 EXTERNAL="$REPO/external"
 CACHE="$HOME/travisCacheDir"
 
+QT_WAS_BUILT="0"
+
 QT_VERSION=5.6.2
 
 XKB_PATH="$BUILD/libxkbcommon"
-XKB_CACHE_VERSION="2"
+XKB_CACHE_VERSION="3"
 
 QT_PATH="$BUILD/qt"
-QT_CACHE_VERSION="2"
+QT_CACHE_VERSION="3"
 QT_PATCH="$UPSTREAM/Telegram/Patches/qtbase_${QT_VERSION//\./_}.diff"
 
 BREAKPAD_PATH="$BUILD/breakpad"
-BREAKPAD_CACHE_VERSION="2"
+BREAKPAD_CACHE_VERSION="3"
 
 GYP_PATH="$BUILD/gyp"
-GYP_CACHE_VERSION="2"
+GYP_CACHE_VERSION="3"
 GYP_PATCH="$UPSTREAM/Telegram/Patches/gyp.diff"
 
 VA_PATH="$BUILD/libva"
-VA_CACHE_VERSION="2"
+VA_CACHE_VERSION="3"
 
 VDPAU_PATH="$BUILD/libvdpau"
-VDPAU_CACHE_VERSION="1"
+VDPAU_CACHE_VERSION="3"
 
 FFMPEG_PATH="$BUILD/ffmpeg"
-FFMPEG_CACHE_VERSION="2"
+FFMPEG_CACHE_VERSION="3"
 
 OPENAL_PATH="$BUILD/openal-soft"
-OPENAL_CACHE_VERSION="2"
+OPENAL_CACHE_VERSION="3"
 
 GYP_DEFINES=""
 
@@ -56,6 +58,8 @@ run() {
 
 build() {
   mkdir -p "$EXTERNAL"
+
+  BUILD_VERSION_DATA=$(echo $BUILD_VERSION | cut -d'-' -f 1)
 
   # libxkbcommon
   getXkbCommon
@@ -83,6 +87,11 @@ build() {
 
   # Guideline Support Library
   getGSL
+
+  if [ "$QT_WAS_BUILT" == "1" ]; then
+    error_msg "Qt was built, please restart the job :("
+    exit 1
+  fi
 
   # Configure the build
   if [[ $BUILD_VERSION == *"disable_autoupdate"* ]]; then
@@ -511,6 +520,7 @@ getCustomQt() {
 }
 
 buildCustomQt() {
+  QT_WAS_BUILT="1"
   info_msg "Downloading and building patched qt"
 
   if [ -d "$EXTERNAL/qt${QT_VERSION}" ]; then
@@ -610,6 +620,7 @@ buildTelegram() {
       -Dlinux_path_qt=$QT_PATH \
       -Dlinux_path_breakpad=$BREAKPAD_PATH \
       -Dlinux_path_libexif_lib=/usr/local/lib \
+      -Dlinux_path_opus_include=/usr/include/opus \
       -Dlinux_lib_ssl=-lssl \
       -Dlinux_lib_crypto=-lcrypto \
       -Dlinux_lib_icu=-licuuc\ -licutu\ -licui18n \

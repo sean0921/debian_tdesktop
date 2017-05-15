@@ -175,6 +175,9 @@ public:
 	bool skipBubbleTail() const override {
 		return isBubbleBottom() && _caption.isEmpty();
 	}
+	bool canEditCaption() const override {
+		return true;
+	}
 	bool isReadyForOpen() const override {
 		return _data->loaded();
 	}
@@ -191,7 +194,7 @@ protected:
 	}
 
 private:
-	PhotoData *_data;
+	gsl::not_null<PhotoData*> _data;
 	int16 _pixw = 1;
 	int16 _pixh = 1;
 	Text _caption;
@@ -266,6 +269,9 @@ public:
 	bool skipBubbleTail() const override {
 		return isBubbleBottom() && _caption.isEmpty();
 	}
+	bool canEditCaption() const override {
+		return true;
+	}
 
 protected:
 	float64 dataProgress() const override {
@@ -279,7 +285,7 @@ protected:
 	}
 
 private:
-	DocumentData *_data;
+	gsl::not_null<DocumentData*> _data;
 	int32 _thumbw;
 	Text _caption;
 
@@ -417,6 +423,9 @@ public:
 	bool hideForwardedFrom() const override {
 		return _data->song();
 	}
+	bool canEditCaption() const override {
+		return true;
+	}
 
 	void step_voiceProgress(float64 ms, bool timer);
 
@@ -445,7 +454,7 @@ private:
 	template <typename Callback>
 	void buildStringRepresentation(Callback callback) const;
 
-	DocumentData *_data;
+	gsl::not_null<DocumentData*> _data;
 
 };
 
@@ -490,6 +499,7 @@ public:
 
 	bool playInline(bool autoplay) override;
 	void stopInline() override;
+	bool isRoundVideoPlaying() const override;
 
 	void attachToParent() override;
 	void detachFromParent() override;
@@ -506,6 +516,9 @@ public:
 		return _caption.originalTextWithEntities();
 	}
 	bool needsBubble() const override {
+		if (_data->isRoundVideo()) {
+			return false;
+		}
 		if (!_caption.isEmpty()) {
 			return true;
 		}
@@ -520,8 +533,13 @@ public:
 	bool customInfoLayout() const override {
 		return _caption.isEmpty();
 	}
+	QString additionalInfoString() const override;
+
 	bool skipBubbleTail() const override {
 		return isBubbleBottom() && _caption.isEmpty();
+	}
+	bool canEditCaption() const override {
+		return !_data->isRoundVideo();
 	}
 	bool isReadyForOpen() const override {
 		return _data->loaded();
@@ -534,8 +552,22 @@ protected:
 	bool dataFinished() const override;
 	bool dataLoaded() const override;
 
+	void setClipReader(Media::Clip::ReaderPointer gif);
+	void clearClipReader() {
+		setClipReader(Media::Clip::ReaderPointer());
+	}
+
 private:
-	DocumentData *_data;
+	int additionalWidth(const HistoryMessageVia *via, const HistoryMessageReply *reply, const HistoryMessageForwarded *forwarded) const;
+	int additionalWidth() const {
+		return additionalWidth(_parent->Get<HistoryMessageVia>(), _parent->Get<HistoryMessageReply>(), _parent->Get<HistoryMessageForwarded>());
+	}
+	QString mediaTypeString() const;
+	bool isSeparateRoundVideo() const {
+		return _data->isRoundVideo() && (_parent->getMedia() == this);
+	}
+
+	gsl::not_null<DocumentData*> _data;
 	int32 _thumbw = 1;
 	int32 _thumbh = 1;
 	Text _caption;
@@ -586,6 +618,11 @@ public:
 	void updateSentMedia(const MTPMessageMedia &media) override;
 	bool needReSetInlineResultMedia(const MTPMessageMedia &media) override;
 
+	bool hasReplyPreview() const override {
+		return !_data->thumb->isNull();
+	}
+	ImagePtr replyPreview() override;
+
 	bool needsBubble() const override {
 		return false;
 	}
@@ -606,7 +643,7 @@ private:
 	int16 _pixw = 1;
 	int16 _pixh = 1;
 	ClickHandlerPtr _packLink;
-	DocumentData *_data;
+	gsl::not_null<DocumentData*> _data;
 	QString _emoji;
 
 };
@@ -659,8 +696,7 @@ public:
 	}
 
 private:
-
-	int32 _userId;
+	int32 _userId = 0;
 	UserData *_contact = nullptr;
 
 	int _phonew = 0;
@@ -671,6 +707,62 @@ private:
 	ClickHandlerPtr _linkl;
 	int _linkw = 0;
 	QString _link;
+
+};
+
+class HistoryCall : public HistoryMedia {
+public:
+	HistoryCall(HistoryItem *parent, const MTPDmessageActionPhoneCall &call);
+	HistoryMediaType type() const override {
+		return MediaTypeCall;
+	}
+	std::unique_ptr<HistoryMedia> clone(HistoryItem *newParent) const override {
+		Unexpected("Clone HistoryCall.");
+	}
+
+	void initDimensions() override;
+
+	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
+	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+
+	bool toggleSelectionByHandlerClick(const ClickHandlerPtr &p) const override {
+		return true;
+	}
+	bool dragItemByHandler(const ClickHandlerPtr &p) const override {
+		return false;
+	}
+
+	QString notificationText() const override;
+	TextWithEntities selectedText(TextSelection selection) const override;
+
+	bool needsBubble() const override {
+		return true;
+	}
+	bool customInfoLayout() const override {
+		return true;
+	}
+
+	enum class FinishReason {
+		Missed,
+		Busy,
+		Disconnected,
+		Hangup,
+	};
+	FinishReason reason() const {
+		return _reason;
+	}
+
+private:
+	static FinishReason GetReason(const MTPDmessageActionPhoneCall &call);
+
+	FinishReason _reason = FinishReason::Missed;
+	int _duration = 0;
+
+	QString _text;
+	QString _status;
+
+	ClickHandlerPtr _link;
+
 };
 
 class HistoryWebPage : public HistoryMedia {
@@ -769,6 +861,7 @@ private:
 
 	int16 _pixw = 0;
 	int16 _pixh = 0;
+
 };
 
 class HistoryGame : public HistoryMedia {

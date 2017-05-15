@@ -23,6 +23,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "storage/localimageloader.h"
 #include "history/history_common.h"
 #include "core/single_timer.h"
+#include "base/weak_unique_ptr.h"
 
 namespace Notify {
 struct PeerUpdate;
@@ -43,6 +44,8 @@ class Panel;
 namespace Ui {
 class PlainShadow;
 class DropdownMenu;
+template <typename Widget>
+class WidgetSlideWrap;
 } // namespace Ui
 
 namespace Window {
@@ -54,8 +57,12 @@ class SectionWidget;
 struct SectionSlideParams;
 } // namespace Window
 
+namespace Calls {
+class Call;
+class TopBar;
+} // namespace Calls
+
 class MainWindow;
-class ApiWrap;
 class ConfirmBox;
 class DialogsWidget;
 class HistoryWidget;
@@ -143,9 +150,9 @@ class MainWidget : public TWidget, public RPCSender, private base::Subscriber {
 	Q_OBJECT
 
 public:
-	MainWidget(QWidget *parent, std::unique_ptr<Window::Controller> controller);
+	MainWidget(QWidget *parent, gsl::not_null<Window::Controller*> controller);
 
-	bool needBackButton();
+	bool isSectionShown() const;
 
 	// Temporary methods, while top bar was not done inside HistoryWidget / OverviewWidget.
 	bool paintTopBar(Painter &, int decreaseWidth, TimeMs ms);
@@ -334,7 +341,6 @@ public:
 	void checkChatBackground();
 	ImagePtr newBackgroundThumb();
 
-	ApiWrap *api();
 	void messageDataReceived(ChannelData *channel, MsgId msgId);
 	void updateBotKeyboard(History *h);
 
@@ -373,8 +379,6 @@ public:
 	void onSelfParticipantUpdated(ChannelData *channel);
 
 	bool contentOverlapped(const QRect &globalRect);
-
-	void rpcClear() override;
 
 	bool isItemVisible(HistoryItem *item);
 
@@ -444,10 +448,8 @@ public slots:
 	void onUpdateMuted();
 
 	void onStickersInstalled(uint64 setId);
-	void onFullPeerUpdated(PeerData *peer);
 
 	void onViewsIncrement();
-	void onActiveChannelUpdateFull();
 
 	void ui_showPeerHistoryAsync(quint64 peerId, qint32 showAtMsgId, Ui::ShowWay way);
 	void ui_autoplayMediaInlineAsync(qint32 channelId, qint32 msgId);
@@ -477,6 +479,11 @@ private:
 	void closeBothPlayers();
 	void playerHeightUpdated();
 
+	void setCurrentCall(Calls::Call *call);
+	void createCallTopBar();
+	void destroyCallTopBar();
+	void callTopBarHeightUpdated();
+
 	void sendReadRequest(PeerData *peer, MsgId upTo);
 	void channelReadDone(PeerData *peer, const MTPBool &result);
 	void historyReadDone(PeerData *peer, const MTPmessages_AffectedMessages &result);
@@ -487,9 +494,8 @@ private:
 	void overviewLoaded(History *history, const MTPmessages_Messages &result, mtpRequestId req);
 	void mediaOverviewUpdated(const Notify::PeerUpdate &update);
 
-	Window::SectionSlideParams prepareShowAnimation(bool willHaveTopBarShadow);
+	Window::SectionSlideParams prepareShowAnimation(bool willHaveTopBarShadow, bool willHaveTabbedSection);
 	void showNewWideSection(const Window::SectionMemento *memento, bool back, bool saveInStack);
-	bool isSectionShown() const;
 
 	// All this methods use the prepareShowAnimation().
 	Window::SectionSlideParams prepareWideSectionAnimation(Window::SectionWidget *section);
@@ -501,7 +507,7 @@ private:
 
 	void saveSectionInStack();
 
-	std::unique_ptr<Window::Controller> _controller;
+	gsl::not_null<Window::Controller*> _controller;
 	bool _started = false;
 
 	SelectedItemSet _toForward;
@@ -556,6 +562,8 @@ private:
 	void inviteImportDone(const MTPUpdates &result);
 	bool inviteImportFail(const RPCError &error);
 
+	int getSectionTop() const;
+
 	void hideAll();
 	void showAll();
 
@@ -576,7 +584,11 @@ private:
 	object_ptr<DialogsWidget> _dialogs;
 	object_ptr<HistoryWidget> _history;
 	object_ptr<Window::SectionWidget> _wideSection = { nullptr };
+	object_ptr<Window::SectionWidget> _thirdSection = { nullptr };
 	object_ptr<OverviewWidget> _overview = { nullptr };
+
+	base::weak_unique_ptr<Calls::Call> _currentCall;
+	object_ptr<Ui::WidgetSlideWrap<Calls::TopBar>> _callTopBar = { nullptr };
 
 	object_ptr<Window::PlayerWrapWidget> _player = { nullptr };
 	object_ptr<Media::Player::VolumeWidget> _playerVolume = { nullptr };
@@ -591,6 +603,7 @@ private:
 	MsgId _msgIdInStack = 0;
 
 	int _playerHeight = 0;
+	int _callTopBarHeight = 0;
 	int _contentScrollAddToY = 0;
 
 	int32 updDate = 0;
@@ -669,8 +682,6 @@ private:
 	bool viewsIncrementFail(const RPCError &error, mtpRequestId req);
 
 	std::unique_ptr<App::WallPaper> _background;
-
-	std::unique_ptr<ApiWrap> _api;
 
 	bool _resizingSide = false;
 	int _resizingSideShift = 0;

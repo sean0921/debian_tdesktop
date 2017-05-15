@@ -20,7 +20,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "core/observer.h"
+#include "base/observer.h"
 
 namespace Notify {
 
@@ -48,6 +48,7 @@ struct PeerUpdate {
 		InviteLinkChanged      = 0x00000100U,
 		MembersChanged         = 0x00000200U,
 		AdminsChanged          = 0x00000400U,
+		BlockedUsersChanged    = 0x00000800U,
 
 		// For users
 		UserCanShareContact    = 0x00010000U,
@@ -58,6 +59,7 @@ struct PeerUpdate {
 		UserOnlineChanged      = 0x00200000U,
 		BotCanAddToGroups      = 0x00400000U,
 		UserCommonChatsChanged = 0x00800000U,
+		UserHasCalls           = 0x01000000U,
 
 		// For chats
 		ChatCanEdit            = 0x00010000U,

@@ -20,7 +20,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "core/runtime_composer.h"
+#include "base/runtime_composer.h"
 
 namespace Ui {
 class RippleAnimation;
@@ -156,8 +156,8 @@ struct HistoryMessageReply : public RuntimeComponent<HistoryMessageReply> {
 	}
 	~HistoryMessageReply() {
 		// clearData() should be called by holder
-		t_assert(replyToMsg == nullptr);
-		t_assert(_replyToVia == nullptr);
+		Expects(replyToMsg == nullptr);
+		Expects(_replyToVia == nullptr);
 	}
 
 	bool updateData(HistoryMessage *holder, bool force = false);
@@ -438,7 +438,7 @@ public:
 		return get();
 	}
 	HistoryMedia &operator*() const {
-		t_assert(!isNull());
+		Expects(!isNull());
 		return *get();
 	}
 	explicit operator bool() const {
@@ -522,31 +522,25 @@ public:
 		return !_block;
 	}
 	void attachToBlock(HistoryBlock *block, int index) {
-		t_assert(_block == nullptr);
-		t_assert(_indexInBlock < 0);
-		t_assert(block != nullptr);
-		t_assert(index >= 0);
+		Expects(_block == nullptr);
+		Expects(_indexInBlock < 0);
+		Expects(block != nullptr);
+		Expects(index >= 0);
 
 		_block = block;
 		_indexInBlock = index;
-		if (pendingResize()) {
-			_history->setHasPendingResizedItems();
-		}
+		setPendingResize();
 	}
 	void setIndexInBlock(int index) {
-		t_assert(_block != nullptr);
-		t_assert(index >= 0);
+		Expects(_block != nullptr);
+		Expects(index >= 0);
 
 		_indexInBlock = index;
 	}
 	int indexInBlock() const {
-		if (_indexInBlock >= 0) {
-			t_assert(_block != nullptr);
-			t_assert(_block->items.at(_indexInBlock) == this);
-		} else if (_block != nullptr) {
-			t_assert(_indexInBlock >= 0);
-			t_assert(_block->items.at(_indexInBlock) == this);
-		}
+		Expects((_indexInBlock >= 0) == (_block != nullptr));
+		Expects((_block == nullptr) || (_block->items[_indexInBlock] == this));
+
 		return _indexInBlock;
 	}
 	bool out() const {
@@ -575,7 +569,7 @@ public:
 		return (_flags & MTPDmessage::Flag::f_reply_markup);
 	}
 	MTPDreplyKeyboardMarkup::Flags replyKeyboardFlags() const {
-		t_assert(definesReplyKeyboard());
+		Expects(definesReplyKeyboard());
 		if (auto markup = Get<HistoryMessageReplyMarkup>()) {
 			return markup->flags;
 		}
@@ -684,24 +678,10 @@ public:
 		return _text.isEmpty();
 	}
 
-	bool canDelete() const {
-		auto channel = _history->peer->asChannel();
-		if (!channel) return !(_flags & MTPDmessage_ClientFlag::f_is_group_migrate);
-
-		if (id == 1) return false;
-		if (channel->amCreator()) return true;
-		if (isPost()) {
-			if (channel->amEditor() && out()) return true;
-			return false;
-		}
-		return (channel->amEditor() || channel->amModerator() || out());
-	}
-
-	bool canPin() const {
-		return id > 0 && _history->peer->isMegagroup() && (_history->peer->asChannel()->amEditor() || _history->peer->asChannel()->amCreator()) && toHistoryMessage();
-	}
-
+	bool canPin() const;
+	bool canForward() const;
 	bool canEdit(const QDateTime &cur) const;
+	bool canDelete() const;
 	bool canDeleteForEveryone(const QDateTime &cur) const;
 
 	bool suggestBanReportDeleteAll() const {
@@ -715,7 +695,12 @@ public:
 	}
 	QString directLink() const;
 
-	int32 y;
+	int y() const {
+		return _y;
+	}
+	void setY(int y) {
+		_y = y;
+	}
 	MsgId id;
 	QDateTime date;
 
@@ -779,16 +764,22 @@ public:
 	}
 
 	PeerData *fromOriginal() const {
-		if (auto fwd = Get<HistoryMessageForwarded>()) {
-			return fwd->_fromOriginal;
+		if (auto forwarded = Get<HistoryMessageForwarded>()) {
+			return forwarded->_fromOriginal;
 		}
 		return from();
 	}
 	PeerData *authorOriginal() const {
-		if (auto fwd = Get<HistoryMessageForwarded>()) {
-			return fwd->_authorOriginal;
+		if (auto forwarded = Get<HistoryMessageForwarded>()) {
+			return forwarded->_authorOriginal;
 		}
 		return author();
+	}
+	MsgId idOriginal() const {
+		if (auto forwarded = Get<HistoryMessageForwarded>()) {
+			return forwarded->_originalId;
+		}
+		return id;
 	}
 
 	// count > 0 - creates the unread bar if necessary and
@@ -959,6 +950,9 @@ protected:
 
 	HistoryMediaPtr _media;
 
+private:
+	int _y = 0;
+
 };
 
 // make all the constructors in HistoryItem children protected
@@ -974,6 +968,7 @@ public:
 		result->finishCreate();
 		return result;
 	}
+
 };
 
 ClickHandlerPtr goToMessageClickHandler(PeerData *peer, MsgId msgId);

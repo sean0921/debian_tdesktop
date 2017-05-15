@@ -154,7 +154,7 @@ inline MsgId idFromMessage(const MTPmessage &msg) {
 	case mtpc_message: return msg.c_message().vid.v;
 	case mtpc_messageService: return msg.c_messageService().vid.v;
 	}
-	return 0;
+	Unexpected("Type in idFromMessage()");
 }
 inline TimeId dateFromMessage(const MTPmessage &msg) {
 	switch (msg.type()) {
@@ -244,6 +244,7 @@ public:
 
 	void paint(Painter &p, int x, int y, int outerWidth, int size) const;
 	void paintRounded(Painter &p, int x, int y, int outerWidth, int size) const;
+	void paintSquare(Painter &p, int x, int y, int outerWidth, int size) const;
 	QPixmap generate(int size);
 	StorageKey uniqueKey() const;
 
@@ -345,6 +346,7 @@ public:
 		paintUserpic(p, rtl() ? (w - x - size) : x, y, size);
 	}
 	void paintUserpicRounded(Painter &p, int x, int y, int size) const;
+	void paintUserpicSquare(Painter &p, int x, int y, int size) const;
 	void loadUserpic(bool loadFirst = false, bool prior = true) {
 		_userpic->load(loadFirst, prior);
 	}
@@ -377,11 +379,12 @@ public:
 		return _openLink;
 	}
 
+	ImagePtr currentUserpic() const;
+
 protected:
 	void updateNameDelayed(const QString &newName, const QString &newNameOrPhone, const QString &newUsername);
 
 	ImagePtr _userpic;
-	ImagePtr currentUserpic() const;
 	mutable EmptyUserpic _userpicEmpty;
 
 private:
@@ -507,6 +510,18 @@ public:
 	}
 	void setBlockStatus(BlockStatus blockStatus);
 
+	enum class CallsStatus {
+		Unknown,
+		Enabled,
+		Disabled,
+		Private,
+	};
+	CallsStatus callsStatus() const {
+		return _callsStatus;
+	}
+	bool hasCalls() const;
+	void setCallsStatus(CallsStatus callsStatus);
+
 	typedef QList<PhotoData*> Photos;
 	Photos photos;
 	int photosCount = -1; // -1 not loaded, 0 all loaded
@@ -535,6 +550,7 @@ private:
 	QString _about;
 	QString _phone;
 	BlockStatus _blockStatus = BlockStatus::Unknown;
+	CallsStatus _callsStatus = CallsStatus::Unknown;
 	int _commonChatsCount = 0;
 
 	static constexpr const uint64 NoAccess = 0xFFFFFFFFFFFFFFFFULL;
@@ -740,6 +756,11 @@ public:
 	}
 	void setAdminsCount(int newAdminsCount);
 
+	int kickedCount() const {
+		return _kickedCount;
+	}
+	void setKickedCount(int newKickedCount);
+
 	int32 date = 0;
 	int version = 0;
 	MTPDchannel::Flags flags = { 0 };
@@ -880,6 +901,7 @@ private:
 
 	int _membersCount = 1;
 	int _adminsCount = 1;
+	int _kickedCount = 0;
 
 	QString _restrictionReason;
 	QString _about;
@@ -1068,17 +1090,20 @@ enum FileStatus {
 	FileReady = 1,
 };
 
+// Don't change the values. This type is used for serialization.
 enum DocumentType {
-	FileDocument     = 0,
-	VideoDocument    = 1,
-	SongDocument     = 2,
-	StickerDocument  = 3,
-	AnimatedDocument = 4,
-	VoiceDocument    = 5,
+	FileDocument       = 0,
+	VideoDocument      = 1,
+	SongDocument       = 2,
+	StickerDocument    = 3,
+	AnimatedDocument   = 4,
+	VoiceDocument      = 5,
+	RoundVideoDocument = 6,
 };
 
 struct DocumentAdditionalData {
-	virtual ~DocumentAdditionalData();
+	virtual ~DocumentAdditionalData() = default;
+
 };
 
 struct StickerData : public DocumentAdditionalData {
@@ -1093,9 +1118,7 @@ struct StickerData : public DocumentAdditionalData {
 };
 
 struct SongData : public DocumentAdditionalData {
-	SongData() : duration(0) {
-	}
-	int32 duration;
+	int32 duration = 0;
 	QString title, performer;
 
 };
@@ -1187,14 +1210,20 @@ public:
 	const VoiceData *voice() const {
 		return const_cast<DocumentData*>(this)->voice();
 	}
+	bool isRoundVideo() const {
+		return (type == RoundVideoDocument);
+	}
 	bool isAnimation() const {
-		return (type == AnimatedDocument) || !mime.compare(qstr("image/gif"), Qt::CaseInsensitive);
+		return (type == AnimatedDocument) || isRoundVideo() || !mime.compare(qstr("image/gif"), Qt::CaseInsensitive);
 	}
 	bool isGifv() const {
 		return (type == AnimatedDocument) && !mime.compare(qstr("video/mp4"), Qt::CaseInsensitive);
 	}
 	bool isTheme() const {
 		return name.endsWith(qstr(".tdesktop-theme"), Qt::CaseInsensitive) || name.endsWith(qstr(".tdesktop-palette"), Qt::CaseInsensitive);
+	}
+	bool tryPlaySong() const {
+		return (song() != nullptr) || mime.startsWith(qstr("audio/"), Qt::CaseInsensitive);
 	}
 	bool isMusic() const {
 		if (auto s = song()) {
@@ -1240,11 +1269,12 @@ public:
 
 	~DocumentData();
 
-	DocumentId id;
+	DocumentId id = 0;
 	DocumentType type = FileDocument;
 	QSize dimensions;
 	int32 date = 0;
-	QString name, mime;
+	QString name;
+	QString mime;
 	ImagePtr thumb, replyPreview;
 	int32 size = 0;
 
@@ -1336,10 +1366,10 @@ private:
 	void setTypeFromAudio() {
 		if (_audio->voice()) {
 			_type = Type::Voice;
-		} else if (_audio->song()) {
-			_type = Type::Song;
 		} else if (_audio->isVideo()) {
 			_type = Type::Video;
+		} else if (_audio->tryPlaySong()) {
+			_type = Type::Song;
 		} else {
 			_type = Type::Unknown;
 		}
@@ -1503,6 +1533,8 @@ struct SendAction {
 		UploadVideo,
 		RecordVoice,
 		UploadVoice,
+		RecordRound,
+		UploadRound,
 		UploadPhoto,
 		UploadFile,
 		ChooseLocation,

@@ -22,9 +22,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 #include "lang.h"
 #include "platform/platform_specific.h"
-#include "boxes/confirmbox.h"
-#include "core/qthelp_regex.h"
-#include "core/qthelp_url.h"
+#include "boxes/confirm_box.h"
+#include "base/qthelp_regex.h"
+#include "base/qthelp_url.h"
 #include "storage/localstorage.h"
 #include "ui/widgets/tooltip.h"
 #include "core/file_utilities.h"
@@ -40,7 +40,7 @@ QString tryConvertUrlToLocal(QString url) {
 
 	using namespace qthelp;
 	auto matchOptions = RegExOption::CaseInsensitive;
-	auto telegramMeMatch = regex_match(qsl("^https?://(www\\.)?(telegram\\.(me|dog)|t\\.me)/(.+)$"), url, matchOptions);
+	auto telegramMeMatch = regex_match(qsl("^https?://(www\\.)?(telegram\\.(me|dog)|t\\.me|telesco\\.pe)/(.+)$"), url, matchOptions);
 	if (telegramMeMatch) {
 		auto query = telegramMeMatch->capturedRef(4);
 		if (auto joinChatMatch = regex_match(qsl("^joinchat/([a-zA-Z0-9\\.\\_\\-]+)(\\?|$)"), query, matchOptions)) {
@@ -51,8 +51,16 @@ QString tryConvertUrlToLocal(QString url) {
 			return qsl("tg://msg_url?") + shareUrlMatch->captured(1);
 		} else if (auto confirmPhoneMatch = regex_match(qsl("^confirmphone/?\\?(.+)"), query, matchOptions)) {
 			return qsl("tg://confirmphone?") + confirmPhoneMatch->captured(1);
+		} else if (auto ivMatch = regex_match(qsl("iv/?\\?(.+)(#|$)"), query, matchOptions)) {
+			auto params = url_parse_params(ivMatch->captured(1), UrlParamNameTransform::ToLower);
+			auto previewedUrl = params.value(qsl("url"));
+			if (previewedUrl.startsWith(qstr("http://"), Qt::CaseInsensitive)
+				|| previewedUrl.startsWith(qstr("https://"), Qt::CaseInsensitive)) {
+				return previewedUrl;
+			}
 		} else if (auto usernameMatch = regex_match(qsl("^([a-zA-Z0-9\\.\\_]+)(/?\\?|/?$|/(\\d+)/?(?:\\?|$))"), query, matchOptions)) {
-			QString params = query.mid(usernameMatch->captured(0).size()).toString(), postParam;
+			auto params = query.mid(usernameMatch->captured(0).size()).toString();
+			auto postParam = QString();
 			if (auto postMatch = regex_match(qsl("^/\\d+/?(?:\\?|$)"), usernameMatch->captured(2))) {
 				postParam = qsl("&post=") + usernameMatch->captured(3);
 			}
@@ -104,7 +112,7 @@ TextWithEntities UrlClickHandler::getExpandedLinkTextWithEntities(ExpandLinksMod
 void HiddenUrlClickHandler::doOpen(QString url) {
 	auto urlText = tryConvertUrlToLocal(url);
 
-	if (urlText.startsWith(qstr("tg://"))) {
+	if (urlText.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
 		App::openLocalUrl(urlText);
 	} else {
 		auto parsedUrl = QUrl::fromUserInput(urlText);
@@ -119,7 +127,7 @@ void HiddenUrlClickHandler::doOpen(QString url) {
 void BotGameUrlClickHandler::onClick(Qt::MouseButton button) const {
 	auto urlText = tryConvertUrlToLocal(url());
 
-	if (urlText.startsWith(qstr("tg://"))) {
+	if (urlText.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
 		App::openLocalUrl(urlText);
 	} else if (!_bot || _bot->isVerified() || Local::isBotTrusted(_bot)) {
 		doOpen(urlText);

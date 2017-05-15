@@ -377,10 +377,7 @@ void finish() {
 	_psEventFilter = nullptr;
 }
 
-void SetWatchingMediaKeys(bool watching) {
-}
-
-bool TransparentWindowsSupported(QPoint globalPosition) {
+bool TranslucentWindowsSupported(QPoint globalPosition) {
 	if (auto app = static_cast<QGuiApplication*>(QCoreApplication::instance())) {
 		if (auto native = app->platformNativeInterface()) {
 			if (auto desktop = QApplication::desktop()) {
@@ -459,7 +456,7 @@ void psRegisterCustomScheme() {
 				}
 			}
 			if (!iconExists) {
-				if (QFile(qsl(":/gui/art/icon256.png")).copy(icon)) {
+				if (QFile(qsl(":/gui/art/logo_256.png")).copy(icon)) {
 					DEBUG_LOG(("App Info: Icon copied to 'tdata'"));
 				}
 			}

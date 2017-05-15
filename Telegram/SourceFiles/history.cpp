@@ -36,17 +36,20 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 namespace {
 
-constexpr int kStatusShowClientsideTyping = 6000;
-constexpr int kStatusShowClientsideRecordVideo = 6000;
-constexpr int kStatusShowClientsideUploadVideo = 6000;
-constexpr int kStatusShowClientsideRecordVoice = 6000;
-constexpr int kStatusShowClientsideUploadVoice = 6000;
-constexpr int kStatusShowClientsideUploadPhoto = 6000;
-constexpr int kStatusShowClientsideUploadFile = 6000;
-constexpr int kStatusShowClientsideChooseLocation = 6000;
-constexpr int kStatusShowClientsideChooseContact = 6000;
-constexpr int kStatusShowClientsidePlayGame = 10000;
-constexpr int kSetMyActionForMs = 10000;
+constexpr auto kStatusShowClientsideTyping = 6000;
+constexpr auto kStatusShowClientsideRecordVideo = 6000;
+constexpr auto kStatusShowClientsideUploadVideo = 6000;
+constexpr auto kStatusShowClientsideRecordVoice = 6000;
+constexpr auto kStatusShowClientsideUploadVoice = 6000;
+constexpr auto kStatusShowClientsideRecordRound = 6000;
+constexpr auto kStatusShowClientsideUploadRound = 6000;
+constexpr auto kStatusShowClientsideUploadPhoto = 6000;
+constexpr auto kStatusShowClientsideUploadFile = 6000;
+constexpr auto kStatusShowClientsideChooseLocation = 6000;
+constexpr auto kStatusShowClientsideChooseContact = 6000;
+constexpr auto kStatusShowClientsidePlayGame = 10000;
+constexpr auto kSetMyActionForMs = 10000;
+constexpr auto kNewBlockEachMessage = 50;
 
 auto GlobalPinnedIndex = 0;
 
@@ -212,6 +215,8 @@ bool History::updateSendActionNeedsAnimating(UserData *user, const MTPSendMessag
 	case mtpc_sendMessageUploadVideoAction: _sendActions.insert(user, { Type::UploadVideo, ms + kStatusShowClientsideUploadVideo, action.c_sendMessageUploadVideoAction().vprogress.v }); break;
 	case mtpc_sendMessageRecordAudioAction: _sendActions.insert(user, { Type::RecordVoice, ms + kStatusShowClientsideRecordVoice }); break;
 	case mtpc_sendMessageUploadAudioAction: _sendActions.insert(user, { Type::UploadVoice, ms + kStatusShowClientsideUploadVoice, action.c_sendMessageUploadAudioAction().vprogress.v }); break;
+	case mtpc_sendMessageRecordRoundAction: _sendActions.insert(user, { Type::RecordRound, ms + kStatusShowClientsideRecordRound }); break;
+	case mtpc_sendMessageUploadRoundAction: _sendActions.insert(user, { Type::UploadRound, ms + kStatusShowClientsideUploadRound }); break;
 	case mtpc_sendMessageUploadPhotoAction: _sendActions.insert(user, { Type::UploadPhoto, ms + kStatusShowClientsideUploadPhoto, action.c_sendMessageUploadPhotoAction().vprogress.v }); break;
 	case mtpc_sendMessageUploadDocumentAction: _sendActions.insert(user, { Type::UploadFile, ms + kStatusShowClientsideUploadFile, action.c_sendMessageUploadDocumentAction().vprogress.v }); break;
 	case mtpc_sendMessageGeoLocationAction: _sendActions.insert(user, { Type::ChooseLocation, ms + kStatusShowClientsideChooseLocation }); break;
@@ -299,6 +304,8 @@ bool History::updateSendActionNeedsAnimating(TimeMs ms, bool force) {
 				case Type::UploadVideo: return name.isEmpty() ? lang(lng_send_action_upload_video) : lng_user_action_upload_video(lt_user, name);
 				case Type::RecordVoice: return name.isEmpty() ? lang(lng_send_action_record_audio) : lng_user_action_record_audio(lt_user, name);
 				case Type::UploadVoice: return name.isEmpty() ? lang(lng_send_action_upload_audio) : lng_user_action_upload_audio(lt_user, name);
+				case Type::RecordRound: return name.isEmpty() ? lang(lng_send_action_record_round) : lng_user_action_record_round(lt_user, name);
+				case Type::UploadRound: return name.isEmpty() ? lang(lng_send_action_upload_round) : lng_user_action_upload_round(lt_user, name);
 				case Type::UploadPhoto: return name.isEmpty() ? lang(lng_send_action_upload_photo) : lng_user_action_upload_photo(lt_user, name);
 				case Type::UploadFile: return name.isEmpty() ? lang(lng_send_action_upload_file) : lng_user_action_upload_file(lt_user, name);
 				case Type::ChooseLocation: return name.isEmpty() ? lang(lng_send_action_geo_location) : lng_user_action_geo_location(lt_user, name);
@@ -351,11 +358,12 @@ bool History::updateSendActionNeedsAnimating(TimeMs ms, bool force) {
 }
 
 void ChannelHistory::getRangeDifference() {
-	auto fromId = MsgId(0), toId = MsgId(0);
+	auto fromId = MsgId(0);
+	auto toId = MsgId(0);
 	for (auto blockIndex = 0, blocksCount = blocks.size(); blockIndex < blocksCount; ++blockIndex) {
-		auto block = blocks.at(blockIndex);
+		auto block = blocks[blockIndex];
 		for (auto itemIndex = 0, itemsCount = block->items.size(); itemIndex < itemsCount; ++itemIndex) {
-			auto item = block->items.at(itemIndex);
+			auto item = block->items[itemIndex];
 			if (item->id > 0) {
 				fromId = item->id;
 				break;
@@ -366,9 +374,9 @@ void ChannelHistory::getRangeDifference() {
 	if (!fromId) return;
 
 	for (auto blockIndex = blocks.size(); blockIndex > 0;) {
-		auto block = blocks.at(--blockIndex);
+		auto block = blocks[--blockIndex];
 		for (auto itemIndex = block->items.size(); itemIndex > 0;) {
-			auto item = block->items.at(--itemIndex);
+			auto item = block->items[--itemIndex];
 			if (item->id > 0) {
 				toId = item->id;
 				break;
@@ -422,9 +430,9 @@ HistoryJoined *ChannelHistory::insertJoinedMessage(bool unread) {
 	}
 
 	for (auto blockIndex = blocks.size(); blockIndex > 0;) {
-		auto block = blocks.at(--blockIndex);
+		auto block = blocks[--blockIndex];
 		for (auto itemIndex = block->items.size(); itemIndex > 0;) {
-			auto item = block->items.at(--itemIndex);
+			auto item = block->items[--itemIndex];
 
 			// Due to a server bug sometimes inviteDate is less (before) than the
 			// first message in the megagroup (message about migration), let us
@@ -492,10 +500,10 @@ void ChannelHistory::checkJoinedMessage(bool createUnread) {
 void ChannelHistory::checkMaxReadMessageDate() {
 	if (_maxReadMessageDate.isValid()) return;
 
-	for (int blockIndex = blocks.size(); blockIndex > 0;) {
-		HistoryBlock *block = blocks.at(--blockIndex);
-		for (int itemIndex = block->items.size(); itemIndex > 0;) {
-			HistoryItem *item = block->items.at(--itemIndex);
+	for (auto blockIndex = blocks.size(); blockIndex > 0;) {
+		auto block = blocks[--blockIndex];
+		for (auto itemIndex = block->items.size(); itemIndex > 0;) {
+			auto item = block->items[--itemIndex];
 			if (!item->unread()) {
 				_maxReadMessageDate = item->date;
 				if (item->isGroupMigrate() && isMegagroup() && peer->migrateFrom()) {
@@ -829,7 +837,11 @@ HistoryItem *History::createItem(const MTPMessage &msg, bool applyServiceAction,
 
 	case mtpc_messageService: {
 		auto &m = msg.c_messageService();
-		result = HistoryService::create(this, m);
+		if (m.vaction.type() == mtpc_messageActionPhoneCall) {
+			result = HistoryMessage::create(this, m);
+		} else {
+			result = HistoryService::create(this, m);
+		}
 
 		if (applyServiceAction) {
 			auto &action = m.vaction;
@@ -1095,7 +1107,7 @@ void History::eraseFromOverview(MediaOverviewType type, MsgId msgId) {
 }
 
 HistoryItem *History::addNewItem(HistoryItem *adding, bool newMsg) {
-	t_assert(!isBuildingFrontBlock());
+	Expects(!isBuildingFrontBlock());
 	addItemToBlock(adding);
 
 	setLastMessage(adding);
@@ -1227,12 +1239,12 @@ HistoryBlock *History::prepareBlockForAddingItem() {
 		result->setIndexInHistory(0);
 		blocks.push_front(result);
 		for (int i = 1, l = blocks.size(); i < l; ++i) {
-			blocks.at(i)->setIndexInHistory(i);
+			blocks[i]->setIndexInHistory(i);
 		}
 		return result;
 	}
 
-	bool addNewBlock = blocks.isEmpty() || (blocks.back()->items.size() >= MessagesPerPage);
+	auto addNewBlock = blocks.isEmpty() || (blocks.back()->items.size() >= kNewBlockEachMessage);
 	if (!addNewBlock) {
 		return blocks.back();
 	}
@@ -1241,13 +1253,13 @@ HistoryBlock *History::prepareBlockForAddingItem() {
 	result->setIndexInHistory(blocks.size());
 	blocks.push_back(result);
 
-	result->items.reserve(MessagesPerPage);
+	result->items.reserve(kNewBlockEachMessage);
 	return result;
 };
 
 void History::addItemToBlock(HistoryItem *item) {
-	t_assert(item != nullptr);
-	t_assert(item->detached());
+	Expects(item != nullptr);
+	Expects(item->detached());
 
 	auto block = prepareBlockForAddingItem();
 
@@ -1301,7 +1313,7 @@ void History::addOlderSlice(const QVector<MTPMessage> &slice) {
 			// lastParticipants are displayed in Profile as members list.
 			markupSenders = &peer->asChannel()->mgInfo->markupSenders;
 		}
-		for (int32 i = block->items.size(); i > 0; --i) {
+		for (auto i = block->items.size(); i > 0; --i) {
 			auto item = block->items[i - 1];
 			mask |= item->addToOverview(AddToOverviewFront);
 			if (item->from()->id) {
@@ -1583,14 +1595,14 @@ void History::getNextShowFrom(HistoryBlock *block, int i) {
 		auto l = block->items.size();
 		for (++i; i < l; ++i) {
 			if (block->items[i]->id > 0) {
-				showFrom = block->items.at(i);
+				showFrom = block->items[i];
 				return;
 			}
 		}
 	}
 
 	for (auto j = block->indexInHistory() + 1, s = blocks.size(); j < s; ++j) {
-		block = blocks.at(j);
+		block = blocks[j];
 		for_const (auto item, block->items) {
 			if (item->id > 0) {
 				showFrom = item;
@@ -1604,7 +1616,7 @@ void History::getNextShowFrom(HistoryBlock *block, int i) {
 void History::countScrollState(int top) {
 	countScrollTopItem(top);
 	if (scrollTopItem) {
-		scrollTopOffset = (top - scrollTopItem->block()->y - scrollTopItem->y);
+		scrollTopOffset = (top - scrollTopItem->block()->y() - scrollTopItem->y());
 	}
 }
 
@@ -1618,22 +1630,22 @@ void History::countScrollTopItem(int top) {
 	if (scrollTopItem && !scrollTopItem->detached()) {
 		itemIndex = scrollTopItem->indexInBlock();
 		blockIndex = scrollTopItem->block()->indexInHistory();
-		itemTop = blocks.at(blockIndex)->y + scrollTopItem->y;
+		itemTop = blocks[blockIndex]->y() + scrollTopItem->y();
 	}
 	if (itemTop > top) {
 		// go backward through history while we don't find an item that starts above
 		do {
-			HistoryBlock *block = blocks.at(blockIndex);
+			auto block = blocks[blockIndex];
 			for (--itemIndex; itemIndex >= 0; --itemIndex) {
-				HistoryItem *item = block->items.at(itemIndex);
-				itemTop = block->y + item->y;
+				auto item = block->items[itemIndex];
+				itemTop = block->y() + item->y();
 				if (itemTop <= top) {
 					scrollTopItem = item;
 					return;
 				}
 			}
 			if (--blockIndex >= 0) {
-				itemIndex = blocks.at(blockIndex)->items.size();
+				itemIndex = blocks[blockIndex]->items.size();
 			} else {
 				break;
 			}
@@ -1643,16 +1655,16 @@ void History::countScrollTopItem(int top) {
 	} else {
 		// go forward through history while we don't find the last item that starts above
 		for (int blocksCount = blocks.size(); blockIndex < blocksCount; ++blockIndex) {
-			HistoryBlock *block = blocks.at(blockIndex);
+			auto block = blocks[blockIndex];
 			for (int itemsCount = block->items.size(); itemIndex < itemsCount; ++itemIndex) {
-				HistoryItem *item = block->items.at(itemIndex);
-				itemTop = block->y + item->y;
+				auto item = block->items[itemIndex];
+				itemTop = block->y() + item->y();
 				if (itemTop > top) {
 					t_assert(itemIndex > 0 || blockIndex > 0);
 					if (itemIndex > 0) {
-						scrollTopItem = block->items.at(itemIndex - 1);
+						scrollTopItem = block->items[itemIndex - 1];
 					} else {
-						scrollTopItem = blocks.at(blockIndex - 1)->items.back();
+						scrollTopItem = blocks[blockIndex - 1]->items.back();
 					}
 					return;
 				}
@@ -1666,12 +1678,12 @@ void History::countScrollTopItem(int top) {
 void History::getNextScrollTopItem(HistoryBlock *block, int32 i) {
 	++i;
 	if (i > 0 && i < block->items.size()) {
-		scrollTopItem = block->items.at(i);
+		scrollTopItem = block->items[i];
 		return;
 	}
 	int j = block->indexInHistory() + 1;
 	if (j > 0 && j < blocks.size()) {
-		scrollTopItem = blocks.at(j)->items.front();
+		scrollTopItem = blocks[j]->items.front();
 		return;
 	}
 	scrollTopItem = nullptr;
@@ -1697,12 +1709,12 @@ void History::destroyUnreadBar() {
 }
 
 HistoryItem *History::addNewInTheMiddle(HistoryItem *newItem, int32 blockIndex, int32 itemIndex) {
-	t_assert(blockIndex >= 0);
-	t_assert(blockIndex < blocks.size());
-	t_assert(itemIndex >= 0);
-	t_assert(itemIndex <= blocks[blockIndex]->items.size());
+	Expects(blockIndex >= 0);
+	Expects(blockIndex < blocks.size());
+	Expects(itemIndex >= 0);
+	Expects(itemIndex <= blocks[blockIndex]->items.size());
 
-	auto block = blocks.at(blockIndex);
+	auto block = blocks[blockIndex];
 
 	newItem->attachToBlock(block, itemIndex);
 	block->items.insert(itemIndex, newItem);
@@ -1737,7 +1749,7 @@ HistoryBlock *History::finishBuildingFrontBlock() {
 	if (block) {
 		if (blocks.size() > 1) {
 			auto last = block->items.back(); // ... item, item, item, last ], [ first, item, item ...
-			auto first = blocks.at(1)->items.front();
+			auto first = blocks[1]->items.front();
 
 			// we've added a new front block, so previous item for
 			// the old first item of a first block was changed
@@ -1932,8 +1944,8 @@ int History::resizeGetHeight(int newWidth) {
 
 	width = newWidth;
 	int y = 0;
-	for_const (HistoryBlock *block, blocks) {
-		block->y = y;
+	for_const (auto block, blocks) {
+		block->setY(y);
 		y += block->resizeGetHeight(newWidth, resizeAllItems);
 	}
 	height = y;
@@ -2169,11 +2181,11 @@ void History::overviewSliceDone(int32 overviewIndex, const MTPmessages_Messages 
 }
 
 void History::changeMsgId(MsgId oldId, MsgId newId) {
-	for (int32 i = 0; i < OverviewCount; ++i) {
+	for (auto i = 0; i < OverviewCount; ++i) {
 		auto j = overviewIds[i].find(oldId);
 		if (j != overviewIds[i].cend()) {
 			overviewIds[i].erase(j);
-			int32 index = overview[i].indexOf(oldId);
+			auto index = overview[i].indexOf(oldId);
 			if (overviewIds[i].constFind(newId) == overviewIds[i].cend()) {
 				overviewIds[i].insert(newId);
 				if (index >= 0) {
@@ -2189,7 +2201,7 @@ void History::changeMsgId(MsgId oldId, MsgId newId) {
 }
 
 void History::removeBlock(HistoryBlock *block) {
-	t_assert(block->items.isEmpty());
+	Expects(block->items.isEmpty());
 
 	if (_buildingFrontBlock && block == _buildingFrontBlock->block) {
 		_buildingFrontBlock->block = nullptr;
@@ -2199,9 +2211,9 @@ void History::removeBlock(HistoryBlock *block) {
 	blocks.removeAt(index);
 	if (index < blocks.size()) {
 		for (int i = index, l = blocks.size(); i < l; ++i) {
-			blocks.at(i)->setIndexInHistory(i);
+			blocks[i]->setIndexInHistory(i);
 		}
-		blocks.at(index)->items.front()->previousItemChanged();
+		blocks[index]->items.front()->previousItemChanged();
 	} else if (!blocks.empty() && !blocks.back()->items.empty()) {
 		blocks.back()->items.back()->nextItemChanged();
 	}
@@ -2212,65 +2224,64 @@ History::~History() {
 }
 
 int HistoryBlock::resizeGetHeight(int newWidth, bool resizeAllItems) {
-	int y = 0;
-	for_const (HistoryItem *item, items) {
-		item->y = y;
+	auto y = 0;
+	for_const (auto item, items) {
+		item->setY(y);
 		if (resizeAllItems || item->pendingResize()) {
 			y += item->resizeGetHeight(newWidth);
 		} else {
 			y += item->height();
 		}
 	}
-	height = y;
-	return height;
+	_height = y;
+	return _height;
 }
 
 void HistoryBlock::clear(bool leaveItems) {
-	Items lst;
-	std::swap(lst, items);
+	auto itemsList = base::take(items);
 
 	if (leaveItems) {
-		for_const (HistoryItem *item, lst) {
+		for_const (auto item, itemsList) {
 			item->detachFast();
 		}
 	} else {
-		for_const (HistoryItem *item, lst) {
+		for_const (auto item, itemsList) {
 			delete item;
 		}
 	}
 }
 
 void HistoryBlock::removeItem(HistoryItem *item) {
-	t_assert(item->block() == this);
+	Expects(item->block() == this);
 
-	int blockIndex = indexInHistory();
-	int itemIndex = item->indexInBlock();
-	if (history->showFrom == item) {
-		history->getNextShowFrom(this, itemIndex);
+	auto blockIndex = indexInHistory();
+	auto itemIndex = item->indexInBlock();
+	if (_history->showFrom == item) {
+		_history->getNextShowFrom(this, itemIndex);
 	}
-	if (history->lastSentMsg == item) {
-		history->lastSentMsg = nullptr;
+	if (_history->lastSentMsg == item) {
+		_history->lastSentMsg = nullptr;
 	}
-	if (history->unreadBar == item) {
-		history->unreadBar = nullptr;
+	if (_history->unreadBar == item) {
+		_history->unreadBar = nullptr;
 	}
-	if (history->scrollTopItem == item) {
-		history->getNextScrollTopItem(this, itemIndex);
+	if (_history->scrollTopItem == item) {
+		_history->getNextScrollTopItem(this, itemIndex);
 	}
 
 	item->detachFast();
 	items.remove(itemIndex);
-	for (int i = itemIndex, l = items.size(); i < l; ++i) {
-		items.at(i)->setIndexInBlock(i);
+	for (auto i = itemIndex, l = items.size(); i < l; ++i) {
+		items[i]->setIndexInBlock(i);
 	}
 	if (items.isEmpty()) {
-		history->removeBlock(this);
+		_history->removeBlock(this);
 	} else if (itemIndex < items.size()) {
-		items.at(itemIndex)->previousItemChanged();
-	} else if (blockIndex + 1 < history->blocks.size()) {
-		history->blocks.at(blockIndex + 1)->items.front()->previousItemChanged();
-	} else if (!history->blocks.empty() && !history->blocks.back()->items.empty()) {
-		history->blocks.back()->items.back()->nextItemChanged();
+		items[itemIndex]->previousItemChanged();
+	} else if (blockIndex + 1 < _history->blocks.size()) {
+		_history->blocks[blockIndex + 1]->items.front()->previousItemChanged();
+	} else if (!_history->blocks.empty() && !_history->blocks.back()->items.empty()) {
+		_history->blocks.back()->items.back()->nextItemChanged();
 	}
 
 	if (items.isEmpty()) {

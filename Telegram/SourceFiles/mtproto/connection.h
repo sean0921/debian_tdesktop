@@ -22,13 +22,22 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 #include "mtproto/core_types.h"
 #include "mtproto/auth_key.h"
+#include "mtproto/dc_options.h"
 #include "core/single_timer.h"
 
 namespace MTP {
 
 class Instance;
 
-bool IsPrimeAndGood(const QByteArray &data, int g);
+bool IsPrimeAndGood(base::const_byte_span primeBytes, int g);
+struct ModExpFirst {
+	static constexpr auto kRandomPowerSize = 256;
+
+	std::vector<gsl::byte> modexp;
+	std::array<gsl::byte, kRandomPowerSize> randomPower;
+};
+ModExpFirst CreateModExp(int g, base::const_byte_span primeBytes, base::const_byte_span randomSeed);
+std::vector<gsl::byte> CreateAuthKey(base::const_byte_span firstBytes, base::const_byte_span randomBytes, base::const_byte_span primeBytes);
 
 namespace internal {
 
@@ -128,7 +137,6 @@ public slots:
 	void onReceivedSome();
 
 	void onReadyData();
-	void socketStart(bool afterConfig = false);
 
 	void onConnected4();
 	void onConnected6();
@@ -136,8 +144,6 @@ public slots:
 	void onDisconnected6();
 	void onError4(qint32 errorCode);
 	void onError6(qint32 errorCode);
-
-	void doFinish();
 
 	// Auth key creation packet receive slots
 	void pqAnswered();
@@ -153,10 +159,15 @@ public slots:
 	void updateAuthKey();
 
 	void onConfigLoaded();
+	void onCDNConfigLoaded();
 
 private:
+	void connectToServer(bool afterConfig = false);
 	void doDisconnect();
 	void restart();
+	void finishAndDestroy();
+	void requestCDNConfig();
+	void handleError(int errorCode);
 
 	void createConn(bool createIPv4, bool createIPv6);
 	void destroyConn(AbstractConnection **conn = 0); // 0 - destory all
@@ -182,10 +193,11 @@ private:
 
 	bool setState(int32 state, int32 ifState = Connection::UpdateAlways);
 
-	std::string encryptPQInnerRSA(const MTPP_Q_inner_data &data, const MTP::internal::RSAPublicKey *key);
+	base::byte_vector encryptPQInnerRSA(const MTPP_Q_inner_data &data, const MTP::internal::RSAPublicKey &key);
 	std::string encryptClientDHInner(const MTPClient_DH_Inner_Data &data);
 
 	Instance *_instance = nullptr;
+	DcType _dcType = DcType::Regular;
 
 	mutable QReadWriteLock stateConnMutex;
 	int32 _state = DisconnectedState;
@@ -268,9 +280,9 @@ private:
 		uint32 msgs_sent = 0;
 	};
 	struct AuthKeyCreateStrings {
-		QByteArray dh_prime;
-		QByteArray g_a;
-		AuthKey::Data auth_key = { { 0 } };
+		std::vector<gsl::byte> dh_prime;
+		std::vector<gsl::byte> g_a;
+		AuthKey::Data auth_key = { { gsl::byte{} } };
 	};
 	std::unique_ptr<AuthKeyCreateData> _authKeyData;
 	std::unique_ptr<AuthKeyCreateStrings> _authKeyStrings;

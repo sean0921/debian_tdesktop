@@ -578,7 +578,6 @@ TextSelection shiftSelection(TextSelection selection, const Text &byText) {
 } // namespace internal
 
 HistoryItem::HistoryItem(History *history, MsgId msgId, MTPDmessage::Flags flags, QDateTime msgDate, int32 from) : HistoryElement()
-, y(0)
 , id(msgId)
 , date(msgDate)
 , _from(from ? App::user(from) : history->peer)
@@ -753,23 +752,39 @@ void HistoryItem::setId(MsgId newId) {
 	}
 }
 
+bool HistoryItem::canPin() const {
+	return id > 0 && _history->peer->isMegagroup() && (_history->peer->asChannel()->amEditor() || _history->peer->asChannel()->amCreator()) && toHistoryMessage();
+}
+
+bool HistoryItem::canForward() const {
+	if (id < 0) {
+		return false;
+	}
+	if (auto message = toHistoryMessage()) {
+		if (auto media = message->getMedia()) {
+			if (media->type() == MediaTypeCall) {
+				return false;
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
 bool HistoryItem::canEdit(const QDateTime &cur) const {
 	auto messageToMyself = (_history->peer->id == AuthSession::CurrentUserPeerId());
 	auto messageTooOld = messageToMyself ? false : (date.secsTo(cur) >= Global::EditTimeLimit());
-	if (id < 0 || messageTooOld) return false;
+	if (id < 0 || messageTooOld) {
+		return false;
+	}
 
 	if (auto msg = toHistoryMessage()) {
-		if (msg->Has<HistoryMessageVia>() || msg->Has<HistoryMessageForwarded>()) return false;
+		if (msg->Has<HistoryMessageVia>() || msg->Has<HistoryMessageForwarded>()) {
+			return false;
+		}
 
 		if (auto media = msg->getMedia()) {
-			auto type = media->type();
-			if (type != MediaTypePhoto &&
-				type != MediaTypeVideo &&
-				type != MediaTypeFile &&
-				type != MediaTypeGif &&
-				type != MediaTypeMusicFile &&
-				type != MediaTypeVoiceFile &&
-				type != MediaTypeWebPage) {
+			if (!media->canEditCaption() && media->type() != MediaTypeWebPage) {
 				return false;
 			}
 		}
@@ -782,42 +797,102 @@ bool HistoryItem::canEdit(const QDateTime &cur) const {
 	return false;
 }
 
+bool HistoryItem::canDelete() const {
+	auto channel = _history->peer->asChannel();
+	if (!channel) {
+		return !(_flags & MTPDmessage_ClientFlag::f_is_group_migrate);
+	}
+
+	if (id == 1) {
+		return false;
+	}
+	if (channel->amCreator()) {
+		return true;
+	}
+	if (isPost()) {
+		if (channel->amEditor() && out()) {
+			return true;
+		}
+		return false;
+	}
+	return (channel->amEditor() || channel->amModerator() || out());
+}
+
 bool HistoryItem::canDeleteForEveryone(const QDateTime &cur) const {
 	auto messageToMyself = (_history->peer->id == AuthSession::CurrentUserPeerId());
 	auto messageTooOld = messageToMyself ? false : (date.secsTo(cur) >= Global::EditTimeLimit());
-	if (id < 0 || messageToMyself || messageTooOld) return false;
-	if (history()->peer->isChannel()) return false;
-
-	if (auto msg = toHistoryMessage()) {
-		return !isPost() && out();
+	if (id < 0 || messageToMyself || messageTooOld || isPost()) {
+		return false;
 	}
-	return false;
+	if (history()->peer->isChannel()) {
+		return false;
+	}
+	if (!toHistoryMessage()) {
+		return false;
+	}
+	if (auto media = getMedia()) {
+		if (media->type() == MediaTypeCall) {
+			return false;
+		}
+	}
+	if (!out()) {
+		if (auto chat = history()->peer->asChat()) {
+			if (!chat->amCreator() && (!chat->amAdmin() || !chat->adminsEnabled())) {
+				return false;
+			}
+		} else {
+			return false;
+		}
+	}
+	return true;
 }
 
 QString HistoryItem::directLink() const {
-	return hasDirectLink() ? Messenger::Instance().createInternalLinkFull(_history->peer->asChannel()->username + '/' + QString::number(id)) : QString();
+	if (hasDirectLink()) {
+		auto query = _history->peer->asChannel()->username + '/' + QString::number(id);
+		if (auto media = getMedia()) {
+			if (auto document = media->getDocument()) {
+				if (document->isRoundVideo()) {
+					return qsl("https://telesco.pe/") + query;
+				}
+			}
+		}
+		return Messenger::Instance().createInternalLinkFull(query);
+	}
+	return QString();
 }
+
 bool HistoryItem::unread() const {
 	// Messages from myself are always read.
 	if (history()->peer->isSelf()) return false;
 
 	if (out()) {
 		// Outgoing messages in converted chats are always read.
-		if (history()->peer->migrateTo()) return false;
+		if (history()->peer->migrateTo()) {
+			return false;
+		}
 
 		if (id > 0) {
-			if (id < history()->outboxReadBefore) return false;
+			if (id < history()->outboxReadBefore) {
+				return false;
+			}
 			if (auto user = history()->peer->asUser()) {
-				if (user->botInfo) return false;
+				if (user->botInfo) {
+					return false;
+				}
 			} else if (auto channel = history()->peer->asChannel()) {
-				if (!channel->isMegagroup()) return false;
+				if (!channel->isMegagroup()) {
+					return false;
+				}
 			}
 		}
 		return true;
 	}
 
 	if (id > 0) {
-		if (id < history()->inboxReadBefore) return false;
+		if (id < history()->inboxReadBefore) {
+			return false;
+		}
 		return true;
 	}
 	return (_flags & MTPDmessage_ClientFlag::f_clientside_unread);
@@ -867,25 +942,32 @@ void HistoryItem::setUnreadBarFreezed() {
 void HistoryItem::clipCallback(Media::Clip::Notification notification) {
 	using namespace Media::Clip;
 
-	HistoryMedia *media = getMedia();
-	if (!media) return;
+	auto media = getMedia();
+	if (!media) {
+		return;
+	}
 
-	Reader *reader = media ? media->getClipReader() : 0;
-	if (!reader) return;
+	auto reader = media ? media->getClipReader() : nullptr;
+	if (!reader) {
+		return;
+	}
 
 	switch (notification) {
 	case NotificationReinit: {
-		bool stopped = false;
+		auto stopped = false;
 		if (reader->autoPausedGif()) {
-			if (MainWidget *m = App::main()) {
+			if (auto m = App::main()) {
 				if (!m->isItemVisible(this)) { // stop animation if it is not visible
 					media->stopInline();
-					if (DocumentData *document = media->getDocument()) { // forget data from memory
+					if (auto document = media->getDocument()) { // forget data from memory
 						document->forget();
 					}
 					stopped = true;
 				}
 			}
+		} else if (reader->mode() == Media::Clip::Reader::Mode::Video && reader->state() == Media::Clip::State::Finished) {
+			// Stop finished video message.
+			media->stopInline();
 		}
 		if (!stopped) {
 			setPendingInitDimensions();
@@ -903,7 +985,9 @@ void HistoryItem::clipCallback(Media::Clip::Notification notification) {
 
 void HistoryItem::recountDisplayDate() {
 	bool displayingDate = ([this]() {
-		if (isEmpty()) return false;
+		if (isEmpty()) {
+			return false;
+		}
 
 		if (auto previous = previousItem()) {
 			return previous->isEmpty() || (previous->date.date() != date.date());
@@ -930,7 +1014,9 @@ QString HistoryItem::notificationText() const {
 	};
 
 	auto result = getText();
-	if (result.size() > 0xFF) result = result.mid(0, 0xFF) + qsl("...");
+	if (result.size() > 0xFF) {
+		result = result.mid(0, 0xFF) + qsl("...");
+	}
 	return result;
 }
 

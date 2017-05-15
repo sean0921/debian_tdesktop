@@ -352,6 +352,14 @@ MultiSelect {
 	fieldCancelSkip: pixels;
 }
 
+CallButton {
+	button: IconButton;
+	bg: color;
+	angle: double;
+	outerRadius: pixels;
+	outerBg: color;
+}
+
 Menu {
 	skip: pixels;
 
@@ -675,7 +683,6 @@ SettingsSlider {
 	labelFgActive: color;
 	duration: int;
 	rippleBottomSkip: pixels;
-	rippleRoundRadius: pixels;
 	rippleBg: color;
 	rippleBgActive: color;
 	ripple: RippleAnimation;

@@ -29,8 +29,8 @@
     ],
     'action': [
       'python', '<(DEPTH)/update_dependent.py', '--styles',
-      '-I<(res_loc)', '-I<(src_loc)',
-      '-o<(SHARED_INTERMEDIATE_DIR)/update_dependent_styles.timestamp',
+      '-I', '<(res_loc)', '-I', '<(src_loc)',
+      '-o', '<(SHARED_INTERMEDIATE_DIR)/update_dependent_styles.timestamp',
       '<@(style_files)',
     ],
     'message': 'Updating dependent style files..',
@@ -46,7 +46,7 @@
     ],
     'action': [
       'python', '<(DEPTH)/update_dependent.py', '--qrc',
-      '-o<(SHARED_INTERMEDIATE_DIR)/update_dependent_qrc.timestamp',
+      '-o', '<(SHARED_INTERMEDIATE_DIR)/update_dependent_qrc.timestamp',
       '<@(qrc_files)',
     ],
     'message': 'Updating dependent qrc files..',
@@ -63,9 +63,9 @@
     ],
     'action': [
       '<(PRODUCT_DIR)/codegen_style<(exe_ext)',
-      '-I<(res_loc)', '-I<(src_loc)',
-      '-o<(SHARED_INTERMEDIATE_DIR)/styles',
-      '-w<(PRODUCT_DIR)/../..',
+      '-I', '<(res_loc)', '-I', '<(src_loc)',
+      '-o', '<(SHARED_INTERMEDIATE_DIR)/styles',
+      '-w', '<(PRODUCT_DIR)/../..',
 
       # GYP/Ninja bug workaround: if we specify just <(RULE_INPUT_PATH)
       # the <(RULE_INPUT_ROOT) variables won't be available in Ninja,
@@ -80,7 +80,7 @@
   }, {
     'action_name': 'codegen_lang',
     'inputs': [
-      '<(PRODUCT_DIR)/MetaLang<(exe_ext)',
+      '<(PRODUCT_DIR)/codegen_lang<(exe_ext)',
       '<(res_loc)/langs/lang.strings',
     ],
     'outputs': [
@@ -88,9 +88,9 @@
       '<(SHARED_INTERMEDIATE_DIR)/lang_auto.h',
     ],
     'action': [
-      '<(PRODUCT_DIR)/MetaLang<(exe_ext)',
-      '-lang_in', '<(res_loc)/langs/lang.strings',
-      '-lang_out', '<(SHARED_INTERMEDIATE_DIR)/lang_auto',
+      '<(PRODUCT_DIR)/codegen_lang<(exe_ext)',
+      '-o', '<(SHARED_INTERMEDIATE_DIR)', '<(res_loc)/langs/lang.strings',
+      '-w', '<(PRODUCT_DIR)/../..',
     ],
     'message': 'codegen_lang-ing lang.strings..',
     'process_outputs_as_sources': 1,
@@ -106,7 +106,8 @@
     ],
     'action': [
       '<(PRODUCT_DIR)/codegen_numbers<(exe_ext)',
-      '-o<(SHARED_INTERMEDIATE_DIR)', '<(res_loc)/numbers.txt',
+      '-o', '<(SHARED_INTERMEDIATE_DIR)', '<(res_loc)/numbers.txt',
+      '-w', '<(PRODUCT_DIR)/../..',
     ],
     'message': 'codegen_numbers-ing numbers.txt..',
     'process_outputs_as_sources': 1,
@@ -122,7 +123,7 @@
     ],
     'action': [
       'python', '<(src_loc)/codegen/scheme/codegen_scheme.py',
-      '-o<(SHARED_INTERMEDIATE_DIR)', '<(res_loc)/scheme.tl',
+      '-o', '<(SHARED_INTERMEDIATE_DIR)', '<(res_loc)/scheme.tl',
     ],
     'message': 'codegen_scheme-ing scheme.tl..',
     'process_outputs_as_sources': 1,
@@ -137,7 +138,7 @@
     ],
     'action': [
       '<(PRODUCT_DIR)/codegen_emoji<(exe_ext)',
-      '-o<(SHARED_INTERMEDIATE_DIR)',
+      '-o', '<(SHARED_INTERMEDIATE_DIR)',
     ],
     'message': 'codegen_emoji-ing..',
     'process_outputs_as_sources': 1,
@@ -155,9 +156,9 @@
     ],
     'action': [
       '<(PRODUCT_DIR)/codegen_style<(exe_ext)',
-      '-I<(res_loc)', '-I<(src_loc)',
-      '-o<(SHARED_INTERMEDIATE_DIR)/styles',
-      '-w<(PRODUCT_DIR)/../..',
+      '-I', '<(res_loc)', '-I', '<(src_loc)',
+      '-o', '<(SHARED_INTERMEDIATE_DIR)/styles',
+      '-w', '<(PRODUCT_DIR)/../..',
 
       # GYP/Ninja bug workaround: if we specify just <(RULE_INPUT_PATH)
       # the <(RULE_INPUT_ROOT) variables won't be available in Ninja,

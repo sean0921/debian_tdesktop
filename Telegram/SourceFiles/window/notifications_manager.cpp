@@ -22,6 +22,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 #include "platform/platform_notifications_manager.h"
 #include "window/notifications_manager_default.h"
+#include "media/media_audio_track.h"
+#include "media/media_audio.h"
 #include "lang.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -60,7 +62,7 @@ void System::createManager() {
 void System::schedule(History *history, HistoryItem *item) {
 	if (App::quitting() || !history->currentNotification() || !App::api()) return;
 
-	PeerData *notifyByFrom = (!history->peer->isUser() && item->mentionsMe()) ? item->from() : 0;
+	auto notifyByFrom = (!history->peer->isUser() && item->mentionsMe()) ? item->from() : nullptr;
 
 	if (item->isSilent()) {
 		history->popNotification(item);
@@ -235,7 +237,12 @@ void System::showNext() {
 	}
 	if (alert) {
 		Platform::Notifications::FlashBounce();
-		App::playSound();
+		if (Global::SoundNotify() && !Platform::Notifications::SkipAudio()) {
+			ensureSoundCreated();
+			_soundTrack->playOnce();
+			emit Media::Player::mixer()->suppressAll(_soundTrack->getLengthMs());
+			emit Media::Player::mixer()->faderOnTimer();
+		}
 	}
 
 	if (_waiters.isEmpty() || !Global::DesktopNotify() || Platform::Notifications::SkipToast()) {
@@ -290,23 +297,23 @@ void System::showNext() {
 				_waitTimer.start(next - ms);
 				break;
 			} else {
-				HistoryItem *fwd = notifyItem->Has<HistoryMessageForwarded>() ? notifyItem : nullptr; // forwarded notify grouping
-				int32 fwdCount = 1;
+				auto forwardedItem = notifyItem->Has<HistoryMessageForwarded>() ? notifyItem : nullptr; // forwarded notify grouping
+				auto forwardedCount = 1;
 
 				auto ms = getms(true);
-				History *history = notifyItem->history();
+				auto history = notifyItem->history();
 				auto j = _whenMaps.find(history);
 				if (j == _whenMaps.cend()) {
 					history->clearNotifications();
 				} else {
-					HistoryItem *nextNotify = 0;
+					auto nextNotify = (HistoryItem*)nullptr;
 					do {
 						history->skipNotification();
 						if (!history->hasNotification()) {
 							break;
 						}
 
-						j.value().remove((fwd ? fwd : notifyItem)->id);
+						j.value().remove((forwardedItem ? forwardedItem : notifyItem)->id);
 						do {
 							auto k = j.value().constFind(history->currentNotification()->id);
 							if (k != j.value().cend()) {
@@ -317,11 +324,11 @@ void System::showNext() {
 							history->skipNotification();
 						} while (history->hasNotification());
 						if (nextNotify) {
-							if (fwd) {
-								HistoryItem *nextFwd = nextNotify->Has<HistoryMessageForwarded>() ? nextNotify : nullptr;
-								if (nextFwd && fwd->author() == nextFwd->author() && qAbs(int64(nextFwd->date.toTime_t()) - int64(fwd->date.toTime_t())) < 2) {
-									fwd = nextFwd;
-									++fwdCount;
+							if (forwardedItem) {
+								auto nextForwarded = nextNotify->Has<HistoryMessageForwarded>() ? nextNotify : nullptr;
+								if (nextForwarded && forwardedItem->author() == nextForwarded->author() && qAbs(int64(nextForwarded->date.toTime_t()) - int64(forwardedItem->date.toTime_t())) < 2) {
+									forwardedItem = nextForwarded;
+									++forwardedCount;
 								} else {
 									nextNotify = nullptr;
 								}
@@ -332,7 +339,7 @@ void System::showNext() {
 					} while (nextNotify);
 				}
 
-				_manager->showNotification(notifyItem, fwdCount);
+				_manager->showNotification(notifyItem, forwardedCount);
 
 				if (!history->hasNotification()) {
 					_waiters.remove(history);
@@ -347,6 +354,15 @@ void System::showNext() {
 	if (nextAlert) {
 		_waitTimer.start(nextAlert - ms);
 	}
+}
+
+void System::ensureSoundCreated() {
+	if (_soundTrack) {
+		return;
+	}
+
+	_soundTrack = Media::Audio::Current().createTrack();
+	_soundTrack->fillFromFile(AuthSession::Current().data().getSoundPath(qsl("msg_incoming")));
 }
 
 void System::updateAll() {
@@ -414,6 +430,8 @@ void NativeManager::doShowNotification(HistoryItem *item, int forwardedCount) {
 
 	doShowNativeNotification(item->history()->peer, item->id, title, subtitle, text, options.hideNameAndPhoto, options.hideReplyButton);
 }
+
+System::~System() = default;
 
 } // namespace Notifications
 } // namespace Window

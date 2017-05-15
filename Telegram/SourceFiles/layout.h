@@ -20,9 +20,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "core/runtime_composer.h"
+#include "base/runtime_composer.h"
 
-static constexpr TextSelection FullSelection = { 0xFFFF, 0xFFFF };
+constexpr auto FullSelection = TextSelection { 0xFFFF, 0xFFFF };
 
 extern TextParseOptions _textNameOptions, _textDlgOptions;
 extern TextParseOptions _historyTextOptions, _historyBotOptions, _historyTextNoMonoOptions, _historyBotNoMonoOptions;
@@ -77,6 +77,7 @@ static const int32 FileStatusSizeFailed = 0x7FFFFFF2;
 QString formatSizeText(qint64 size);
 QString formatDownloadText(qint64 ready, qint64 total);
 QString formatDurationText(qint64 duration);
+QString formatDurationWords(qint64 duration);
 QString formatDurationAndSizeText(qint64 duration, qint64 size);
 QString formatGifAndSizeText(qint64 size);
 QString formatPlayedText(qint64 played, qint64 duration);

@@ -22,11 +22,12 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "mainwidget.h"
 #include "application.h"
 #include "historywidget.h"
+#include "history/history_inner_widget.h"
 #include "storage/localstorage.h"
 #include "window/notifications_manager_default.h"
 #include "platform/platform_notifications_manager.h"
-#include "boxes/contactsbox.h"
-#include "boxes/aboutbox.h"
+#include "boxes/contacts_box.h"
+#include "boxes/about_box.h"
 #include "lang.h"
 #include "platform/mac/mac_utilities.h"
 
@@ -35,6 +36,15 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include <IOKit/IOKitLib.h>
 #include <IOKit/hidsystem/ev_keymap.h>
 #include <SPMediaKeyTap.h>
+
+namespace {
+
+// When we close a window that is fullscreen we first leave the fullscreen
+// mode and after that hide the window. This is a timeout for elaving the
+// fullscreen mode, after that we'll hide the window no matter what.
+constexpr auto kHideAfterFullscreenTimeoutMs = 3000;
+
+} // namespace
 
 @interface MainWindowObserver : NSObject {
 }
@@ -47,7 +57,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 - (void) windowWillEnterFullScreen:(NSNotification *)aNotification;
 - (void) windowWillExitFullScreen:(NSNotification *)aNotification;
 
-@end
+@end // @interface MainWindowObserver
 
 namespace Platform {
 
@@ -63,7 +73,6 @@ public:
 
 	void willEnterFullScreen();
 	void willExitFullScreen();
-	void activateCustomNotifications();
 
 	void initCustomTitle(NSWindow *window, NSView *view);
 
@@ -82,30 +91,10 @@ private:
 
 };
 
-class MainWindow::CustomNotificationHandle : public QObject {
-public:
-	CustomNotificationHandle(QWidget *parent) : QObject(parent) {
-	}
-
-	void activate() {
-		auto widget = static_cast<QWidget*>(parent());
-		NSWindow *wnd = [reinterpret_cast<NSView *>(widget->winId()) window];
-		[wnd orderFront:wnd];
-	}
-
-	~CustomNotificationHandle() {
-		if (auto window = App::wnd()) {
-			window->customNotificationDestroyed(this);
-		}
-	}
-
-};
-
 } // namespace Platform
 
 @implementation MainWindowObserver {
-
-MainWindow::Private *_private;
+	MainWindow::Private *_private;
 
 }
 
@@ -117,7 +106,6 @@ MainWindow::Private *_private;
 }
 
 - (void) activeSpaceDidChange:(NSNotification *)aNotification {
-	_private->activateCustomNotifications();
 }
 
 - (void) darkModeChanged:(NSNotification *)aNotification {
@@ -140,7 +128,7 @@ MainWindow::Private *_private;
 	_private->willExitFullScreen();
 }
 
-@end
+@end // @implementation MainWindowObserver
 
 namespace Platform {
 
@@ -202,10 +190,6 @@ void MainWindow::Private::willExitFullScreen() {
 	_public->setTitleVisible(true);
 }
 
-void MainWindow::Private::activateCustomNotifications() {
-	_public->activateCustomNotifications();
-}
-
 void MainWindow::Private::enableShadow(WId winId) {
 //	[[(NSView*)winId window] setStyleMask:NSBorderlessWindowMask];
 //	[[(NSView*)winId window] setHasShadow:YES];
@@ -231,15 +215,11 @@ MainWindow::Private::~Private() {
 }
 
 MainWindow::MainWindow()
-: icon256(qsl(":/gui/art/icon256.png"))
-, iconbig256(qsl(":/gui/art/iconbig256.png"))
-, wndIcon(QPixmap::fromImage(iconbig256, Qt::ColorOnly))
-, _private(std::make_unique<Private>(this)) {
+: _private(std::make_unique<Private>(this)) {
 	trayImg = st::macTrayIcon.instance(QColor(0, 0, 0, 180), dbisOne);
 	trayImgSel = st::macTrayIcon.instance(QColor(255, 255, 255), dbisOne);
 
-	_hideAfterFullScreenTimer.setSingleShot(true);
-	connect(&_hideAfterFullScreenTimer, SIGNAL(timeout()), this, SLOT(onHideAfterFullScreen()));
+	_hideAfterFullScreenTimer.setCallback([this] { hideAndDeactivate(); });
 }
 
 void MainWindow::closeWithoutDestroy() {
@@ -247,7 +227,7 @@ void MainWindow::closeWithoutDestroy() {
 
 	auto isFullScreen = (([nsWindow styleMask] & NSFullScreenWindowMask) == NSFullScreenWindowMask);
 	if (isFullScreen) {
-		_hideAfterFullScreenTimer.start(3000);
+		_hideAfterFullScreenTimer.callOnce(kHideAfterFullscreenTimeoutMs);
 		[nsWindow toggleFullScreen:nsWindow];
 	} else {
 		hideAndDeactivate();
@@ -256,8 +236,7 @@ void MainWindow::closeWithoutDestroy() {
 
 void MainWindow::stateChangedHook(Qt::WindowState state) {
 	if (_hideAfterFullScreenTimer.isActive()) {
-		_hideAfterFullScreenTimer.stop();
-		QTimer::singleShot(0, this, SLOT(onHideAfterFullScreen()));
+		_hideAfterFullScreenTimer.callOnce(0);
 	}
 }
 
@@ -273,18 +252,15 @@ void MainWindow::initHook() {
 	}
 }
 
+void MainWindow::updateWindowIcon() {
+}
+
 void MainWindow::titleVisibilityChangedHook() {
 	updateTitleCounter();
 }
 
-void MainWindow::onHideAfterFullScreen() {
-	hideAndDeactivate();
-}
-
 void MainWindow::hideAndDeactivate() {
 	hide();
-	NSWindow *nsWindow = [reinterpret_cast<NSView*>(winId()) window];
-	[[NSApplication sharedApplication] hide: nsWindow];
 }
 
 QImage MainWindow::psTrayIcon(bool selected) const {
@@ -524,20 +500,6 @@ void MainWindow::psUpdateSysMenu(Qt::WindowState state) {
 }
 
 void MainWindow::psUpdateMargins() {
-}
-
-void MainWindow::customNotificationCreated(QWidget *notification) {
-	_customNotifications.insert(object_ptr<CustomNotificationHandle>(notification));
-}
-
-void MainWindow::customNotificationDestroyed(CustomNotificationHandle *handle) {
-	_customNotifications.erase(handle);
-}
-
-void MainWindow::activateCustomNotifications() {
-	for (auto handle : _customNotifications) {
-		handle->activate();
-	}
 }
 
 void MainWindow::updateGlobalMenuHook() {

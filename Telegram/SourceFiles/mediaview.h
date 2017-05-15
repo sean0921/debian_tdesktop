@@ -154,6 +154,7 @@ private:
 	};
 
 	void showSaveMsgFile();
+	void updateMixerVideoVolume() const;
 
 	void dropdownHidden();
 	void updateDocSize();
@@ -178,6 +179,7 @@ private:
 
 	void initAnimation();
 	void createClipReader();
+	Images::Options videoThumbOptions() const;
 
 	void initThemePreview();
 	void destroyThemePreview();

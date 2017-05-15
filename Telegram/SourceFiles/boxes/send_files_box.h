@@ -20,7 +20,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "boxes/abstractbox.h"
+#include "boxes/abstract_box.h"
 #include "storage/localimageloader.h"
 
 namespace Ui {
@@ -115,8 +115,7 @@ class EditCaptionBox : public BoxContent, public RPCSender {
 	Q_OBJECT
 
 public:
-	EditCaptionBox(QWidget*, HistoryItem *msg);
-	static bool canEdit(HistoryItem *message);
+	EditCaptionBox(QWidget*, HistoryMedia *media, FullMsgId msgId);
 
 public slots:
 	void onCaptionResized();
@@ -139,6 +138,8 @@ private:
 
 	void saveDone(const MTPUpdates &updates);
 	bool saveFail(const RPCError &error);
+
+	int errorTopSkip() const;
 
 	FullMsgId _msgId;
 	bool _animated = false;

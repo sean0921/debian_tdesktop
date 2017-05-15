@@ -25,13 +25,39 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "platform/platform_window_title.h"
 #include "window/themes/window_theme.h"
 #include "mediaview.h"
+#include "messenger.h"
 #include "mainwindow.h"
 
 namespace Window {
 
+QImage LoadLogo() {
+	return QImage(qsl(":/gui/art/logo_256.png"));
+}
+
+QImage LoadLogoNoMargin() {
+	return QImage(qsl(":/gui/art/logo_256_no_margin.png"));
+}
+
+QIcon CreateOfficialIcon() {
+	auto useNoMarginLogo = (cPlatform() == dbipMac);
+	if (auto messenger = Messenger::InstancePointer()) {
+		return QIcon(App::pixmapFromImageInPlace(useNoMarginLogo ? messenger->logoNoMargin() : messenger->logo()));
+	}
+	return QIcon(App::pixmapFromImageInPlace(useNoMarginLogo ? LoadLogoNoMargin() : LoadLogo()));
+}
+
+QIcon CreateIcon() {
+	auto result = CreateOfficialIcon();
+	if (cPlatform() == dbipLinux32 || cPlatform() == dbipLinux64) {
+		return QIcon::fromTheme("telegram", result);
+	}
+	return result;
+}
+
 MainWindow::MainWindow() : QWidget()
 , _positionUpdatedTimer(this)
 , _body(this)
+, _icon(CreateIcon())
 , _titleText(qsl("Telegram"))
 , _isActiveTimer(this) {
 	subscribe(Theme::Background(), [this](const Theme::BackgroundUpdate &data) {
@@ -156,8 +182,13 @@ void MainWindow::createMediaView() {
 	_mediaView.create(nullptr);
 }
 
+void MainWindow::updateWindowIcon() {
+	setWindowIcon(_icon);
+}
+
 void MainWindow::init() {
 	initHook();
+	updateWindowIcon();
 
 	_positionUpdatedTimer->setSingleShot(true);
 	connect(_positionUpdatedTimer, SIGNAL(timeout()), this, SLOT(savePositionByTimer()));
@@ -339,17 +370,24 @@ void MainWindow::showRightColumn(object_ptr<TWidget> widget) {
 	}
 	auto nowRightWidth = _rightColumn ? _rightColumn->width() : 0;
 	setMinimumWidth(st::windowMinWidth + nowRightWidth);
-	auto nowWidth = width();
-
 	if (!isMaximized()) {
-		auto desktop = QDesktopWidget().availableGeometry(this);
-		auto newWidth = qMin(wasWidth + nowRightWidth - wasRightWidth, desktop.width());
-		auto newLeft = qMin(x(), desktop.x() + desktop.width() - newWidth);
-		if (x() != newLeft || width() != newWidth) {
-			setGeometry(newLeft, y(), newWidth, height());
-		} else {
-			updateControlsGeometry();
-		}
+		tryToExtendWidthBy(wasWidth + nowRightWidth - wasRightWidth - width());
+	} else {
+		updateControlsGeometry();
+	}
+}
+
+bool MainWindow::canExtendWidthBy(int addToWidth) {
+	auto desktop = QDesktopWidget().availableGeometry(this);
+	return (width() + addToWidth) <= desktop.width();
+}
+
+void MainWindow::tryToExtendWidthBy(int addToWidth) {
+	auto desktop = QDesktopWidget().availableGeometry(this);
+	auto newWidth = qMin(width() + addToWidth, desktop.width());
+	auto newLeft = qMin(x(), desktop.x() + desktop.width() - newWidth);
+	if (x() != newLeft || width() != newWidth) {
+		setGeometry(newLeft, y(), newWidth, height());
 	} else {
 		updateControlsGeometry();
 	}
@@ -370,32 +408,6 @@ PeerData *MainWindow::ui_getPeerForMouseAction() {
 		return _mediaView->ui_getPeerForMouseAction();
 	}
 	return nullptr;
-}
-
-void MainWindow::enableGifPauseReason(GifPauseReason reason) {
-	if (!(_gifPauseReasons & reason)) {
-		auto notify = (static_cast<int>(_gifPauseReasons) < static_cast<int>(reason));
-		_gifPauseReasons |= reason;
-		if (notify) {
-			_gifPauseLevelChanged.notify();
-		}
-	}
-}
-
-void MainWindow::disableGifPauseReason(GifPauseReason reason) {
-	if (_gifPauseReasons & reason) {
-		_gifPauseReasons &= ~qFlags(reason);
-		if (static_cast<int>(_gifPauseReasons) < static_cast<int>(reason)) {
-			_gifPauseLevelChanged.notify();
-		}
-	}
-}
-
-bool MainWindow::isGifPausedAtLeastFor(GifPauseReason reason) const {
-	if (reason == GifPauseReason::Any) {
-		return (_gifPauseReasons != 0) || !isActive();
-	}
-	return (static_cast<int>(_gifPauseReasons) >= 2 * static_cast<int>(reason)) || !isActive();
 }
 
 MainWindow::~MainWindow() = default;

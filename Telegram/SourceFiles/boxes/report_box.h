@@ -20,7 +20,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "boxes/abstractbox.h"
+#include "boxes/abstract_box.h"
 
 namespace Ui {
 template <typename Enum>
@@ -38,7 +38,7 @@ public:
 
 private slots:
 	void onReport();
-	void onDescriptionResized();
+	void onReasonResized();
 	void onClose() {
 		closeBox();
 	}

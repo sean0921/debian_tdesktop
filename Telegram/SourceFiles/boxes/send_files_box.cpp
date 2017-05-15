@@ -31,7 +31,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_history.h"
 #include "styles/style_boxes.h"
 #include "media/media_clip_reader.h"
-#include "mainwindow.h"
+#include "window/window_controller.h"
 
 namespace {
 
@@ -61,7 +61,7 @@ SendFilesBox::SendFilesBox(QWidget*, const QStringList &files, CompressConfirm c
 }
 
 void SendFilesBox::prepareSingleFileLayout() {
-	t_assert(_files.size() == 1);
+	Expects(_files.size() == 1);
 	if (!_files.front().isEmpty()) {
 		tryToReadSingleFile();
 	}
@@ -231,6 +231,8 @@ SendFilesBox::SendFilesBox(QWidget*, const QString &phone, const QString &firstn
 }
 
 void SendFilesBox::prepare() {
+	Expects(controller() != nullptr);
+
 	if (_files.size() > 1) {
 		updateTitleText();
 	}
@@ -331,7 +333,7 @@ void SendFilesBox::paintEvent(QPaintEvent *e) {
 		}
 		if (_gifPreview && _gifPreview->started()) {
 			auto s = QSize(_previewWidth, _previewHeight);
-			auto paused = App::wnd()->isGifPausedAtLeastFor(Window::GifPauseReason::Layer);
+			auto paused = controller()->isGifPausedAtLeastFor(Window::GifPauseReason::Layer);
 			auto frame = _gifPreview->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, ImageRoundCorner::None, paused ? 0 : getms());
 			p.drawPixmap(_previewLeft, st::boxPhotoPadding.top(), frame);
 		} else {
@@ -448,48 +450,47 @@ void SendFilesBox::closeHook() {
 	}
 }
 
-EditCaptionBox::EditCaptionBox(QWidget*, HistoryItem *msg)
-: _msgId(msg->fullId()) {
+EditCaptionBox::EditCaptionBox(QWidget*, HistoryMedia *media, FullMsgId msgId) : _msgId(msgId) {
+	Expects(media->canEditCaption());
+
 	QSize dimensions;
 	ImagePtr image;
 	QString caption;
 	DocumentData *doc = nullptr;
-	if (auto media = msg->getMedia()) {
-		auto t = media->type();
-		switch (t) {
-		case MediaTypeGif: {
-			_animated = true;
-			doc = static_cast<HistoryGif*>(media)->getDocument();
-			dimensions = doc->dimensions;
-			image = doc->thumb;
-		} break;
 
-		case MediaTypePhoto: {
-			_photo = true;
-			PhotoData *photo = static_cast<HistoryPhoto*>(media)->photo();
-			dimensions = QSize(photo->full->width(), photo->full->height());
-			image = photo->full;
-		} break;
+	switch (media->type()) {
+	case MediaTypeGif: {
+		_animated = true;
+		doc = static_cast<HistoryGif*>(media)->getDocument();
+		dimensions = doc->dimensions;
+		image = doc->thumb;
+	} break;
 
-		case MediaTypeVideo: {
-			_animated = true;
-			doc = static_cast<HistoryVideo*>(media)->getDocument();
-			dimensions = doc->dimensions;
-			image = doc->thumb;
-		} break;
+	case MediaTypePhoto: {
+		_photo = true;
+		auto photo = static_cast<HistoryPhoto*>(media)->photo();
+		dimensions = QSize(photo->full->width(), photo->full->height());
+		image = photo->full;
+	} break;
 
-		case MediaTypeFile:
-		case MediaTypeMusicFile:
-		case MediaTypeVoiceFile: {
-			_doc = true;
-			doc = static_cast<HistoryDocument*>(media)->getDocument();
-			image = doc->thumb;
-		} break;
-		}
-		caption = media->getCaption().text;
+	case MediaTypeVideo: {
+		_animated = true;
+		doc = static_cast<HistoryVideo*>(media)->getDocument();
+		dimensions = doc->dimensions;
+		image = doc->thumb;
+	} break;
+
+	case MediaTypeFile:
+	case MediaTypeMusicFile:
+	case MediaTypeVoiceFile: {
+		_doc = true;
+		doc = static_cast<HistoryDocument*>(media)->getDocument();
+		image = doc->thumb;
+	} break;
 	}
-	if ((!_animated && (dimensions.isEmpty() || doc)) || image->isNull()) {
-		_animated = false;
+	caption = media->getCaption().text;
+
+	if (!_animated && (dimensions.isEmpty() || doc || image->isNull())) {
 		if (image->isNull()) {
 			_thumbw = 0;
 		} else {
@@ -561,17 +562,11 @@ EditCaptionBox::EditCaptionBox(QWidget*, HistoryItem *msg)
 		_thumb = App::pixmapFromImageInPlace(_thumb.toImage().scaled(_thumbw * cIntRetinaFactor(), _thumbh * cIntRetinaFactor(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
 		_thumb.setDevicePixelRatio(cRetinaFactor());
 	}
-	if (_animated || _photo || _doc) {
-		_field.create(this, st::confirmCaptionArea, lang(lng_photo_caption), caption);
-		_field->setMaxLength(MaxPhotoCaption);
-		_field->setCtrlEnterSubmit(Ui::CtrlEnterSubmit::Both);
-	} else {
-		auto original = msg->originalText();
-		auto text = textApplyEntities(original.text, original.entities);
-		_field.create(this, st::editTextArea, lang(lng_photo_caption), text);
-//		_field->setMaxLength(MaxMessageSize); // entities can make text in input field larger but still valid
-		_field->setCtrlEnterSubmit(cCtrlEnter() ? Ui::CtrlEnterSubmit::CtrlEnter : Ui::CtrlEnterSubmit::Enter);
-	}
+	t_assert(_animated || _photo || _doc);
+
+	_field.create(this, st::confirmCaptionArea, lang(lng_photo_caption), caption);
+	_field->setMaxLength(MaxPhotoCaption);
+	_field->setCtrlEnterSubmit(Ui::CtrlEnterSubmit::Both);
 }
 
 void EditCaptionBox::prepareGifPreview(DocumentData *document) {
@@ -611,20 +606,6 @@ void EditCaptionBox::clipCallback(Media::Clip::Notification notification) {
 	}
 }
 
-bool EditCaptionBox::canEdit(HistoryItem *message) {
-	if (auto media = message->getMedia()) {
-		switch (media->type()) {
-		case MediaTypeGif:
-		case MediaTypePhoto:
-		case MediaTypeVideo:
-		case MediaTypeFile:
-		case MediaTypeMusicFile:
-		case MediaTypeVoiceFile: return true;
-		}
-	}
-	return false;
-}
-
 void EditCaptionBox::prepare() {
 	addButton(lang(lng_settings_save), [this] { onSave(); });
 	addButton(lang(lng_cancel), [this] { closeBox(); });
@@ -646,7 +627,7 @@ void EditCaptionBox::onCaptionResized() {
 }
 
 void EditCaptionBox::updateBoxSize() {
-	auto newHeight = st::boxPhotoPadding.top() + st::boxPhotoCaptionSkip + _field->height() + st::normalFont->height;
+	auto newHeight = st::boxPhotoPadding.top() + st::boxPhotoCaptionSkip + _field->height() + errorTopSkip() + st::normalFont->height;
 	if (_photo || _animated) {
 		newHeight += _thumbh;
 	} else if (_thumbw) {
@@ -657,6 +638,10 @@ void EditCaptionBox::updateBoxSize() {
 		newHeight += st::boxTitleFont->height;
 	}
 	setDimensions(st::boxWideWidth, newHeight);
+}
+
+int EditCaptionBox::errorTopSkip() const {
+	return (st::boxButtonPadding.top() / 2);
 }
 
 void EditCaptionBox::paintEvent(QPaintEvent *e) {
@@ -673,7 +658,7 @@ void EditCaptionBox::paintEvent(QPaintEvent *e) {
 		}
 		if (_gifPreview && _gifPreview->started()) {
 			auto s = QSize(_thumbw, _thumbh);
-			auto paused = App::wnd()->isGifPausedAtLeastFor(Window::GifPauseReason::Layer);
+			auto paused = controller()->isGifPausedAtLeastFor(Window::GifPauseReason::Layer);
 			auto frame = _gifPreview->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, ImageRoundCorner::None, paused ? 0 : getms());
 			p.drawPixmap(_thumbx, st::boxPhotoPadding.top(), frame);
 		} else {
@@ -749,14 +734,14 @@ void EditCaptionBox::paintEvent(QPaintEvent *e) {
 	if (!_error.isEmpty()) {
 		p.setFont(st::normalFont);
 		p.setPen(st::boxTextFgError);
-		p.drawTextLeft(_field->x(), _field->y() + _field->height() + (st::boxButtonPadding.top() / 2), width(), _error);
+		p.drawTextLeft(_field->x(), _field->y() + _field->height() + errorTopSkip(), width(), _error);
 	}
 }
 
 void EditCaptionBox::resizeEvent(QResizeEvent *e) {
 	BoxContent::resizeEvent(e);
 	_field->resize(st::boxWideWidth - st::boxPhotoPadding.left() - st::boxPhotoPadding.right(), _field->height());
-	_field->moveToLeft(st::boxPhotoPadding.left(), height() - st::normalFont->height - _field->height());
+	_field->moveToLeft(st::boxPhotoPadding.left(), height() - st::normalFont->height - errorTopSkip() - _field->height());
 }
 
 void EditCaptionBox::setInnerFocus() {
@@ -766,7 +751,7 @@ void EditCaptionBox::setInnerFocus() {
 void EditCaptionBox::onSave(bool ctrlShiftEnter) {
 	if (_saveRequestId) return;
 
-	HistoryItem *item = App::histItemById(_msgId);
+	auto item = App::histItemById(_msgId);
 	if (!item) {
 		_error = lang(lng_edit_deleted);
 		update();

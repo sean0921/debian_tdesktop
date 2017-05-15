@@ -22,14 +22,14 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 #include "lang.h"
 #include "mainwidget.h"
-#include "stickers/stickers.h"
-#include "boxes/confirmbox.h"
-#include "boxes/stickersetbox.h"
+#include "chat_helpers/stickers.h"
+#include "boxes/confirm_box.h"
+#include "boxes/sticker_set_box.h"
 #include "apiwrap.h"
 #include "storage/localstorage.h"
 #include "dialogs/dialogs_layout.h"
 #include "styles/style_boxes.h"
-#include "styles/style_stickers.h"
+#include "styles/style_chat_helpers.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/effects/ripple_animation.h"
@@ -142,6 +142,7 @@ StickersBox::StickersBox(QWidget*, Section section)
 , _installed(0, this, Section::Installed)
 , _featured(1, this, Section::Featured)
 , _archived(2, this, Section::Archived) {
+	_tabs->setRippleTopRoundRadius(st::boxRadius);
 }
 
 StickersBox::StickersBox(QWidget*, const Stickers::Order &archivedIds)
@@ -300,6 +301,10 @@ void StickersBox::refreshTabs() {
 	if ((_tab == &_archived && !_tabIndices.contains(Section::Archived))
 		|| (_tab == &_featured && !_tabIndices.contains(Section::Featured))) {
 		switchTab();
+	} else if (_tab == &_archived) {
+		_tabs->setActiveSectionFast(_tabIndices.indexOf(Section::Archived));
+	} else if (_tab == &_featured) {
+		_tabs->setActiveSectionFast(_tabIndices.indexOf(Section::Featured));
 	}
 	updateTabsGeometry();
 }
@@ -409,6 +414,7 @@ void StickersBox::switchTab() {
 	_tab->widget()->show();
 	rebuildList();
 	onScrollToY(_tab->getScrollTop());
+	setInnerVisible(true);
 	auto nowCache = grabContentCache();
 	auto nowIndex = _tab->index();
 

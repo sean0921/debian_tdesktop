@@ -23,7 +23,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "mainwidget.h"
 #include "storage/localstorage.h"
 #include "platform/platform_specific.h"
-#include "messenger.h"
+#include "auth_session.h"
 
 namespace Images {
 namespace {
@@ -191,6 +191,9 @@ void prepareCircle(QImage &img) {
 void prepareRound(QImage &image, ImageRoundRadius radius, ImageRoundCorners corners) {
 	if (!static_cast<int>(corners)) {
 		return;
+	} else if (radius == ImageRoundRadius::Ellipse) {
+		t_assert(corners == ImageRoundCorners(ImageRoundCorner::All));
+		prepareCircle(image);
 	}
 	t_assert(!image.isNull());
 
@@ -468,6 +471,8 @@ const QPixmap &Image::pixRounded(int32 w, int32 h, ImageRoundRadius radius, Imag
 		options |= Images::Option::RoundedLarge | cornerOptions(corners);
 	} else if (radius == ImageRoundRadius::Small) {
 		options |= Images::Option::RoundedSmall | cornerOptions(corners);
+	} else if (radius == ImageRoundRadius::Ellipse) {
+		options |= Images::Option::Circled | cornerOptions(corners);
 	}
 	auto k = PixKey(w, h, options);
 	auto i = _sizesCache.constFind(k);
@@ -618,6 +623,8 @@ const QPixmap &Image::pixSingle(int32 w, int32 h, int32 outerw, int32 outerh, Im
 		options |= Images::Option::RoundedLarge | cornerOptions(corners);
 	} else if (radius == ImageRoundRadius::Small) {
 		options |= Images::Option::RoundedSmall | cornerOptions(corners);
+	} else if (radius == ImageRoundRadius::Ellipse) {
+		options |= Images::Option::Circled | cornerOptions(corners);
 	}
 
 	auto k = SinglePixKey(options);
@@ -657,6 +664,8 @@ const QPixmap &Image::pixBlurredSingle(int w, int h, int32 outerw, int32 outerh,
 		options |= Images::Option::RoundedLarge | cornerOptions(corners);
 	} else if (radius == ImageRoundRadius::Small) {
 		options |= Images::Option::RoundedSmall | cornerOptions(corners);
+	} else if (radius == ImageRoundRadius::Ellipse) {
+		options |= Images::Option::Circled | cornerOptions(corners);
 	}
 
 	auto k = SinglePixKey(options);
@@ -858,7 +867,7 @@ void RemoteImage::doCheckload() const {
 void RemoteImage::destroyLoaderDelayed(FileLoader *newValue) const {
 	_loader->stop();
 	auto loader = std::unique_ptr<FileLoader>(std::exchange(_loader, newValue));
-	Messenger::Instance().delayedDestroyLoader(std::move(loader));
+	AuthSession::Current().downloader().delayedDestroyLoader(std::move(loader));
 }
 
 void RemoteImage::loadLocal() {
@@ -959,7 +968,7 @@ void RemoteImage::cancel() {
 	auto loader = std::exchange(_loader, CancelledFileLoader);
 	loader->cancel();
 	loader->stop();
-	Messenger::Instance().delayedDestroyLoader(std::unique_ptr<FileLoader>(loader));
+	AuthSession::Current().downloader().delayedDestroyLoader(std::unique_ptr<FileLoader>(loader));
 }
 
 float64 RemoteImage::progress() const {

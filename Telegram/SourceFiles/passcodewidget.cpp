@@ -29,6 +29,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/widgets/input_fields.h"
 #include "styles/style_boxes.h"
 #include "window/window_slide_animation.h"
+#include "window/window_controller.h"
 #include "auth_session.h"
 
 PasscodeWidget::PasscodeWidget(QWidget *parent) : TWidget(parent)
@@ -58,8 +59,7 @@ void PasscodeWidget::onSubmit() {
 
 	if (App::main()) {
 		if (Local::checkPasscode(_passcode->text().toUtf8())) {
-			cSetPasscodeBadTries(0);
-			App::wnd()->clearPasscode(); // Destroys this widget.
+			Messenger::Instance().clearPasscode(); // Destroys this widget.
 			return;
 		} else {
 			cSetPasscodeBadTries(cPasscodeBadTries() + 1);
@@ -187,6 +187,8 @@ void PasscodeWidget::resizeEvent(QResizeEvent *e) {
 }
 
 void PasscodeWidget::setInnerFocus() {
-	Global::RefDialogsListFocused().set(false, true);
+	if (auto controller = App::wnd()->controller()) {
+		controller->dialogsListFocused().set(false, true);
+	}
 	_passcode->setFocusFast();
 }

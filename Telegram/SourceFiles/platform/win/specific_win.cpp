@@ -31,7 +31,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "history/history_location_manager.h"
 #include "storage/localstorage.h"
 #include "passcodewidget.h"
-#include "core/task_queue.h"
+#include "base/task_queue.h"
 
 #include <Shobjidl.h>
 #include <shellapi.h>
@@ -525,13 +525,6 @@ void start() {
 
 void finish() {
 	EventFilter::destroy();
-}
-
-void SetWatchingMediaKeys(bool watching) {
-}
-
-bool TransparentWindowsSupported(QPoint globalPosition) {
-	return true;
 }
 
 namespace ThirdParty {

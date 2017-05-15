@@ -26,17 +26,11 @@ class MediaView;
 
 namespace Window {
 
-enum class GifPauseReason {
-	Any = 0,
-	InlineResults = (1 << 0),
-	SavedGifs = (1 << 1),
-	Layer = (1 << 2),
-	MediaPreview = (1 << 3),
-};
-Q_DECLARE_FLAGS(GifPauseReasons, GifPauseReason);
-Q_DECLARE_OPERATORS_FOR_FLAGS(GifPauseReasons);
-
 class TitleWidget;
+
+QImage LoadLogo();
+QImage LoadLogoNoMargin();
+QIcon CreateIcon();
 
 class MainWindow : public QWidget, protected base::Subscriber {
 	Q_OBJECT
@@ -79,6 +73,8 @@ public:
 	QWidget *filedialogParent();
 
 	void showRightColumn(object_ptr<TWidget> widget);
+	bool canExtendWidthBy(int addToWidth);
+	void tryToExtendWidthBy(int addToWidth);
 
 	virtual void updateTrayMenu(bool force = false) {
 	}
@@ -93,13 +89,6 @@ public:
 		return _body.data();
 	}
 	virtual PeerData *ui_getPeerForMouseAction();
-
-	void enableGifPauseReason(GifPauseReason reason);
-	void disableGifPauseReason(GifPauseReason reason);
-	base::Observable<void> &gifPauseLevelChanged() {
-		return _gifPauseLevelChanged;
-	}
-	bool isGifPausedAtLeastFor(GifPauseReason reason) const;
 
 public slots:
 	bool minimizeToTray();
@@ -121,6 +110,8 @@ protected:
 	void clearWidgets();
 	virtual void clearWidgetsHook() {
 	}
+
+	virtual void updateWindowIcon();
 
 	virtual void stateChangedHook(Qt::WindowState state) {
 	}
@@ -179,15 +170,13 @@ private:
 	object_ptr<TWidget> _body;
 	object_ptr<TWidget> _rightColumn = { nullptr };
 
+	QIcon _icon;
 	QString _titleText;
 
 	object_ptr<QTimer> _isActiveTimer;
 	bool _isActive = false;
 
 	object_ptr<MediaView> _mediaView = { nullptr };
-
-	GifPauseReasons _gifPauseReasons = { 0 };
-	base::Observable<void> _gifPauseLevelChanged;
 
 };
 

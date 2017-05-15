@@ -23,7 +23,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "dialogs/dialogs_indexed_list.h"
 #include "dialogs/dialogs_layout.h"
 #include "styles/style_dialogs.h"
-#include "styles/style_stickers.h"
+#include "styles/style_chat_helpers.h"
 #include "styles/style_history.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
@@ -33,10 +33,10 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "mainwindow.h"
 #include "dialogswidget.h"
 #include "mainwidget.h"
-#include "boxes/addcontactbox.h"
-#include "boxes/contactsbox.h"
-#include "boxes/confirmbox.h"
-#include "boxes/aboutbox.h"
+#include "boxes/add_contact_box.h"
+#include "boxes/contacts_box.h"
+#include "boxes/confirm_box.h"
+#include "boxes/about_box.h"
 #include "storage/localstorage.h"
 #include "apiwrap.h"
 #include "ui/widgets/dropdown_menu.h"
@@ -45,6 +45,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "autoupdater.h"
 #include "observer_peer.h"
 #include "auth_session.h"
+#include "messenger.h"
 #include "window/notifications_manager.h"
 #include "ui/effects/widget_fade_wrap.h"
 #include "window/window_controller.h"
@@ -74,7 +75,8 @@ struct DialogsInner::PeerSearchResult {
 	Dialogs::RippleRow row;
 };
 
-DialogsInner::DialogsInner(QWidget *parent, QWidget *main) : SplittedWidget(parent)
+DialogsInner::DialogsInner(QWidget *parent, gsl::not_null<Window::Controller*> controller, QWidget *main) : SplittedWidget(parent)
+, _controller(controller)
 , _dialogs(std::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Date))
 , _contactsNoDialogs(std::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Name))
 , _contacts(std::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Name))
@@ -1502,31 +1504,28 @@ bool DialogsInner::searchReceived(const QVector<MTPMessage> &messages, DialogsSe
 
 	TimeId lastDateFound = 0;
 	for_const (auto message, messages) {
-		if (auto msgId = idFromMessage(message)) {
-			auto peerId = peerFromMessage(message);
-			auto lastDate = dateFromMessage(message);
-			if (auto peer = App::peerLoaded(peerId)) {
-				if (lastDate) {
-					auto item = App::histories().addNewMessage(message, NewMessageExisting);
-					_searchResults.push_back(std::make_unique<Dialogs::FakeRow>(item));
-					lastDateFound = lastDate;
-					if (isGlobalSearch) {
-						_lastSearchDate = lastDateFound;
-					}
-				}
+		auto msgId = idFromMessage(message);
+		auto peerId = peerFromMessage(message);
+		auto lastDate = dateFromMessage(message);
+		if (auto peer = App::peerLoaded(peerId)) {
+			if (lastDate) {
+				auto item = App::histories().addNewMessage(message, NewMessageExisting);
+				_searchResults.push_back(std::make_unique<Dialogs::FakeRow>(item));
+				lastDateFound = lastDate;
 				if (isGlobalSearch) {
-					_lastSearchPeer = peer;
+					_lastSearchDate = lastDateFound;
 				}
-			} else {
-				LOG(("API Error: a search results with not loaded peer %1").arg(peerId));
 			}
-			if (isMigratedSearch) {
-				_lastSearchMigratedId = msgId;
-			} else {
-				_lastSearchId = msgId;
+			if (isGlobalSearch) {
+				_lastSearchPeer = peer;
 			}
 		} else {
-			LOG(("API Error: a search results with not message id"));
+			LOG(("API Error: a search results with not loaded peer %1").arg(peerId));
+		}
+		if (isMigratedSearch) {
+			_lastSearchMigratedId = msgId;
+		} else {
+			_lastSearchId = msgId;
 		}
 	}
 	if (isMigratedSearch) {
@@ -1674,7 +1673,7 @@ void DialogsInner::refresh(bool toTop) {
 		emit mustScrollTo(0, 0);
 		loadPeerPhotos();
 	}
-	Global::RefDialogsListDisplayForced().set(_searchInPeer || !_filter.isEmpty(), true);
+	_controller->dialogsListDisplayForced().set(_searchInPeer || !_filter.isEmpty(), true);
 	update();
 }
 
@@ -1722,7 +1721,7 @@ void DialogsInner::searchInPeer(PeerData *peer) {
 	} else {
 		_cancelSearchInPeer->hide();
 	}
-	Global::RefDialogsListDisplayForced().set(_searchInPeer || !_filter.isEmpty(), true);
+	_controller->dialogsListDisplayForced().set(_searchInPeer || !_filter.isEmpty(), true);
 }
 
 void DialogsInner::clearFilter() {
@@ -2274,7 +2273,7 @@ DialogsWidget::DialogsWidget(QWidget *parent, gsl::not_null<Window::Controller*>
 , _cancelSearch(this, st::dialogsCancelSearch)
 , _lockUnlock(this, st::dialogsLock)
 , _scroll(this, st::dialogsScroll) {
-	_inner = _scroll->setOwnedWidget(object_ptr<DialogsInner>(this, parent));
+	_inner = _scroll->setOwnedWidget(object_ptr<DialogsInner>(this, _controller, parent));
 	connect(_inner, SIGNAL(draggingScrollDelta(int)), this, SLOT(onDraggingScrollDelta(int)));
 	connect(_inner, SIGNAL(mustScrollTo(int,int)), _scroll, SLOT(scrollToY(int,int)));
 	connect(_inner, SIGNAL(dialogMoved(int,int)), this, SLOT(onDialogMoved(int,int)));
@@ -2304,7 +2303,7 @@ DialogsWidget::DialogsWidget(QWidget *parent, gsl::not_null<Window::Controller*>
 	subscribe(Global::RefLocalPasscodeChanged(), [this] { updateLockUnlockVisibility(); });
 	_lockUnlock->setClickedCallback([this] {
 		_lockUnlock->setIconOverride(&st::dialogsUnlockIcon, &st::dialogsUnlockIconOver);
-		App::wnd()->setupPasscode();
+		Messenger::Instance().setupPasscode();
 		_lockUnlock->setIconOverride(nullptr);
 	});
 	_mainMenuToggle->setClickedCallback([this] { showMainMenu(); });
@@ -2388,10 +2387,11 @@ void DialogsWidget::startWidthAnimation() {
 	auto grabGeometry = QRect(scrollGeometry.x(), scrollGeometry.y(), st::dialogsWidthMin, scrollGeometry.height());
 	_scroll->setGeometry(grabGeometry);
 	myEnsureResized(_scroll);
-	_widthAnimationCache = QPixmap(grabGeometry.size() * cIntRetinaFactor());
-	_widthAnimationCache.setDevicePixelRatio(cRetinaFactor());
-	_widthAnimationCache.fill(Qt::transparent);
-	_scroll->render(&_widthAnimationCache, QPoint(0, 0), QRect(QPoint(0, 0), grabGeometry.size()), QWidget::DrawChildren | QWidget::IgnoreMask);
+	auto image = QImage(grabGeometry.size() * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
+	image.setDevicePixelRatio(cRetinaFactor());
+	image.fill(Qt::transparent);
+	_scroll->render(&image, QPoint(0, 0), QRect(QPoint(0, 0), grabGeometry.size()), QWidget::DrawChildren | QWidget::IgnoreMask);
+	_widthAnimationCache = App::pixmapFromImageInPlace(std::move(image));
 	_scroll->setGeometry(scrollGeometry);
 	_scroll->hide();
 }

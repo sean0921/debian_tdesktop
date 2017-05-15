@@ -58,7 +58,7 @@ class DialogsInner : public Ui::SplittedWidget, public RPCSender, private base::
 	Q_OBJECT
 
 public:
-	DialogsInner(QWidget *parent, QWidget *main);
+	DialogsInner(QWidget *parent, gsl::not_null<Window::Controller*> controller, QWidget *main);
 
 	void dialogsReceived(const QVector<MTPDialog> &dialogs);
 	void addSavedPeersAfter(const QDateTime &date);
@@ -226,6 +226,8 @@ private:
 	void savePinnedOrder();
 	void step_pinnedShifting(TimeMs ms, bool timer);
 
+	gsl::not_null<Window::Controller*> _controller;
+
 	DialogsList _dialogs;
 	DialogsList _dialogsImportant;
 
@@ -344,11 +346,6 @@ public:
 
 	void searchMessages(const QString &query, PeerData *inPeer = 0);
 	void onSearchMore();
-
-	void rpcClear() override {
-		_inner->rpcClear();
-		RPCSender::rpcClear();
-	}
 
 	void notify_userIsContactChanged(UserData *user, bool fromThisApp);
 	void notify_historyMuteUpdated(History *history);

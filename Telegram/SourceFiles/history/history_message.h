@@ -27,6 +27,9 @@ public:
 	static HistoryMessage *create(History *history, const MTPDmessage &msg) {
 		return _create(history, msg);
 	}
+	static HistoryMessage *create(History *history, const MTPDmessageService &msg) {
+		return _create(history, msg);
+	}
 	static HistoryMessage *create(History *history, MsgId msgId, MTPDmessage::Flags flags, QDateTime date, int32 from, HistoryMessage *fwd) {
 		return _create(history, msgId, flags, date, from, fwd);
 	}
@@ -147,6 +150,7 @@ public:
 
 private:
 	HistoryMessage(History *history, const MTPDmessage &msg);
+	HistoryMessage(History *history, const MTPDmessageService &msg);
 	HistoryMessage(History *history, MsgId msgId, MTPDmessage::Flags flags, QDateTime date, int32 from, HistoryMessage *fwd); // local forwarded
 	HistoryMessage(History *history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, int32 viaBotId, QDateTime date, int32 from, const TextWithEntities &textWithEntities); // local message
 	HistoryMessage(History *history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, int32 viaBotId, QDateTime date, int32 from, DocumentData *doc, const QString &caption, const MTPReplyMarkup &markup); // local document
@@ -166,8 +170,12 @@ private:
 	void applyEditionToEmpty();
 
 	bool displayForwardedFrom() const {
-		if (auto fwd = Get<HistoryMessageForwarded>()) {
-			return Has<HistoryMessageVia>() || !_media || !_media->isDisplayed() || fwd->_authorOriginal->isChannel() || !_media->hideForwardedFrom();
+		if (auto forwarded = Get<HistoryMessageForwarded>()) {
+			return Has<HistoryMessageVia>()
+				|| !_media
+				|| !_media->isDisplayed()
+				|| !_media->hideForwardedFrom()
+				|| forwarded->_authorOriginal->isChannel();
 		}
 		return false;
 	}

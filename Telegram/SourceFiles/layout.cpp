@@ -26,8 +26,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "storage/file_upload.h"
 #include "mainwindow.h"
 #include "core/file_utilities.h"
-#include "boxes/addcontactbox.h"
-#include "boxes/confirmbox.h"
+#include "boxes/add_contact_box.h"
+#include "boxes/confirm_box.h"
 #include "media/media_audio.h"
 #include "storage/localstorage.h"
 
@@ -125,6 +125,15 @@ QString formatDownloadText(qint64 ready, qint64 total) {
 QString formatDurationText(qint64 duration) {
 	qint64 hours = (duration / 3600), minutes = (duration % 3600) / 60, seconds = duration % 60;
 	return (hours ? QString::number(hours) + ':' : QString()) + (minutes >= 10 ? QString() : QString('0')) + QString::number(minutes) + ':' + (seconds >= 10 ? QString() : QString('0')) + QString::number(seconds);
+}
+
+QString formatDurationWords(qint64 duration) {
+	if (duration > 59) {
+		auto minutes = (duration / 60);
+		auto seconds = (duration % 60);
+		return lng_duration_minutes_seconds(lt_count_minutes, minutes, lt_count_seconds, seconds);
+	}
+	return lng_duration_seconds(lt_count, duration);
 }
 
 QString formatDurationAndSizeText(qint64 duration, qint64 size) {

@@ -23,7 +23,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "lang.h"
 #include "styles/style_boxes.h"
 #include "styles/style_profile.h"
-#include "boxes/confirmbox.h"
+#include "boxes/confirm_box.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
@@ -71,7 +71,7 @@ void ReportBox::reasonChanged(Reason reason) {
 			_reasonOtherText->resize(width() - (st::boxPadding.left() + st::boxOptionListPadding.left() + st::boxPadding.right()), _reasonOtherText->height());
 
 			updateMaxHeight();
-			connect(_reasonOtherText, SIGNAL(resized()), this, SLOT(onDescriptionResized()));
+			connect(_reasonOtherText, SIGNAL(resized()), this, SLOT(onReasonResized()));
 			connect(_reasonOtherText, SIGNAL(submitted(bool)), this, SLOT(onReport()));
 			connect(_reasonOtherText, SIGNAL(cancelled()), this, SLOT(onClose()));
 		}
@@ -90,7 +90,7 @@ void ReportBox::setInnerFocus() {
 	}
 }
 
-void ReportBox::onDescriptionResized() {
+void ReportBox::onReasonResized() {
 	updateMaxHeight();
 	update();
 }

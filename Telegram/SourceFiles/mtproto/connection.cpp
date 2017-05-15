@@ -28,6 +28,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include <openssl/rand.h>
 #include "zlib.h"
 #include "lang.h"
+#include "base/openssl_help.h"
 
 #include "mtproto/rsa_public_key.h"
 #include "messenger.h"
@@ -40,6 +41,149 @@ namespace {
 
 constexpr auto kRecreateKeyId = AuthKey::KeyId(0xFFFFFFFFFFFFFFFFULL);
 constexpr auto kIntSize = static_cast<int>(sizeof(mtpPrime));
+constexpr auto kMaxModExpSize = 256;
+
+bool IsGoodModExpFirst(const openssl::BigNum &modexp, const openssl::BigNum &prime) {
+	auto diff = prime - modexp;
+	if (modexp.failed() || prime.failed() || diff.failed()) {
+		return false;
+	}
+	constexpr auto kMinDiffBitsCount = 2048 - 64;
+	if (diff.isNegative() || diff.bitsSize() < kMinDiffBitsCount || modexp.bitsSize() < kMinDiffBitsCount) {
+		return false;
+	}
+	t_assert(modexp.bytesSize() <= kMaxModExpSize);
+	return true;
+}
+
+bool IsPrimeAndGoodCheck(const openssl::BigNum &prime, int g) {
+	constexpr auto kGoodPrimeBitsCount = 2048;
+
+	if (prime.failed() || prime.isNegative() || prime.bitsSize() != kGoodPrimeBitsCount) {
+		LOG(("MTP Error: Bad prime bits count %1, expected %2.").arg(prime.bitsSize()).arg(kGoodPrimeBitsCount));
+		return false;
+	}
+
+	openssl::Context context;
+	if (!prime.isPrime(context)) {
+		LOG(("MTP Error: Bad prime."));
+		return false;
+	}
+
+	switch (g) {
+	case 2: {
+		auto mod8 = prime.modWord(8);
+		if (mod8 != 7) {
+			LOG(("BigNum PT Error: bad g value: %1, mod8: %2").arg(g).arg(mod8));
+			return false;
+		}
+	} break;
+	case 3: {
+		auto mod3 = prime.modWord(3);
+		if (mod3 != 2) {
+			LOG(("BigNum PT Error: bad g value: %1, mod3: %2").arg(g).arg(mod3));
+			return false;
+		}
+	} break;
+	case 4: break;
+	case 5: {
+		auto mod5 = prime.modWord(5);
+		if (mod5 != 1 && mod5 != 4) {
+			LOG(("BigNum PT Error: bad g value: %1, mod5: %2").arg(g).arg(mod5));
+			return false;
+		}
+	} break;
+	case 6: {
+		auto mod24 = prime.modWord(24);
+		if (mod24 != 19 && mod24 != 23) {
+			LOG(("BigNum PT Error: bad g value: %1, mod24: %2").arg(g).arg(mod24));
+			return false;
+		}
+	} break;
+	case 7: {
+		auto mod7 = prime.modWord(7);
+		if (mod7 != 3 && mod7 != 5 && mod7 != 6) {
+			LOG(("BigNum PT Error: bad g value: %1, mod7: %2").arg(g).arg(mod7));
+			return false;
+		}
+	} break;
+	default: {
+		LOG(("BigNum PT Error: bad g value: %1").arg(g));
+		return false;
+	} break;
+	}
+
+	auto primeSubOneDivTwo = prime;
+	primeSubOneDivTwo.setSubWord(1);
+	primeSubOneDivTwo.setDivWord(2);
+	if (!primeSubOneDivTwo.isPrime(context)) {
+		LOG(("MTP Error: Bad (prime - 1) / 2."));
+		return false;
+	}
+
+	return true;
+}
+
+bool IsPrimeAndGood(base::const_byte_span primeBytes, int g) {
+	static constexpr unsigned char GoodPrime[] = {
+		0xC7, 0x1C, 0xAE, 0xB9, 0xC6, 0xB1, 0xC9, 0x04, 0x8E, 0x6C, 0x52, 0x2F, 0x70, 0xF1, 0x3F, 0x73,
+		0x98, 0x0D, 0x40, 0x23, 0x8E, 0x3E, 0x21, 0xC1, 0x49, 0x34, 0xD0, 0x37, 0x56, 0x3D, 0x93, 0x0F,
+		0x48, 0x19, 0x8A, 0x0A, 0xA7, 0xC1, 0x40, 0x58, 0x22, 0x94, 0x93, 0xD2, 0x25, 0x30, 0xF4, 0xDB,
+		0xFA, 0x33, 0x6F, 0x6E, 0x0A, 0xC9, 0x25, 0x13, 0x95, 0x43, 0xAE, 0xD4, 0x4C, 0xCE, 0x7C, 0x37,
+		0x20, 0xFD, 0x51, 0xF6, 0x94, 0x58, 0x70, 0x5A, 0xC6, 0x8C, 0xD4, 0xFE, 0x6B, 0x6B, 0x13, 0xAB,
+		0xDC, 0x97, 0x46, 0x51, 0x29, 0x69, 0x32, 0x84, 0x54, 0xF1, 0x8F, 0xAF, 0x8C, 0x59, 0x5F, 0x64,
+		0x24, 0x77, 0xFE, 0x96, 0xBB, 0x2A, 0x94, 0x1D, 0x5B, 0xCD, 0x1D, 0x4A, 0xC8, 0xCC, 0x49, 0x88,
+		0x07, 0x08, 0xFA, 0x9B, 0x37, 0x8E, 0x3C, 0x4F, 0x3A, 0x90, 0x60, 0xBE, 0xE6, 0x7C, 0xF9, 0xA4,
+		0xA4, 0xA6, 0x95, 0x81, 0x10, 0x51, 0x90, 0x7E, 0x16, 0x27, 0x53, 0xB5, 0x6B, 0x0F, 0x6B, 0x41,
+		0x0D, 0xBA, 0x74, 0xD8, 0xA8, 0x4B, 0x2A, 0x14, 0xB3, 0x14, 0x4E, 0x0E, 0xF1, 0x28, 0x47, 0x54,
+		0xFD, 0x17, 0xED, 0x95, 0x0D, 0x59, 0x65, 0xB4, 0xB9, 0xDD, 0x46, 0x58, 0x2D, 0xB1, 0x17, 0x8D,
+		0x16, 0x9C, 0x6B, 0xC4, 0x65, 0xB0, 0xD6, 0xFF, 0x9C, 0xA3, 0x92, 0x8F, 0xEF, 0x5B, 0x9A, 0xE4,
+		0xE4, 0x18, 0xFC, 0x15, 0xE8, 0x3E, 0xBE, 0xA0, 0xF8, 0x7F, 0xA9, 0xFF, 0x5E, 0xED, 0x70, 0x05,
+		0x0D, 0xED, 0x28, 0x49, 0xF4, 0x7B, 0xF9, 0x59, 0xD9, 0x56, 0x85, 0x0C, 0xE9, 0x29, 0x85, 0x1F,
+		0x0D, 0x81, 0x15, 0xF6, 0x35, 0xB1, 0x05, 0xEE, 0x2E, 0x4E, 0x15, 0xD0, 0x4B, 0x24, 0x54, 0xBF,
+		0x6F, 0x4F, 0xAD, 0xF0, 0x34, 0xB1, 0x04, 0x03, 0x11, 0x9C, 0xD8, 0xE3, 0xB9, 0x2F, 0xCC, 0x5B };
+
+	if (!base::compare_bytes(gsl::as_bytes(gsl::make_span(GoodPrime)), primeBytes)) {
+		if (g == 3 || g == 4 || g == 5 || g == 7) {
+			return true;
+		}
+	}
+
+	return IsPrimeAndGoodCheck(openssl::BigNum(primeBytes), g);
+}
+
+std::vector<gsl::byte> CreateAuthKey(base::const_byte_span firstBytes, base::const_byte_span randomBytes, base::const_byte_span primeBytes) {
+	using openssl::BigNum;
+	BigNum first(firstBytes);
+	BigNum prime(primeBytes);
+	if (!IsGoodModExpFirst(first, prime)) {
+		LOG(("AuthKey Error: Bad first prime in CreateAuthKey()."));
+		return std::vector<gsl::byte>();
+	}
+	return BigNum::ModExp(first, BigNum(randomBytes), prime).getBytes();
+}
+
+ModExpFirst CreateModExp(int g, base::const_byte_span primeBytes, base::const_byte_span randomSeed) {
+	Expects(randomSeed.size() == ModExpFirst::kRandomPowerSize);
+
+	using namespace openssl;
+
+	BigNum prime(primeBytes);
+	ModExpFirst result;
+	constexpr auto kMaxModExpFirstTries = 5;
+	for (auto tries = 0; tries != kMaxModExpFirstTries; ++tries) {
+		FillRandom(result.randomPower);
+		for (auto i = 0; i != ModExpFirst::kRandomPowerSize; ++i) {
+			result.randomPower[i] ^= randomSeed[i];
+		}
+		auto modexp = BigNum::ModExp(BigNum(g), BigNum(result.randomPower), prime);
+		if (IsGoodModExpFirst(modexp, prime)) {
+			result.modexp = modexp.getBytes();
+			break;
+		}
+	}
+	return result;
+}
 
 void wrapInvokeAfter(mtpRequest &to, const mtpRequest &from, const mtpRequestMap &haveSent, int32 skipBeforeRequest = 0) {
 	mtpMsgId afterId(*(mtpMsgId*)(from->after->data() + 4));
@@ -106,268 +250,13 @@ bool parsePQ(const QByteArray &pqStr, QByteArray &pStr, QByteArray &qStr) {
 	return true;
 }
 
-class BigNumCounter {
-public:
-	BigNumCounter() : ctx(BN_CTX_new()) {
-		BN_init(&bnPower);
-		BN_init(&bnModul);
-		BN_init(&bn_g);
-		BN_init(&bn_g_a);
-		BN_init(&bnResult);
-		BN_init(&bnTemp);
-	}
-	~BigNumCounter() {
-		BN_CTX_free(ctx);
-		BN_clear_free(&bnPower);
-		BN_clear_free(&bnModul);
-		BN_clear_free(&bn_g);
-		BN_clear_free(&bn_g_a);
-		BN_clear_free(&bnResult);
-		BN_clear_free(&bnTemp);
-	}
-
-	bool count(const void *power, const void *modul, uint32 g, void *gResult, const void *g_a, void *g_aResult) {
-		DEBUG_LOG(("BigNum Info: counting g_b = g ^ b % dh_prime and auth_key = g_a ^ b % dh_prime"));
-		uint32 g_be = qToBigEndian(g);
-		if (
-			!BN_bin2bn((const uchar*)power, 64 * sizeof(uint32), &bnPower) ||
-			!BN_bin2bn((const uchar*)modul, 64 * sizeof(uint32), &bnModul) ||
-			!BN_bin2bn((const uchar*)&g_be, sizeof(uint32), &bn_g) ||
-			!BN_bin2bn((const uchar*)g_a, 64 * sizeof(uint32), &bn_g_a)
-			) {
-			ERR_load_crypto_strings();
-			LOG(("BigNum Error: BN_bin2bn failed, error: %1").arg(ERR_error_string(ERR_get_error(), 0)));
-			DEBUG_LOG(("BigNum Error: base %1, power %2, modul %3").arg(Logs::mb(&g_be, sizeof(uint32)).str()).arg(Logs::mb(power, 64 * sizeof(uint32)).str()).arg(Logs::mb(modul, 64 * sizeof(uint32)).str()));
-			return false;
-		}
-
-		if (!BN_mod_exp(&bnResult, &bn_g, &bnPower, &bnModul, ctx)) {
-			ERR_load_crypto_strings();
-			LOG(("BigNum Error: BN_mod_exp failed, error: %1").arg(ERR_error_string(ERR_get_error(), 0)));
-			DEBUG_LOG(("BigNum Error: base %1, power %2, modul %3").arg(Logs::mb(&g_be, sizeof(uint32)).str()).arg(Logs::mb(power, 64 * sizeof(uint32)).str()).arg(Logs::mb(modul, 64 * sizeof(uint32)).str()));
-			return false;
-		}
-
-		// check g_b > 2^{2048 - 8} and get the value of g_b
-		if (BN_is_negative(&bnResult)) {
-			LOG(("BigNum Error: bad g_b - negative"));
-			return false;
-		}
-		uint32 resultLen = BN_num_bytes(&bnResult);
-		if (resultLen != 64 * sizeof(uint32)) {
-			LOG(("BigNum Error: bad g_b len (%1)").arg(resultLen));
-			return false;
-		}
-		resultLen = BN_bn2bin(&bnResult, (uchar*)gResult);
-		if (resultLen != 64 * sizeof(uint32)) {
-			LOG(("BigNum Error: bad g_b export len (%1)").arg(resultLen));
-			return false;
-		}
-
-		// check g_b < dh_prime - 2^{2048 - 8}
-		BN_sub(&bnTemp, &bnModul, &bnResult);
-		if (BN_is_negative(&bnTemp)) {
-			DEBUG_LOG(("BigNum Error: bad g_b > dh_prime"));
-			return false;
-		}
-		if (BN_num_bytes(&bnTemp) != 64 * sizeof(uint32)) {
-			DEBUG_LOG(("BigNum Error: bad g_b > dh_prime - 2^{2048 - 8}"));
-			return false;
-		}
-
-		if (!BN_mod_exp(&bnResult, &bn_g_a, &bnPower, &bnModul, ctx)) {
-			ERR_load_crypto_strings();
-			LOG(("BigNum Error: BN_mod_exp failed, error: %1").arg(ERR_error_string(ERR_get_error(), 0)));
-			DEBUG_LOG(("BigNum Error: base %1, power %2, modul %3").arg(Logs::mb(&g_be, sizeof(uint32)).str()).arg(Logs::mb(power, 64 * sizeof(uint32)).str()).arg(Logs::mb(modul, 64 * sizeof(uint32)).str()));
-			return false;
-		}
-
-		resultLen = BN_num_bytes(&bnResult);
-		if (resultLen != 64 * sizeof(uint32)) {
-			DEBUG_LOG(("BigNum Error: bad g_aResult len (%1)").arg(resultLen));
-			return false;
-		}
-		resultLen = BN_bn2bin(&bnResult, (uchar*)g_aResult);
-		if (resultLen != 64 * sizeof(uint32)) {
-			DEBUG_LOG(("BigNum Error: bad g_aResult export len (%1)").arg(resultLen));
-			return false;
-		}
-
-		// check g_a > 2^{2048 - 8}
-		if (BN_is_negative(&bn_g_a)) {
-			LOG(("BigNum Error: bad g_a - negative"));
-			return false;
-		}
-		resultLen = BN_num_bytes(&bn_g_a);
-		if (resultLen != 64 * sizeof(uint32)) {
-			LOG(("BigNum Error: bad g_a len (%1)").arg(resultLen));
-			return false;
-		}
-
-		// check g_a < dh_prime - 2^{2048 - 8}
-		BN_sub(&bnTemp, &bnModul, &bn_g_a);
-		if (BN_is_negative(&bnTemp)) {
-			LOG(("BigNum Error: bad g_b > dh_prime"));
-			return false;
-		}
-		if (BN_num_bytes(&bnTemp) != 64 * sizeof(uint32)) {
-			LOG(("BigNum Error: bad g_b > dh_prime - 2^{2048 - 8}"));
-			return false;
-		}
-
-		return true;
-	}
-
-private:
-	BIGNUM bnPower, bnModul, bn_g, bn_g_a, bnResult, bnTemp;
-	BN_CTX *ctx;
-
-};
-
-// Miller-Rabin primality test
-class BigNumPrimeTest {
-public:
-	BigNumPrimeTest() : _context(BN_CTX_new()) {
-		BN_init(&_prime);
-	}
-	~BigNumPrimeTest() {
-		BN_clear_free(&_prime);
-		BN_CTX_free(_context);
-	}
-
-	bool isPrimeAndGood(const QByteArray &data, int g) {
-		constexpr auto kMillerRabinIterationCount = 30;
-		constexpr auto kGoodPrimeSize = 256;
-
-		if (data.size() != kGoodPrimeSize) {
-			LOG(("BigNum PT Error: data size %1").arg(data.size()));
-			return false;
-		}
-		if (!memcmp(data.constData(), "\
-\xC7\x1C\xAE\xB9\xC6\xB1\xC9\x04\x8E\x6C\x52\x2F\x70\xF1\x3F\x73\
-\x98\x0D\x40\x23\x8E\x3E\x21\xC1\x49\x34\xD0\x37\x56\x3D\x93\x0F\
-\x48\x19\x8A\x0A\xA7\xC1\x40\x58\x22\x94\x93\xD2\x25\x30\xF4\xDB\
-\xFA\x33\x6F\x6E\x0A\xC9\x25\x13\x95\x43\xAE\xD4\x4C\xCE\x7C\x37\
-\x20\xFD\x51\xF6\x94\x58\x70\x5A\xC6\x8C\xD4\xFE\x6B\x6B\x13\xAB\
-\xDC\x97\x46\x51\x29\x69\x32\x84\x54\xF1\x8F\xAF\x8C\x59\x5F\x64\
-\x24\x77\xFE\x96\xBB\x2A\x94\x1D\x5B\xCD\x1D\x4A\xC8\xCC\x49\x88\
-\x07\x08\xFA\x9B\x37\x8E\x3C\x4F\x3A\x90\x60\xBE\xE6\x7C\xF9\xA4\
-\xA4\xA6\x95\x81\x10\x51\x90\x7E\x16\x27\x53\xB5\x6B\x0F\x6B\x41\
-\x0D\xBA\x74\xD8\xA8\x4B\x2A\x14\xB3\x14\x4E\x0E\xF1\x28\x47\x54\
-\xFD\x17\xED\x95\x0D\x59\x65\xB4\xB9\xDD\x46\x58\x2D\xB1\x17\x8D\
-\x16\x9C\x6B\xC4\x65\xB0\xD6\xFF\x9C\xA3\x92\x8F\xEF\x5B\x9A\xE4\
-\xE4\x18\xFC\x15\xE8\x3E\xBE\xA0\xF8\x7F\xA9\xFF\x5E\xED\x70\x05\
-\x0D\xED\x28\x49\xF4\x7B\xF9\x59\xD9\x56\x85\x0C\xE9\x29\x85\x1F\
-\x0D\x81\x15\xF6\x35\xB1\x05\xEE\x2E\x4E\x15\xD0\x4B\x24\x54\xBF\
-\x6F\x4F\xAD\xF0\x34\xB1\x04\x03\x11\x9C\xD8\xE3\xB9\x2F\xCC\x5B", kGoodPrimeSize)) {
-			if (g == 3 || g == 4 || g == 5 || g == 7) {
-				return true;
-			}
-		}
-		if (!BN_bin2bn((const uchar*)data.constData(), kGoodPrimeSize, &_prime)) {
-			ERR_load_crypto_strings();
-			LOG(("BigNum PT Error: BN_bin2bn failed, error: %1").arg(ERR_error_string(ERR_get_error(), 0)));
-			DEBUG_LOG(("BigNum PT Error: prime %1").arg(Logs::mb(data.constData(), kGoodPrimeSize).str()));
-			return false;
-		}
-
-		auto numBits = BN_num_bits(&_prime);
-		if (numBits != 2048) {
-			LOG(("BigNum PT Error: BN_bin2bn failed, bad dh_prime num bits: %1").arg(numBits));
-			return false;
-		}
-
-		if (BN_is_prime_ex(&_prime, kMillerRabinIterationCount, _context, NULL) == 0) {
-			return false;
-		}
-
-		switch (g) {
-		case 2: {
-			auto mod8 = BN_mod_word(&_prime, 8);
-			if (mod8 != 7) {
-				LOG(("BigNum PT Error: bad g value: %1, mod8: %2").arg(g).arg(mod8));
-				return false;
-			}
-		} break;
-		case 3: {
-			auto mod3 = BN_mod_word(&_prime, 3);
-			if (mod3 != 2) {
-				LOG(("BigNum PT Error: bad g value: %1, mod3: %2").arg(g).arg(mod3));
-				return false;
-			}
-		} break;
-		case 4: break;
-		case 5: {
-			auto mod5 = BN_mod_word(&_prime, 5);
-			if (mod5 != 1 && mod5 != 4) {
-				LOG(("BigNum PT Error: bad g value: %1, mod5: %2").arg(g).arg(mod5));
-				return false;
-			}
-		} break;
-		case 6: {
-			auto mod24 = BN_mod_word(&_prime, 24);
-			if (mod24 != 19 && mod24 != 23) {
-				LOG(("BigNum PT Error: bad g value: %1, mod24: %2").arg(g).arg(mod24));
-				return false;
-			}
-		} break;
-		case 7: {
-			auto mod7 = BN_mod_word(&_prime, 7);
-			if (mod7 != 3 && mod7 != 5 && mod7 != 6) {
-				LOG(("BigNum PT Error: bad g value: %1, mod7: %2").arg(g).arg(mod7));
-				return false;
-			}
-		} break;
-		default: {
-			LOG(("BigNum PT Error: bad g value: %1").arg(g));
-			return false;
-		} break;
-		}
-
-		BN_sub_word(&_prime, 1); // (p - 1) / 2
-		BN_div_word(&_prime, 2);
-
-		if (BN_is_prime_ex(&_prime, kMillerRabinIterationCount, _context, NULL) == 0) {
-			return false;
-		}
-
-		return true;
-	}
-
-private:
-	BIGNUM _prime;
-	BN_CTX *_context;
-
-};
-
-typedef QMap<uint64, RSAPublicKey> RSAPublicKeys;
-RSAPublicKeys InitRSAPublicKeys() {
-	DEBUG_LOG(("MTP Info: RSA public keys list creation"));
-
-	RSAPublicKeys result;
-
-	int keysCount;
-	const char **keys = cPublicRSAKeys(keysCount);
-	for (int i = 0; i < keysCount; ++i) {
-		RSAPublicKey key(keys[i]);
-		if (key.isValid()) {
-			result.insert(key.getFingerPrint(), key);
-		} else {
-			LOG(("MTP Error: could not read this public RSA key:"));
-			LOG((keys[i]));
-		}
-	}
-	DEBUG_LOG(("MTP Info: read %1 public RSA keys").arg(result.size()));
-	return result;
-}
-
 } // namespace
 
 Connection::Connection(Instance *instance) : _instance(instance) {
 }
 
 void Connection::start(SessionData *sessionData, ShiftedDcId shiftedDcId) {
-	t_assert(thread == nullptr && data == nullptr);
+	Expects(thread == nullptr && data == nullptr);
 
 	thread = std::make_unique<Thread>();
 	auto newData = std::make_unique<ConnectionPrivate>(_instance, thread.get(), this, sessionData, shiftedDcId);
@@ -378,14 +267,14 @@ void Connection::start(SessionData *sessionData, ShiftedDcId shiftedDcId) {
 }
 
 void Connection::kill() {
-	t_assert(data != nullptr && thread != nullptr);
+	Expects(data != nullptr && thread != nullptr);
 	data->stop();
 	data = nullptr;
 	thread->quit();
 }
 
 void Connection::waitTillFinish() {
-	t_assert(data == nullptr && thread != nullptr);
+	Expects(data == nullptr && thread != nullptr);
 
 	DEBUG_LOG(("Waiting for connectionThread to finish"));
 	thread->wait();
@@ -393,19 +282,19 @@ void Connection::waitTillFinish() {
 }
 
 int32 Connection::state() const {
-	t_assert(data != nullptr && thread != nullptr);
+	Expects(data != nullptr && thread != nullptr);
 
 	return data->getState();
 }
 
 QString Connection::transport() const {
-	t_assert(data != nullptr && thread != nullptr);
+	Expects(data != nullptr && thread != nullptr);
 
 	return data->transport();
 }
 
 Connection::~Connection() {
-	t_assert(data == nullptr);
+	Expects(data == nullptr);
 	if (thread) {
 		waitTillFinish();
 	}
@@ -477,10 +366,10 @@ ConnectionPrivate::ConnectionPrivate(Instance *instance, QThread *thread, Connec
 	retryTimer.moveToThread(thread);
 	moveToThread(thread);
 
-	t_assert(_shiftedDcId != 0);
+	Expects(_shiftedDcId != 0);
 
-	connect(thread, SIGNAL(started()), this, SLOT(socketStart()));
-	connect(thread, SIGNAL(finished()), this, SLOT(doFinish()));
+	connect(thread, &QThread::started, this, [this] { connectToServer(); });
+	connect(thread, &QThread::finished, this, [this] { finishAndDestroy(); });
 	connect(this, SIGNAL(finished(internal::Connection*)), _instance, SLOT(connectionFinished(internal::Connection*)), Qt::QueuedConnection);
 
 	connect(&retryTimer, SIGNAL(timeout()), this, SLOT(retryByTimer()));
@@ -515,7 +404,11 @@ ConnectionPrivate::ConnectionPrivate(Instance *instance, QThread *thread, Connec
 }
 
 void ConnectionPrivate::onConfigLoaded() {
-	socketStart(true);
+	connectToServer(true);
+}
+
+void ConnectionPrivate::onCDNConfigLoaded() {
+	restart();
 }
 
 int32 ConnectionPrivate::getShiftedDcId() const {
@@ -881,12 +774,14 @@ void ConnectionPrivate::tryToSend() {
 		}
 	}
 
-	MTPInitConnection<mtpRequest> initWrapperImpl, *initWrapper = &initWrapperImpl;
+	MTPInitConnection<mtpRequest> initWrapper;
 	int32 initSize = 0, initSizeInInts = 0;
 	if (needsLayer) {
 		auto langCode = (cLang() == languageTest || cLang() == languageDefault) ? Sandbox::LangSystemISO() : str_const_toString(LanguageCodes[cLang()]);
-		initWrapperImpl = MTPInitConnection<mtpRequest>(MTP_int(ApiId), MTP_string(cApiDeviceModel()), MTP_string(cApiSystemVersion()), MTP_string(cApiAppVersion()), MTP_string(langCode), mtpRequest());
-		initSizeInInts = (initWrapper->innerLength() >> 2) + 2;
+		auto deviceModel = (_dcType == DcType::Cdn) ? "n/a" : cApiDeviceModel();
+		auto systemVersion = (_dcType == DcType::Cdn) ? "n/a" : cApiSystemVersion();
+		initWrapper = MTPInitConnection<mtpRequest>(MTP_int(ApiId), MTP_string(deviceModel), MTP_string(systemVersion), MTP_string(cApiAppVersion()), MTP_string(langCode), mtpRequest());
+		initSizeInInts = (initWrapper.innerLength() >> 2) + 2;
 		initSize = initSizeInInts * sizeof(mtpPrime);
 	}
 
@@ -946,7 +841,7 @@ void ConnectionPrivate::tryToSend() {
 						memcpy(wrappedRequest->data(), toSendRequest->constData(), 7 * sizeof(mtpPrime)); // all except length
 						wrappedRequest->push_back(mtpc_invokeWithLayer);
 						wrappedRequest->push_back(MTP::internal::CurrentLayer);
-						initWrapper->write(*wrappedRequest);
+						initWrapper.write(*wrappedRequest);
 						wrappedRequest->resize(wrappedRequest->size() + noWrapSize);
 						memcpy(wrappedRequest->data() + wrappedRequest->size() - noWrapSize, toSendRequest->constData() + 8, noWrapSize * sizeof(mtpPrime));
 						toSendRequest = wrappedRequest;
@@ -978,7 +873,7 @@ void ConnectionPrivate::tryToSend() {
 				initSerialized.reserve(initSizeInInts);
 				initSerialized.push_back(mtpc_invokeWithLayer);
 				initSerialized.push_back(MTP::internal::CurrentLayer);
-				initWrapper->write(initSerialized);
+				initWrapper.write(initSerialized);
 			}
 			toSendRequest = mtpRequestData::prepare(containerSize, containerSize + 3 * toSend.size()); // prepare container + each in invoke after
 			toSendRequest->push_back(mtpc_msg_container);
@@ -1082,7 +977,7 @@ void ConnectionPrivate::retryByTimer() {
 		}
 		keyId = 0;
 	}
-	socketStart();
+	connectToServer();
 }
 
 void ConnectionPrivate::restartNow() {
@@ -1091,27 +986,31 @@ void ConnectionPrivate::restartNow() {
 	restart();
 }
 
-void ConnectionPrivate::socketStart(bool afterConfig) {
+void ConnectionPrivate::connectToServer(bool afterConfig) {
 	if (_finished) {
-		DEBUG_LOG(("MTP Error: socketStart() called for finished connection!"));
+		DEBUG_LOG(("MTP Error: connectToServer() called for finished connection!"));
 		return;
 	}
-	auto dcType = DcOptions::DcType::Regular;
-	auto isDownloadDc = isDownloadDcId(_shiftedDcId);
-	if (isDownloadDc) { // using media_only addresses only if key for this dc is already created
+	auto bareDc = bareDcId(_shiftedDcId);
+	_dcType = Messenger::Instance().dcOptions()->dcType(_shiftedDcId);
+	if (_dcType == DcType::MediaDownload) { // using media_only addresses only if key for this dc is already created
 		QReadLocker lockFinished(&sessionDataMutex);
-		if (!sessionData || sessionData->getKey()) {
-			dcType = DcOptions::DcType::MediaDownload;
+		if (!sessionData || !sessionData->getKey()) {
+			_dcType = DcType::Regular;
+		}
+	} else if (_dcType == DcType::Cdn && !_instance->isKeysDestroyer()) {
+		if (!Messenger::Instance().dcOptions()->hasCDNKeysForDc(bareDc)) {
+			requestCDNConfig();
+			return;
 		}
 	}
-	auto bareDc = bareDcId(_shiftedDcId);
 
 	using Variants = DcOptions::Variants;
 	auto kIPv4 = Variants::IPv4;
 	auto kIPv6 = Variants::IPv6;
 	auto kTcp = Variants::Tcp;
 	auto kHttp = Variants::Http;
-	auto variants = Messenger::Instance().dcOptions()->lookup(bareDc, dcType);
+	auto variants = Messenger::Instance().dcOptions()->lookup(bareDc, _dcType);
 	auto noIPv4 = (variants.data[kIPv4][kHttp].port == 0);
 	auto noIPv6 = (!Global::TryIPv6() || (variants.data[kIPv6][kHttp].port == 0));
 	if (noIPv4 && noIPv6) {
@@ -1128,7 +1027,7 @@ void ConnectionPrivate::socketStart(bool afterConfig) {
 		DEBUG_LOG(("MTP Info: DC %1 options for IPv4 over HTTP not found, waiting for config").arg(_shiftedDcId));
 		if (Global::TryIPv6() && noIPv6) DEBUG_LOG(("MTP Info: DC %1 options for IPv6 over HTTP not found, waiting for config").arg(_shiftedDcId));
 		connect(_instance, SIGNAL(configLoaded()), this, SLOT(onConfigLoaded()), Qt::UniqueConnection);
-		QMetaObject::invokeMethod(_instance, "configLoadRequest", Qt::QueuedConnection);
+		InvokeQueued(_instance, [instance = _instance] { instance->configLoadRequest(); });
 		return;
 	}
 
@@ -1201,18 +1100,18 @@ void ConnectionPrivate::restart() {
 
 void ConnectionPrivate::onSentSome(uint64 size) {
 	if (!_waitForReceivedTimer.isActive()) {
-		uint64 remain = _waitForReceived;
+		auto remain = static_cast<uint64>(_waitForReceived);
 		if (!oldConnection) {
-			uint64 remainBySize = size * _waitForReceived / 8192; // 8kb / sec, so 512 kb give 64 sec
+			auto remainBySize = size * _waitForReceived / 8192; // 8kb / sec, so 512 kb give 64 sec
 			remain = snap(remainBySize, remain, uint64(MTPMaxReceiveDelay));
 			if (remain != _waitForReceived) {
 				DEBUG_LOG(("Checking connect for request with size %1 bytes, delay will be %2").arg(size).arg(remain));
 			}
 		}
 		if (isUploadDcId(_shiftedDcId)) {
-			remain *= MTPUploadSessionsCount;
+			remain *= kUploadSessionsCount;
 		} else if (isDownloadDcId(_shiftedDcId)) {
-			remain *= MTPDownloadSessionsCount;
+			remain *= kDownloadSessionsCount;
 		}
 		_waitForReceivedTimer.start(remain);
 	}
@@ -1276,7 +1175,7 @@ void ConnectionPrivate::onWaitReceivedFailed() {
 	if (retryTimer.isActive()) return;
 
 	DEBUG_LOG(("MTP Info: immediate restart!"));
-	QTimer::singleShot(0, this, SLOT(socketStart()));
+	InvokeQueued(this, [this] { connectToServer(); });
 }
 
 void ConnectionPrivate::onWaitConnectedFailed() {
@@ -1287,7 +1186,7 @@ void ConnectionPrivate::onWaitConnectedFailed() {
 	restarted = true;
 
 	DEBUG_LOG(("MTP Info: immediate restart!"));
-	QTimer::singleShot(0, this, SLOT(socketStart()));
+	InvokeQueued(this, [this] { connectToServer(); });
 }
 
 void ConnectionPrivate::onWaitIPv4Failed() {
@@ -1319,11 +1218,16 @@ void ConnectionPrivate::doDisconnect() {
 	restarted = false;
 }
 
-void ConnectionPrivate::doFinish() {
+void ConnectionPrivate::finishAndDestroy() {
 	doDisconnect();
 	_finished = true;
 	emit finished(_owner);
 	deleteLater();
+}
+
+void ConnectionPrivate::requestCDNConfig() {
+	connect(_instance, SIGNAL(cdnConfigLoaded()), this, SLOT(onCDNConfigLoaded()), Qt::UniqueConnection);
+	InvokeQueued(_instance, [instance = _instance] { instance->cdnConfigLoadRequest(); });
 }
 
 void ConnectionPrivate::handleReceived() {
@@ -1485,9 +1389,9 @@ void ConnectionPrivate::handleReceived() {
 		bool emitSignal = false;
 		{
 			QReadLocker locker(sessionData->haveReceivedMutex());
-			emitSignal = !sessionData->haveReceivedMap().isEmpty();
+			emitSignal = !sessionData->haveReceivedResponses().isEmpty() || !sessionData->haveReceivedUpdates().isEmpty();
 			if (emitSignal) {
-				DEBUG_LOG(("MTP Info: emitting needToReceive() - need to parse in another thread, haveReceivedMap.size() = %1").arg(sessionData->haveReceivedMap().size()));
+				DEBUG_LOG(("MTP Info: emitting needToReceive() - need to parse in another thread, %1 responses, %2 updates.").arg(sessionData->haveReceivedResponses().size()).arg(sessionData->haveReceivedUpdates().size()));
 			}
 		}
 
@@ -1914,7 +1818,7 @@ ConnectionPrivate::HandleResult ConnectionPrivate::handleOneReceived(const mtpPr
 
 	case mtpc_rpc_result: {
 		if (from + 3 > end) throw mtpErrorInsufficient();
-		mtpResponse response;
+		auto response = SerializedMessage();
 
 		MTPlong reqMsgId;
 		reqMsgId.read(++from, end);
@@ -1949,10 +1853,11 @@ ConnectionPrivate::HandleResult ConnectionPrivate::handleOneReceived(const mtpPr
 			sessionData->owner()->notifyLayerInited(true);
 		}
 
-		mtpRequestId requestId = wasSent(reqMsgId.v);
+		auto requestId = wasSent(reqMsgId.v);
 		if (requestId && requestId != mtpRequestId(0xFFFFFFFF)) {
+			// Save rpc_result for processing in the main thread.
 			QWriteLocker locker(sessionData->haveReceivedMutex());
-			sessionData->haveReceivedMap().insert(requestId, response); // save rpc_result for processing in main mtp thread
+			sessionData->haveReceivedResponses().insert(requestId, response);
 		} else {
 			DEBUG_LOG(("RPC Info: requestId not found for msgId %1").arg(reqMsgId.v));
 		}
@@ -1992,10 +1897,9 @@ ConnectionPrivate::HandleResult ConnectionPrivate::handleOneReceived(const mtpPr
 		mtpBuffer update(from - start);
 		if (from > start) memcpy(update.data(), start, (from - start) * sizeof(mtpPrime));
 
+		// Notify main process about new session - need to get difference.
 		QWriteLocker locker(sessionData->haveReceivedMutex());
-		mtpResponseMap &haveReceived(sessionData->haveReceivedMap());
-		mtpRequestId fakeRequestId = sessionData->nextFakeRequestId();
-		haveReceived.insert(fakeRequestId, mtpResponse(update)); // notify main process about new session - need to get difference
+		sessionData->haveReceivedUpdates().push_back(SerializedMessage(update));
 	} return HandleResult::Success;
 
 	case mtpc_ping: {
@@ -2046,16 +1950,19 @@ ConnectionPrivate::HandleResult ConnectionPrivate::handleOneReceived(const mtpPr
 		return HandleResult::ResetSession;
 	}
 
-	mtpBuffer update(end - from);
-	if (end > from) memcpy(update.data(), from, (end - from) * sizeof(mtpPrime));
+	if (_dcType == DcType::Regular) {
+		mtpBuffer update(end - from);
+		if (end > from) memcpy(update.data(), from, (end - from) * sizeof(mtpPrime));
 
-	QWriteLocker locker(sessionData->haveReceivedMutex());
-	mtpResponseMap &haveReceived(sessionData->haveReceivedMap());
-	mtpRequestId fakeRequestId = sessionData->nextFakeRequestId();
-	haveReceived.insert(fakeRequestId, mtpResponse(update)); // notify main process about new updates
+		// Notify main process about the new updates.
+		QWriteLocker locker(sessionData->haveReceivedMutex());
+		sessionData->haveReceivedUpdates().push_back(SerializedMessage(update));
 
-	if (cons != mtpc_updatesTooLong && cons != mtpc_updateShortMessage && cons != mtpc_updateShortChatMessage && cons != mtpc_updateShortSentMessage && cons != mtpc_updateShort && cons != mtpc_updatesCombined && cons != mtpc_updates) {
-		LOG(("Message Error: unknown constructor %1").arg(cons)); // maybe new api?..
+		if (cons != mtpc_updatesTooLong && cons != mtpc_updateShortMessage && cons != mtpc_updateShortChatMessage && cons != mtpc_updateShortSentMessage && cons != mtpc_updateShort && cons != mtpc_updatesCombined && cons != mtpc_updates) {
+			LOG(("Message Error: unknown constructor %1").arg(cons)); // maybe new api?..
+		}
+	} else {
+		LOG(("Message Error: unexpected updates in dcType: %1").arg(static_cast<int>(_dcType)));
 	}
 
 	return HandleResult::Success;
@@ -2430,27 +2337,17 @@ void ConnectionPrivate::pqAnswered() {
 		return restart();
 	}
 
-	static MTP::internal::RSAPublicKeys RSAKeys = MTP::internal::InitRSAPublicKeys();
-	const MTP::internal::RSAPublicKey *rsaKey = nullptr;
-	auto &fingerPrints = res_pq.c_resPQ().vserver_public_key_fingerprints.v;
-	for (auto &fingerPrint : fingerPrints) {
-		auto it = RSAKeys.constFind(static_cast<uint64>(fingerPrint.v));
-		if (it != RSAKeys.cend()) {
-			rsaKey = &it.value();
-			break;
+	auto rsaKey = internal::RSAPublicKey();
+	if (!Messenger::Instance().dcOptions()->getDcRSAKey(bareDcId(_shiftedDcId), res_pq.c_resPQ().vserver_public_key_fingerprints.v, &rsaKey)) {
+		if (_dcType == DcType::Cdn) {
+			LOG(("Warning: CDN public RSA key not found"));
+			requestCDNConfig();
+			return;
 		}
-	}
-	if (!rsaKey) {
-		QStringList suggested, my;
-		for (auto &fingerPrint : fingerPrints) {
-			suggested.push_back(QString("%1").arg(fingerPrint.v));
-		}
-		for (auto i = RSAKeys.cbegin(), e = RSAKeys.cend(); i != e; ++i) {
-			my.push_back(QString("%1").arg(i.key()));
-		}
-		LOG(("AuthKey Error: could not choose public RSA key, suggested fingerprints: %1, my fingerprints: %2").arg(suggested.join(", ")).arg(my.join(", ")));
+		LOG(("AuthKey Error: could not choose public RSA key"));
 		return restart();
 	}
+	t_assert(rsaKey.isValid());
 
 	_authKeyData->server_nonce = res_pq_data.vserver_nonce;
 	_authKeyData->new_nonce = rand_value<MTPint256>();
@@ -2477,14 +2374,14 @@ void ConnectionPrivate::pqAnswered() {
 	MTPReq_DH_params req_DH_params;
 	req_DH_params.vnonce = _authKeyData->nonce;
 	req_DH_params.vserver_nonce = _authKeyData->server_nonce;
-	req_DH_params.vpublic_key_fingerprint = MTP_long(rsaKey->getFingerPrint());
+	req_DH_params.vpublic_key_fingerprint = MTP_long(rsaKey.getFingerPrint());
 	req_DH_params.vp = p_q_inner.c_p_q_inner_data().vp;
 	req_DH_params.vq = p_q_inner.c_p_q_inner_data().vq;
-	req_DH_params.vencrypted_data = MTP_string(std::move(dhEncString));
+	req_DH_params.vencrypted_data = MTP_bytes(dhEncString);
 	sendRequestNotSecure(req_DH_params);
 }
 
-std::string ConnectionPrivate::encryptPQInnerRSA(const MTPP_Q_inner_data &data, const MTP::internal::RSAPublicKey *key) {
+base::byte_vector ConnectionPrivate::encryptPQInnerRSA(const MTPP_Q_inner_data &data, const MTP::internal::RSAPublicKey &key) {
 	auto p_q_inner_size = data.innerLength();
 	auto encSize = (p_q_inner_size >> 2) + 6;
 	if (encSize >= 65) {
@@ -2493,7 +2390,7 @@ std::string ConnectionPrivate::encryptPQInnerRSA(const MTPP_Q_inner_data &data, 
 		data.write(tmp);
 		LOG(("AuthKey Error: too large data for RSA encrypt, size %1").arg(encSize * sizeof(mtpPrime)));
 		DEBUG_LOG(("AuthKey Error: bad data for RSA encrypt %1").arg(Logs::mb(&tmp[0], tmp.size() * 4).str()));
-		return std::string(); // can't be 255-byte string
+		return base::byte_vector(); // can't be 255-byte string
 	}
 
 	auto encBuffer = mtpBuffer();
@@ -2508,11 +2405,9 @@ std::string ConnectionPrivate::encryptPQInnerRSA(const MTPP_Q_inner_data &data, 
 		memset_rand(&encBuffer[encSize], (65 - encSize) * sizeof(mtpPrime));
 	}
 
-	auto dhEncString = std::string();
-	if (!key->encrypt(reinterpret_cast<const char*>(&encBuffer[0]) + 3, dhEncString)) {
-		return std::string();
-	}
-	return dhEncString;
+	auto bytes = gsl::as_bytes(gsl::make_span(encBuffer));
+	auto bytesToEncrypt = bytes.subspan(3, 256);
+	return key.encrypt(bytesToEncrypt);
 }
 
 void ConnectionPrivate::dhParamsAnswered() {
@@ -2589,24 +2484,15 @@ void ConnectionPrivate::dhParamsAnswered() {
 		}
 		unixtimeSet(dh_inner_data.vserver_time.v);
 
-		auto &dhPrime = dh_inner_data.vdh_prime.v;
-		auto &g_a = dh_inner_data.vg_a.v;
-		if (dhPrime.length() != 256 || g_a.length() != 256) {
-			LOG(("AuthKey Error: bad dh_prime len (%1) or g_a len (%2)").arg(dhPrime.length()).arg(g_a.length()));
-			DEBUG_LOG(("AuthKey Error: dh_prime %1, g_a %2").arg(Logs::mb(dhPrime.constData(), dhPrime.length()).str()).arg(Logs::mb(g_a.constData(), g_a.length()).str()));
+		// check that dhPrime and (dhPrime - 1) / 2 are really prime
+		if (!IsPrimeAndGood(bytesFromMTP(dh_inner_data.vdh_prime), dh_inner_data.vg.v)) {
+			LOG(("AuthKey Error: bad dh_prime primality!"));
 			return restart();
 		}
 
-		// check that dhPrime and (dhPrime - 1) / 2 are really prime using openssl BIGNUM methods
-		if (!IsPrimeAndGood(dhPrime, dh_inner_data.vg.v)) {
-			LOG(("AuthKey Error: bad dh_prime primality!").arg(dhPrime.length()).arg(g_a.length()));
-			DEBUG_LOG(("AuthKey Error: dh_prime %1").arg(Logs::mb(dhPrime.constData(), dhPrime.length()).str()));
-			return restart();
-		}
-
-		_authKeyStrings->dh_prime = QByteArray(dhPrime.data(), dhPrime.size());
+		_authKeyStrings->dh_prime = byteVectorFromMTP(dh_inner_data.vdh_prime);
 		_authKeyData->g = dh_inner_data.vg.v;
-		_authKeyStrings->g_a = QByteArray(g_a.data(), g_a.size());
+		_authKeyStrings->g_a = byteVectorFromMTP(dh_inner_data.vg_a);
 		_authKeyData->retry_id = MTP_long(0);
 		_authKeyData->retries = 0;
 	} return dhClientParamsSend();
@@ -2643,25 +2529,28 @@ void ConnectionPrivate::dhClientParamsSend() {
 		return restart();
 	}
 
-	auto g_b_string = std::string(256, ' ');
-
 	// gen rand 'b'
-	uint32 b[64];
-	auto g_b = reinterpret_cast<uint32*>(&g_b_string[0]);
-	memset_rand(b, sizeof(b));
-
-	// count g_b and auth_key using openssl BIGNUM methods
-	MTP::internal::BigNumCounter bnCounter;
-	if (!bnCounter.count(b, _authKeyStrings->dh_prime.constData(), _authKeyData->g, g_b, _authKeyStrings->g_a.constData(), _authKeyStrings->auth_key.data())) {
-		return dhClientParamsSend();
+	auto randomSeed = std::array<gsl::byte, ModExpFirst::kRandomPowerSize>();
+	openssl::FillRandom(randomSeed);
+	auto g_b_data = CreateModExp(_authKeyData->g, _authKeyStrings->dh_prime, randomSeed);
+	if (g_b_data.modexp.empty()) {
+		LOG(("AuthKey Error: could not generate good g_b."));
+		return restart();
 	}
+
+	auto computedAuthKey = CreateAuthKey(_authKeyStrings->g_a, g_b_data.randomPower, _authKeyStrings->dh_prime);
+	if (computedAuthKey.empty()) {
+		LOG(("AuthKey Error: could not generate auth_key."));
+		return restart();
+	}
+	AuthKey::FillData(_authKeyStrings->auth_key, computedAuthKey);
 
 	// count auth_key hashes - parts of sha1(auth_key)
 	auto auth_key_sha = hashSha1(_authKeyStrings->auth_key.data(), _authKeyStrings->auth_key.size());
 	memcpy(&_authKeyData->auth_key_aux_hash, auth_key_sha.data(), 8);
 	memcpy(&_authKeyData->auth_key_hash, auth_key_sha.data() + 12, 8);
 
-	auto client_dh_inner = MTP_client_DH_inner_data(_authKeyData->nonce, _authKeyData->server_nonce, _authKeyData->retry_id, MTP_string(std::move(g_b_string)));
+	auto client_dh_inner = MTP_client_DH_inner_data(_authKeyData->nonce, _authKeyData->server_nonce, _authKeyData->retry_id, MTP_bytes(g_b_data.modexp));
 
 	auto sdhEncString = encryptClientDHInner(client_dh_inner);
 
@@ -2839,28 +2728,28 @@ void ConnectionPrivate::authKeyCreated() {
 }
 
 void ConnectionPrivate::clearAuthKeyData() {
-	auto zeroMemory = [](void *data, int size) {
-#ifdef Q_OS_WIN
-		SecureZeroMemory(data, size);
+	auto zeroMemory = [](base::byte_span bytes) {
+#ifdef Q_OS_WIN2
+		SecureZeroMemory(bytes.data(), bytes.size());
 #else // Q_OS_WIN
-		auto end = static_cast<char*>(data) + size;
-		for (volatile auto p = static_cast<volatile char*>(data); p != end; ++p) {
+		auto end = reinterpret_cast<char*>(bytes.data()) + bytes.size();
+		for (volatile auto p = reinterpret_cast<volatile char*>(bytes.data()); p != end; ++p) {
 			*p = 0;
 		}
 #endif // Q_OS_WIN
 	};
 	if (_authKeyData) {
-		zeroMemory(_authKeyData.get(), sizeof(AuthKeyCreateData));
+		zeroMemory(gsl::make_span(reinterpret_cast<gsl::byte*>(_authKeyData.get()), sizeof(AuthKeyCreateData)));
 		_authKeyData.reset();
 	}
 	if (_authKeyStrings) {
-		if (!_authKeyStrings->dh_prime.isEmpty()) {
-			zeroMemory(_authKeyStrings->dh_prime.data(), _authKeyStrings->dh_prime.size());
+		if (!_authKeyStrings->dh_prime.empty()) {
+			zeroMemory(_authKeyStrings->dh_prime);
 		}
-		if (!_authKeyStrings->g_a.isEmpty()) {
-			zeroMemory(_authKeyStrings->g_a.data(), _authKeyStrings->g_a.size());
+		if (!_authKeyStrings->g_a.empty()) {
+			zeroMemory(_authKeyStrings->g_a);
 		}
-		zeroMemory(_authKeyStrings->auth_key.data(), _authKeyStrings->auth_key.size());
+		zeroMemory(_authKeyStrings->auth_key);
 		_authKeyStrings.reset();
 	}
 }
@@ -2872,17 +2761,7 @@ void ConnectionPrivate::onError4(qint32 errorCode) {
 		LOG(("Protocol Error: -429 flood code returned!"));
 	}
 	if (_conn || !_conn6) {
-		destroyConn();
-		_waitForConnectedTimer.stop();
-
-		if (errorCode == -404 && _instance->isKeysDestroyer()) {
-			LOG(("MTP Info: -404 error received on destroying key %1, assuming it is destroyed.").arg(_shiftedDcId));
-			emit _instance->keyDestroyed(_shiftedDcId);
-			return;
-		} else {
-			MTP_LOG(_shiftedDcId, ("Restarting after error in IPv4 connection, error code: %1...").arg(errorCode));
-			return restart();
-		}
+		handleError(errorCode);
 	} else {
 		destroyConn(&_conn4);
 	}
@@ -2895,20 +2774,30 @@ void ConnectionPrivate::onError6(qint32 errorCode) {
 		LOG(("Protocol Error: -429 flood code returned!"));
 	}
 	if (_conn || !_conn4) {
-		destroyConn();
-		_waitForConnectedTimer.stop();
-
-		if (errorCode == -404 && _instance->isKeysDestroyer()) {
-			LOG(("MTP Info: -404 error received on destroying key %1, assuming it is destroyed.").arg(_shiftedDcId));
-			emit _instance->keyDestroyed(_shiftedDcId);
-			return;
-		} else {
-			MTP_LOG(_shiftedDcId, ("Restarting after error in IPv6 connection, error code: %1...").arg(errorCode));
-			return restart();
-		}
+		handleError(errorCode);
 	} else {
 		destroyConn(&_conn6);
 	}
+}
+
+void ConnectionPrivate::handleError(int errorCode) {
+	destroyConn();
+	_waitForConnectedTimer.stop();
+
+	if (errorCode == -404) {
+		if (_instance->isKeysDestroyer()) {
+			LOG(("MTP Info: -404 error received on destroying key %1, assuming it is destroyed.").arg(_shiftedDcId));
+			emit _instance->keyDestroyed(_shiftedDcId);
+			return;
+		} else if (_dcType == DcType::Cdn) {
+			LOG(("MTP Info: -404 error received in CDN dc %1, assuming it was destroyed, recreating.").arg(_shiftedDcId));
+			clearMessages();
+			keyId = kRecreateKeyId;
+			return restart();
+		}
+	}
+	MTP_LOG(_shiftedDcId, ("Restarting after error in connection, error code: %1...").arg(errorCode));
+	return restart();
 }
 
 void ConnectionPrivate::onReadyData() {
@@ -3095,8 +2984,16 @@ void ConnectionPrivate::stop() {
 
 } // namespace internal
 
-bool IsPrimeAndGood(const QByteArray &data, int g) {
-	return MTP::internal::BigNumPrimeTest().isPrimeAndGood(data, g);
+bool IsPrimeAndGood(base::const_byte_span primeBytes, int g) {
+	return internal::IsPrimeAndGood(primeBytes, g);
+}
+
+ModExpFirst CreateModExp(int g, base::const_byte_span primeBytes, base::const_byte_span randomSeed) {
+	return internal::CreateModExp(g, primeBytes, randomSeed);
+}
+
+std::vector<gsl::byte> CreateAuthKey(base::const_byte_span firstBytes, base::const_byte_span randomBytes, base::const_byte_span primeBytes) {
+	return internal::CreateAuthKey(firstBytes, randomBytes, primeBytes);
 }
 
 } // namespace MTP

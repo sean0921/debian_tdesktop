@@ -26,7 +26,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_boxes.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/buttons.h"
-#include "core/zlib_help.h"
+#include "base/zlib_help.h"
 #include "lang.h"
 #include "shortcuts.h"
 #include "messenger.h"
@@ -36,9 +36,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "intro/introwidget.h"
 #include "mainwidget.h"
 #include "layerwidget.h"
-#include "boxes/confirmbox.h"
-#include "boxes/contactsbox.h"
-#include "boxes/addcontactbox.h"
+#include "boxes/confirm_box.h"
+#include "boxes/contacts_box.h"
+#include "boxes/add_contact_box.h"
 #include "observer_peer.h"
 #include "autoupdater.h"
 #include "mediaview.h"
@@ -50,7 +50,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/themes/window_theme.h"
 #include "window/themes/window_theme_warning.h"
 #include "window/window_main_menu.h"
-#include "core/task_queue.h"
+#include "base/task_queue.h"
 #include "auth_session.h"
 #include "window/window_controller.h"
 
@@ -94,12 +94,15 @@ void ConnectingWidget::onReconnect() {
 }
 
 MainWindow::MainWindow() {
-	icon16 = icon256.scaledToWidth(16, Qt::SmoothTransformation);
-	icon32 = icon256.scaledToWidth(32, Qt::SmoothTransformation);
-	icon64 = icon256.scaledToWidth(64, Qt::SmoothTransformation);
-	iconbig16 = iconbig256.scaledToWidth(16, Qt::SmoothTransformation);
-	iconbig32 = iconbig256.scaledToWidth(32, Qt::SmoothTransformation);
-	iconbig64 = iconbig256.scaledToWidth(64, Qt::SmoothTransformation);
+	auto logo = Messenger::Instance().logo();
+	icon16 = logo.scaledToWidth(16, Qt::SmoothTransformation);
+	icon32 = logo.scaledToWidth(32, Qt::SmoothTransformation);
+	icon64 = logo.scaledToWidth(64, Qt::SmoothTransformation);
+
+	auto logoNoMargin = Messenger::Instance().logoNoMargin();
+	iconbig16 = logoNoMargin.scaledToWidth(16, Qt::SmoothTransformation);
+	iconbig32 = logoNoMargin.scaledToWidth(32, Qt::SmoothTransformation);
+	iconbig64 = logoNoMargin.scaledToWidth(64, Qt::SmoothTransformation);
 
 	resize(st::windowDefaultWidth, st::windowDefaultHeight);
 
@@ -108,15 +111,24 @@ MainWindow::MainWindow() {
 	_inactiveTimer.setSingleShot(true);
 	connect(&_inactiveTimer, SIGNAL(timeout()), this, SLOT(onInactiveTimer()));
 
-	connect(&_autoLockTimer, SIGNAL(timeout()), this, SLOT(checkAutoLock()));
-
-	subscribe(Global::RefSelfChanged(), [this]() { updateGlobalMenu(); });
+	subscribe(Global::RefSelfChanged(), [this] { updateGlobalMenu(); });
 	subscribe(Window::Theme::Background(), [this](const Window::Theme::BackgroundUpdate &data) {
 		themeUpdated(data);
 	});
+	subscribe(Messenger::Instance().authSessionChanged(), [this] { checkAuthSession(); });
+	subscribe(Messenger::Instance().passcodedChanged(), [this] { updateGlobalMenu(); });
+	checkAuthSession();
 
 	setAttribute(Qt::WA_NoSystemBackground);
 	setAttribute(Qt::WA_OpaquePaintEvent);
+}
+
+void MainWindow::checkAuthSession() {
+	if (AuthSession::Exists()) {
+		_controller = std::make_unique<Window::Controller>(this);
+	} else {
+		_controller = nullptr;
+	}
 }
 
 void MainWindow::inactivePress(bool inactive) {
@@ -227,12 +239,8 @@ void MainWindow::clearPasscode() {
 	if (_intro) {
 		_intro->showAnimated(bg, true);
 	} else {
+		t_assert(_main != nullptr);
 		_main->showAnimated(bg, true);
-	}
-	AuthSession::Current().notifications().updateAll();
-	updateGlobalMenu();
-
-	if (_main) {
 		_main->checkStartUrl();
 	}
 }
@@ -251,32 +259,6 @@ void MainWindow::setupPasscode() {
 		_passcode->showAnimated(bg);
 	} else {
 		setInnerFocus();
-	}
-	_shouldLockAt = 0;
-	if (AuthSession::Exists()) {
-		AuthSession::Current().notifications().updateAll();
-	}
-	updateGlobalMenu();
-}
-
-void MainWindow::checkAutoLockIn(int msec) {
-	if (_autoLockTimer.isActive()) {
-		int remain = _autoLockTimer.remainingTime();
-		if (remain > 0 && remain <= msec) return;
-	}
-	_autoLockTimer.start(msec);
-}
-
-void MainWindow::checkAutoLock() {
-	if (!Global::LocalPasscode() || App::passcoded()) return;
-
-	App::app()->checkLocalTime();
-	auto ms = getms(true), idle = psIdleTime(), should = Global::AutoLock() * 1000LL;
-	if (idle >= should || (_shouldLockAt > 0 && ms > _shouldLockAt + 3000LL)) {
-		setupPasscode();
-	} else {
-		_shouldLockAt = ms + (should - idle);
-		_autoLockTimer.start(should - idle);
 	}
 }
 
@@ -338,7 +320,7 @@ void MainWindow::sendServiceHistoryRequest() {
 	UserData *user = App::userLoaded(ServiceUserId);
 	if (!user) {
 		auto userFlags = MTPDuser::Flag::f_first_name | MTPDuser::Flag::f_phone | MTPDuser::Flag::f_status | MTPDuser::Flag::f_verified;
-		user = App::feedUsers(MTP_vector<MTPUser>(1, MTP_user(MTP_flags(userFlags), MTP_int(ServiceUserId), MTPlong(), MTP_string("Telegram"), MTPstring(), MTPstring(), MTP_string("42777"), MTP_userProfilePhotoEmpty(), MTP_userStatusRecently(), MTPint(), MTPstring(), MTPstring())));
+		user = App::feedUsers(MTP_vector<MTPUser>(1, MTP_user(MTP_flags(userFlags), MTP_int(ServiceUserId), MTPlong(), MTP_string("Telegram"), MTPstring(), MTPstring(), MTP_string("42777"), MTP_userProfilePhotoEmpty(), MTP_userStatusRecently(), MTPint(), MTPstring(), MTPstring(), MTPstring())));
 	}
 	_serviceHistoryRequest = MTP::send(MTPmessages_GetHistory(user->input, MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(1), MTP_int(0), MTP_int(0)), _main->rpcDone(&MainWidget::serviceHistoryDone), _main->rpcFail(&MainWidget::serviceHistoryFail));
 }
@@ -351,7 +333,8 @@ void MainWindow::setupMain(const MTPUser *self) {
 
 	t_assert(AuthSession::Exists());
 
-	_main.create(bodyWidget(), std::make_unique<Window::Controller>(this));
+
+	_main.create(bodyWidget(), controller());
 	_main->show();
 	updateControlsGeometry();
 
@@ -376,9 +359,7 @@ void MainWindow::showSettings() {
 void MainWindow::showSpecialLayer(object_ptr<LayerWidget> layer) {
 	if (_passcode) return;
 
-	if (!_layerBg) {
-		_layerBg.create(bodyWidget());
-	}
+	ensureLayerCreated();
 	_layerBg->showSpecialLayer(std::move(layer));
 }
 
@@ -387,17 +368,33 @@ void MainWindow::showMainMenu() {
 
 	if (isHidden()) showFromTray();
 
-	if (!_layerBg) {
-		_layerBg.create(bodyWidget());
-	}
+	ensureLayerCreated();
 	_layerBg->showMainMenu();
+}
+
+void MainWindow::ensureLayerCreated() {
+	if (!_layerBg) {
+		_layerBg.create(bodyWidget(), _controller.get());
+		if (_controller) {
+			_controller->enableGifPauseReason(Window::GifPauseReason::Layer);
+		}
+	}
+}
+
+void MainWindow::destroyLayerDelayed() {
+	if (_layerBg) {
+		_layerBg.destroyDelayed();
+		if (_controller) {
+			_controller->disableGifPauseReason(Window::GifPauseReason::Layer);
+		}
+	}
 }
 
 void MainWindow::ui_hideSettingsAndLayer(ShowLayerOptions options) {
 	if (_layerBg) {
 		_layerBg->hideAll();
 		if (options.testFlag(ForceFastShowLayer)) {
-			_layerBg.destroyDelayed();
+			destroyLayerDelayed();
 		}
 	}
 }
@@ -433,9 +430,7 @@ PasscodeWidget *MainWindow::passcodeWidget() {
 
 void MainWindow::ui_showBox(object_ptr<BoxContent> box, ShowLayerOptions options) {
 	if (box) {
-		if (!_layerBg) {
-			_layerBg.create(bodyWidget());
-		}
+		ensureLayerCreated();
 		if (options.testFlag(KeepOtherLayers)) {
 			if (options.testFlag(ShowAfterOtherLayers)) {
 				_layerBg->prependBox(std::move(box));
@@ -452,7 +447,7 @@ void MainWindow::ui_showBox(object_ptr<BoxContent> box, ShowLayerOptions options
 		if (_layerBg) {
 			_layerBg->hideTopLayer();
 			if (options.testFlag(ForceFastShowLayer) && !_layerBg->layerShown()) {
-				_layerBg.destroyDelayed();
+				destroyLayerDelayed();
 			}
 		}
 		hideMediaview();
@@ -464,9 +459,11 @@ bool MainWindow::ui_isLayerShown() {
 }
 
 void MainWindow::ui_showMediaPreview(DocumentData *document) {
-	if (!document || ((!document->isAnimation() || !document->loaded()) && !document->sticker())) return;
+	if (!document || ((!document->isAnimation() || !document->loaded()) && !document->sticker())) {
+		return;
+	}
 	if (!_mediaPreview) {
-		_mediaPreview.create(bodyWidget());
+		_mediaPreview.create(bodyWidget(), controller());
 		updateControlsGeometry();
 	}
 	if (_mediaPreview->isHidden()) {
@@ -478,7 +475,7 @@ void MainWindow::ui_showMediaPreview(DocumentData *document) {
 void MainWindow::ui_showMediaPreview(PhotoData *photo) {
 	if (!photo) return;
 	if (!_mediaPreview) {
-		_mediaPreview.create(bodyWidget());
+		_mediaPreview.create(bodyWidget(), controller());
 		updateControlsGeometry();
 	}
 	if (_mediaPreview->isHidden()) {
@@ -566,7 +563,7 @@ void MainWindow::checkHistoryActivation() {
 }
 
 void MainWindow::layerHidden() {
-	_layerBg.destroyDelayed();
+	destroyLayerDelayed();
 	hideMediaview();
 	setInnerFocus();
 	checkHistoryActivation();
@@ -753,15 +750,12 @@ void MainWindow::noIntro(Intro::Widget *was) {
 	}
 }
 
-void MainWindow::noMain(MainWidget *was) {
-	if (was == _main) {
-		_main = nullptr;
-	}
-}
-
 void MainWindow::noLayerStack(LayerStackWidget *was) {
 	if (was == _layerBg) {
 		_layerBg = nullptr;
+		if (_controller) {
+			_controller->disableGifPauseReason(Window::GifPauseReason::Layer);
+		}
 	}
 }
 
@@ -913,10 +907,6 @@ void MainWindow::app_activateClickHandler(ClickHandlerPtr handler, Qt::MouseButt
 	handler->onClick(button);
 }
 
-QImage MainWindow::iconLarge() const {
-	return iconbig256;
-}
-
 void MainWindow::placeSmallCounter(QImage &img, int size, int count, style::color bg, const QPoint &shift, style::color color) {
 	QPainter p(&img);
 
@@ -1049,15 +1039,12 @@ MainWindow::~MainWindow() {
 	delete trayIconMenu;
 }
 
-PreLaunchWindow *PreLaunchWindowInstance = 0;
+PreLaunchWindow *PreLaunchWindowInstance = nullptr;
 
-PreLaunchWindow::PreLaunchWindow(QString title) : TWidget(0) {
-	Fonts::start();
+PreLaunchWindow::PreLaunchWindow(QString title) {
+	Fonts::Start();
 
-	QIcon icon(App::pixmapFromImageInPlace(QImage(cPlatform() == dbipMac ? qsl(":/gui/art/iconbig256.png") : qsl(":/gui/art/icon256.png"))));
-	if (cPlatform() == dbipLinux32 || cPlatform() == dbipLinux64) {
-		icon = QIcon::fromTheme("telegram", icon);
-	}
+	auto icon = Window::CreateIcon();
 	setWindowIcon(icon);
 	setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
 
@@ -1093,13 +1080,13 @@ PreLaunchWindow *PreLaunchWindow::instance() {
 
 PreLaunchWindow::~PreLaunchWindow() {
 	if (PreLaunchWindowInstance == this) {
-		PreLaunchWindowInstance = 0;
+		PreLaunchWindowInstance = nullptr;
 	}
 }
 
 PreLaunchLabel::PreLaunchLabel(QWidget *parent) : QLabel(parent) {
 	QFont labelFont(font());
-	labelFont.setFamily(qsl("Open Sans Semibold"));
+	labelFont.setFamily(Fonts::GetOverride(qsl("Open Sans Semibold")));
 	labelFont.setPixelSize(static_cast<PreLaunchWindow*>(parent)->basicSize());
 	setFont(labelFont);
 
@@ -1117,7 +1104,7 @@ void PreLaunchLabel::setText(const QString &text) {
 
 PreLaunchInput::PreLaunchInput(QWidget *parent, bool password) : QLineEdit(parent) {
 	QFont logFont(font());
-	logFont.setFamily(qsl("Open Sans"));
+	logFont.setFamily(Fonts::GetOverride(qsl("Open Sans")));
 	logFont.setPixelSize(static_cast<PreLaunchWindow*>(parent)->basicSize());
 	setFont(logFont);
 
@@ -1135,7 +1122,7 @@ PreLaunchInput::PreLaunchInput(QWidget *parent, bool password) : QLineEdit(paren
 
 PreLaunchLog::PreLaunchLog(QWidget *parent) : QTextEdit(parent) {
 	QFont logFont(font());
-	logFont.setFamily(qsl("Open Sans"));
+	logFont.setFamily(Fonts::GetOverride(qsl("Open Sans")));
 	logFont.setPixelSize(static_cast<PreLaunchWindow*>(parent)->basicSize());
 	setFont(logFont);
 
@@ -1157,7 +1144,7 @@ PreLaunchButton::PreLaunchButton(QWidget *parent, bool confirm) : QPushButton(pa
 	setObjectName(confirm ? "confirm" : "cancel");
 
 	QFont closeFont(font());
-	closeFont.setFamily(qsl("Open Sans Semibold"));
+	closeFont.setFamily(Fonts::GetOverride(qsl("Open Sans Semibold")));
 	closeFont.setPixelSize(static_cast<PreLaunchWindow*>(parent)->basicSize());
 	setFont(closeFont);
 
@@ -1176,7 +1163,7 @@ PreLaunchCheckbox::PreLaunchCheckbox(QWidget *parent) : QCheckBox(parent) {
 	setCheckState(Qt::Checked);
 
 	QFont closeFont(font());
-	closeFont.setFamily(qsl("Open Sans Semibold"));
+	closeFont.setFamily(Fonts::GetOverride(qsl("Open Sans Semibold")));
 	closeFont.setPixelSize(static_cast<PreLaunchWindow*>(parent)->basicSize());
 	setFont(closeFont);
 

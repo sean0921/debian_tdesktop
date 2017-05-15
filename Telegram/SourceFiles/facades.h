@@ -20,8 +20,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "core/type_traits.h"
-#include "core/observer.h"
+#include "base/type_traits.h"
+#include "base/observer.h"
 
 class LayerWidget;
 class BoxContent;
@@ -291,11 +291,10 @@ bool started();
 void start();
 void finish();
 
-DeclareReadOnlyVar(uint64, LaunchId);
-DeclareRefVar(SingleDelayedCall, HandleHistoryUpdate);
-DeclareRefVar(SingleDelayedCall, HandleUnreadCounterUpdate);
-DeclareRefVar(SingleDelayedCall, HandleDelayedPeerUpdates);
-DeclareRefVar(SingleDelayedCall, HandleObservables);
+DeclareRefVar(SingleQueuedInvokation, HandleHistoryUpdate);
+DeclareRefVar(SingleQueuedInvokation, HandleUnreadCounterUpdate);
+DeclareRefVar(SingleQueuedInvokation, HandleDelayedPeerUpdates);
+DeclareRefVar(SingleQueuedInvokation, HandleObservables);
 
 DeclareVar(Adaptive::WindowLayout, AdaptiveWindowLayout);
 DeclareVar(Adaptive::ChatLayout, AdaptiveChatLayout);
@@ -337,6 +336,12 @@ DeclareVar(int32, EditTimeLimit);
 DeclareVar(int32, StickersRecentLimit);
 DeclareVar(int32, PinnedDialogsCountMax);
 DeclareVar(QString, InternalLinksDomain);
+DeclareVar(int32, CallReceiveTimeoutMs);
+DeclareVar(int32, CallRingTimeoutMs);
+DeclareVar(int32, CallConnectTimeoutMs);
+DeclareVar(int32, CallPacketTimeoutMs);
+DeclareVar(bool, PhoneCallsEnabled);
+DeclareRefVar(base::Observable<void>, PhoneCallsEnabledChanged);
 
 typedef QMap<PeerId, MsgId> HiddenPinnedMessagesMap;
 DeclareVar(HiddenPinnedMessagesMap, HiddenPinnedMessages);
@@ -390,10 +395,6 @@ DeclareRefVar(base::Variable<DBIWorkMode>, WorkMode);
 DeclareRefVar(base::Observable<HistoryItem*>, ItemRemoved);
 DeclareRefVar(base::Observable<void>, UnreadCounterUpdate);
 DeclareRefVar(base::Observable<void>, PeerChooseCancel);
-
-DeclareVar(float64, DialogsWidthRatio);
-DeclareRefVar(base::Variable<bool>, DialogsListFocused);
-DeclareRefVar(base::Variable<bool>, DialogsListDisplayForced);
 
 } // namespace Global
 

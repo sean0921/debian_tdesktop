@@ -37,6 +37,12 @@ Choose a folder for the future build, for example **D:\\TBuild\\**. There you wi
 
 All commands (if not stated otherwise) will be launched from **VS2015 x86 Native Tools Command Prompt.bat** (should be in **Start Menu > Programs > Visual Studio 2015** menu folder).
 
+#### A note on D:\\TBuild
+
+***In case you don't have a *D* drive, or prefer to use another working directory.***
+Since all of the examples and commands here are using the *D* drive, you might find it more comfortable to map the drive to a folder you of your choice.
+For example, to map *D:\\* to *C:\\base_folder_for_telegram_dev*, open the cmd and execute: `subst D: C:\base_folder_for_telegram_dev`.
+
 ## Clone source code
 
 Go to **D:\\TBuild**
@@ -143,10 +149,11 @@ Go to **D:\\TBuild\\Libraries** and run
 Go to **D:\\TBuild\\Libraries** and run
 
     git clone https://github.com/telegramdesktop/opus.git
+    git checkout ffmpeg_fix
 
 #### Building libraries
 
-* Open in VS2015 **D:\\TBuild\\Libraries\\opus\\win32\\VS2010\\opus.sln**
+* Open in VS2015 **D:\\TBuild\\Libraries\\opus\\win32\\VS2015\\opus.sln**
 * Build Debug configuration
 * Build Release configuration (it will be required in **FFmpeg** build!)
 
@@ -158,7 +165,7 @@ Go to **D:\\TBuild\\Libraries** and run
     cd ffmpeg
     git checkout release/3.2
 
-http://msys2.github.io/ > Download [msys2-x86_64-20150512.exe](http://sourceforge.net/projects/msys2/files/Base/x86_64/msys2-x86_64-20150512.exe/download) and install to **D:\\msys64**
+http://www.msys2.org/ > Download the latest version and install it to **D:\\msys64**
 
 #### Building libraries
 
@@ -177,7 +184,7 @@ While still running the VS2015 x86 Native Tools Command Prompt, go to **D:\\msys
 
     PKG_CONFIG_PATH="/mingw64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
-    ./configure --toolchain=msvc --disable-programs --disable-doc --disable-everything --enable-protocol=file --enable-libopus --enable-decoder=aac --enable-decoder=aac_latm --enable-decoder=aasc --enable-decoder=flac --enable-decoder=gif --enable-decoder=h264 --enable-decoder=mp1 --enable-decoder=mp1float --enable-decoder=mp2 --enable-decoder=mp2float --enable-decoder=mp3 --enable-decoder=mp3adu --enable-decoder=mp3adufloat --enable-decoder=mp3float --enable-decoder=mp3on4 --enable-decoder=mp3on4float --enable-decoder=mpeg4 --enable-decoder=msmpeg4v2 --enable-decoder=msmpeg4v3 --enable-decoder=wavpack --enable-decoder=opus --enable-decoder=vorbis --enable-decoder=wmalossless --enable-decoder=wmapro --enable-decoder=wmav1 --enable-decoder=wmav2 --enable-decoder=wmavoice --enable-encoder=libopus --enable-hwaccel=h264_d3d11va --enable-hwaccel=h264_dxva2 --enable-parser=aac --enable-parser=aac_latm --enable-parser=flac --enable-parser=h264 --enable-parser=mpeg4video --enable-parser=mpegaudio --enable-parser=opus --enable-parser=vorbis --enable-demuxer=aac --enable-demuxer=flac --enable-demuxer=gif --enable-demuxer=h264 --enable-demuxer=mov --enable-demuxer=mp3 --enable-demuxer=ogg --enable-demuxer=wav --enable-muxer=ogg --enable-muxer=opus --extra-ldflags="-libpath:/d/TBuild/Libraries/opus/win32/VS2010/Win32/Release celt.lib silk_common.lib silk_float.lib"
+    ./configure --toolchain=msvc --disable-programs --disable-doc --disable-everything --enable-protocol=file --enable-libopus --enable-decoder=aac --enable-decoder=aac_latm --enable-decoder=aasc --enable-decoder=flac --enable-decoder=gif --enable-decoder=h264 --enable-decoder=mp1 --enable-decoder=mp1float --enable-decoder=mp2 --enable-decoder=mp2float --enable-decoder=mp3 --enable-decoder=mp3adu --enable-decoder=mp3adufloat --enable-decoder=mp3float --enable-decoder=mp3on4 --enable-decoder=mp3on4float --enable-decoder=mpeg4 --enable-decoder=msmpeg4v2 --enable-decoder=msmpeg4v3 --enable-decoder=wavpack --enable-decoder=opus --enable-decoder=pcm_alaw --enable-decoder=pcm_alaw_at --enable-decoder=pcm_f32be --enable-decoder=pcm_f32le --enable-decoder=pcm_f64be --enable-decoder=pcm_f64le --enable-decoder=pcm_lxf --enable-decoder=pcm_mulaw --enable-decoder=pcm_mulaw_at --enable-decoder=pcm_s16be --enable-decoder=pcm_s16be_planar --enable-decoder=pcm_s16le --enable-decoder=pcm_s16le_planar --enable-decoder=pcm_s24be --enable-decoder=pcm_s24daud --enable-decoder=pcm_s24le --enable-decoder=pcm_s24le_planar --enable-decoder=pcm_s32be --enable-decoder=pcm_s32le --enable-decoder=pcm_s32le_planar --enable-decoder=pcm_s64be --enable-decoder=pcm_s64le --enable-decoder=pcm_s8 --enable-decoder=pcm_s8_planar --enable-decoder=pcm_u16be --enable-decoder=pcm_u16le --enable-decoder=pcm_u24be --enable-decoder=pcm_u24le --enable-decoder=pcm_u32be --enable-decoder=pcm_u32le --enable-decoder=pcm_u8 --enable-decoder=pcm_zork --enable-decoder=vorbis --enable-decoder=wmalossless --enable-decoder=wmapro --enable-decoder=wmav1 --enable-decoder=wmav2 --enable-decoder=wmavoice --enable-encoder=libopus --enable-hwaccel=h264_d3d11va --enable-hwaccel=h264_dxva2 --enable-parser=aac --enable-parser=aac_latm --enable-parser=flac --enable-parser=h264 --enable-parser=mpeg4video --enable-parser=mpegaudio --enable-parser=opus --enable-parser=vorbis --enable-demuxer=aac --enable-demuxer=flac --enable-demuxer=gif --enable-demuxer=h264 --enable-demuxer=mov --enable-demuxer=mp3 --enable-demuxer=ogg --enable-demuxer=wav --enable-muxer=ogg --enable-muxer=opus --extra-ldflags="-libpath:/d/TBuild/Libraries/opus/win32/VS2015/Win32/Release"
 
     make
     make install
@@ -191,7 +198,6 @@ While still running the VS2015 x86 Native Tools Command Prompt, go to **D:\\msys
 
     git clone git://code.qt.io/qt/qt5.git qt5_6_2
     cd qt5_6_2
-    git checkout 5.6
     perl init-repository --module-subset=qtbase,qtimageformats
     git checkout v5.6.2
     cd qtimageformats && git checkout v5.6.2 && cd ..
@@ -203,7 +209,7 @@ While still running the VS2015 x86 Native Tools Command Prompt, go to **D:\\msys
 
 #### Install Windows SDKs
 
-If you didn't install Windows SDKs before, you need to install them now. To install the SDKs just open Telegram solution at **D:\TBuild\tdesktop\Telegram.sln** and on startup Visual Studio 2015 will popup dialog box and ask to download and install extra components (including Windows 7 SDK).
+If you didn't install Windows SDKs before, you need to install them now. To install the SDKs just open Telegram solution at **D:\TBuild\tdesktop\Telegram.sln** ([jump here to generate Telegram.sln](#setup-gypninja-and-generate-vs-solution)) and on startup Visual Studio 2015 will popup dialog box and ask to download and install extra components (including Windows 7 SDK).
 
 If you already have Windows SDKs then find the library folder and correct it at configure's command below (like **C:\Program Files (x86)\Windows Kits\8.0\Lib\win8\um\x86**).
 
@@ -272,12 +278,16 @@ run `git reset --hard HEAD` and execute `gclient` again
 <!-- -->
 
     git clone https://chromium.googlesource.com/external/gyp
+    cd gyp
+    git checkout a478c1ab51
     SET PATH=%PATH%;D:\TBuild\Libraries\gyp;D:\TBuild\Libraries\ninja;
-    cd ..\tdesktop\Telegram
+    cd ..\..\tdesktop\Telegram
+
+Also, actually add **D:\\TBuild\\Libraries\\ninja\\** (not just for running the **gyp** command) to your path environment variable, since Telegram needs it for the build process.
 
 If you want to pass a build define (like `TDESKTOP_DISABLE_AUTOUPDATE` or `TDESKTOP_DISABLE_NETWORK_PROXY`), call `set TDESKTOP_BUILD_DEFINES=TDESKTOP_DISABLE_AUTOUPDATE,TDESKTOP_DISABLE_NETWORK_PROXY,...` (comma seperated string)
 
-After, call `gyp\refresh.bat`
+After, call `gyp\refresh.bat` (python 2.7 needed)
 
 #### Configure VS
 
@@ -285,6 +295,7 @@ After, call `gyp\refresh.bat`
 * QT5 > Qt Options > Add
   * Version name: **Qt 5.6.22Win32**
   * Path: **D:\TBuild\Libraries\qt5_6_2\qtbase**
+    * If you made a network map, here you should use the real path! (e.g *C:\base_folder_for_telegram_dev* or what you used at the beginning)
 * Default Qt/Win version: **Qt 5.6.2 Win32** – **OK** - You may need to restart Visual Studio for this to take effect.
 
 #### Build the project

@@ -35,6 +35,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "application.h"
 #include "apiwrap.h"
 #include "auth_session.h"
+#include "window/window_controller.h"
 
 #include <openssl/evp.h>
 
@@ -145,7 +146,7 @@ auto PassKey = MTP::AuthKeyPtr();
 auto LocalKey = MTP::AuthKeyPtr();
 
 void createLocalKey(const QByteArray &pass, QByteArray *salt, MTP::AuthKeyPtr *result) {
-	auto key = MTP::AuthKey::Data { { 0 } };
+	auto key = MTP::AuthKey::Data { { gsl::byte{} } };
 	auto iterCount = pass.size() ? LocalEncryptIterCount : LocalEncryptNoPwdIterCount; // dont slow down for no password
 	auto newSalt = QByteArray();
 	if (!salt) {
@@ -638,12 +639,12 @@ enum class WriteMapWhen {
 	Soon,
 };
 
-std::unique_ptr<AuthSessionData> AuthSessionDataCache;
-AuthSessionData &GetAuthSessionDataCache() {
-	if (!AuthSessionDataCache) {
-		AuthSessionDataCache = std::make_unique<AuthSessionData>();
+std::unique_ptr<StoredAuthSession> StoredAuthSessionCache;
+StoredAuthSession &GetStoredAuthSessionCache() {
+	if (!StoredAuthSessionCache) {
+		StoredAuthSessionCache = std::make_unique<StoredAuthSession>();
 	}
-	return *AuthSessionDataCache;
+	return *StoredAuthSessionCache;
 }
 
 void _writeMap(WriteMapWhen when = WriteMapWhen::Soon);
@@ -852,8 +853,8 @@ struct ReadSettingsContext {
 	MTP::DcOptions dcOptions;
 };
 
-void applyReadContext(const ReadSettingsContext &context) {
-	Messenger::Instance().dcOptions()->addFromOther(context.dcOptions);
+void applyReadContext(ReadSettingsContext &&context) {
+	Messenger::Instance().dcOptions()->addFromOther(std::move(context.dcOptions));
 }
 
 bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSettingsContext &context) {
@@ -925,16 +926,13 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 
 		DEBUG_LOG(("MTP Info: user found, dc %1, uid %2").arg(dcId).arg(userId));
 		Messenger::Instance().setMtpMainDcId(dcId);
-		if (userId) {
-			Messenger::Instance().authSessionCreate(UserId(userId));
-		}
+		Messenger::Instance().setAuthSessionUserId(userId);
 	} break;
 
 	case dbiKey: {
 		qint32 dcId;
-		auto key = MTP::AuthKey::Data { { 0 } };
 		stream >> dcId;
-		stream.readRawData(key.data(), key.size());
+		auto key = Serialize::read<MTP::AuthKey::Data>(stream);
 		if (!_checkStreamStatus(stream)) return false;
 
 		Messenger::Instance().setMtpKey(dcId, key);
@@ -1012,7 +1010,7 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 		if (!_checkStreamStatus(stream)) return false;
 
 		Global::SetDialogsModeEnabled(enabled == 1);
-		Dialogs::Mode mode = Dialogs::Mode::All;
+		auto mode = Dialogs::Mode::All;
 		if (enabled) {
 			mode = static_cast<Dialogs::Mode>(modeInt);
 			if (mode != Dialogs::Mode::All && mode != Dialogs::Mode::Important) {
@@ -1088,7 +1086,7 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 		stream >> v;
 		if (!_checkStreamStatus(stream)) return false;
 
-		Global::SetDialogsWidthRatio(v / 1000000.);
+		GetStoredAuthSessionCache().dialogsWidthRatio = v / 1000000.;
 	} break;
 
 	case dbiLastSeenWarningSeenOld: {
@@ -1096,7 +1094,7 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 		stream >> v;
 		if (!_checkStreamStatus(stream)) return false;
 
-		GetAuthSessionDataCache().setLastSeenWarningSeen(v == 1);
+		GetStoredAuthSessionCache().data.setLastSeenWarningSeen(v == 1);
 	} break;
 
 	case dbiAuthSessionData: {
@@ -1104,7 +1102,7 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 		stream >> v;
 		if (!_checkStreamStatus(stream)) return false;
 
-		GetAuthSessionDataCache().constructFromSerialized(v);
+		GetStoredAuthSessionCache().data.constructFromSerialized(v);
 	} break;
 
 	case dbiWorkMode: {
@@ -1709,8 +1707,18 @@ void _writeUserSettings() {
 			recentEmojiPreloadData.push_back(qMakePair(item.first->id(), item.second));
 		}
 	}
-	auto userDataInstance = AuthSessionDataCache ? AuthSessionDataCache.get() : AuthSession::Exists() ? &AuthSession::Current().data() : nullptr;
+	auto userDataInstance = StoredAuthSessionCache ? &StoredAuthSessionCache->data : Messenger::Instance().getAuthSessionData();
 	auto userData = userDataInstance ? userDataInstance->serialize() : QByteArray();
+	auto dialogsWidthRatio = [] {
+		if (StoredAuthSessionCache) {
+			return StoredAuthSessionCache->dialogsWidthRatio;
+		} else if (auto window = App::wnd()) {
+			if (auto controller = window->controller()) {
+				return controller->dialogsWidthRatio().value();
+			}
+		}
+		return Window::Controller::kDefaultDialogsWidthRatio;
+	};
 
 	uint32 size = 21 * (sizeof(quint32) + sizeof(qint32));
 	size += sizeof(quint32) + Serialize::stringSize(Global::AskDownloadPath() ? QString() : Global::DownloadPath()) + Serialize::bytearraySize(Global::AskDownloadPath() ? QByteArray() : Global::DownloadPathBookmark());
@@ -1755,7 +1763,7 @@ void _writeUserSettings() {
 	data.stream << quint32(dbiDialogsMode) << qint32(Global::DialogsModeEnabled() ? 1 : 0) << static_cast<qint32>(Global::DialogsMode());
 	data.stream << quint32(dbiModerateMode) << qint32(Global::ModerateModeEnabled() ? 1 : 0);
 	data.stream << quint32(dbiAutoPlay) << qint32(cAutoPlayGif() ? 1 : 0);
-	data.stream << quint32(dbiDialogsWidthRatio) << qint32(snap(qRound(Global::DialogsWidthRatio() * 1000000), 0, 1000000));
+	data.stream << quint32(dbiDialogsWidthRatio) << qint32(snap(qRound(dialogsWidthRatio() * 1000000), 0, 1000000));
 	data.stream << quint32(dbiUseExternalVideoPlayer) << qint32(cUseExternalVideoPlayer());
 	if (!userData.isEmpty()) {
 		data.stream << quint32(dbiAuthSessionData) << userData;
@@ -1790,7 +1798,7 @@ void _readUserSettings() {
 		LOG(("App Info: could not read encrypted user settings..."));
 
 		_readOldUserSettings(true, context);
-		applyReadContext(context);
+		applyReadContext(std::move(context));
 
 		return _writeUserSettings();
 	}
@@ -1813,7 +1821,7 @@ void _readUserSettings() {
 	_readingUserSettings = false;
 	LOG(("App Info: encrypted user settings read."));
 
-	applyReadContext(context);
+	applyReadContext(std::move(context));
 }
 
 void _writeMtpData() {
@@ -1838,7 +1846,7 @@ void _readMtpData() {
 	if (!readEncryptedFile(mtp, toFilePart(_dataNameKey), FileOption::Safe)) {
 		if (LocalKey) {
 			_readOldMtpData(true, context);
-			applyReadContext(context);
+			applyReadContext(std::move(context));
 
 			_writeMtpData();
 		}
@@ -1857,7 +1865,7 @@ void _readMtpData() {
 			return _writeMtpData();
 		}
 	}
-	applyReadContext(context);
+	applyReadContext(std::move(context));
 }
 
 ReadMapState _readMap(const QByteArray &pass) {
@@ -1891,8 +1899,8 @@ ReadMapState _readMap(const QByteArray &pass) {
 		LOG(("App Info: could not decrypt pass-protected key from map file, maybe bad password..."));
 		return ReadMapPassNeeded;
 	}
-	auto key = MTP::AuthKey::Data { { 0 } };
-	if (keyData.stream.readRawData(key.data(), key.size()) != key.size() || !keyData.stream.atEnd()) {
+	auto key = Serialize::read<MTP::AuthKey::Data>(keyData.stream);
+	if (keyData.stream.status() != QDataStream::Ok || !keyData.stream.atEnd()) {
 		LOG(("App Error: could not read pass-protected key from map file"));
 		return ReadMapFailed;
 	}
@@ -2065,12 +2073,7 @@ ReadMapState _readMap(const QByteArray &pass) {
 	_readUserSettings();
 	_readMtpData();
 
-	if (AuthSessionDataCache) {
-		if (AuthSession::Exists()) {
-			AuthSession::Current().data().copyFrom(*AuthSessionDataCache);
-		}
-		AuthSessionDataCache.reset();
-	}
+	Messenger::Instance().setAuthSessionFromStorage(std::move(StoredAuthSessionCache));
 
 	LOG(("Map read time: %1").arg(getms() - ms));
 	if (_oldSettingsVersion < AppVersion) {
@@ -2225,7 +2228,7 @@ void start() {
 		_readOldSettings(true, context);
 		_readOldUserSettings(false, context); // needed further in _readUserSettings
 		_readOldMtpData(false, context); // needed further in _readMtpData
-		applyReadContext(context);
+		applyReadContext(std::move(context));
 
 		return writeSettings();
 	}
@@ -2267,7 +2270,7 @@ void start() {
 
 	readTheme();
 
-	applyReadContext(context);
+	applyReadContext(std::move(context));
 }
 
 void writeSettings() {
@@ -2367,7 +2370,7 @@ void reset() {
 	_savedGifsKey = 0;
 	_backgroundKey = _userSettingsKey = _recentHashtagsAndBotsKey = _savedPeersKey = 0;
 	_oldMapVersion = _oldSettingsVersion = 0;
-	AuthSessionDataCache.reset();
+	StoredAuthSessionCache.reset();
 	_mapChanged = true;
 	_writeMap(WriteMapWhen::Now);
 
@@ -3658,8 +3661,8 @@ void readSavedGifs() {
 	saved.reserve(cnt);
 	OrderedSet<DocumentId> read;
 	for (uint32 i = 0; i < cnt; ++i) {
-		DocumentData *document = Serialize::Document::readFromStream(gifs.version, gifs.stream);
-		if (!document || !document->isAnimation()) continue;
+		auto document = Serialize::Document::readFromStream(gifs.version, gifs.stream);
+		if (!document || !document->isGifv()) continue;
 
 		if (read.contains(document->id)) continue;
 		read.insert(document->id);

@@ -20,12 +20,15 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #include "messenger.h"
 
+#include "base/timer.h"
 #include "storage/localstorage.h"
 #include "platform/platform_specific.h"
 #include "mainwindow.h"
 #include "application.h"
 #include "shortcuts.h"
 #include "auth_session.h"
+#include "apiwrap.h"
+#include "calls/calls_instance.h"
 #include "langloaderplain.h"
 #include "observer_peer.h"
 #include "storage/file_upload.h"
@@ -33,13 +36,17 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "mtproto/dc_options.h"
 #include "mtproto/mtp_instance.h"
 #include "media/player/media_player_instance.h"
+#include "media/media_audio_track.h"
 #include "window/notifications_manager.h"
 #include "window/themes/window_theme.h"
 #include "history/history_location_manager.h"
 #include "ui/widgets/tooltip.h"
 #include "storage/serialize_common.h"
+#include "window/window_controller.h"
 
 namespace {
+
+constexpr auto kQuitPreventTimeoutMs = 1500;
 
 Messenger *SingleInstance = nullptr;
 
@@ -50,17 +57,24 @@ Messenger *Messenger::InstancePointer() {
 }
 
 struct Messenger::Private {
+	UserId authSessionUserId = 0;
+	std::unique_ptr<Local::StoredAuthSession> storedAuthSession;
 	MTP::Instance::Config mtpConfig;
 	MTP::AuthKeysList mtpKeysToDestroy;
+	base::Timer quitTimer;
 };
 
 Messenger::Messenger() : QObject()
 , _private(std::make_unique<Private>())
-, _delayedLoadersDestroyer(this, "onDelayedDestroyLoaders") {
-	t_assert(SingleInstance == nullptr);
+, _audio(std::make_unique<Media::Audio::Instance>())
+, _logo(Window::LoadLogo())
+, _logoNoMargin(Window::LoadLogoNoMargin()) {
+	Expects(!_logo.isNull());
+	Expects(!_logoNoMargin.isNull());
+	Expects(SingleInstance == nullptr);
 	SingleInstance = this;
 
-	Fonts::start();
+	Fonts::Start();
 
 	ThirdParty::start();
 	Global::start();
@@ -127,7 +141,7 @@ Messenger::Messenger() : QObject()
 
 	DEBUG_LOG(("Application Info: showing."));
 	if (state == Local::ReadMapPassNeeded) {
-		_window->setupPasscode();
+		setupPasscode();
 	} else {
 		if (AuthSession::Exists()) {
 			_window->setupMain();
@@ -160,12 +174,12 @@ Messenger::Messenger() : QObject()
 }
 
 void Messenger::setMtpMainDcId(MTP::DcId mainDcId) {
-	t_assert(!_mtproto);
+	Expects(!_mtproto);
 	_private->mtpConfig.mainDcId = mainDcId;
 }
 
 void Messenger::setMtpKey(MTP::DcId dcId, const MTP::AuthKey::Data &keyData) {
-	t_assert(!_mtproto);
+	Expects(!_mtproto);
 	_private->mtpConfig.keys.push_back(std::make_shared<MTP::AuthKey>(MTP::AuthKey::Type::ReadFromFile, dcId, keyData));
 }
 
@@ -214,9 +228,27 @@ QByteArray Messenger::serializeMtpAuthorization() const {
 	return serialize(_private->mtpConfig.mainDcId, keys, keysToDestroy);
 }
 
+void Messenger::setAuthSessionUserId(UserId userId) {
+	Expects(!authSession());
+	_private->authSessionUserId = userId;
+}
+
+void Messenger::setAuthSessionFromStorage(std::unique_ptr<Local::StoredAuthSession> data) {
+	Expects(!authSession());
+	_private->storedAuthSession = std::move(data);
+}
+
+AuthSessionData *Messenger::getAuthSessionData() {
+	if (_private->authSessionUserId) {
+		return _private->storedAuthSession ? &_private->storedAuthSession->data : nullptr;
+	} else if (AuthSession::Exists()) {
+		return &AuthSession::Current().data();
+	}
+	return nullptr;
+}
+
 void Messenger::setMtpAuthorization(const QByteArray &serialized) {
-	t_assert(!_mtproto);
-	t_assert(!authSession());
+	Expects(!_mtproto);
 
 	auto readonly = serialized;
 	QBuffer buffer(&readonly);
@@ -234,9 +266,7 @@ void Messenger::setMtpAuthorization(const QByteArray &serialized) {
 		return;
 	}
 
-	if (userId) {
-		authSessionCreate(userId);
-	}
+	setAuthSessionUserId(userId);
 	_private->mtpConfig.mainDcId = mainDcId;
 
 	auto readKeys = [&stream](auto &keys) {
@@ -262,7 +292,7 @@ void Messenger::setMtpAuthorization(const QByteArray &serialized) {
 }
 
 void Messenger::startMtp() {
-	t_assert(!_mtproto);
+	Expects(!_mtproto);
 	_mtproto = std::make_unique<MTP::Instance>(_dcOptions.get(), MTP::Instance::Mode::Normal, base::take(_private->mtpConfig));
 	_private->mtpConfig.mainDcId = _mtproto->mainDcId();
 
@@ -279,6 +309,20 @@ void Messenger::startMtp() {
 
 	if (!_private->mtpKeysToDestroy.empty()) {
 		destroyMtpKeys(base::take(_private->mtpKeysToDestroy));
+	}
+
+	if (_private->authSessionUserId) {
+		authSessionCreate(base::take(_private->authSessionUserId));
+	}
+	if (_private->storedAuthSession) {
+		if (_authSession) {
+			_authSession->data().copyFrom(_private->storedAuthSession->data);
+			if (auto window = App::wnd()) {
+				t_assert(window->controller() != nullptr);
+				window->controller()->dialogsWidthRatio().set(_private->storedAuthSession->dialogsWidthRatio);
+			}
+		}
+		_private->storedAuthSession.reset();
 	}
 }
 
@@ -354,7 +398,8 @@ void Messenger::loadLanguage() {
 			LOG(("Lang load warnings: %1").arg(loader.warnings()));
 		}
 	}
-	QCoreApplication::instance()->installTranslator(_translator = new Translator());
+	_translator = std::make_unique<Translator>();
+	QCoreApplication::instance()->installTranslator(_translator.get());
 }
 
 void Messenger::startLocalStorage() {
@@ -367,6 +412,11 @@ void Messenger::startLocalStorage() {
 			for (auto id : ids) {
 				instance->restart(id);
 			}
+		}
+	});
+	subscribe(authSessionChanged(), [this] {
+		if (_mtproto) {
+			_mtproto->configLoadRequest();
 		}
 	});
 }
@@ -448,17 +498,17 @@ void Messenger::peerClearPhoto(PeerId id) {
 	}
 }
 
-void Messenger::killDownloadSessionsStart(int32 dc) {
-	if (killDownloadSessionTimes.constFind(dc) == killDownloadSessionTimes.cend()) {
-		killDownloadSessionTimes.insert(dc, getms() + MTPAckSendWaiting + MTPKillFileSessionTimeout);
+void Messenger::killDownloadSessionsStart(MTP::DcId dcId) {
+	if (killDownloadSessionTimes.constFind(dcId) == killDownloadSessionTimes.cend()) {
+		killDownloadSessionTimes.insert(dcId, getms() + MTPAckSendWaiting + MTPKillFileSessionTimeout);
 	}
 	if (!killDownloadSessionsTimer.isActive()) {
 		killDownloadSessionsTimer.start(MTPAckSendWaiting + MTPKillFileSessionTimeout + 5);
 	}
 }
 
-void Messenger::killDownloadSessionsStop(int32 dc) {
-	killDownloadSessionTimes.remove(dc);
+void Messenger::killDownloadSessionsStop(MTP::DcId dcId) {
+	killDownloadSessionTimes.remove(dcId);
 	if (killDownloadSessionTimes.isEmpty() && killDownloadSessionsTimer.isActive()) {
 		killDownloadSessionsTimer.stop();
 	}
@@ -510,7 +560,7 @@ void Messenger::killDownloadSessions() {
 	auto ms = getms(), left = static_cast<TimeMs>(MTPAckSendWaiting) + MTPKillFileSessionTimeout;
 	for (auto i = killDownloadSessionTimes.begin(); i != killDownloadSessionTimes.end(); ) {
 		if (i.value() <= ms) {
-			for (int j = 0; j < MTPDownloadSessionsCount; ++j) {
+			for (int j = 0; j < MTP::kDownloadSessionsCount; ++j) {
 				MTP::stopSession(MTP::downloadDcId(i.key(), j));
 			}
 			i = killDownloadSessionTimes.erase(i);
@@ -584,13 +634,16 @@ void Messenger::onSwitchTestMode() {
 }
 
 void Messenger::authSessionCreate(UserId userId) {
+	Expects(_mtproto != nullptr);
 	_authSession = std::make_unique<AuthSession>(userId);
-	authSessionChanged().notify();
+	authSessionChanged().notify(true);
 }
 
 void Messenger::authSessionDestroy() {
 	_authSession.reset();
-	authSessionChanged().notify();
+	_private->storedAuthSession.reset();
+	_private->authSessionUserId = 0;
+	authSessionChanged().notify(true);
 }
 
 void Messenger::setInternalLinkDomain(const QString &domain) const {
@@ -677,9 +730,9 @@ void Messenger::checkMapVersion() {
 	if (Local::oldMapVersion() < AppVersion) {
 		if (Local::oldMapVersion()) {
 			QString versionFeatures;
-			if ((cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000028) {
-				versionFeatures = QString::fromUtf8("\xE2\x80\x94 Better Emoji & Stickers & Saved GIFs panel.\n\xE2\x80\x94 Bug fixes and other minor improvements.");
-			} else if (!(cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000029) {
+			if ((cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1000036) {
+				versionFeatures = QString::fromUtf8("\xE2\x80\x94 Telegram Calls are now available on desktops: secure, crystal-clear, constantly improved by artificial intelligence.\n\xE2\x80\x94 Bug fixes and other minor improvements.");
+			} else if (!(cAlphaVersion() || cBetaVersion()) && Local::oldMapVersion() < 1001000) {
 				versionFeatures = langNewVersionText();
 			} else {
 				versionFeatures = lang(lng_new_version_minor).trimmed();
@@ -692,21 +745,28 @@ void Messenger::checkMapVersion() {
 	}
 }
 
-void Messenger::prepareToDestroy() {
+void Messenger::setupPasscode() {
+	_window->setupPasscode();
+	_passcodedChanged.notify();
+}
+
+void Messenger::clearPasscode() {
+	cSetPasscodeBadTries(0);
+	_window->clearPasscode();
+	_passcodedChanged.notify();
+}
+
+Messenger::~Messenger() {
+	Expects(SingleInstance == this);
+
 	_window.reset();
 
 	// Some MTP requests can be cancelled from data clearing.
 	App::clearHistories();
-	_delayedDestroyedLoaders.clear();
 	authSessionDestroy();
 
 	_mtproto.reset();
 	_mtprotoForKeysDestroy.reset();
-}
-
-Messenger::~Messenger() {
-	t_assert(SingleInstance == this);
-	SingleInstance = nullptr;
 
 	Shortcuts::finish();
 
@@ -717,7 +777,6 @@ Messenger::~Messenger() {
 	deinitLocationManager();
 
 	delete base::take(_uploader);
-	delete base::take(_translator);
 
 	Window::Theme::Unload();
 
@@ -727,17 +786,49 @@ Messenger::~Messenger() {
 	Local::finish();
 	Global::finish();
 	ThirdParty::finish();
+
+	SingleInstance = nullptr;
 }
 
 MainWindow *Messenger::mainWindow() {
 	return _window.get();
 }
 
-void Messenger::delayedDestroyLoader(std::unique_ptr<FileLoader> loader) {
-	_delayedDestroyedLoaders.push_back(std::move(loader));
-	_delayedLoadersDestroyer.call();
+QPoint Messenger::getPointForCallPanelCenter() const {
+	Expects(_window != nullptr);
+	Expects(_window->windowHandle() != nullptr);
+	if (_window->isActive()) {
+		return _window->geometry().center();
+	}
+	return _window->windowHandle()->screen()->geometry().center();
 }
 
-void Messenger::onDelayedDestroyLoaders() {
-	_delayedDestroyedLoaders.clear();
+void Messenger::QuitAttempt() {
+	auto prevents = false;
+	if (!Sandbox::isSavingSession() && AuthSession::Exists()) {
+		if (AuthSession::Current().api().isQuitPrevent()) {
+			prevents = true;
+		}
+		if (AuthSession::Current().calls().isQuitPrevent()) {
+			prevents = true;
+		}
+	}
+	if (prevents) {
+		Instance().quitDelayed();
+	} else {
+		QCoreApplication::quit();
+	}
+}
+
+void Messenger::quitPreventFinished() {
+	if (App::quitting()) {
+		QuitAttempt();
+	}
+}
+
+void Messenger::quitDelayed() {
+	if (!_private->quitTimer.isActive()) {
+		_private->quitTimer.setCallback([] { QCoreApplication::quit(); });
+		_private->quitTimer.callOnce(kQuitPreventTimeoutMs);
+	}
 }

@@ -113,6 +113,9 @@ public:
 	}
 	virtual void stopInline() {
 	}
+	virtual bool isRoundVideoPlaying() const {
+		return false;
+	}
 
 	virtual void attachToParent() {
 	}
@@ -151,6 +154,13 @@ public:
 		return false;
 	}
 
+	// An attach media in a web page can provide an
+	// additional text to be displayed below the attach.
+	// For example duration / progress for video messages.
+	virtual QString additionalInfoString() const {
+		return QString();
+	}
+
 	int currentWidth() const {
 		return _width;
 	}
@@ -168,6 +178,10 @@ public:
 		return (_inBubbleState == MediaInBubbleState::Bottom) || (_inBubbleState == MediaInBubbleState::None);
 	}
 	virtual bool skipBubbleTail() const {
+		return false;
+	}
+
+	virtual bool canEditCaption() const {
 		return false;
 	}
 

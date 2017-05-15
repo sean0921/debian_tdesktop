@@ -26,8 +26,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "storage/localstorage.h"
 #include "autoupdater.h"
 #include "window/notifications_manager.h"
-#include "core/task_queue.h"
 #include "messenger.h"
+#include "base/timer.h"
 
 namespace {
 
@@ -319,10 +319,7 @@ void Application::closeApplication() {
 	if (App::launchState() == App::QuitProcessed) return;
 	App::setLaunchState(App::QuitProcessed);
 
-	if (_messengerInstance) {
-		Messenger::Instance().prepareToDestroy();
-		_messengerInstance.reset();
-	}
+	_messengerInstance.reset();
 
 	Sandbox::finish();
 
@@ -345,10 +342,6 @@ void Application::closeApplication() {
 	}
 	_updateThread = 0;
 #endif // !TDESKTOP_DISABLE_AUTOUPDATE
-}
-
-void Application::onMainThreadTask() {
-	base::TaskQueue::ProcessMainTasks();
 }
 
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
@@ -551,6 +544,7 @@ void adjustSingleTimers() {
 	if (auto a = application()) {
 		a->adjustSingleTimers();
 	}
+	base::Timer::Adjust();
 }
 
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE

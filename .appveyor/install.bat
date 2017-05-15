@@ -1,13 +1,13 @@
 @echo off
 
 SET BUILD_DIR=C:\TBuild
-set LIB_DIR=%BUILD_DIR%\Libraries
-set SRC_DIR=%BUILD_DIR%\tdesktop
+SET LIB_DIR=%BUILD_DIR%\Libraries
+SET SRC_DIR=%BUILD_DIR%\tdesktop
 SET QT_VERSION=5_6_2
 
-cd %BUILD_DIR%
-
 call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x86
+
+cd %BUILD_DIR%
 
 call:configureBuild
 call:getDependencies
@@ -25,7 +25,7 @@ GOTO:EOF
 
 :getDependencies
     call:logInfo "Clone dependencies repository"
-    git clone -q --branch=master https://github.com/telegramdesktop/dependencies_windows.git %LIB_DIR%
+    git clone -q --depth 1 --branch=master https://github.com/telegramdesktop/dependencies_windows.git %LIB_DIR%
     cd %LIB_DIR%
     call prepare.bat
 GOTO:EOF
@@ -34,6 +34,8 @@ GOTO:EOF
     call:logInfo "Setup GYP/Ninja and generate VS solution"
     cd %LIB_DIR%
     git clone https://chromium.googlesource.com/external/gyp
+    cd gyp
+    git checkout a478c1ab51
     SET PATH=%PATH%;C:\TBuild\Libraries\gyp;C:\TBuild\Libraries\ninja;
     cd %SRC_DIR%
     git submodule init

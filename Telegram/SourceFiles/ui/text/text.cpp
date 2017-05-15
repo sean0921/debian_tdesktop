@@ -26,7 +26,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/text/text_block.h"
 #include "lang.h"
 #include "platform/platform_specific.h"
-#include "boxes/confirmbox.h"
+#include "boxes/confirm_box.h"
 #include "mainwindow.h"
 
 namespace {
@@ -567,7 +567,7 @@ public:
 
 		ch = emojiLookback = 0;
 		lastSkipped = false;
-		checkTilde = !cRetina() && _t->_st->font->size() == 13 && _t->_st->font->flags() == 0; // tilde Open Sans fix
+		checkTilde = !cRetina() && (_t->_st->font->size() == 13) && (_t->_st->font->flags() == 0) && (_t->_st->font->f.family() == qstr("Open Sans")); // tilde Open Sans fix
 		for (; ptr <= end; ++ptr) {
 			while (checkEntities() || (rich && checkCommand())) {
 			}

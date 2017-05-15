@@ -20,7 +20,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "core/variant.h"
+#include "base/variant.h"
 
 namespace MTP {
 
@@ -287,6 +287,15 @@ public:
 
 	SentRequestWrap request(mtpRequestId requestId) noexcept WARN_UNUSED_RESULT;
 
+	void requestSendDelayed() {
+		MTP::sendAnything();
+	}
+	void requestCancellingDiscard() {
+		for (auto &request : _requests) {
+			request.handled();
+		}
+	}
+
 private:
 	class RequestWrap {
 	public:
@@ -358,7 +367,7 @@ private:
 	}
 
 	gsl::not_null<Instance*> _instance;
-	std::set<RequestWrap, RequestWrapComparator> _requests;
+	std::set<RequestWrap, RequestWrapComparator> _requests; // Better to use flatmap.
 
 };
 

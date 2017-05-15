@@ -31,7 +31,6 @@
         '-lssl',
         '-lcrypto',
         '/usr/local/lib/liblzma.a',
-        '/usr/local/lib/libopus.a',
       ],
     },
     'include_dirs': [
@@ -68,13 +67,14 @@
         '-lcrashpad_client',
         '-lcrashpad_util',
         '/usr/local/macold/lib/libz.a',
+        '/usr/local/macold/lib/libopus.a',
         '/usr/local/macold/lib/libopenal.a',
-        '/usr/local/iconv_old/lib/libiconv.a',
-        '/usr/local/ffmpeg_old/lib/libavcodec.a',
-        '/usr/local/ffmpeg_old/lib/libavformat.a',
-        '/usr/local/ffmpeg_old/lib/libavutil.a',
-        '/usr/local/ffmpeg_old/lib/libswscale.a',
-        '/usr/local/ffmpeg_old/lib/libswresample.a',
+        '/usr/local/macold/lib/libiconv.a',
+        '/usr/local/macold/lib/libavcodec.a',
+        '/usr/local/macold/lib/libavformat.a',
+        '/usr/local/macold/lib/libavutil.a',
+        '/usr/local/macold/lib/libswscale.a',
+        '/usr/local/macold/lib/libswresample.a',
         '/usr/local/macold/lib/libexif.a',
         '/usr/local/macold/lib/libc++.a',
         '/usr/local/macold/lib/libc++abi.a',
@@ -123,7 +123,7 @@
       'postbuild_name': 'Copy crashpad_handler to Helpers',
       'action': [
         'cp',
-        '<(libs_loc)/crashpad_oldmac/crashpad/out/${CONFIGURATION}/crashpad_handler',
+        '<(libs_loc)/macold/crashpad/out/${CONFIGURATION}/crashpad_handler',
         '${BUILT_PRODUCTS_DIR}/Telegram.app/Contents/Helpers/',
       ],
     }],
@@ -131,6 +131,7 @@
     'xcode_settings': {
       'OTHER_LDFLAGS': [
         '/usr/local/lib/libz.a',
+        '/usr/local/lib/libopus.a',
         '/usr/local/lib/libopenal.a',
         '/usr/local/lib/libiconv.a',
         '/usr/local/lib/libavcodec.a',
@@ -141,8 +142,8 @@
       ],
     },
     'include_dirs': [
-      '<(libs_loc)/crashpad/crashpad',
-      '<(libs_loc)/crashpad/crashpad/third_party/mini_chromium/mini_chromium',
+      '<(libs_loc)/crashpad',
+      '<(libs_loc)/crashpad/third_party/mini_chromium/mini_chromium',
       '<(libs_loc)/openssl-xcode/include'
     ],
     'library_dirs': [
@@ -151,12 +152,12 @@
     'configurations': {
       'Debug': {
         'library_dirs': [
-          '<(libs_loc)/crashpad/crashpad/out/Debug',
+          '<(libs_loc)/crashpad/out/Debug',
         ],
       },
       'Release': {
         'library_dirs': [
-          '<(libs_loc)/crashpad/crashpad/out/Release',
+          '<(libs_loc)/crashpad/out/Release',
         ],
       },
     },
@@ -190,7 +191,7 @@
       'postbuild_name': 'Copy crashpad_client to Helpers',
       'action': [
         'cp',
-        '<(libs_loc)/crashpad/crashpad/out/${CONFIGURATION}/crashpad_handler',
+        '<(libs_loc)/crashpad/out/${CONFIGURATION}/crashpad_handler',
         '${BUILT_PRODUCTS_DIR}/Telegram.app/Contents/Helpers/',
       ],
     }],

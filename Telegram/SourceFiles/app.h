@@ -221,7 +221,6 @@ namespace App {
 
 	void initMedia();
 	void deinitMedia();
-	void playSound();
 
 	void checkImageCacheSize();
 
@@ -234,7 +233,6 @@ namespace App {
 	};
 	void quit();
 	bool quitting();
-	void allDraftsSaved();
 	LaunchState launchState();
 	void setLaunchState(LaunchState state);
 	void restart();
@@ -270,6 +268,7 @@ namespace App {
 
 	void regGifItem(Media::Clip::Reader *reader, HistoryItem *item);
 	void unregGifItem(Media::Clip::Reader *reader);
+	void stopRoundVideoPlayback();
 	void stopGifItems();
 
 	void regMuted(PeerData *peer, int32 changeIn);
