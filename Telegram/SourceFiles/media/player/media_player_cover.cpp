@@ -72,7 +72,8 @@ CoverWidget::CoverWidget(QWidget *parent) : TWidget(parent)
 , _nameLabel(this, st::mediaPlayerName)
 , _timeLabel(this, st::mediaPlayerTime)
 , _close(this, st::mediaPlayerPanelClose)
-, _playback(std::make_unique<Clip::Playback>(new Ui::MediaSlider(this, st::mediaPlayerPanelPlayback)))
+, _playbackSlider(this, st::mediaPlayerPanelPlayback)
+, _playback(std::make_unique<Clip::Playback>())
 , _playPause(this)
 , _volumeToggle(this, st::mediaPlayerVolumeToggle)
 , _volumeController(this)
@@ -86,38 +87,55 @@ CoverWidget::CoverWidget(QWidget *parent) : TWidget(parent)
 	_timeLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 	setMouseTracking(true);
 
-	_playback->setChangeProgressCallback([this](float64 value) {
-		handleSeekProgress(value);
+	_playback->setInLoadingStateChangedCallback([this](bool loading) {
+		_playbackSlider->setDisabled(loading);
 	});
-	_playback->setChangeFinishedCallback([this](float64 value) {
+	_playback->setValueChangedCallback([this](float64 value) {
+		_playbackSlider->setValue(value);
+	});
+	_playbackSlider->setChangeProgressCallback([this](float64 value) {
+		handleSeekProgress(value);
+		_playback->setValue(value, false);
+	});
+	_playbackSlider->setChangeFinishedCallback([this](float64 value) {
 		handleSeekFinished(value);
+		_playback->setValue(value, false);
 	});
 	_playPause->setClickedCallback([this] {
-		instance()->playPauseCancelClicked();
+		instance()->playPauseCancelClicked(AudioMsgId::Type::Song);
 	});
 
 	updateRepeatTrackIcon();
 	_repeatTrack->setClickedCallback([this] {
-		instance()->toggleRepeat();
+		instance()->toggleRepeat(AudioMsgId::Type::Song);
 	});
 
 	updateVolumeToggleIcon();
 	_volumeToggle->setClickedCallback([this]() {
 		Global::SetSongVolume((Global::SongVolume() > 0) ? 0. : Global::RememberedSongVolume());
+		mixer()->setSongVolume(Global::SongVolume());
 		Global::RefSongVolumeChanged().notify();
 	});
 	subscribe(Global::RefSongVolumeChanged(), [this] { updateVolumeToggleIcon(); });
-	subscribe(instance()->repeatChangedNotifier(), [this] {
-		updateRepeatTrackIcon();
+	subscribe(instance()->repeatChangedNotifier(), [this](AudioMsgId::Type type) {
+		if (type == AudioMsgId::Type::Song) {
+			updateRepeatTrackIcon();
+		}
 	});
-	subscribe(instance()->playlistChangedNotifier(), [this] {
-		handlePlaylistUpdate();
+	subscribe(instance()->playlistChangedNotifier(), [this](AudioMsgId::Type type) {
+		if (type == AudioMsgId::Type::Song) {
+			handlePlaylistUpdate();
+		}
 	});
 	subscribe(instance()->updatedNotifier(), [this](const TrackState &state) {
-		handleSongUpdate(state);
+		if (state.id.type() == AudioMsgId::Type::Song) {
+			handleSongUpdate(state);
+		}
 	});
-	subscribe(instance()->songChangedNotifier(), [this] {
-		handleSongChange();
+	subscribe(instance()->trackChangedNotifier(), [this](AudioMsgId::Type type) {
+		if (type == AudioMsgId::Type::Song) {
+			handleSongChange();
+		}
 	});
 	handleSongChange();
 
@@ -168,7 +186,7 @@ void CoverWidget::resizeEvent(QResizeEvent *e) {
 
 	int skip = (st::mediaPlayerPanelPlayback.seekSize.width() / 2);
 	int length = (width() - 2 * st::mediaPlayerPanelPadding + st::mediaPlayerPanelPlayback.seekSize.width());
-	_playback->setGeometry(st::mediaPlayerPanelPadding - skip, st::mediaPlayerPanelPlaybackTop, length, 2 * st::mediaPlayerPanelPlaybackPadding + st::mediaPlayerPanelPlayback.width);
+	_playbackSlider->setGeometry(st::mediaPlayerPanelPadding - skip, st::mediaPlayerPanelPlaybackTop, length, 2 * st::mediaPlayerPanelPlaybackPadding + st::mediaPlayerPanelPlayback.width);
 
 	auto top = st::mediaPlayerPanelVolumeToggleTop;
 	auto right = st::mediaPlayerPanelPlayLeft;
@@ -222,7 +240,7 @@ void CoverWidget::updateLabelPositions() {
 }
 
 void CoverWidget::updateRepeatTrackIcon() {
-	_repeatTrack->setIconOverride(instance()->repeatEnabled() ? nullptr : &st::mediaPlayerRepeatInactiveIcon);
+	_repeatTrack->setIconOverride(instance()->repeatEnabled(AudioMsgId::Type::Song) ? nullptr : &st::mediaPlayerRepeatInactiveIcon);
 }
 
 void CoverWidget::handleSongUpdate(const TrackState &state) {
@@ -236,7 +254,7 @@ void CoverWidget::handleSongUpdate(const TrackState &state) {
 		_playback->updateState(state);
 	}
 
-	auto stopped = (IsStopped(state.state) || state.state == State::Finishing);
+	auto stopped = IsStoppedOrStopping(state.state);
 	auto showPause = !stopped && (state.state == State::Playing || state.state == State::Resuming || state.state == State::Starting);
 	if (instance()->isSeeking(AudioMsgId::Type::Song)) {
 		showPause = true;
@@ -258,7 +276,7 @@ void CoverWidget::updateTimeText(const TrackState &state) {
 	QString time;
 	qint64 position = 0, length = 0, display = 0;
 	auto frequency = state.frequency;
-	if (!IsStopped(state.state) && state.state != State::Finishing) {
+	if (!IsStoppedOrStopping(state.state)) {
 		display = position = state.position;
 		length = state.length;
 	} else {
@@ -269,11 +287,11 @@ void CoverWidget::updateTimeText(const TrackState &state) {
 
 	if (state.id.audio()->loading()) {
 		_time = QString::number(qRound(state.id.audio()->progress() * 100)) + '%';
-		_playback->setDisabled(true);
+		_playbackSlider->setDisabled(true);
 	} else {
 		display = display / frequency;
 		_time = formatDurationText(display);
-		_playback->setDisabled(false);
+		_playbackSlider->setDisabled(false);
 	}
 	if (_seekPositionMs < 0) {
 		updateTimeLabel();
@@ -295,7 +313,7 @@ void CoverWidget::updateTimeLabel() {
 }
 
 void CoverWidget::handleSongChange() {
-	auto &current = instance()->current();
+	auto current = instance()->current(AudioMsgId::Type::Song);
 	auto song = current.audio()->song();
 	if (!song) {
 		return;
@@ -315,8 +333,8 @@ void CoverWidget::handleSongChange() {
 }
 
 void CoverWidget::handlePlaylistUpdate() {
-	auto &current = instance()->current();
-	auto &playlist = instance()->playlist();
+	auto current = instance()->current(AudioMsgId::Type::Song);
+	auto playlist = instance()->playlist(AudioMsgId::Type::Song);
 	auto index = playlist.indexOf(current.contextId());
 	if (!current || index < 0) {
 		destroyPrevNextButtons();

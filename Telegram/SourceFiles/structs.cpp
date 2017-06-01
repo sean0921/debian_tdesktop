@@ -1202,8 +1202,12 @@ void DocumentOpenClickHandler::doOpen(DocumentData *data, HistoryItem *context, 
 		using State = Media::Player::State;
 		if (playVoice) {
 			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Voice);
-			if (state.id == AudioMsgId(data, msgId) && !Media::Player::IsStopped(state.state) && state.state != State::Finishing) {
-				Media::Player::mixer()->pauseresume(AudioMsgId::Type::Voice);
+			if (state.id == AudioMsgId(data, msgId) && !Media::Player::IsStoppedOrStopping(state.state)) {
+				if (Media::Player::IsPaused(state.state) || state.state == State::Pausing) {
+					Media::Player::mixer()->resume(state.id);
+				} else {
+					Media::Player::mixer()->pause(state.id);
+				}
 			} else {
 				auto audio = AudioMsgId(data, msgId);
 				Media::Player::mixer()->play(audio);
@@ -1214,8 +1218,12 @@ void DocumentOpenClickHandler::doOpen(DocumentData *data, HistoryItem *context, 
 			}
 		} else if (playMusic) {
 			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Song);
-			if (state.id == AudioMsgId(data, msgId) && !Media::Player::IsStopped(state.state) && state.state != State::Finishing) {
-				Media::Player::mixer()->pauseresume(AudioMsgId::Type::Song);
+			if (state.id == AudioMsgId(data, msgId) && !Media::Player::IsStoppedOrStopping(state.state)) {
+				if (Media::Player::IsPaused(state.state) || state.state == State::Pausing) {
+					Media::Player::mixer()->resume(state.id);
+				} else {
+					Media::Player::mixer()->pause(state.id);
+				}
 			} else {
 				auto song = AudioMsgId(data, msgId);
 				Media::Player::mixer()->play(song);
@@ -1502,8 +1510,12 @@ void DocumentData::performActionOnLoad() {
 	if (playVoice) {
 		if (loaded()) {
 			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Voice);
-			if (state.id == AudioMsgId(this, _actionOnLoadMsgId) && !Media::Player::IsStopped(state.state) && state.state != State::Finishing) {
-				Media::Player::mixer()->pauseresume(AudioMsgId::Type::Voice);
+			if (state.id == AudioMsgId(this, _actionOnLoadMsgId) && !Media::Player::IsStoppedOrStopping(state.state)) {
+				if (Media::Player::IsPaused(state.state) || state.state == State::Pausing) {
+					Media::Player::mixer()->resume(state.id);
+				} else {
+					Media::Player::mixer()->pause(state.id);
+				}
 			} else if (Media::Player::IsStopped(state.state)) {
 				Media::Player::mixer()->play(AudioMsgId(this, _actionOnLoadMsgId));
 				if (App::main()) App::main()->mediaMarkRead(this);
@@ -1512,8 +1524,12 @@ void DocumentData::performActionOnLoad() {
 	} else if (playMusic) {
 		if (loaded()) {
 			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Song);
-			if (state.id == AudioMsgId(this, _actionOnLoadMsgId) && !Media::Player::IsStopped(state.state) && state.state != State::Finishing) {
-				Media::Player::mixer()->pauseresume(AudioMsgId::Type::Song);
+			if (state.id == AudioMsgId(this, _actionOnLoadMsgId) && !Media::Player::IsStoppedOrStopping(state.state)) {
+				if (Media::Player::IsPaused(state.state) || state.state == State::Pausing) {
+					Media::Player::mixer()->resume(state.id);
+				} else {
+					Media::Player::mixer()->pause(state.id);
+				}
 			} else if (Media::Player::IsStopped(state.state)) {
 				auto song = AudioMsgId(this, _actionOnLoadMsgId);
 				Media::Player::mixer()->play(song);

@@ -624,7 +624,7 @@ buildTelegram() {
       -Dlinux_lib_ssl=-lssl \
       -Dlinux_lib_crypto=-lcrypto \
       -Dlinux_lib_icu=-licuuc\ -licutu\ -licui18n \
-      --depth=. --generator-output=../.. --format=cmake -Goutput_dir=out \
+      --depth=. --generator-output=.. --format=cmake -Goutput_dir=../out \
       Telegram.gyp
   cd "$UPSTREAM/out/Debug"
 
@@ -636,7 +636,7 @@ buildTelegram() {
 check() {
   local filePath="$UPSTREAM/out/Debug/Telegram"
   if test -f "$filePath"; then
-    success_msg "Build successful done! :)"
+    success_msg "Build successfully done! :)"
 
     local size;
     size=$(stat -c %s "$filePath")

@@ -27,6 +27,55 @@ QString GetOverride(const QString &familyName);
 
 } // namespace
 
+enum class RectPart {
+	None = 0,
+
+	TopLeft = (1 << 0),
+	Top = (1 << 1),
+	TopRight = (1 << 2),
+	Left = (1 << 3),
+	Center = (1 << 4),
+	Right = (1 << 5),
+	BottomLeft = (1 << 6),
+	Bottom = (1 << 7),
+	BottomRight = (1 << 8),
+
+	FullTop = TopLeft | Top | TopRight,
+	NoTopBottom = Left | Center | Right,
+	FullBottom = BottomLeft | Bottom | BottomRight,
+	NoTop = NoTopBottom | FullBottom,
+	NoBottom = FullTop | NoTopBottom,
+
+	FullLeft = TopLeft | Left | BottomLeft,
+	NoLeftRight = Top | Center | Bottom,
+	FullRight = TopRight | Right | BottomRight,
+	NoLeft = NoLeftRight | FullRight,
+	NoRight = FullLeft | NoLeftRight,
+
+	CornersMask = TopLeft | TopRight | BottomLeft | BottomRight,
+	SidesMask = Top | Bottom | Left | Right,
+
+	Full = FullTop | NoTop,
+};
+Q_DECLARE_FLAGS(RectParts, RectPart);
+Q_DECLARE_OPERATORS_FOR_FLAGS(RectParts);
+
+inline bool IsTopCorner(RectPart corner) {
+	return (corner == RectPart::TopLeft) || (corner == RectPart::TopRight);
+}
+
+inline bool IsBottomCorner(RectPart corner) {
+	return (corner == RectPart::BottomLeft) || (corner == RectPart::BottomRight);
+}
+
+inline bool IsLeftCorner(RectPart corner) {
+	return (corner == RectPart::TopLeft) || (corner == RectPart::BottomLeft);
+}
+
+inline bool IsRightCorner(RectPart corner) {
+	return (corner == RectPart::TopRight) || (corner == RectPart::BottomRight);
+}
+
 class Painter : public QPainter {
 public:
 	explicit Painter(QPaintDevice *device) : QPainter(device) {
@@ -170,20 +219,33 @@ public:
 	QPoint myrtlpoint(int x, int y) const {
 		return rtlpoint(x, y, Base::width());
 	}
-	QPoint myrtlpoint(const QPoint p) const {
-		return rtlpoint(p, Base::width());
+	QPoint myrtlpoint(const QPoint point) const {
+		return rtlpoint(point, Base::width());
 	}
 	QRect myrtlrect(int x, int y, int w, int h) const {
 		return rtlrect(x, y, w, h, Base::width());
 	}
-	QRect myrtlrect(const QRect &r) const {
-		return rtlrect(r, Base::width());
+	QRect myrtlrect(const QRect &rect) const {
+		return rtlrect(rect, Base::width());
 	}
-	void rtlupdate(const QRect &r) {
-		Base::update(myrtlrect(r));
+	void rtlupdate(const QRect &rect) {
+		Base::update(myrtlrect(rect));
 	}
 	void rtlupdate(int x, int y, int w, int h) {
 		Base::update(myrtlrect(x, y, w, h));
+	}
+
+	QPoint mapFromGlobal(const QPoint &point) const {
+		return Base::mapFromGlobal(point);
+	}
+	QPoint mapToGlobal(const QPoint &point) const {
+		return Base::mapToGlobal(point);
+	}
+	QRect mapFromGlobal(const QRect &rect) const {
+		return QRect(mapFromGlobal(rect.topLeft()), rect.size());
+	}
+	QRect mapToGlobal(const QRect &rect) {
+		return QRect(mapToGlobal(rect.topLeft()), rect.size());
 	}
 
 protected:

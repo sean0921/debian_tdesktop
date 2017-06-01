@@ -2648,18 +2648,7 @@ namespace {
 			auto gifs = ::gifItems;
 			for_const (auto item, gifs) {
 				if (auto media = item->getMedia()) {
-					media->stopInline();
-				}
-			}
-		}
-	}
-
-	void stopRoundVideoPlayback() {
-		if (!::gifItems.isEmpty()) {
-			auto gifs = ::gifItems;
-			for_const (auto item, gifs) {
-				if (auto media = item->getMedia()) {
-					if (media->isRoundVideoPlaying()) {
+					if (!media->isRoundVideoPlaying()) {
 						media->stopInline();
 					}
 				}
@@ -2742,11 +2731,11 @@ namespace {
 	void complexAdjustRect(ImageRoundCorners corners, QRect &rect, RectParts &parts) {
 		if (corners & ImageRoundCorner::TopLeft) {
 			if (!(corners & ImageRoundCorner::BottomLeft)) {
-				parts = RectPart::NoTopBottom | RectPart::TopFull;
+				parts = RectPart::NoTopBottom | RectPart::FullTop;
 				rect.setHeight(rect.height() + msgRadius());
 			}
 		} else if (corners & ImageRoundCorner::BottomLeft) {
-			parts = RectPart::NoTopBottom | RectPart::BottomFull;
+			parts = RectPart::NoTopBottom | RectPart::FullBottom;
 			rect.setTop(rect.y() - msgRadius());
 		} else {
 			parts = RectPart::NoTopBottom;

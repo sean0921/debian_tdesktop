@@ -125,31 +125,18 @@ enum HistoryMediaType {
 };
 
 enum MediaOverviewType {
-	OverviewPhotos     = 0,
-	OverviewVideos     = 1,
-	OverviewMusicFiles = 2,
-	OverviewFiles      = 3,
-	OverviewVoiceFiles = 4,
-	OverviewLinks      = 5,
-	OverviewChatPhotos = 6,
+	OverviewPhotos          = 0,
+	OverviewVideos          = 1,
+	OverviewMusicFiles      = 2,
+	OverviewFiles           = 3,
+	OverviewVoiceFiles      = 4,
+	OverviewLinks           = 5,
+	OverviewChatPhotos      = 6,
+	OverviewRoundVoiceFiles = 7,
+	OverviewGIFs            = 8,
 
 	OverviewCount
 };
-
-inline MTPMessagesFilter typeToMediaFilter(MediaOverviewType &type) {
-	switch (type) {
-	case OverviewPhotos: return MTP_inputMessagesFilterPhotos();
-	case OverviewVideos: return MTP_inputMessagesFilterVideo();
-	case OverviewMusicFiles: return MTP_inputMessagesFilterMusic();
-	case OverviewFiles: return MTP_inputMessagesFilterDocument();
-	case OverviewVoiceFiles: return MTP_inputMessagesFilterVoice();
-	case OverviewLinks: return MTP_inputMessagesFilterUrl();
-	case OverviewChatPhotos: return MTP_inputMessagesFilterChatPhotos();
-	case OverviewCount: break;
-	default: type = OverviewCount; break;
-	}
-	return MTPMessagesFilter();
-}
 
 struct TextWithTags {
 	struct Tag {

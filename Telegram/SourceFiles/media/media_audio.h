@@ -69,7 +69,7 @@ enum class State {
 
 	Starting = 0x08,
 	Playing = 0x10,
-	Finishing = 0x18,
+	Stopping = 0x18,
 	Pausing = 0x20,
 	Paused = 0x28,
 	PausedAtEnd = 0x30,
@@ -83,6 +83,14 @@ inline bool IsStopped(State state) {
 		|| (state == State::StoppedAtStart);
 }
 
+inline bool IsStoppedOrStopping(State state) {
+	return IsStopped(state) || (state == State::Stopping);
+}
+
+inline bool IsStoppedAtEnd(State state) {
+	return (state == State::StoppedAtEnd);
+}
+
 inline bool IsPaused(State state) {
 	return (state == State::Paused)
 		|| (state == State::PausedAtEnd);
@@ -90,7 +98,7 @@ inline bool IsPaused(State state) {
 
 inline bool IsFading(State state) {
 	return (state == State::Starting)
-		|| (state == State::Finishing)
+		|| (state == State::Stopping)
 		|| (state == State::Pausing)
 		|| (state == State::Resuming);
 }
@@ -114,18 +122,16 @@ public:
 	Mixer();
 
 	void play(const AudioMsgId &audio, int64 position = 0);
-	void pauseresume(AudioMsgId::Type type, bool fast = false);
+	void play(const AudioMsgId &audio, std::unique_ptr<VideoSoundData> videoData, int64 position = 0);
+	void pause(const AudioMsgId &audio, bool fast = false);
+	void resume(const AudioMsgId &audio, bool fast = false);
 	void seek(AudioMsgId::Type type, int64 position); // type == AudioMsgId::Type::Song
-	void stop(AudioMsgId::Type type);
+	void stop(const AudioMsgId &audio);
+	void stop(const AudioMsgId &audio, State state);
 
 	// Video player audio stream interface.
-	void initFromVideo(uint64 videoPlayId, std::unique_ptr<VideoSoundData> &&data, int64 position);
 	void feedFromVideo(VideoSoundPart &&part);
-	int64 getVideoCorrectedTime(uint64 playId, TimeMs frameMs, TimeMs systemMs);
-	TrackState currentVideoState(uint64 videoPlayId);
-	void stopFromVideo(uint64 videoPlayId);
-	void pauseFromVideo(uint64 videoPlayId);
-	void resumeFromVideo(uint64 videoPlayId);
+	int64 getVideoCorrectedTime(const AudioMsgId &id, TimeMs frameMs, TimeMs systemMs);
 
 	void stopAndClear();
 
@@ -143,6 +149,8 @@ public:
 	void reattachTracks();
 
 	// Thread: Any.
+	void setSongVolume(float64 volume);
+	float64 getSongVolume() const;
 	void setVideoVolume(float64 volume);
 	float64 getVideoVolume() const;
 
@@ -177,7 +185,9 @@ private:
 	public:
 		static constexpr int kBuffersCount = 3;
 
+		// Thread: Any. Must be locked: AudioMutex.
 		void reattach(AudioMsgId::Type type);
+
 		void detach();
 		void clear();
 		void started();
@@ -186,6 +196,8 @@ private:
 		void ensureStreamCreated();
 
 		int getNotQueuedBufferIndex();
+
+		~Track();
 
 		TrackState state;
 
@@ -207,9 +219,10 @@ private:
 			uint32 buffers[kBuffersCount] = { 0 };
 		};
 		Stream stream;
-
-		uint64 videoPlayId = 0;
 		std::unique_ptr<VideoSoundData> videoData;
+
+		TimeMs lastUpdateWhen = 0;
+		TimeMs lastUpdateCorrectedMs = 0;
 
 	private:
 		void createStream();
@@ -218,6 +231,7 @@ private:
 
 	};
 
+	// Thread: Any. Must be locked: AudioMutex.
 	void setStoppedState(Track *current, State state = State::Stopped);
 
 	Track *trackForType(AudioMsgId::Type type, int index = -1); // -1 uses currentIndex(type)
@@ -232,13 +246,9 @@ private:
 	Track _songTracks[kTogetherLimit];
 
 	Track _videoTrack;
-	QAtomicInt _videoVolume;
-	uint64 _lastVideoPlayId = 0;
-	TimeMs _lastVideoPlaybackWhen = 0;
-	TimeMs _lastVideoPlaybackCorrectedMs = 0;
-	QMutex _lastVideoMutex;
 
-	QMutex _mutex;
+	QAtomicInt _volumeVideo;
+	QAtomicInt _volumeSong;
 
 	friend class Fader;
 	friend class Loaders;
@@ -280,18 +290,20 @@ private:
 		EmitPositionUpdated = 0x04,
 		EmitNeedToPreload = 0x08,
 	};
-	int32 updateOnePlayback(Mixer::Track *track, bool &hasPlaying, bool &hasFading, float64 suppressGain, bool suppressGainChanged);
+	int32 updateOnePlayback(Mixer::Track *track, bool &hasPlaying, bool &hasFading, float64 volumeMultiplier, bool volumeChanged);
 	void setStoppedState(Mixer::Track *track, State state = State::Stopped);
 
 	QTimer _timer;
+
+	bool _volumeChangedSong = false;
+	bool _volumeChangedVideo = false;
 
 	bool _suppressAll = false;
 	bool _suppressAllAnim = false;
 	bool _suppressSong = false;
 	bool _suppressSongAnim = false;
-	bool _songVolumeChanged = false;
-	bool _videoVolumeChanged = false;
-	anim::value _suppressAllGain, _suppressSongGain;
+	anim::value _suppressVolumeAll;
+	anim::value _suppressVolumeSong;
 	TimeMs _suppressAllStart = 0;
 	TimeMs _suppressAllEnd = 0;
 	TimeMs _suppressSongStart = 0;

@@ -22,6 +22,12 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 #include "ui/effects/radial_animation.h"
 
+namespace Media {
+namespace Clip {
+class Playback;
+} // namespace Clip
+} // namespace Media
+
 void historyInitMedia();
 
 class HistoryFileMedia : public HistoryMedia {
@@ -139,6 +145,9 @@ public:
 	QString inDialogsText() const override;
 	TextWithEntities selectedText(TextSelection selection) const override;
 
+	int32 addToOverview(AddToOverviewMethod method) override;
+	void eraseFromOverview() override;
+
 	PhotoData *photo() const {
 		return _data;
 	}
@@ -228,6 +237,9 @@ public:
 	QString notificationText() const override;
 	QString inDialogsText() const override;
 	TextWithEntities selectedText(TextSelection selection) const override;
+
+	int32 addToOverview(AddToOverviewMethod method) override;
+	void eraseFromOverview() override;
 
 	DocumentData *getDocument() override {
 		return _data;
@@ -388,6 +400,9 @@ public:
 	QString inDialogsText() const override;
 	TextWithEntities selectedText(TextSelection selection) const override;
 
+	int32 addToOverview(AddToOverviewMethod method) override;
+	void eraseFromOverview() override;
+
 	bool uploading() const override {
 		return _data->uploading();
 	}
@@ -395,6 +410,8 @@ public:
 	DocumentData *getDocument() override {
 		return _data;
 	}
+
+	bool playInline(bool autoplay) override;
 
 	void attachToParent() override;
 	void detachFromParent() override;
@@ -486,6 +503,9 @@ public:
 	QString inDialogsText() const override;
 	TextWithEntities selectedText(TextSelection selection) const override;
 
+	int32 addToOverview(AddToOverviewMethod method) override;
+	void eraseFromOverview() override;
+
 	bool uploading() const override {
 		return _data->uploading();
 	}
@@ -563,15 +583,15 @@ private:
 		return additionalWidth(_parent->Get<HistoryMessageVia>(), _parent->Get<HistoryMessageReply>(), _parent->Get<HistoryMessageForwarded>());
 	}
 	QString mediaTypeString() const;
-	bool isSeparateRoundVideo() const {
-		return _data->isRoundVideo() && (_parent->getMedia() == this);
-	}
+	bool isSeparateRoundVideo() const;
 
 	gsl::not_null<DocumentData*> _data;
+	ClickHandlerPtr _openInMediaviewLink;
 	int32 _thumbw = 1;
 	int32 _thumbh = 1;
 	Text _caption;
 
+	mutable std::unique_ptr<Media::Clip::Playback> _roundPlayback;
 	Media::Clip::ReaderPointer _gif;
 
 	void setStatusSize(int32 newSize) const;

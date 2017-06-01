@@ -91,11 +91,22 @@ QPixmap PrepareFrame(const FrameRequest &request, const QImage &original, bool h
 
 } // namespace
 
-Reader::Reader(const FileLocation &location, const QByteArray &data, Callback &&callback, Mode mode, int64 seekMs)
+Reader::Reader(const QString &filepath, Callback &&callback, Mode mode, int64 seekMs)
 : _callback(std::move(callback))
 , _mode(mode)
-, _playId(rand_value<uint64>())
 , _seekPositionMs(seekMs) {
+	init(FileLocation(filepath), QByteArray());
+}
+
+Reader::Reader(gsl::not_null<DocumentData*> document, FullMsgId msgId, Callback &&callback, Mode mode, int64 seekMs)
+: _callback(std::move(callback))
+, _mode(mode)
+, _audioMsgId(document, msgId, (mode == Mode::Video) ? rand_value<uint32>() : 0)
+, _seekPositionMs(seekMs) {
+	init(document->location(), document->data());
+}
+
+void Reader::init(const FileLocation &location, const QByteArray &data) {
 	if (threads.size() < ClipThreadsCount) {
 		_threadIndex = threads.size();
 		threads.push_back(new QThread());
@@ -212,6 +223,9 @@ void Reader::start(int32 framew, int32 frameh, int32 outerw, int32 outerh, Image
 }
 
 QPixmap Reader::current(int32 framew, int32 frameh, int32 outerw, int32 outerh, ImageRoundRadius radius, ImageRoundCorners corners, TimeMs ms) {
+	Expects(outerw > 0);
+	Expects(outerh > 0);
+
 	auto frame = frameToShow();
 	t_assert(frame != nullptr);
 
@@ -258,6 +272,17 @@ QPixmap Reader::current(int32 framew, int32 frameh, int32 outerw, int32 outerh, 
 		managers.at(_threadIndex)->update(this);
 	}
 
+	return frame->pix;
+}
+
+QPixmap Reader::current() {
+	Expects(_mode == Mode::Video);
+
+	auto frame = frameToShow();
+	t_assert(frame != nullptr);
+
+	frame->displayed.storeRelease(1);
+	moveToNextShow();
 	return frame->pix;
 }
 
@@ -338,7 +363,7 @@ class ReaderPrivate {
 public:
 	ReaderPrivate(Reader *reader, const FileLocation &location, const QByteArray &data) : _interface(reader)
 	, _mode(reader->mode())
-	, _playId(reader->playId())
+	, _audioMsgId(reader->audioMsgId())
 	, _seekPositionMs(reader->seekPositionMs())
 	, _data(data) {
 		if (_data.isEmpty()) {
@@ -361,9 +386,8 @@ public:
 				// If seek was done to the end: try to read the first frame,
 				// get the frame size and return a black frame with that size.
 
-				auto firstFramePlayId = 0LL;
-				auto firstFramePositionMs = 0LL;
-				auto reader = std::make_unique<internal::FFMpegReaderImplementation>(_location.get(), &_data, firstFramePlayId);
+				auto firstFramePositionMs = TimeMs(0);
+				auto reader = std::make_unique<internal::FFMpegReaderImplementation>(_location.get(), &_data, AudioMsgId());
 				if (reader->start(internal::ReaderImplementation::Mode::Normal, firstFramePositionMs)) {
 					auto firstFrameReadResult = reader->readFramesTill(-1, ms);
 					if (firstFrameReadResult == internal::ReaderImplementation::ReadResult::Success) {
@@ -411,8 +435,8 @@ public:
 		}
 		if (!_started) {
 			_started = true;
-			if (!_videoPausedAtMs) {
-				_implementation->resumeAudio();
+			if (!_videoPausedAtMs && _hasAudio) {
+				Player::mixer()->resume(_audioMsgId, true);
 			}
 		}
 
@@ -426,7 +450,7 @@ public:
 		auto frameMs = _seekPositionMs + ms - _animationStarted;
 		auto readResult = _implementation->readFramesTill(frameMs, ms);
 		if (readResult == internal::ReaderImplementation::ReadResult::EndOfFile) {
-			stop();
+			stop(Player::State::StoppedAtEnd);
 			_state = State::Finished;
 			return ProcessResult::Finished;
 		} else if (readResult == internal::ReaderImplementation::ReadResult::Error) {
@@ -470,7 +494,7 @@ public:
 			}
 		}
 
-		_implementation = std::make_unique<internal::FFMpegReaderImplementation>(_location.get(), &_data, _playId);
+		_implementation = std::make_unique<internal::FFMpegReaderImplementation>(_location.get(), &_data, _audioMsgId);
 //		_implementation = new QtGifReaderImplementation(_location, &_data);
 
 		auto implementationMode = [this]() {
@@ -491,7 +515,9 @@ public:
 		if (_videoPausedAtMs) return; // Paused already.
 
 		_videoPausedAtMs = ms;
-		_implementation->pauseAudio();
+		if (_hasAudio) {
+			Player::mixer()->pause(_audioMsgId, true);
+		}
 	}
 
 	void resumeVideo(TimeMs ms) {
@@ -502,17 +528,22 @@ public:
 		_nextFrameWhen += delta;
 
 		_videoPausedAtMs = 0;
-		_implementation->resumeAudio();
+		if (_hasAudio) {
+			Player::mixer()->resume(_audioMsgId, true);
+		}
 	}
 
 	ProcessResult error() {
-		stop();
+		stop(Player::State::StoppedAtError);
 		_state = State::Error;
 		return ProcessResult::Error;
 	}
 
-	void stop() {
+	void stop(Player::State audioState) {
 		_implementation = nullptr;
+		if (_hasAudio) {
+			Player::mixer()->stop(_audioMsgId, audioState);
+		}
 
 		if (_location) {
 			if (_accessed) {
@@ -524,7 +555,7 @@ public:
 	}
 
 	~ReaderPrivate() {
-		stop();
+		stop(Player::State::Stopped);
 		_data.clear();
 	}
 
@@ -532,7 +563,7 @@ private:
 	Reader *_interface;
 	State _state = State::Reading;
 	Reader::Mode _mode;
-	uint64 _playId;
+	AudioMsgId _audioMsgId;
 	TimeMs _seekPositionMs = 0;
 
 	QByteArray _data;
@@ -844,9 +875,8 @@ FileLoadTask::Video PrepareForSending(const QString &fname, const QByteArray &da
 	auto localLocation = FileLocation(fname);
 	auto localData = QByteArray(data);
 
-	auto playId = 0ULL;
 	auto seekPositionMs = 0LL;
-	auto reader = std::make_unique<internal::FFMpegReaderImplementation>(&localLocation, &localData, playId);
+	auto reader = std::make_unique<internal::FFMpegReaderImplementation>(&localLocation, &localData, AudioMsgId());
 	if (reader->start(internal::ReaderImplementation::Mode::Inspecting, seekPositionMs)) {
 		auto durationMs = reader->durationMs();
 		if (durationMs > 0) {

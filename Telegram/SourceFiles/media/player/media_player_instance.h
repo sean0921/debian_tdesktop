@@ -38,43 +38,81 @@ struct TrackState;
 
 class Instance : private base::Subscriber {
 public:
-	void play();
+	void play(AudioMsgId::Type type);
 	void pause(AudioMsgId::Type type);
-	void stop();
-	void playPause();
-	void next();
-	void previous();
+	void stop(AudioMsgId::Type type);
+	void playPause(AudioMsgId::Type type);
+	bool next(AudioMsgId::Type type);
+	bool previous(AudioMsgId::Type type);
 
-	void playPauseCancelClicked();
+	AudioMsgId::Type getActiveType() const;
+
+	void play() {
+		play(getActiveType());
+	}
+	void pause() {
+		pause(getActiveType());
+	}
+	void stop() {
+		stop(getActiveType());
+	}
+	void playPause() {
+		playPause(getActiveType());
+	}
+	bool next() {
+		return next(getActiveType());
+	}
+	bool previous() {
+		return previous(getActiveType());
+	}
+
+	void playPauseCancelClicked(AudioMsgId::Type type);
 
 	void play(const AudioMsgId &audioId);
-	const AudioMsgId &current() const {
-		return _current;
+	AudioMsgId current(AudioMsgId::Type type) const {
+		if (auto data = getData(type)) {
+			return data->current;
+		}
+		return AudioMsgId();
 	}
 
-	bool repeatEnabled() const {
-		return _repeatEnabled;
+	bool repeatEnabled(AudioMsgId::Type type) const {
+		if (auto data = getData(type)) {
+			return data->repeatEnabled;
+		}
+		return false;
 	}
-	void toggleRepeat() {
-		_repeatEnabled = !_repeatEnabled;
-		_repeatChangedNotifier.notify();
+	void toggleRepeat(AudioMsgId::Type type) {
+		if (auto data = getData(type)) {
+			data->repeatEnabled = !data->repeatEnabled;
+			_repeatChangedNotifier.notify(type);
+		}
 	}
 
 	bool isSeeking(AudioMsgId::Type type) const {
-		if (type == AudioMsgId::Type::Song) {
-			return (_seeking == _current);
-		} else if (type == AudioMsgId::Type::Voice) {
-			return (_seekingVoice == _currentVoice);
+		if (auto data = getData(type)) {
+			return (data->seeking == data->current);
 		}
 		return false;
 	}
 	void startSeeking(AudioMsgId::Type type);
 	void stopSeeking(AudioMsgId::Type type);
 
-	const QList<FullMsgId> &playlist() const {
-		return _playlist;
+	QList<FullMsgId> playlist(AudioMsgId::Type type) const {
+		if (auto data = getData(type)) {
+			return data->playlist;
+		}
+		return QList<FullMsgId>();
 	}
 
+	struct Switch {
+		AudioMsgId from;
+		FullMsgId to;
+	};
+
+	base::Observable<Switch> &switchToNextNotifier() {
+		return _switchToNextNotifier;
+	}
 	base::Observable<bool> &usePanelPlayer() {
 		return _usePanelPlayer;
 	}
@@ -87,13 +125,16 @@ public:
 	base::Observable<TrackState> &updatedNotifier() {
 		return _updatedNotifier;
 	}
-	base::Observable<void> &playlistChangedNotifier() {
+	base::Observable<AudioMsgId::Type> &tracksFinishedNotifier() {
+		return _tracksFinishedNotifier;
+	}
+	base::Observable<AudioMsgId::Type> &playlistChangedNotifier() {
 		return _playlistChangedNotifier;
 	}
-	base::Observable<void> &songChangedNotifier() {
-		return _songChangedNotifier;
+	base::Observable<AudioMsgId::Type> &trackChangedNotifier() {
+		return _trackChangedNotifier;
 	}
-	base::Observable<void> &repeatChangedNotifier() {
+	base::Observable<AudioMsgId::Type> &repeatChangedNotifier() {
 		return _repeatChangedNotifier;
 	}
 
@@ -105,37 +146,65 @@ private:
 	Instance();
 	friend void start();
 
+	struct Data {
+		Data(AudioMsgId::Type type, MediaOverviewType overview) : type(type), overview(overview) {
+		}
+
+		AudioMsgId::Type type;
+		MediaOverviewType overview;
+		AudioMsgId current;
+		AudioMsgId seeking;
+		History *history = nullptr;
+		History *migrated = nullptr;
+		bool repeatEnabled = false;
+		QList<FullMsgId> playlist;
+		bool isPlaying = false;
+	};
+
 	// Observed notifications.
 	void notifyPeerUpdated(const Notify::PeerUpdate &update);
 	void handleSongUpdate(const AudioMsgId &audioId);
 
+	void checkPeerUpdate(AudioMsgId::Type type, const Notify::PeerUpdate &update);
 	void setCurrent(const AudioMsgId &audioId);
-	void rebuildPlaylist();
-	void moveInPlaylist(int delta);
-	void preloadNext();
+	void rebuildPlaylist(Data *data);
+	bool moveInPlaylist(Data *data, int delta, bool autonext);
+	void preloadNext(Data *data);
 	void handleLogout();
 
 	template <typename CheckCallback>
 	void emitUpdate(AudioMsgId::Type type, CheckCallback check);
 
-	AudioMsgId _current, _seeking;
-	History *_history = nullptr;
-	History *_migrated = nullptr;
+	Data *getData(AudioMsgId::Type type) {
+		if (type == AudioMsgId::Type::Song) {
+			return &_songData;
+		} else if (type == AudioMsgId::Type::Voice) {
+			return &_voiceData;
+		}
+		return nullptr;
+	}
 
-	bool _repeatEnabled = false;
+	const Data *getData(AudioMsgId::Type type) const {
+		if (type == AudioMsgId::Type::Song) {
+			return &_songData;
+		} else if (type == AudioMsgId::Type::Voice) {
+			return &_voiceData;
+		}
+		return nullptr;
+	}
 
-	QList<FullMsgId> _playlist;
-	bool _isPlaying = false;
+	Data _songData;
+	Data _voiceData;
 
-	AudioMsgId _currentVoice, _seekingVoice;
-
+	base::Observable<Switch> _switchToNextNotifier;
 	base::Observable<bool> _usePanelPlayer;
 	base::Observable<bool> _titleButtonOver;
 	base::Observable<bool> _playerWidgetOver;
 	base::Observable<TrackState> _updatedNotifier;
-	base::Observable<void> _playlistChangedNotifier;
-	base::Observable<void> _songChangedNotifier;
-	base::Observable<void> _repeatChangedNotifier;
+	base::Observable<AudioMsgId::Type> _tracksFinishedNotifier;
+	base::Observable<AudioMsgId::Type> _playlistChangedNotifier;
+	base::Observable<AudioMsgId::Type> _trackChangedNotifier;
+	base::Observable<AudioMsgId::Type> _repeatChangedNotifier;
 
 };
 

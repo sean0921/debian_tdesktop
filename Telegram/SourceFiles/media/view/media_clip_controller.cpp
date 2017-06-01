@@ -34,7 +34,8 @@ namespace Clip {
 
 Controller::Controller(QWidget *parent) : TWidget(parent)
 , _playPauseResume(this, st::mediaviewPlayButton)
-, _playback(std::make_unique<Playback>(new Ui::MediaSlider(this, st::mediaviewPlayback)))
+, _playbackSlider(this, st::mediaviewPlayback)
+, _playback(std::make_unique<Playback>())
 , _volumeController(this)
 , _fullScreenToggle(this, st::mediaviewFullScreenButton)
 , _playedAlready(this, st::mediaviewPlayProgressLabel)
@@ -50,11 +51,19 @@ Controller::Controller(QWidget *parent) : TWidget(parent)
 	connect(_fullScreenToggle, SIGNAL(clicked()), this, SIGNAL(toFullScreenPressed()));
 	connect(_volumeController, SIGNAL(volumeChanged(float64)), this, SIGNAL(volumeChanged(float64)));
 
-	_playback->setChangeProgressCallback([this](float64 value) {
-		handleSeekProgress(value);
+	_playback->setInLoadingStateChangedCallback([this](bool loading) {
+		_playbackSlider->setDisabled(loading);
 	});
-	_playback->setChangeFinishedCallback([this](float64 value) {
+	_playback->setValueChangedCallback([this](float64 value) {
+		_playbackSlider->setValue(value);
+	});
+	_playbackSlider->setChangeProgressCallback([this](float64 value) {
+		handleSeekProgress(value);
+		_playback->setValue(value, false);
+	});
+	_playbackSlider->setChangeFinishedCallback([this](float64 value) {
 		handleSeekFinished(value);
+		_playback->setValue(value, false);
 	});
 }
 
@@ -93,7 +102,7 @@ void Controller::hideAnimated() {
 template <typename Callback>
 void Controller::startFading(Callback start) {
 	start();
-	_playback->show();
+	_playbackSlider->show();
 }
 
 void Controller::fadeFinished() {
@@ -101,7 +110,7 @@ void Controller::fadeFinished() {
 }
 
 void Controller::fadeUpdated(float64 opacity) {
-	_playback->setFadeOpacity(opacity);
+	_playbackSlider->setFadeOpacity(opacity);
 }
 
 void Controller::updatePlayback(const Player::TrackState &state) {
@@ -124,10 +133,10 @@ void Controller::updatePlayPauseResumeState(const Player::TrackState &state) {
 void Controller::updateTimeTexts(const Player::TrackState &state) {
 	qint64 position = 0, length = state.length;
 
-	if (!Player::IsStopped(state.state) && state.state != Player::State::Finishing) {
-		position = state.position;
-	} else if (state.state == Player::State::StoppedAtEnd) {
+	if (Player::IsStoppedAtEnd(state.state)) {
 		position = state.length;
+	} else if (!Player::IsStoppedOrStopping(state.state)) {
+		position = state.position;
 	} else {
 		position = 0;
 	}
@@ -178,12 +187,12 @@ void Controller::setInFullScreen(bool inFullScreen) {
 
 void Controller::grabStart() {
 	showChildren();
-	_playback->hide();
+	_playbackSlider->hide();
 }
 
 void Controller::grabFinish() {
 	hideChildren();
-	_playback->show();
+	_playbackSlider->show();
 }
 
 void Controller::resizeEvent(QResizeEvent *e) {
@@ -195,9 +204,9 @@ void Controller::resizeEvent(QResizeEvent *e) {
 
 	_volumeController->moveToRight(st::mediaviewFullScreenLeft + _fullScreenToggle->width() + st::mediaviewVolumeLeft, (height() - _volumeController->height()) / 2);
 
-	int playbackWidth = width() - st::mediaviewPlayPauseLeft - _playPauseResume->width() - playTop - fullScreenTop - _volumeController->width() - st::mediaviewVolumeLeft - _fullScreenToggle->width() - st::mediaviewFullScreenLeft;
-	_playback->resize(playbackWidth, st::mediaviewPlayback.seekSize.height());
-	_playback->moveToLeft(st::mediaviewPlayPauseLeft + _playPauseResume->width() + playTop, st::mediaviewPlaybackTop);
+	auto playbackWidth = width() - st::mediaviewPlayPauseLeft - _playPauseResume->width() - playTop - fullScreenTop - _volumeController->width() - st::mediaviewVolumeLeft - _fullScreenToggle->width() - st::mediaviewFullScreenLeft;
+	_playbackSlider->resize(playbackWidth, st::mediaviewPlayback.seekSize.height());
+	_playbackSlider->moveToLeft(st::mediaviewPlayPauseLeft + _playPauseResume->width() + playTop, st::mediaviewPlaybackTop);
 
 	_playedAlready->moveToLeft(st::mediaviewPlayPauseLeft + _playPauseResume->width() + playTop, st::mediaviewPlayProgressTop);
 	_toPlayLeft->moveToRight(width() - (st::mediaviewPlayPauseLeft + _playPauseResume->width() + playTop) - playbackWidth, st::mediaviewPlayProgressTop);
