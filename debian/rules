@@ -45,10 +45,6 @@ override_dh_auto_configure:
 	  sed -i "$$NUM r debian/CMakeLists.inj" out/$(BUILD_MODE)/CMakeLists.txt
 	dh_auto_configure
 
-override_dh_auto_build:
-	dh_auto_build
-	ronn --roff debian/telegram-desktop.1.md
-
 override_dh_auto_clean:
 	dh_auto_clean || dh_auto_clean --sourcedirectory=$(CURDIR)
-	rm -rf out debian/telegram-desktop.1
+	rm -rf out

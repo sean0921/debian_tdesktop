@@ -22,7 +22,6 @@ Build-Depends:
  libtgvoip-dev,
  qtbase5-dev (>=5.5),
  qtbase5-private-dev (>=5.5),
- ruby-ronn,
  zlib1g-dev (>=1:1.2.8),
 Standards-Version: 3.9.8
 Homepage: https://desktop.telegram.org
