@@ -4,6 +4,7 @@ telegram-desktop (1.1.10-1) unstable; urgency=medium
     - New admin features in channels and supergroups
   * Refresh patches
   * Bump Standards-Version to 4.0.0
+  * Rewrite a manpage to nroff (closes: #860595)
 
  -- Nicholas Guriev <guriev-ns@ya.ru>  Thu, 06 Jul 2017 19:53:05 +0300
 
@@ -20,7 +21,7 @@ telegram-desktop (1.1.0-1) unstable; urgency=medium
 telegram-desktop (1.0.29-1) unstable; urgency=medium
 
   * New upstream release
-  * Refresh patchs
+  * Refresh patches
   * Add attribution info (closes: #859027)
   * Fix build in i386 (closes: #859058)
   * Fix FTBFS on various architectures (closes: #859057)
