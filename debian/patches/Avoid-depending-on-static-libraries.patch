@@ -1,7 +1,7 @@
 Description: Eliminates dependencies from static Qt and other libraries
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Forwarded: no
-Last-Update: 2017-04-19
+Last-Update: 2017-07-06
 
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
@@ -266,7 +266,7 @@ Last-Update: 2017-04-19
        'cflags_c': [
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -52,24 +52,15 @@
+@@ -52,25 +52,15 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
@@ -274,6 +274,7 @@ Last-Update: 2017-04-19
 -      'composeplatforminputcontextplugin',
 -      'ibusplatforminputcontextplugin',
 -      'fcitxplatforminputcontextplugin',
+-      'himeplatforminputcontextplugin',
 -      'liblzma.a',
 -      'libopenal.a',
 -      'libavformat.a',
@@ -302,7 +303,7 @@ Last-Update: 2017-04-19
      'cflags_cc': [
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -542,7 +542,6 @@
+@@ -570,7 +570,6 @@
  <(src_loc)/overviewwidget.h
  <(src_loc)/passcodewidget.cpp
  <(src_loc)/passcodewidget.h
@@ -310,7 +311,7 @@ Last-Update: 2017-04-19
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -552,14 +551,7 @@
+@@ -580,14 +579,7 @@
  <(src_loc)/structs.cpp
  <(src_loc)/structs.h
  
