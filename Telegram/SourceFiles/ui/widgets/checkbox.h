@@ -31,6 +31,8 @@ class Checkbox : public RippleButton {
 public:
 	Checkbox(QWidget *parent, const QString &text, bool checked = false, const style::Checkbox &st = st::defaultCheckbox);
 
+	void setText(const QString &text);
+
 	bool checked() const;
 	enum class NotifyAboutChange {
 		Notify,
@@ -61,6 +63,8 @@ signals:
 	void changed();
 
 private:
+	void resizeToText();
+
 	const style::Checkbox &_st;
 
 	Text _text;
@@ -187,6 +191,26 @@ public:
 	Radioenum(QWidget *parent, const std::shared_ptr<RadioenumGroup<Enum>> &group, Enum value, const QString &text, const style::Checkbox &st = st::defaultCheckbox)
 		: Radiobutton(parent, std::shared_ptr<RadiobuttonGroup>(group, &group->_group), static_cast<int>(value), text, st) {
 	}
+
+};
+
+class ToggleView {
+public:
+	ToggleView(const style::Toggle &st, bool toggled, base::lambda<void()> updateCallback);
+
+	void setToggledFast(bool toggled);
+	void setToggledAnimated(bool toggled);
+	void finishAnimation();
+	void setStyle(const style::Toggle &st);
+	void setUpdateCallback(base::lambda<void()> updateCallback);
+
+	void paint(Painter &p, int left, int top, int outerWidth, TimeMs ms);
+
+private:
+	gsl::not_null<const style::Toggle*> _st;
+	bool _toggled = false;
+	base::lambda<void()> _updateCallback;
+	Animation _toggleAnimation;
 
 };
 

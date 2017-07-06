@@ -289,9 +289,6 @@ inline const char *cApiSystemVersion() {
 	return "Linux";
 #endif
 }
-inline QString cApiAppVersion() {
-	return QString::number(AppVersion);
-}
 
 extern QString gKeyFile;
 inline const QString &cDataFile() {
@@ -304,9 +301,6 @@ inline const QString &cTempDir() {
 	static const QString res = cWorkingDir() + qsl("tdata/tdld/");
 	return res;
 }
-
-static const char *DefaultCountry = "US";
-static const char *DefaultLanguage = "en";
 
 enum {
 	DialogsFirstLoad = 20, // first dialogs part size requested

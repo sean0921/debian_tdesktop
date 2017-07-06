@@ -29,7 +29,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_chat_helpers.h"
 #include "styles/style_history.h"
 #include "styles/style_boxes.h"
-#include "lang.h"
+#include "lang/lang_keys.h"
 #include "data/data_abstract_structure.h"
 #include "history/history_service_layout.h"
 #include "history/history_location_manager.h"
@@ -640,7 +640,7 @@ namespace {
 			cdata->flags = d.vflags.v;
 
 			cdata->count = d.vparticipants_count.v;
-			cdata->isForbidden = false;
+			cdata->setIsForbidden(false);
 			if (canEdit != cdata->canEdit()) {
 				update.flags |= UpdateFlag::ChatCanEdit;
 			}
@@ -659,13 +659,13 @@ namespace {
 			cdata->count = -1;
 			cdata->invalidateParticipants();
 			cdata->flags = 0;
-			cdata->isForbidden = true;
+			cdata->setIsForbidden(true);
 			if (canEdit != cdata->canEdit()) {
 				update.flags |= UpdateFlag::ChatCanEdit;
 			}
 		} break;
 		case mtpc_channel: {
-			auto &d(chat.c_channel());
+			auto &d = chat.c_channel();
 
 			auto peerId = peerFromChannel(d.vid.v);
 			minimal = d.is_min();
@@ -681,16 +681,24 @@ namespace {
 
 			auto cdata = data->asChannel();
 			auto wasInChannel = cdata->amIn();
-			auto canEditPhoto = cdata->canEditPhoto();
 			auto canViewAdmins = cdata->canViewAdmins();
 			auto canViewMembers = cdata->canViewMembers();
 			auto canAddMembers = cdata->canAddMembers();
-			auto wasEditor = cdata->amEditor();
 
 			if (minimal) {
 				auto mask = MTPDchannel::Flag::f_broadcast | MTPDchannel::Flag::f_verified | MTPDchannel::Flag::f_megagroup | MTPDchannel::Flag::f_democracy;
 				cdata->flags = (cdata->flags & ~mask) | (d.vflags.v & mask);
 			} else {
+				if (d.has_admin_rights()) {
+					cdata->setAdminRights(d.vadmin_rights);
+				} else if (cdata->hasAdminRights()) {
+					cdata->setAdminRights(MTP_channelAdminRights(MTP_flags(0)));
+				}
+				if (d.has_banned_rights()) {
+					cdata->setRestrictedRights(d.vbanned_rights);
+				} else if (cdata->hasRestrictedRights()) {
+					cdata->setRestrictedRights(MTP_channelBannedRights(MTP_flags(0), MTP_int(0)));
+				}
 				cdata->inputChannel = MTP_inputChannel(d.vid, d.vaccess_hash);
 				cdata->access = d.vaccess_hash.v;
 				cdata->date = d.vdate.v;
@@ -709,18 +717,13 @@ namespace {
 			QString uname = d.has_username() ? textOneLine(qs(d.vusername)) : QString();
 			cdata->setName(qs(d.vtitle), uname);
 
-			cdata->isForbidden = false;
+			cdata->setIsForbidden(false);
 			cdata->setPhoto(d.vphoto);
 
 			if (wasInChannel != cdata->amIn()) update.flags |= UpdateFlag::ChannelAmIn;
-			if (canEditPhoto != cdata->canEditPhoto()) update.flags |= UpdateFlag::ChannelCanEditPhoto;
-			if (canViewAdmins != cdata->canViewAdmins()) update.flags |= UpdateFlag::ChannelCanViewAdmins;
-			if (canViewMembers != cdata->canViewMembers()) update.flags |= UpdateFlag::ChannelCanViewMembers;
-			if (canAddMembers != cdata->canAddMembers()) update.flags |= UpdateFlag::ChannelCanAddMembers;
-			if (wasEditor != cdata->amEditor()) {
-				cdata->selfAdminUpdated();
-				update.flags |= (UpdateFlag::ChannelAmEditor | UpdateFlag::AdminsChanged);
-			}
+			if (canViewAdmins != cdata->canViewAdmins()
+				|| canViewMembers != cdata->canViewMembers()
+				|| canAddMembers != cdata->canAddMembers()) update.flags |= UpdateFlag::ChannelRightsChanged;
 		} break;
 		case mtpc_channelForbidden: {
 			auto &d(chat.c_channelForbidden());
@@ -731,11 +734,9 @@ namespace {
 
 			auto cdata = data->asChannel();
 			auto wasInChannel = cdata->amIn();
-			auto canEditPhoto = cdata->canEditPhoto();
 			auto canViewAdmins = cdata->canViewAdmins();
 			auto canViewMembers = cdata->canViewMembers();
 			auto canAddMembers = cdata->canAddMembers();
-			auto wasEditor = cdata->amEditor();
 
 			cdata->inputChannel = MTP_inputChannel(d.vid, d.vaccess_hash);
 
@@ -743,23 +744,25 @@ namespace {
 			cdata->flags = (cdata->flags & ~mask) | (mtpCastFlags(d.vflags) & mask);
 			cdata->flagsUpdated();
 
+			if (cdata->hasAdminRights()) {
+				cdata->setAdminRights(MTP_channelAdminRights(MTP_flags(0)));
+			}
+			if (cdata->hasRestrictedRights()) {
+				cdata->setRestrictedRights(MTP_channelBannedRights(MTP_flags(0), MTP_int(0)));
+			}
+
 			cdata->setName(qs(d.vtitle), QString());
 
 			cdata->access = d.vaccess_hash.v;
 			cdata->setPhoto(MTP_chatPhotoEmpty());
 			cdata->date = 0;
 			cdata->setMembersCount(0);
-			cdata->isForbidden = true;
+			cdata->setIsForbidden(true);
 
 			if (wasInChannel != cdata->amIn()) update.flags |= UpdateFlag::ChannelAmIn;
-			if (canEditPhoto != cdata->canEditPhoto()) update.flags |= UpdateFlag::ChannelCanEditPhoto;
-			if (canViewAdmins != cdata->canViewAdmins()) update.flags |= UpdateFlag::ChannelCanViewAdmins;
-			if (canViewMembers != cdata->canViewMembers()) update.flags |= UpdateFlag::ChannelCanViewMembers;
-			if (canAddMembers != cdata->canAddMembers()) update.flags |= UpdateFlag::ChannelCanAddMembers;
-			if (wasEditor != cdata->amEditor()) {
-				cdata->selfAdminUpdated();
-				update.flags |= (UpdateFlag::ChannelAmEditor | UpdateFlag::AdminsChanged);
-			}
+			if (canViewAdmins != cdata->canViewAdmins()
+				|| canViewMembers != cdata->canViewMembers()
+				|| canAddMembers != cdata->canAddMembers()) update.flags |= UpdateFlag::ChannelRightsChanged;
 		} break;
 		}
 		if (!data) {
@@ -812,10 +815,10 @@ namespace {
 				auto &v = d.vparticipants.v;
 				chat->count = v.size();
 				int32 pversion = chat->participants.isEmpty() ? 1 : (chat->participants.begin().value() + 1);
-				chat->invitedByMe = ChatData::InvitedByMe();
-				chat->admins = ChatData::Admins();
+				chat->invitedByMe.clear();
+				chat->admins.clear();
 				chat->flags &= ~MTPDchat::Flag::f_admin;
-				for (QVector<MTPChatParticipant>::const_iterator i = v.cbegin(), e = v.cend(); i != e; ++i) {
+				for (auto i = v.cbegin(), e = v.cend(); i != e; ++i) {
 					int32 uid = 0, inviter = 0;
 					switch (i->type()) {
 					case mtpc_chatParticipantCreator: {
@@ -857,7 +860,7 @@ namespace {
 					History *h = App::historyLoaded(chat->id);
 					bool found = !h || !h->lastKeyboardFrom;
 					int32 botStatus = -1;
-					for (ChatData::Participants::iterator i = chat->participants.begin(), e = chat->participants.end(); i != e;) {
+					for (auto i = chat->participants.begin(), e = chat->participants.end(); i != e;) {
 						if (i.value() < pversion) {
 							i = chat->participants.erase(i);
 						} else {
@@ -963,7 +966,7 @@ namespace {
 						chat->count--;
 					}
 				} else {
-					ChatData::Participants::iterator i = chat->participants.find(user);
+					auto i = chat->participants.find(user);
 					if (i != chat->participants.end()) {
 						chat->participants.erase(i);
 						chat->count--;
@@ -980,7 +983,7 @@ namespace {
 					}
 					if (chat->botStatus > 0 && user->botInfo) {
 						int32 botStatus = -1;
-						for (ChatData::Participants::const_iterator j = chat->participants.cbegin(), e = chat->participants.cend(); j != e; ++j) {
+						for (auto j = chat->participants.cbegin(), e = chat->participants.cend(); j != e; ++j) {
 							if (j.key()->botInfo) {
 								if (true || botStatus > 0/* || !j.key()->botInfo->readsAllHistory*/) {
 									botStatus = 2;
@@ -1494,11 +1497,18 @@ namespace {
 	}
 
 	WebPageData *feedWebPage(const MTPDwebPage &webpage, WebPageData *convert) {
-		return App::webPageSet(webpage.vid.v, convert, webpage.has_type() ? qs(webpage.vtype) : qsl("article"), qs(webpage.vurl), qs(webpage.vdisplay_url), webpage.has_site_name() ? qs(webpage.vsite_name) : QString(), webpage.has_title() ? qs(webpage.vtitle) : QString(), webpage.has_description() ? qs(webpage.vdescription) : QString(), webpage.has_photo() ? App::feedPhoto(webpage.vphoto) : 0, webpage.has_document() ? App::feedDocument(webpage.vdocument) : 0, webpage.has_duration() ? webpage.vduration.v : 0, webpage.has_author() ? qs(webpage.vauthor) : QString(), 0);
+		auto description = TextWithEntities { webpage.has_description() ? textClean(qs(webpage.vdescription)) : QString() };
+		auto siteName = webpage.has_site_name() ? qs(webpage.vsite_name) : QString();
+		auto parseFlags = TextParseLinks | TextParseMultiline | TextParseRichText;
+		if (siteName == qstr("Twitter") || siteName == qstr("Instagram")) {
+			parseFlags |= TextParseHashtags | TextParseMentions;
+		}
+		textParseEntities(description.text, parseFlags, &description.entities);
+		return App::webPageSet(webpage.vid.v, convert, webpage.has_type() ? qs(webpage.vtype) : qsl("article"), qs(webpage.vurl), qs(webpage.vdisplay_url), siteName, webpage.has_title() ? qs(webpage.vtitle) : QString(), description, webpage.has_photo() ? App::feedPhoto(webpage.vphoto) : nullptr, webpage.has_document() ? App::feedDocument(webpage.vdocument) : nullptr, webpage.has_duration() ? webpage.vduration.v : 0, webpage.has_author() ? qs(webpage.vauthor) : QString(), 0);
 	}
 
 	WebPageData *feedWebPage(const MTPDwebPagePending &webpage, WebPageData *convert) {
-		return App::webPageSet(webpage.vid.v, convert, QString(), QString(), QString(), QString(), QString(), QString(), 0, 0, 0, QString(), webpage.vdate.v);
+		return App::webPageSet(webpage.vid.v, convert, QString(), QString(), QString(), QString(), QString(), TextWithEntities(), nullptr, nullptr, 0, QString(), webpage.vdate.v);
 	}
 
 	WebPageData *feedWebPage(const MTPWebPage &webpage) {
@@ -1513,6 +1523,10 @@ namespace {
 		case mtpc_webPageNotModified: LOG(("API Error: webPageNotModified is unexpected in feedWebPage().")); break;
 		}
 		return nullptr;
+	}
+
+	WebPageData *feedWebPage(WebPageId webPageId, const QString &siteName, const TextWithEntities &content) {
+		return App::webPageSet(webPageId, nullptr, qsl("article"), QString(), QString(), siteName, QString(), content, nullptr, nullptr, 0, QString(), 0);
 	}
 
 	GameData *feedGame(const MTPDgame &game, GameData *convert) {
@@ -1775,7 +1789,7 @@ namespace {
 		return i.value();
 	}
 
-	WebPageData *webPageSet(const WebPageId &webPage, WebPageData *convert, const QString &type, const QString &url, const QString &displayUrl, const QString &siteName, const QString &title, const QString &description, PhotoData *photo, DocumentData *document, int32 duration, const QString &author, int32 pendingTill) {
+	WebPageData *webPageSet(const WebPageId &webPage, WebPageData *convert, const QString &type, const QString &url, const QString &displayUrl, const QString &siteName, const QString &title, const TextWithEntities &description, PhotoData *photo, DocumentData *document, int32 duration, const QString &author, int32 pendingTill) {
 		if (convert) {
 			if (convert->id != webPage) {
 				auto i = webPagesData.find(convert->id);
@@ -1790,7 +1804,7 @@ namespace {
 				convert->displayUrl = textClean(displayUrl);
 				convert->siteName = textClean(siteName);
 				convert->title = textOneLine(textClean(title));
-				convert->description = textClean(description);
+				convert->description = description;
 				convert->photo = photo;
 				convert->document = document;
 				convert->duration = duration;
@@ -1821,7 +1835,7 @@ namespace {
 					result->displayUrl = textClean(displayUrl);
 					result->siteName = textClean(siteName);
 					result->title = textOneLine(textClean(title));
-					result->description = textClean(description);
+					result->description = description;
 					result->photo = photo;
 					result->document = document;
 					result->duration = duration;
@@ -2235,8 +2249,6 @@ namespace {
 		prepareCorners(EmojiHoverCorners, st::buttonRadius, st::emojiPanHover);
 		prepareCorners(StickerHoverCorners, st::buttonRadius, st::emojiPanHover);
 		prepareCorners(BotKeyboardCorners, st::buttonRadius, st::botKbBg);
-		prepareCorners(BotKeyboardOverCorners, st::buttonRadius, st::botKbOverBg);
-		prepareCorners(BotKeyboardDownCorners, st::buttonRadius, st::botKbDownBg);
 		prepareCorners(PhotoSelectOverlayCorners, st::buttonRadius, st::overviewPhotoSelectOverlay);
 
 		prepareCorners(Doc1Corners, st::buttonRadius, st::msgFile1Bg);

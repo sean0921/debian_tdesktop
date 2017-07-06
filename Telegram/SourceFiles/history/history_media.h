@@ -46,8 +46,8 @@ public:
 	}
 	virtual TextWithEntities selectedText(TextSelection selection) const = 0;
 
-	bool hasPoint(int x, int y) const {
-		return (x >= 0 && y >= 0 && x < _width && y < _height);
+	bool hasPoint(QPoint point) const {
+		return QRect(0, 0, _width, _height).contains(point);
 	}
 
 	virtual bool isDisplayed() const {
@@ -60,13 +60,15 @@ public:
 		return false;
 	}
 	virtual void initDimensions() = 0;
+	virtual void updateMessageId() {
+	}
 	virtual int resizeGetHeight(int width) {
 		_width = qMin(width, _maxw);
 		return _height;
 	}
 	virtual void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const = 0;
-	virtual HistoryTextState getState(int x, int y, HistoryStateRequest request) const = 0;
-	virtual void updatePressed(int x, int y) {
+	virtual HistoryTextState getState(QPoint point, HistoryStateRequest request) const = 0;
+	virtual void updatePressed(QPoint point) {
 	}
 
 	virtual int32 addToOverview(AddToOverviewMethod method) {
@@ -80,15 +82,24 @@ public:
 	virtual bool toggleSelectionByHandlerClick(const ClickHandlerPtr &p) const = 0;
 
 	// if we press and drag on this media should we drag the item
-	virtual bool dragItem() const {
+	virtual bool dragItem() const WARN_UNUSED_RESULT {
 		return false;
 	}
 
-	virtual TextSelection adjustSelection(TextSelection selection, TextSelectType type) const {
+	virtual TextSelection adjustSelection(TextSelection selection, TextSelectType type) const WARN_UNUSED_RESULT {
 		return selection;
 	}
-	virtual bool consumeMessageText(const TextWithEntities &textWithEntities) {
+	virtual bool consumeMessageText(const TextWithEntities &textWithEntities) WARN_UNUSED_RESULT {
 		return false;
+	}
+	virtual uint16 fullSelectionLength() const WARN_UNUSED_RESULT {
+		return 0;
+	}
+	TextSelection skipSelection(TextSelection selection) const WARN_UNUSED_RESULT {
+		return internal::unshiftSelection(selection, fullSelectionLength());
+	}
+	TextSelection unskipSelection(TextSelection selection) const WARN_UNUSED_RESULT {
+		return internal::shiftSelection(selection, fullSelectionLength());
 	}
 
 	// if we press and drag this link should we drag the item

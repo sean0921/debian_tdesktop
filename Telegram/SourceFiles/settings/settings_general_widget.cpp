@@ -21,7 +21,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "settings/settings_general_widget.h"
 
 #include "styles/style_settings.h"
-#include "lang.h"
+#include "lang/lang_keys.h"
 #include "ui/effects/widget_slide_wrap.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/buttons.h"
@@ -33,7 +33,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "boxes/confirm_box.h"
 #include "boxes/about_box.h"
 #include "core/file_utilities.h"
-#include "langloaderplain.h"
+#include "lang/lang_file_parser.h"
+#include "lang/lang_cloud_manager.h"
+#include "messenger.h"
 #include "autoupdater.h"
 
 namespace Settings {
@@ -158,7 +160,6 @@ void UpdateStateRow::onFailed() {
 GeneralWidget::GeneralWidget(QWidget *parent, UserData *self) : BlockWidget(parent, self, lang(lng_settings_section_general))
 , _changeLanguage(this, lang(lng_settings_change_lang), st::boxLinkButton) {
 	connect(_changeLanguage, SIGNAL(clicked()), this, SLOT(onChangeLanguage()));
-	subscribe(Global::RefChooseCustomLang(), [this]() { chooseCustomLang(); });
 	refreshControls();
 }
 
@@ -204,39 +205,22 @@ void GeneralWidget::refreshControls() {
 	}
 }
 
-void GeneralWidget::chooseCustomLang() {
-	auto filter = qsl("Language files (*.strings)");
-	auto title = qsl("Choose language .strings file");
-	FileDialog::GetOpenPath(title, filter, base::lambda_guarded(this, [this](const FileDialog::OpenResult &result) {
-		if (result.paths.isEmpty()) {
-			return;
-		}
-
-		_testLanguage = QFileInfo(result.paths.front()).absoluteFilePath();
-		LangLoaderPlain loader(_testLanguage, langLoaderRequest(lng_sure_save_language, lng_cancel, lng_box_ok));
-		if (loader.errors().isEmpty()) {
-			LangLoaderResult result = loader.found();
-			auto text = result.value(lng_sure_save_language, langOriginal(lng_sure_save_language)),
-				save = result.value(lng_box_ok, langOriginal(lng_box_ok)),
-				cancel = result.value(lng_cancel, langOriginal(lng_cancel));
-			Ui::show(Box<ConfirmBox>(text, save, cancel, base::lambda_guarded(this, [this] {
-				cSetLangFile(_testLanguage);
-				cSetLang(languageTest);
-				Local::writeSettings();
-				onRestart();
-			})));
-		} else {
-			Ui::show(Box<InformBox>("Custom lang failed :(\n\nError: " + loader.errors()));
-		}
-	}));
-}
-
 void GeneralWidget::onChangeLanguage() {
 	if ((_changeLanguage->clickModifiers() & Qt::ShiftModifier) && (_changeLanguage->clickModifiers() & Qt::AltModifier)) {
-		chooseCustomLang();
+		Lang::CurrentCloudManager().switchToLanguage(qsl("custom"));
+		return;
+	}
+	auto manager = Messenger::Instance().langCloudManager();
+	if (manager->languageList().isEmpty()) {
+		_languagesLoadedSubscription = subscribe(manager->languageListChanged(), [this] {
+			unsubscribe(base::take(_languagesLoadedSubscription));
+			Ui::show(Box<LanguageBox>());
+		});
 	} else {
+		unsubscribe(base::take(_languagesLoadedSubscription));
 		Ui::show(Box<LanguageBox>());
 	}
+	manager->requestLanguageList();
 }
 
 void GeneralWidget::onRestart() {

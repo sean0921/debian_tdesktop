@@ -168,8 +168,6 @@ public:
 
 	void start(const MTPUser *self = nullptr);
 
-	void checkStartUrl();
-	void openLocalUrl(const QString &str);
 	void openPeerByName(const QString &name, MsgId msgId = ShowAtUnreadMsgId, const QString &startToken = QString());
 	void joinGroupByHash(const QString &hash);
 	void stickersBox(const MTPInputStickerSet &set);
@@ -203,7 +201,6 @@ public:
 	void dialogsToUp();
 	void newUnreadMsg(History *history, HistoryItem *item);
 	void markActiveHistoryAsRead();
-	void historyCleared(History *history);
 
 	void peerBefore(const PeerData *inPeer, MsgId inMsg, PeerData *&outPeer, MsgId &outMsg);
 	void peerAfter(const PeerData *inPeer, MsgId inMsg, PeerData *&outPeer, MsgId &outMsg);
@@ -216,7 +213,7 @@ public:
 	int backgroundFromY() const;
 	PeerData *overviewPeer();
 	bool showMediaTypeSwitch() const;
-	void showWideSection(const Window::SectionMemento &memento);
+	void showWideSection(Window::SectionMemento &&memento);
 	void showMediaOverview(PeerData *peer, MediaOverviewType type, bool back = false, int32 lastScrollTop = -1);
 	bool stackIsEmpty() const;
 	void showBackFromStack();
@@ -273,7 +270,7 @@ public:
 	void clearHistory(PeerData *peer);
 	void deleteAllFromUser(ChannelData *channel, UserData *from);
 
-	void addParticipants(PeerData *chatOrChannel, const QVector<UserData*> &users);
+	void addParticipants(PeerData *chatOrChannel, const std::vector<gsl::not_null<UserData*>> &users);
 	struct UserAndPeer {
 		UserData *user;
 		PeerData *peer;
@@ -328,7 +325,7 @@ public:
 
 	void checkLastUpdate(bool afterSleep);
 
-	void serviceNotification(const TextWithEntities &message, const MTPMessageMedia &media, int32 date);
+	void insertCheckedServiceNotification(const TextWithEntities &message, const MTPMessageMedia &media, int32 date);
 	void serviceHistoryDone(const MTPmessages_Messages &msgs);
 	bool serviceHistoryFail(const RPCError &error);
 
@@ -348,10 +345,8 @@ public:
 
 	void pushReplyReturn(HistoryItem *item);
 
-	bool hasForwardingItems();
-	void fillForwardingInfo(Text *&from, Text *&text, bool &serviceColor, ImagePtr &preview);
-	void cancelForwarding();
-	void finishForwarding(History *hist, bool silent); // send them
+	void cancelForwarding(History *history);
+	void finishForwarding(History *history, bool silent); // send them
 
 	void mediaMarkRead(DocumentData *data);
 	void mediaMarkRead(const HistoryItemsMap &items);
@@ -368,7 +363,6 @@ public:
 	void ptsWaiterStartTimerFor(ChannelData *channel, int32 ms); // ms <= 0 - stop timer
 	void feedUpdates(const MTPUpdates &updates, uint64 randomId = 0);
 	void feedUpdate(const MTPUpdate &update);
-	void updateAfterDrag();
 
 	void ctrlEnterSubmitUpdated();
 	void setInnerFocus();
@@ -382,13 +376,11 @@ public:
 
 	bool contentOverlapped(const QRect &globalRect);
 
-	bool isItemVisible(HistoryItem *item);
-
 	void documentLoadProgress(DocumentData *document);
 
 	void app_sendBotCallback(const HistoryMessageReplyMarkup::Button *button, const HistoryItem *msg, int row, int col);
 
-	void ui_repaintHistoryItem(const HistoryItem *item);
+	void ui_repaintHistoryItem(gsl::not_null<const HistoryItem*> item);
 	void ui_showPeerHistory(quint64 peer, qint32 msgId, Ui::ShowWay way);
 	PeerData *ui_getPeerForMouseAction();
 
@@ -402,7 +394,6 @@ public:
 	void notify_migrateUpdated(PeerData *peer);
 	void notify_historyItemLayoutChanged(const HistoryItem *item);
 	void notify_historyMuteUpdated(History *history);
-	void notify_handlePendingHistoryUpdate();
 
 	bool cmd_search();
 	bool cmd_next_chat();
@@ -506,9 +497,6 @@ private:
 	void updateControlsGeometry();
 	void updateDialogsWidthAnimated();
 
-	void updateForwardingTexts();
-	void updateForwardingItemRemovedSubscription();
-
 	void createPlayer();
 	void switchToPanelPlayer();
 	void switchToFixedPlayer();
@@ -531,7 +519,7 @@ private:
 	void mediaOverviewUpdated(const Notify::PeerUpdate &update);
 
 	Window::SectionSlideParams prepareShowAnimation(bool willHaveTopBarShadow, bool willHaveTabbedSection);
-	void showNewWideSection(const Window::SectionMemento *memento, bool back, bool saveInStack);
+	void showNewWideSection(Window::SectionMemento &&memento, bool back, bool saveInStack);
 
 	// All this methods use the prepareShowAnimation().
 	Window::SectionSlideParams prepareWideSectionAnimation(Window::SectionWidget *section);
@@ -608,11 +596,6 @@ private:
 
 	gsl::not_null<Window::Controller*> _controller;
 	bool _started = false;
-
-	SelectedItemSet _toForward;
-	Text _toForwardFrom, _toForwardText;
-	int32 _toForwardNameVersion = 0;
-	int _forwardingItemRemovedSubscription = 0;
 
 	OrderedSet<WebPageId> _webPagesUpdated;
 	OrderedSet<GameId> _gamesUpdated;

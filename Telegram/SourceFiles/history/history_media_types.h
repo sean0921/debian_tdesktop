@@ -20,6 +20,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
+#include "history/history_media.h"
 #include "ui/effects/radial_animation.h"
 
 namespace Media {
@@ -28,7 +29,7 @@ class Playback;
 } // namespace Clip
 } // namespace Media
 
-void historyInitMedia();
+void HistoryInitMedia();
 
 class HistoryFileMedia : public HistoryMedia {
 public:
@@ -116,9 +117,10 @@ protected:
 
 class HistoryPhoto : public HistoryFileMedia {
 public:
-	HistoryPhoto(HistoryItem *parent, PhotoData *photo, const QString &caption);
-	HistoryPhoto(HistoryItem *parent, PeerData *chat, const MTPDphoto &photo, int width);
-	HistoryPhoto(HistoryItem *parent, const HistoryPhoto &other);
+	HistoryPhoto(gsl::not_null<HistoryItem*> parent, gsl::not_null<PhotoData*> photo, const QString &caption);
+	HistoryPhoto(gsl::not_null<HistoryItem*> parent, gsl::not_null<PeerData*> chat, gsl::not_null<PhotoData*> photo, int width);
+	HistoryPhoto(gsl::not_null<HistoryItem*> parent, gsl::not_null<PeerData*> chat, const MTPDphoto &photo, int width);
+	HistoryPhoto(gsl::not_null<HistoryItem*> parent, const HistoryPhoto &other);
 
 	void init();
 	HistoryMediaType type() const override {
@@ -132,10 +134,13 @@ public:
 	int resizeGetHeight(int width) override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
-	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override {
+	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT {
 		return _caption.adjustSelection(selection, type);
+	}
+	uint16 fullSelectionLength() const override {
+		return _caption.length();
 	}
 	bool hasTextForCopy() const override {
 		return !_caption.isEmpty();
@@ -166,18 +171,7 @@ public:
 	TextWithEntities getCaption() const override {
 		return _caption.originalTextWithEntities();
 	}
-	bool needsBubble() const override {
-		if (!_caption.isEmpty()) {
-			return true;
-		}
-		if (auto message = _parent->toHistoryMessage()) {
-			return message->viaBot()
-				|| message->Has<HistoryMessageForwarded>()
-				|| message->Has<HistoryMessageReply>()
-				|| message->displayFromName();
-		}
-		return false;
-	}
+	bool needsBubble() const override;
 	bool customInfoLayout() const override {
 		return _caption.isEmpty();
 	}
@@ -212,8 +206,8 @@ private:
 
 class HistoryVideo : public HistoryFileMedia {
 public:
-	HistoryVideo(HistoryItem *parent, DocumentData *document, const QString &caption);
-	HistoryVideo(HistoryItem *parent, const HistoryVideo &other);
+	HistoryVideo(gsl::not_null<HistoryItem*> parent, DocumentData *document, const QString &caption);
+	HistoryVideo(gsl::not_null<HistoryItem*> parent, const HistoryVideo &other);
 	HistoryMediaType type() const override {
 		return MediaTypeVideo;
 	}
@@ -225,10 +219,13 @@ public:
 	int resizeGetHeight(int width) override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
-	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override {
+	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT {
 		return _caption.adjustSelection(selection, type);
+	}
+	uint16 fullSelectionLength() const override {
+		return _caption.length();
 	}
 	bool hasTextForCopy() const override {
 		return !_caption.isEmpty();
@@ -263,18 +260,7 @@ public:
 	TextWithEntities getCaption() const override {
 		return _caption.originalTextWithEntities();
 	}
-	bool needsBubble() const override {
-		if (!_caption.isEmpty()) {
-			return true;
-		}
-		if (auto message = _parent->toHistoryMessage()) {
-			return message->viaBot()
-				|| message->Has<HistoryMessageForwarded>()
-				|| message->Has<HistoryMessageReply>()
-				|| message->displayFromName();
-		}
-		return false;
-	}
+	bool needsBubble() const override;
 	bool customInfoLayout() const override {
 		return _caption.isEmpty();
 	}
@@ -370,8 +356,8 @@ private:
 
 class HistoryDocument : public HistoryFileMedia, public RuntimeComposer {
 public:
-	HistoryDocument(HistoryItem *parent, DocumentData *document, const QString &caption);
-	HistoryDocument(HistoryItem *parent, const HistoryDocument &other);
+	HistoryDocument(gsl::not_null<HistoryItem*> parent, DocumentData *document, const QString &caption);
+	HistoryDocument(gsl::not_null<HistoryItem*> parent, const HistoryDocument &other);
 	HistoryMediaType type() const override {
 		return _data->voice() ? MediaTypeVoiceFile : (_data->song() ? MediaTypeMusicFile : MediaTypeFile);
 	}
@@ -383,14 +369,20 @@ public:
 	int resizeGetHeight(int width) override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
-	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
-	void updatePressed(int x, int y) override;
+	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
+	void updatePressed(QPoint point) override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override {
+	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT {
 		if (auto captioned = Get<HistoryDocumentCaptioned>()) {
 			return captioned->_caption.adjustSelection(selection, type);
 		}
 		return selection;
+	}
+	uint16 fullSelectionLength() const override {
+		if (auto captioned = Get<HistoryDocumentCaptioned>()) {
+			return captioned->_caption.length();
+		}
+		return 0;
 	}
 	bool hasTextForCopy() const override {
 		return Has<HistoryDocumentCaptioned>();
@@ -477,8 +469,8 @@ private:
 
 class HistoryGif : public HistoryFileMedia {
 public:
-	HistoryGif(HistoryItem *parent, DocumentData *document, const QString &caption);
-	HistoryGif(HistoryItem *parent, const HistoryGif &other);
+	HistoryGif(gsl::not_null<HistoryItem*> parent, DocumentData *document, const QString &caption);
+	HistoryGif(gsl::not_null<HistoryItem*> parent, const HistoryGif &other);
 	HistoryMediaType type() const override {
 		return MediaTypeGif;
 	}
@@ -490,10 +482,13 @@ public:
 	int resizeGetHeight(int width) override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
-	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override {
+	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT {
 		return _caption.adjustSelection(selection, type);
+	}
+	uint16 fullSelectionLength() const override {
+		return _caption.length();
 	}
 	bool hasTextForCopy() const override {
 		return !_caption.isEmpty();
@@ -535,21 +530,7 @@ public:
 	TextWithEntities getCaption() const override {
 		return _caption.originalTextWithEntities();
 	}
-	bool needsBubble() const override {
-		if (_data->isRoundVideo()) {
-			return false;
-		}
-		if (!_caption.isEmpty()) {
-			return true;
-		}
-		if (auto message = _parent->toHistoryMessage()) {
-			return message->viaBot()
-				|| message->Has<HistoryMessageForwarded>()
-				|| message->Has<HistoryMessageReply>()
-				|| message->displayFromName();
-		}
-		return false;
-	}
+	bool needsBubble() const override;
 	bool customInfoLayout() const override {
 		return _caption.isEmpty();
 	}
@@ -601,7 +582,7 @@ private:
 
 class HistorySticker : public HistoryMedia {
 public:
-	HistorySticker(HistoryItem *parent, DocumentData *document);
+	HistorySticker(gsl::not_null<HistoryItem*> parent, DocumentData *document);
 	HistoryMediaType type() const override {
 		return MediaTypeSticker;
 	}
@@ -613,7 +594,7 @@ public:
 	int resizeGetHeight(int width) override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
-	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
 	bool toggleSelectionByHandlerClick(const ClickHandlerPtr &p) const override {
 		return true;
@@ -670,7 +651,7 @@ private:
 
 class HistoryContact : public HistoryMedia {
 public:
-	HistoryContact(HistoryItem *parent, int32 userId, const QString &first, const QString &last, const QString &phone);
+	HistoryContact(gsl::not_null<HistoryItem*> parent, int32 userId, const QString &first, const QString &last, const QString &phone);
 	HistoryMediaType type() const override {
 		return MediaTypeContact;
 	}
@@ -681,7 +662,7 @@ public:
 	void initDimensions() override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
-	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
 	bool toggleSelectionByHandlerClick(const ClickHandlerPtr &p) const override {
 		return true;
@@ -732,7 +713,7 @@ private:
 
 class HistoryCall : public HistoryMedia {
 public:
-	HistoryCall(HistoryItem *parent, const MTPDmessageActionPhoneCall &call);
+	HistoryCall(gsl::not_null<HistoryItem*> parent, const MTPDmessageActionPhoneCall &call);
 	HistoryMediaType type() const override {
 		return MediaTypeCall;
 	}
@@ -743,7 +724,7 @@ public:
 	void initDimensions() override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
-	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
 	bool toggleSelectionByHandlerClick(const ClickHandlerPtr &p) const override {
 		return true;
@@ -787,8 +768,8 @@ private:
 
 class HistoryWebPage : public HistoryMedia {
 public:
-	HistoryWebPage(HistoryItem *parent, WebPageData *data);
-	HistoryWebPage(HistoryItem *parent, const HistoryWebPage &other);
+	HistoryWebPage(gsl::not_null<HistoryItem*> parent, gsl::not_null<WebPageData*> data);
+	HistoryWebPage(gsl::not_null<HistoryItem*> parent, const HistoryWebPage &other);
 	HistoryMediaType type() const override {
 		return MediaTypeWebPage;
 	}
@@ -800,9 +781,12 @@ public:
 	int resizeGetHeight(int width) override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
-	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override;
+	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT;
+	uint16 fullSelectionLength() const override {
+		return _title.length() + _description.length();
+	}
 	bool hasTextForCopy() const override {
 		return false; // we do not add _title and _description in FullSelection text copy.
 	}
@@ -820,13 +804,13 @@ public:
 	void clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) override;
 
 	bool isDisplayed() const override {
-		return !_data->pendingTill;
+		return !_data->pendingTill && !_parent->Has<HistoryMessageLogEntryOriginal>();
 	}
 	DocumentData *getDocument() override {
-		return _attach ? _attach->getDocument() : 0;
+		return _attach ? _attach->getDocument() : nullptr;
 	}
 	Media::Clip::Reader *getClipReader() override {
-		return _attach ? _attach->getClipReader() : 0;
+		return _attach ? _attach->getClipReader() : nullptr;
 	}
 	bool playInline(bool autoplay) override {
 		return _attach ? _attach->playInline(autoplay) : false;
@@ -841,7 +825,7 @@ public:
 	bool hasReplyPreview() const override;
 	ImagePtr replyPreview() override;
 
-	WebPageData *webpage() {
+	gsl::not_null<WebPageData*> webpage() {
 		return _data;
 	}
 
@@ -865,8 +849,9 @@ private:
 	}
 	QMargins inBubblePadding() const;
 	int bottomInfoPadding() const;
+	bool isLogEntryOriginal() const;
 
-	WebPageData *_data;
+	gsl::not_null<WebPageData*> _data;
 	ClickHandlerPtr _openl;
 	std::unique_ptr<HistoryMedia> _attach;
 
@@ -886,8 +871,8 @@ private:
 
 class HistoryGame : public HistoryMedia {
 public:
-	HistoryGame(HistoryItem *parent, GameData *data);
-	HistoryGame(HistoryItem *parent, const HistoryGame &other);
+	HistoryGame(gsl::not_null<HistoryItem*> parent, GameData *data);
+	HistoryGame(gsl::not_null<HistoryItem*> parent, const HistoryGame &other);
 	HistoryMediaType type() const override {
 		return MediaTypeGame;
 	}
@@ -897,11 +882,15 @@ public:
 
 	void initDimensions() override;
 	int resizeGetHeight(int width) override;
+	void updateMessageId() override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
-	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override;
+	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT;
+	uint16 fullSelectionLength() const override {
+		return _title.length() + _description.length();
+	}
 	bool isAboveMessage() const override {
 		return true;
 	}
@@ -986,8 +975,8 @@ private:
 
 class HistoryInvoice : public HistoryMedia {
 public:
-	HistoryInvoice(HistoryItem *parent, const MTPDmessageMediaInvoice &data);
-	HistoryInvoice(HistoryItem *parent, const HistoryInvoice &other);
+	HistoryInvoice(gsl::not_null<HistoryItem*> parent, const MTPDmessageMediaInvoice &data);
+	HistoryInvoice(gsl::not_null<HistoryItem*> parent, const HistoryInvoice &other);
 	HistoryMediaType type() const override {
 		return MediaTypeInvoice;
 	}
@@ -1007,9 +996,12 @@ public:
 	static QString fillAmountAndCurrency(int amount, const QString &currency);
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
-	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override;
+	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT;
+	uint16 fullSelectionLength() const override {
+		return _title.length() + _description.length();
+	}
 	bool hasTextForCopy() const override {
 		return false; // we do not add _title and _description in FullSelection text copy.
 	}
@@ -1077,8 +1069,8 @@ struct LocationData;
 
 class HistoryLocation : public HistoryMedia {
 public:
-	HistoryLocation(HistoryItem *parent, const LocationCoords &coords, const QString &title = QString(), const QString &description = QString());
-	HistoryLocation(HistoryItem *parent, const HistoryLocation &other);
+	HistoryLocation(gsl::not_null<HistoryItem*> parent, const LocationCoords &coords, const QString &title = QString(), const QString &description = QString());
+	HistoryLocation(gsl::not_null<HistoryItem*> parent, const HistoryLocation &other);
 	HistoryMediaType type() const override {
 		return MediaTypeLocation;
 	}
@@ -1090,9 +1082,12 @@ public:
 	int resizeGetHeight(int32 width) override;
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
-	HistoryTextState getState(int x, int y, HistoryStateRequest request) const override;
+	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override;
+	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT;
+	uint16 fullSelectionLength() const override {
+		return _title.length() + _description.length();
+	}
 	bool hasTextForCopy() const override {
 		return !_title.isEmpty() || !_description.isEmpty();
 	}
@@ -1108,18 +1103,7 @@ public:
 	QString inDialogsText() const override;
 	TextWithEntities selectedText(TextSelection selection) const override;
 
-	bool needsBubble() const override {
-		if (!_title.isEmpty() || !_description.isEmpty()) {
-			return true;
-		}
-		if (auto message = _parent->toHistoryMessage()) {
-			return message->viaBot()
-				|| message->Has<HistoryMessageForwarded>()
-				|| message->Has<HistoryMessageReply>()
-				|| message->displayFromName();
-		}
-		return false;
-	}
+	bool needsBubble() const override;
 	bool customInfoLayout() const override {
 		return true;
 	}

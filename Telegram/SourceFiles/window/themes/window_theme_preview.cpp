@@ -21,7 +21,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/themes/window_theme_preview.h"
 
 #include "window/themes/window_theme.h"
-#include "lang.h"
+#include "lang/lang_keys.h"
 #include "platform/platform_window_title.h"
 #include "styles/style_widgets.h"
 #include "styles/style_window.h"
@@ -524,7 +524,7 @@ void Generator::paintDialogs() {
 
 	auto filterLeft = _dialogs.x() + st::dialogsFilterPadding.x() + st::dialogsMenuToggle.width + st::dialogsFilterPadding.x();
 	auto filterRight = st::dialogsFilterSkip + st::dialogsFilterPadding.x();
-	auto filterWidth = _dialogs.width() - filterLeft - filterRight;
+	auto filterWidth = _dialogs.x() + _dialogs.width() - filterLeft - filterRight;
 	auto filterAreaHeight = st::dialogsFilterPadding.y() + st::dialogsMenuToggle.height + st::dialogsFilterPadding.y();
 	auto filterTop = _dialogs.y() + (filterAreaHeight - st::dialogsFilter.height) / 2;
 	auto filter = QRect(filterLeft, filterTop, filterWidth, st::dialogsFilter.height);

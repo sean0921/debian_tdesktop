@@ -24,7 +24,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_boxes.h"
 #include "styles/style_history.h"
 #include "observer_peer.h"
-#include "lang.h"
+#include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
 #include "base/qthelp_url.h"
@@ -45,7 +45,7 @@ ShareBox::ShareBox(QWidget*, CopyCallback &&copyCallback, SubmitCallback &&submi
 : _copyCallback(std::move(copyCallback))
 , _submitCallback(std::move(submitCallback))
 , _filterCallback(std::move(filterCallback))
-, _select(this, st::contactsMultiSelect, lang(lng_participant_filter))
+, _select(this, st::contactsMultiSelect, langFactory(lng_participant_filter))
 , _searchTimer(this) {
 }
 
@@ -53,7 +53,7 @@ void ShareBox::prepare() {
 	_select->resizeToWidth(st::boxWideWidth);
 	myEnsureResized(_select);
 
-	setTitle(lang(lng_share_title));
+	setTitle(langFactory(lng_share_title));
 
 	_inner = setInnerWidget(object_ptr<Inner>(this, std::move(_filterCallback)), getTopScrollSkip());
 	connect(_inner, SIGNAL(mustScrollTo(int,int)), this, SLOT(onMustScrollTo(int,int)));
@@ -207,11 +207,11 @@ void ShareBox::updateButtons() {
 void ShareBox::createButtons() {
 	clearButtons();
 	if (_hasSelected) {
-		addButton(lang(lng_share_confirm), [this] { onSubmit(); });
+		addButton(langFactory(lng_share_confirm), [this] { onSubmit(); });
 	} else {
-		addButton(lang(lng_share_copy_link), [this] { onCopyLink(); });
+		addButton(langFactory(lng_share_copy_link), [this] { onCopyLink(); });
 	}
-	addButton(lang(lng_cancel), [this] { closeBox(); });
+	addButton(langFactory(lng_cancel), [this] { closeBox(); });
 }
 
 void ShareBox::onFilterUpdate(const QString &query) {
@@ -809,7 +809,7 @@ QVector<PeerData*> ShareBox::Inner::selected() const {
 	return result;
 }
 
-QString appendShareGameScoreUrl(const QString &url, const FullMsgId &fullId) {
+QString AppendShareGameScoreUrl(const QString &url, const FullMsgId &fullId) {
 	auto shareHashData = QByteArray(0x10, Qt::Uninitialized);
 	auto shareHashDataInts = reinterpret_cast<int32*>(shareHashData.data());
 	auto channel = fullId.channel ? App::channelLoaded(fullId.channel) : static_cast<ChannelData*>(nullptr);
@@ -854,7 +854,7 @@ QString appendShareGameScoreUrl(const QString &url, const FullMsgId &fullId) {
 
 namespace {
 
-void shareGameScoreFromItem(HistoryItem *item) {
+void ShareGameScoreFromItem(HistoryItem *item) {
 	struct ShareGameScoreData {
 		ShareGameScoreData(const FullMsgId &msgId) : msgId(msgId) {
 		}
@@ -884,6 +884,25 @@ void shareGameScoreFromItem(HistoryItem *item) {
 		if (!data->requests.empty()) {
 			return; // Share clicked already.
 		}
+		if (result.empty()) {
+			return;
+		}
+
+		auto restrictedEverywhere = true;
+		auto restrictedSomewhere = false;
+		for_const (auto peer, result) {
+			if (auto megagroup = peer->asMegagroup()) {
+				if (megagroup->restrictedRights().is_send_games()) {
+					restrictedSomewhere = true;
+					continue;
+				}
+			}
+			restrictedEverywhere = false;
+		}
+		if (restrictedEverywhere) {
+			Ui::show(Box<InformBox>(lang(lng_restricted_send_inline)), KeepOtherLayers);
+			return;
+		}
 
 		auto doneCallback = [data](const MTPUpdates &updates, mtpRequestId requestId) {
 			if (auto main = App::main()) {
@@ -901,6 +920,12 @@ void shareGameScoreFromItem(HistoryItem *item) {
 		if (auto main = App::main()) {
 			if (auto item = App::histItemById(data->msgId)) {
 				for_const (auto peer, result) {
+					if (auto megagroup = peer->asMegagroup()) {
+						if (megagroup->restrictedRights().is_send_games()) {
+							continue;
+						}
+					}
+
 					MTPVector<MTPlong> random = MTP_vector<MTPlong>(1, rand_value<MTPlong>());
 					auto request = MTPmessages_ForwardMessages(MTP_flags(sendFlags), item->history()->peer->input, msgIds, random, peer->input);
 					auto callback = doneCallback;
@@ -924,7 +949,7 @@ void shareGameScoreFromItem(HistoryItem *item) {
 
 } // namespace
 
-void shareGameScoreByHash(const QString &hash) {
+void ShareGameScoreByHash(const QString &hash) {
 	auto key128Size = 0x10;
 
 	auto hashEncrypted = QByteArray::fromBase64(hash.toLatin1(), QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
@@ -975,12 +1000,12 @@ void shareGameScoreByHash(const QString &hash) {
 	}
 
 	if (auto item = App::histItemById(channelId, msgId)) {
-		shareGameScoreFromItem(item);
+		ShareGameScoreFromItem(item);
 	} else if (App::api()) {
 		auto resolveMessageAndShareScore = [msgId](ChannelData *channel) {
 			App::api()->requestMessageData(channel, msgId, [](ChannelData *channel, MsgId msgId) {
 				if (auto item = App::histItemById(channel, msgId)) {
-					shareGameScoreFromItem(item);
+					ShareGameScoreFromItem(item);
 				} else {
 					Ui::show(Box<InformBox>(lang(lng_edit_deleted)));
 				}

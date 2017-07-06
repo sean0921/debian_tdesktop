@@ -189,6 +189,8 @@ private:
 	bool _singleItem = false;
 	UserData *_moderateFrom = nullptr;
 	ChannelData *_moderateInChannel = nullptr;
+	bool _moderateBan = false;
+	bool _moderateDeleteAll = false;
 
 	object_ptr<Ui::FlatLabel> _text = { nullptr };
 	object_ptr<Ui::Checkbox> _forEveryone = { nullptr };
@@ -200,7 +202,7 @@ private:
 
 class ConfirmInviteBox : public BoxContent, public RPCSender {
 public:
-	ConfirmInviteBox(QWidget*, const QString &title, const MTPChatPhoto &photo, int count, const QVector<UserData*> &participants);
+	ConfirmInviteBox(QWidget*, const QString &title, bool isChannel, const MTPChatPhoto &photo, int count, const QVector<UserData*> &participants);
 
 protected:
 	void prepare() override;

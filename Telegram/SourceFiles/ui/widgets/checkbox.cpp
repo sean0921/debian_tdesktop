@@ -20,7 +20,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #include "ui/widgets/checkbox.h"
 
-#include "lang.h"
+#include "lang/lang_keys.h"
 #include "ui/effects/ripple_animation.h"
 
 namespace Ui {
@@ -39,20 +39,30 @@ Checkbox::Checkbox(QWidget *parent, const QString &text, bool checked, const sty
 , _st(st)
 , _text(_st.style, text, _checkboxOptions)
 , _checked(checked) {
-	if (_st.width <= 0) {
-		resizeToWidth(_text.maxWidth() - _st.width);
-	} else {
-		resizeToWidth(_st.width);
-	}
-	_checkRect = myrtlrect(_st.margin.left(), _st.margin.top(), _st.diameter, _st.diameter);
+	resizeToText();
 
 	connect(this, SIGNAL(clicked()), this, SLOT(onClicked()));
 
 	setCursor(style::cur_pointer);
 }
 
+void Checkbox::setText(const QString &text) {
+	_text.setText(_st.style, text, _checkboxOptions);
+	resizeToText();
+	update();
+}
+
 bool Checkbox::checked() const {
 	return _checked;
+}
+
+void Checkbox::resizeToText() {
+	if (_st.width <= 0) {
+		resizeToWidth(_text.maxWidth() - _st.width);
+	} else {
+		resizeToWidth(_st.width);
+	}
+	_checkRect = myrtlrect(_st.margin.left(), _st.margin.top(), _st.diameter, _st.diameter);
 }
 
 void Checkbox::setChecked(bool checked, NotifyAboutChange notify) {
@@ -258,6 +268,62 @@ QPoint Radiobutton::prepareRippleStartPosition() const {
 
 Radiobutton::~Radiobutton() {
 	_group->unregisterButton(this);
+}
+
+ToggleView::ToggleView(const style::Toggle &st, bool toggled, base::lambda<void()> updateCallback)
+: _st(&st)
+, _toggled(toggled)
+, _updateCallback(std::move(updateCallback)) {
+}
+
+void ToggleView::setStyle(const style::Toggle &st) {
+	_st = &st;
+}
+
+void ToggleView::setToggledFast(bool toggled) {
+	_toggled = toggled;
+	finishAnimation();
+	if (_updateCallback) {
+		_updateCallback();
+	}
+}
+
+void ToggleView::setUpdateCallback(base::lambda<void()> updateCallback) {
+	_updateCallback = std::move(updateCallback);
+	if (_toggleAnimation.animating()) {
+		_toggleAnimation.setUpdateCallback(_updateCallback);
+	}
+}
+
+void ToggleView::setToggledAnimated(bool toggled) {
+	if (_toggled != toggled) {
+		_toggled = toggled;
+		_toggleAnimation.start(_updateCallback, _toggled ? 0. : 1., _toggled ? 1. : 0., _st->duration);
+	}
+}
+
+void ToggleView::finishAnimation() {
+	_toggleAnimation.finish();
+}
+
+void ToggleView::paint(Painter &p, int left, int top, int outerWidth, TimeMs ms) {
+	PainterHighQualityEnabler hq(p);
+	auto toggled = _toggleAnimation.current(ms, _toggled ? 1. : 0.);
+	auto fullWidth = _st->diameter + _st->width;
+	auto innerDiameter = _st->diameter - 2 * _st->shift;
+	auto innerRadius = float64(innerDiameter) / 2.;
+	auto bgRect = rtlrect(left + _st->shift, top + _st->shift, fullWidth - 2 * _st->shift, innerDiameter, outerWidth);
+	auto fgRect = rtlrect(left + anim::interpolate(0, fullWidth - _st->diameter, toggled), top, _st->diameter, _st->diameter, outerWidth);
+
+	p.setPen(Qt::NoPen);
+	p.setBrush(anim::brush(_st->untoggledFg, _st->toggledFg, toggled));
+	p.drawRoundedRect(bgRect, innerRadius, innerRadius);
+
+	auto pen = anim::pen(_st->untoggledFg, _st->toggledFg, toggled);
+	pen.setWidth(_st->border);
+	p.setPen(pen);
+	p.setBrush(anim::brush(_st->untoggledBg, _st->toggledBg, toggled));
+	p.drawEllipse(fgRect);
 }
 
 } // namespace Ui

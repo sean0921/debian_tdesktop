@@ -28,7 +28,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
 #include "data/data_drafts.h"
-#include "lang.h"
+#include "lang/lang_keys.h"
 #include "application.h"
 #include "mainwindow.h"
 #include "dialogswidget.h"
@@ -326,7 +326,7 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 		}
 
 		if (_state == SearchedState || !_searchResults.empty()) {
-			QString text = lng_search_found_results(lt_count, _searchResults.empty() ? 0 : (_searchedMigratedCount + _searchedCount));
+			auto text = _searchResults.empty() ? lang(lng_search_no_results) : lng_search_found_results(lt_count, _searchedMigratedCount + _searchedCount);
 			p.fillRect(0, 0, fullWidth, st::searchedBarHeight, st::searchedBarBg);
 			if (!paintingOther) {
 				p.setFont(st::searchedBarFont);
@@ -2267,7 +2267,7 @@ void DialogsWidget::UpdateButton::paintEvent(QPaintEvent *e) {
 
 DialogsWidget::DialogsWidget(QWidget *parent, gsl::not_null<Window::Controller*> controller) : Window::AbstractSectionWidget(parent, controller)
 , _mainMenuToggle(this, st::dialogsMenuToggle)
-, _filter(this, st::dialogsFilter, lang(lng_dlg_filter))
+, _filter(this, st::dialogsFilter, langFactory(lng_dlg_filter))
 , _jumpToDate(this, object_ptr<Ui::IconButton>(this, st::dialogsCalendar))
 , _cancelSearch(this, st::dialogsCancelSearch)
 , _lockUnlock(this, st::dialogsLock)
@@ -2652,7 +2652,7 @@ bool DialogsWidget::onSearchMessages(bool searchCache) {
 		_searchFull = _searchFullMigrated = false;
 		MTP::cancel(base::take(_searchRequest));
 		if (_searchInPeer) {
-			_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(0), _searchInPeer->input, MTP_string(_searchQuery), MTP_inputMessagesFilterEmpty(), MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(SearchPerPage)), rpcDone(&DialogsWidget::searchReceived, DialogsSearchPeerFromStart), rpcFail(&DialogsWidget::searchFailed, DialogsSearchPeerFromStart));
+			_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(0), _searchInPeer->input, MTP_string(_searchQuery), MTP_inputUserEmpty(), MTP_inputMessagesFilterEmpty(), MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(SearchPerPage)), rpcDone(&DialogsWidget::searchReceived, DialogsSearchPeerFromStart), rpcFail(&DialogsWidget::searchFailed, DialogsSearchPeerFromStart));
 		} else {
 			_searchRequest = MTP::send(MTPmessages_SearchGlobal(MTP_string(_searchQuery), MTP_int(0), MTP_inputPeerEmpty(), MTP_int(0), MTP_int(SearchPerPage)), rpcDone(&DialogsWidget::searchReceived, DialogsSearchFromStart), rpcFail(&DialogsWidget::searchFailed, DialogsSearchFromStart));
 		}
@@ -2714,7 +2714,7 @@ void DialogsWidget::onSearchMore() {
 			auto offsetPeer = _inner->lastSearchPeer();
 			auto offsetId = _inner->lastSearchId();
 			if (_searchInPeer) {
-				_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(0), _searchInPeer->input, MTP_string(_searchQuery), MTP_inputMessagesFilterEmpty(), MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(offsetId), MTP_int(SearchPerPage)), rpcDone(&DialogsWidget::searchReceived, offsetId ? DialogsSearchPeerFromOffset : DialogsSearchPeerFromStart), rpcFail(&DialogsWidget::searchFailed, offsetId ? DialogsSearchPeerFromOffset : DialogsSearchPeerFromStart));
+				_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(0), _searchInPeer->input, MTP_string(_searchQuery), MTP_inputUserEmpty(), MTP_inputMessagesFilterEmpty(), MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(offsetId), MTP_int(SearchPerPage)), rpcDone(&DialogsWidget::searchReceived, offsetId ? DialogsSearchPeerFromOffset : DialogsSearchPeerFromStart), rpcFail(&DialogsWidget::searchFailed, offsetId ? DialogsSearchPeerFromOffset : DialogsSearchPeerFromStart));
 			} else {
 				_searchRequest = MTP::send(MTPmessages_SearchGlobal(MTP_string(_searchQuery), MTP_int(offsetDate), offsetPeer ? offsetPeer->input : MTP_inputPeerEmpty(), MTP_int(offsetId), MTP_int(SearchPerPage)), rpcDone(&DialogsWidget::searchReceived, offsetId ? DialogsSearchFromOffset : DialogsSearchFromStart), rpcFail(&DialogsWidget::searchFailed, offsetId ? DialogsSearchFromOffset : DialogsSearchFromStart));
 			}
@@ -2723,7 +2723,7 @@ void DialogsWidget::onSearchMore() {
 			}
 		} else if (_searchInMigrated && !_searchFullMigrated) {
 			auto offsetMigratedId = _inner->lastSearchMigratedId();
-			_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(0), _searchInMigrated->input, MTP_string(_searchQuery), MTP_inputMessagesFilterEmpty(), MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(offsetMigratedId), MTP_int(SearchPerPage)), rpcDone(&DialogsWidget::searchReceived, offsetMigratedId ? DialogsSearchMigratedFromOffset : DialogsSearchMigratedFromStart), rpcFail(&DialogsWidget::searchFailed, offsetMigratedId ? DialogsSearchMigratedFromOffset : DialogsSearchMigratedFromStart));
+			_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(0), _searchInMigrated->input, MTP_string(_searchQuery), MTP_inputUserEmpty(), MTP_inputMessagesFilterEmpty(), MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(offsetMigratedId), MTP_int(SearchPerPage)), rpcDone(&DialogsWidget::searchReceived, offsetMigratedId ? DialogsSearchMigratedFromOffset : DialogsSearchMigratedFromStart), rpcFail(&DialogsWidget::searchFailed, offsetMigratedId ? DialogsSearchMigratedFromOffset : DialogsSearchMigratedFromStart));
 		}
 	}
 }
@@ -2947,10 +2947,9 @@ void DialogsWidget::updateDragInScroll(bool inScroll) {
 void DialogsWidget::dropEvent(QDropEvent *e) {
 	_chooseByDragTimer.stop();
 	if (_scroll->geometry().contains(e->pos())) {
-		PeerData *p = _inner->updateFromParentDrag(mapToGlobal(e->pos()));
-		if (p) {
+		if (auto peer = _inner->updateFromParentDrag(mapToGlobal(e->pos()))) {
 			e->acceptProposedAction();
-			App::main()->onFilesOrForwardDrop(p->id, e->mimeData());
+			App::main()->onFilesOrForwardDrop(peer->id, e->mimeData());
 		}
 	}
 }

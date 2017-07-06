@@ -21,7 +21,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "boxes/confirm_box.h"
 
 #include "styles/style_boxes.h"
-#include "lang.h"
+#include "lang/lang_keys.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "apiwrap.h"
@@ -115,9 +115,9 @@ void ConfirmBox::init(const QString &text) {
 }
 
 void ConfirmBox::prepare() {
-	addButton(_confirmText, [this] { confirmed(); }, _confirmStyle);
+	addButton([this] { return _confirmText; }, [this] { confirmed(); }, _confirmStyle);
 	if (!_informative) {
-		addButton(_cancelText, [this] { _cancelled = true; closeBox(); });
+		addButton([this] { return _cancelText; }, [this] { _cancelled = true; closeBox(); });
 	}
 	textUpdated();
 }
@@ -186,9 +186,8 @@ void ConfirmBox::updateLink() {
 }
 
 void ConfirmBox::updateHover() {
-	QPoint m(mapFromGlobal(_lastMousePos));
-
-	auto state = _text.getStateLeft(m.x() - st::boxPadding.left(), m.y() - st::boxPadding.top(), _textWidth, width());
+	auto m = mapFromGlobal(_lastMousePos);
+	auto state = _text.getStateLeft(m - QPoint(st::boxPadding.left(), st::boxPadding.top()), _textWidth, width());
 
 	ClickHandler::setActive(state.link, this);
 }
@@ -225,7 +224,7 @@ MaxInviteBox::MaxInviteBox(QWidget*, const QString &link)
 void MaxInviteBox::prepare() {
 	setMouseTracking(true);
 
-	addButton(lang(lng_box_ok), [this] { closeBox(); });
+	addButton(langFactory(lng_box_ok), [this] { closeBox(); });
 
 	_textWidth = st::boxWidth - st::boxPadding.left() - st::boxButtonPadding.right();
 	_textHeight = qMin(_text.countHeight(_textWidth), 16 * st::boxLabelStyle.lineHeight);
@@ -293,10 +292,10 @@ void ConvertToSupergroupBox::prepare() {
 	text.push_back(lang(lng_profile_convert_feature3));
 	text.push_back(lang(lng_profile_convert_feature4));
 
-	setTitle(lang(lng_profile_convert_title));
+	setTitle(langFactory(lng_profile_convert_title));
 
-	addButton(lang(lng_profile_convert_confirm), [this] { convertToSupergroup(); });
-	addButton(lang(lng_cancel), [this] { closeBox(); });
+	addButton(langFactory(lng_profile_convert_confirm), [this] { convertToSupergroup(); });
+	addButton(langFactory(lng_cancel), [this] { closeBox(); });
 
 	_text.setText(st::boxLabelStyle, text.join('\n'), _confirmBoxTextOptions);
 	_note.setText(st::boxLabelStyle, lng_profile_convert_warning(lt_bold_start, textcmdStartSemibold(), lt_bold_end, textcmdStopSemibold()), _confirmBoxTextOptions);
@@ -363,8 +362,8 @@ PinMessageBox::PinMessageBox(QWidget*, ChannelData *channel, MsgId msgId)
 }
 
 void PinMessageBox::prepare() {
-	addButton(lang(lng_pinned_pin), [this] { pinMessage(); });
-	addButton(lang(lng_cancel), [this] { closeBox(); });
+	addButton(langFactory(lng_pinned_pin), [this] { pinMessage(); });
+	addButton(langFactory(lng_cancel), [this] { closeBox(); });
 
 	setDimensions(st::boxWidth, st::boxPadding.top() + _text->height() + st::boxMediumSkip + _notify->heightNoMargins() + st::boxPadding.bottom());
 }
@@ -408,9 +407,13 @@ bool PinMessageBox::pinFail(const RPCError &error) {
 
 DeleteMessagesBox::DeleteMessagesBox(QWidget*, HistoryItem *item, bool suggestModerateActions) : _singleItem(true) {
 	_ids.push_back(item->fullId());
-	if (suggestModerateActions && item->suggestBanReportDeleteAll()) {
-		_moderateFrom = item->from()->asUser();
-		_moderateInChannel = item->history()->peer->asChannel();
+	if (suggestModerateActions) {
+		_moderateBan = item->suggestBanReport();
+		_moderateDeleteAll = item->suggestDeleteAllReport();
+		if (_moderateBan || _moderateDeleteAll) {
+			_moderateFrom = item->from()->asUser();
+			_moderateInChannel = item->history()->peer->asChannel();
+		}
 	}
 }
 
@@ -428,9 +431,13 @@ void DeleteMessagesBox::prepare() {
 	if (_moderateFrom) {
 		t_assert(_moderateInChannel != nullptr);
 		text = lang(lng_selected_delete_sure_this);
-		_banUser.create(this, lang(lng_ban_user), false, st::defaultBoxCheckbox);
+		if (_moderateBan) {
+			_banUser.create(this, lang(lng_ban_user), false, st::defaultBoxCheckbox);
+		}
 		_reportSpam.create(this, lang(lng_report_spam), false, st::defaultBoxCheckbox);
-		_deleteAll.create(this, lang(lng_delete_all_from), false, st::defaultBoxCheckbox);
+		if (_moderateDeleteAll) {
+			_deleteAll.create(this, lang(lng_delete_all_from), false, st::defaultBoxCheckbox);
+		}
 	} else {
 		text = _singleItem ? lang(lng_selected_delete_sure_this) : lng_selected_delete_sure(lt_count, _ids.size());
 		auto canDeleteAllForEveryone = true;
@@ -471,12 +478,19 @@ void DeleteMessagesBox::prepare() {
 	}
 	_text.create(this, text, Ui::FlatLabel::InitType::Simple, st::boxLabel);
 
-	addButton(lang(lng_box_delete), [this] { deleteAndClear(); });
-	addButton(lang(lng_cancel), [this] { closeBox(); });
+	addButton(langFactory(lng_box_delete), [this] { deleteAndClear(); });
+	addButton(langFactory(lng_cancel), [this] { closeBox(); });
 
 	auto fullHeight = st::boxPadding.top() + _text->height() + st::boxPadding.bottom();
 	if (_moderateFrom) {
-		fullHeight += st::boxMediumSkip + _banUser->heightNoMargins() + st::boxLittleSkip + _reportSpam->heightNoMargins() + st::boxLittleSkip + _deleteAll->heightNoMargins();
+		fullHeight += st::boxMediumSkip;
+		if (_banUser) {
+			fullHeight += _banUser->heightNoMargins() + st::boxLittleSkip;
+		}
+		fullHeight += _reportSpam->heightNoMargins();
+		if (_deleteAll) {
+			fullHeight += st::boxLittleSkip + _deleteAll->heightNoMargins();
+		}
 	} else if (_forEveryone) {
 		fullHeight += st::boxMediumSkip + _forEveryone->heightNoMargins();
 	}
@@ -487,9 +501,16 @@ void DeleteMessagesBox::resizeEvent(QResizeEvent *e) {
 	BoxContent::resizeEvent(e);
 	_text->moveToLeft(st::boxPadding.left(), st::boxPadding.top());
 	if (_moderateFrom) {
-		_banUser->moveToLeft(st::boxPadding.left(), _text->bottomNoMargins() + st::boxMediumSkip);
-		_reportSpam->moveToLeft(st::boxPadding.left(), _banUser->bottomNoMargins() + st::boxLittleSkip);
-		_deleteAll->moveToLeft(st::boxPadding.left(), _reportSpam->bottomNoMargins() + st::boxLittleSkip);
+		auto top = _text->bottomNoMargins() + st::boxMediumSkip;
+		if (_banUser) {
+			_banUser->moveToLeft(st::boxPadding.left(), top);
+			top += _banUser->heightNoMargins() + st::boxLittleSkip;
+		}
+		_reportSpam->moveToLeft(st::boxPadding.left(), top);
+		top += _reportSpam->heightNoMargins() + st::boxLittleSkip;
+		if (_deleteAll) {
+			_deleteAll->moveToLeft(st::boxPadding.left(), top);
+		}
 	} else if (_forEveryone) {
 		_forEveryone->moveToLeft(st::boxPadding.left(), _text->bottomNoMargins() + st::boxMediumSkip);
 	}
@@ -509,13 +530,13 @@ void DeleteMessagesBox::deleteAndClear() {
 	}
 
 	if (_moderateFrom) {
-		if (_banUser->checked()) {
-			MTP::send(MTPchannels_KickFromChannel(_moderateInChannel->inputChannel, _moderateFrom->inputUser, MTP_boolTrue()), App::main()->rpcDone(&MainWidget::sentUpdatesReceived));
+		if (_banUser && _banUser->checked()) {
+			App::api()->kickParticipant(_moderateInChannel, _moderateFrom);
 		}
 		if (_reportSpam->checked()) {
 			MTP::send(MTPchannels_ReportSpam(_moderateInChannel->inputChannel, _moderateFrom->inputUser, MTP_vector<MTPint>(1, MTP_int(_ids[0].msg))));
 		}
-		if (_deleteAll->checked()) {
+		if (_deleteAll && _deleteAll->checked()) {
 			App::main()->deleteAllFromUser(_moderateInChannel, _moderateFrom);
 		}
 	}
@@ -547,14 +568,18 @@ void DeleteMessagesBox::deleteAndClear() {
 	Ui::hideLayer();
 }
 
-ConfirmInviteBox::ConfirmInviteBox(QWidget*, const QString &title, const MTPChatPhoto &photo, int count, const QVector<UserData*> &participants)
+ConfirmInviteBox::ConfirmInviteBox(QWidget*, const QString &title, bool isChannel, const MTPChatPhoto &photo, int count, const QVector<UserData*> &participants)
 : _title(this, st::confirmInviteTitle)
 , _status(this, st::confirmInviteStatus)
 , _participants(participants) {
 	_title->setText(title);
 	QString status;
 	if (_participants.isEmpty() || _participants.size() >= count) {
-		status = lng_chat_status_members(lt_count, count);
+		if (count > 0) {
+			status = lng_chat_status_members(lt_count, count);
+		} else {
+			status = lang(isChannel ? lng_channel_status : lng_group_status);
+		}
 	} else {
 		status = lng_group_invite_members(lt_count, count);
 	}
@@ -576,12 +601,12 @@ ConfirmInviteBox::ConfirmInviteBox(QWidget*, const QString &title, const MTPChat
 }
 
 void ConfirmInviteBox::prepare() {
-	addButton(lang(lng_group_invite_join), [this] {
+	addButton(langFactory(lng_group_invite_join), [this] {
 		if (auto main = App::main()) {
 			main->onInviteImport();
 		}
 	});
-	addButton(lang(lng_cancel), [this] { closeBox(); });
+	addButton(langFactory(lng_cancel), [this] { closeBox(); });
 
 	if (_participants.size() > 4) {
 		_participants.resize(4);

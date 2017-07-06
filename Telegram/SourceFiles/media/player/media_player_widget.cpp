@@ -25,7 +25,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/buttons.h"
 #include "ui/effects/ripple_animation.h"
-#include "lang.h"
+#include "lang/lang_keys.h"
 #include "media/media_audio.h"
 #include "media/view/media_clip_playback.h"
 #include "media/player/media_player_button.h"
@@ -111,15 +111,15 @@ Widget::Widget(QWidget *parent) : TWidget(parent)
 		if (_type != AudioMsgId::Type::Song) {
 			return; // Round video seek is not supported for now :(
 		}
-		handleSeekProgress(value);
 		_playback->setValue(value, false);
+		handleSeekProgress(value);
 	});
 	_playbackSlider->setChangeFinishedCallback([this](float64 value) {
 		if (_type != AudioMsgId::Type::Song) {
 			return; // Round video seek is not supported for now :(
 		}
-		handleSeekFinished(value);
 		_playback->setValue(value, false);
+		handleSeekFinished(value);
 	});
 	_playPause->setClickedCallback([this] {
 		instance()->playPauseCancelClicked(_type);
