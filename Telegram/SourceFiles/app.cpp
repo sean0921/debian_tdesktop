@@ -111,15 +111,12 @@ namespace {
 	style::font monofont;
 
 	struct CornersPixmaps {
-		CornersPixmaps() {
-			memset(p, 0, sizeof(p));
-		}
-		QPixmap *p[4];
+		QPixmap p[4];
 	};
-	CornersPixmaps corners[RoundCornersCount];
+	QVector<CornersPixmaps> corners;
 	using CornersMap = QMap<uint32, CornersPixmaps>;
 	CornersMap cornersMap;
-	QImage *cornersMaskLarge[4] = { nullptr }, *cornersMaskSmall[4] = { nullptr };
+	QImage cornersMaskLarge[4], cornersMaskSmall[4];
 
 	using EmojiImagesMap = QMap<int, QPixmap>;
 	EmojiImagesMap MainEmojiMap;
@@ -459,11 +456,11 @@ namespace {
 				// apply first_name and last_name from minimal user only if we don't have
 				// local values for first name and last name already, otherwise skip
 				bool noLocalName = data->firstName.isEmpty() && data->lastName.isEmpty();
-				QString fname = (!minimal || noLocalName) ? (d.has_first_name() ? textOneLine(qs(d.vfirst_name)) : QString()) : data->firstName;
-				QString lname = (!minimal || noLocalName) ? (d.has_last_name() ? textOneLine(qs(d.vlast_name)) : QString()) : data->lastName;
+				QString fname = (!minimal || noLocalName) ? (d.has_first_name() ? TextUtilities::SingleLine(qs(d.vfirst_name)) : QString()) : data->firstName;
+				QString lname = (!minimal || noLocalName) ? (d.has_last_name() ? TextUtilities::SingleLine(qs(d.vlast_name)) : QString()) : data->lastName;
 
 				QString phone = minimal ? data->phone() : (d.has_phone() ? qs(d.vphone) : QString());
-				QString uname = minimal ? data->username : (d.has_username() ? textOneLine(qs(d.vusername)) : QString());
+				QString uname = minimal ? data->username : (d.has_username() ? TextUtilities::SingleLine(qs(d.vusername)) : QString());
 
 				bool phoneChanged = (data->phone() != phone);
 				if (phoneChanged) {
@@ -714,7 +711,7 @@ namespace {
 			}
 			cdata->flagsUpdated();
 
-			QString uname = d.has_username() ? textOneLine(qs(d.vusername)) : QString();
+			QString uname = d.has_username() ? TextUtilities::SingleLine(qs(d.vusername)) : QString();
 			cdata->setName(qs(d.vtitle), uname);
 
 			cdata->setIsForbidden(false);
@@ -1096,7 +1093,7 @@ namespace {
 		}
 		if (auto existing = App::histItemById(peerToChannel(peerId), m.vid.v)) {
 			auto text = qs(m.vmessage);
-			auto entities = m.has_entities() ? entitiesFromMTP(m.ventities.v) : EntitiesInText();
+			auto entities = m.has_entities() ? TextUtilities::EntitiesFromMTP(m.ventities.v) : EntitiesInText();
 			existing->setText({ text, entities });
 			existing->updateMedia(m.has_media() ? (&m.vmedia) : nullptr);
 			existing->updateReplyMarkup(m.has_reply_markup() ? (&m.vreply_markup) : nullptr);
@@ -1334,7 +1331,7 @@ namespace {
 			bool showPhone = !isServiceUser(user->id) && !user->isSelf() && !user->contact;
 			bool showPhoneChanged = !isServiceUser(user->id) && !user->isSelf() && ((showPhone && !wasShowPhone) || (!showPhone && wasShowPhone));
 			if (showPhoneChanged) {
-				user->setName(textOneLine(user->firstName), textOneLine(user->lastName), showPhone ? App::formatPhone(user->phone()) : QString(), textOneLine(user->username));
+				user->setName(TextUtilities::SingleLine(user->firstName), TextUtilities::SingleLine(user->lastName), showPhone ? App::formatPhone(user->phone()) : QString(), TextUtilities::SingleLine(user->username));
 			}
 			markPeerUpdated(user);
 		}
@@ -1497,13 +1494,13 @@ namespace {
 	}
 
 	WebPageData *feedWebPage(const MTPDwebPage &webpage, WebPageData *convert) {
-		auto description = TextWithEntities { webpage.has_description() ? textClean(qs(webpage.vdescription)) : QString() };
+		auto description = TextWithEntities { webpage.has_description() ? TextUtilities::Clean(qs(webpage.vdescription)) : QString() };
 		auto siteName = webpage.has_site_name() ? qs(webpage.vsite_name) : QString();
 		auto parseFlags = TextParseLinks | TextParseMultiline | TextParseRichText;
 		if (siteName == qstr("Twitter") || siteName == qstr("Instagram")) {
 			parseFlags |= TextParseHashtags | TextParseMentions;
 		}
-		textParseEntities(description.text, parseFlags, &description.entities);
+		TextUtilities::ParseEntities(description, parseFlags);
 		return App::webPageSet(webpage.vid.v, convert, webpage.has_type() ? qs(webpage.vtype) : qsl("article"), qs(webpage.vurl), qs(webpage.vdisplay_url), siteName, webpage.has_title() ? qs(webpage.vtitle) : QString(), description, webpage.has_photo() ? App::feedPhoto(webpage.vphoto) : nullptr, webpage.has_document() ? App::feedDocument(webpage.vdocument) : nullptr, webpage.has_duration() ? webpage.vduration.v : 0, webpage.has_author() ? qs(webpage.vauthor) : QString(), 0);
 	}
 
@@ -1800,15 +1797,15 @@ namespace {
 			}
 			if ((convert->url.isEmpty() && !url.isEmpty()) || (convert->pendingTill && convert->pendingTill != pendingTill && pendingTill >= -1)) {
 				convert->type = toWebPageType(type);
-				convert->url = textClean(url);
-				convert->displayUrl = textClean(displayUrl);
-				convert->siteName = textClean(siteName);
-				convert->title = textOneLine(textClean(title));
+				convert->url = TextUtilities::Clean(url);
+				convert->displayUrl = TextUtilities::Clean(displayUrl);
+				convert->siteName = TextUtilities::Clean(siteName);
+				convert->title = TextUtilities::SingleLine(title);
 				convert->description = description;
 				convert->photo = photo;
 				convert->document = document;
 				convert->duration = duration;
-				convert->author = textClean(author);
+				convert->author = TextUtilities::Clean(author);
 				if (convert->pendingTill > 0 && pendingTill <= 0 && api()) api()->clearWebPageRequest(convert);
 				convert->pendingTill = pendingTill;
 				if (App::main()) App::main()->webPageUpdated(convert);
@@ -1831,15 +1828,15 @@ namespace {
 			if (result != convert) {
 				if ((result->url.isEmpty() && !url.isEmpty()) || (result->pendingTill && result->pendingTill != pendingTill && pendingTill >= -1)) {
 					result->type = toWebPageType(type);
-					result->url = textClean(url);
-					result->displayUrl = textClean(displayUrl);
-					result->siteName = textClean(siteName);
-					result->title = textOneLine(textClean(title));
+					result->url = TextUtilities::Clean(url);
+					result->displayUrl = TextUtilities::Clean(displayUrl);
+					result->siteName = TextUtilities::Clean(siteName);
+					result->title = TextUtilities::SingleLine(title);
 					result->description = description;
 					result->photo = photo;
 					result->document = document;
 					result->duration = duration;
-					result->author = textClean(author);
+					result->author = TextUtilities::Clean(author);
 					if (result->pendingTill > 0 && pendingTill <= 0 && api()) api()->clearWebPageRequest(result);
 					result->pendingTill = pendingTill;
 					if (App::main()) App::main()->webPageUpdated(result);
@@ -1869,9 +1866,9 @@ namespace {
 			}
 			if (!convert->accessHash && accessHash) {
 				convert->accessHash = accessHash;
-				convert->shortName = textClean(shortName);
-				convert->title = textOneLine(textClean(title));
-				convert->description = textClean(description);
+				convert->shortName = TextUtilities::Clean(shortName);
+				convert->title = TextUtilities::SingleLine(title);
+				convert->description = TextUtilities::Clean(description);
 				convert->photo = photo;
 				convert->document = document;
 				if (App::main()) App::main()->gameUpdated(convert);
@@ -1891,9 +1888,9 @@ namespace {
 			if (result != convert) {
 				if (!result->accessHash && accessHash) {
 					result->accessHash = accessHash;
-					result->shortName = textClean(shortName);
-					result->title = textOneLine(textClean(title));
-					result->description = textClean(description);
+					result->shortName = TextUtilities::Clean(shortName);
+					result->title = TextUtilities::SingleLine(title);
+					result->description = TextUtilities::Clean(description);
 					result->photo = photo;
 					result->document = document;
 					if (App::main()) App::main()->gameUpdated(result);
@@ -2174,6 +2171,7 @@ namespace {
 	}
 
 	void prepareCorners(RoundCorners index, int32 radius, const QBrush &brush, const style::color *shadow = nullptr, QImage *cors = nullptr) {
+		Expects(::corners.size() > index);
 		int32 r = radius * cIntRetinaFactor(), s = st::msgShadow * cIntRetinaFactor();
 		QImage rect(r * 3, r * 3 + (shadow ? s : 0), QImage::Format_ARGB32_Premultiplied), localCors[4];
 		{
@@ -2198,8 +2196,8 @@ namespace {
 		cors[3] = rect.copy(r * 2, r * 2, r, r + (shadow ? s : 0));
 		if (index != SmallMaskCorners && index != LargeMaskCorners) {
 			for (int i = 0; i < 4; ++i) {
-				::corners[index].p[i] = new QPixmap(pixmapFromImageInPlace(std::move(cors[i])));
-				::corners[index].p[i]->setDevicePixelRatio(cRetinaFactor());
+				::corners[index].p[i] = pixmapFromImageInPlace(std::move(cors[i]));
+				::corners[index].p[i].setDevicePixelRatio(cRetinaFactor());
 			}
 		}
 	}
@@ -2221,18 +2219,21 @@ namespace {
 		return MsgRadius;
 	}
 
-	void createCorners() {
+	void createMaskCorners() {
 		QImage mask[4];
-		prepareCorners(LargeMaskCorners, msgRadius(), QColor(255, 255, 255), nullptr, mask);
-		for (int i = 0; i < 4; ++i) {
-			::cornersMaskLarge[i] = new QImage(mask[i].convertToFormat(QImage::Format_ARGB32_Premultiplied));
-			::cornersMaskLarge[i]->setDevicePixelRatio(cRetinaFactor());
-		}
 		prepareCorners(SmallMaskCorners, st::buttonRadius, QColor(255, 255, 255), nullptr, mask);
 		for (int i = 0; i < 4; ++i) {
-			::cornersMaskSmall[i] = new QImage(mask[i].convertToFormat(QImage::Format_ARGB32_Premultiplied));
-			::cornersMaskSmall[i]->setDevicePixelRatio(cRetinaFactor());
+			::cornersMaskSmall[i] = mask[i].convertToFormat(QImage::Format_ARGB32_Premultiplied);
+			::cornersMaskSmall[i].setDevicePixelRatio(cRetinaFactor());
 		}
+		prepareCorners(LargeMaskCorners, msgRadius(), QColor(255, 255, 255), nullptr, mask);
+		for (int i = 0; i < 4; ++i) {
+			::cornersMaskLarge[i] = mask[i].convertToFormat(QImage::Format_ARGB32_Premultiplied);
+			::cornersMaskLarge[i].setDevicePixelRatio(cRetinaFactor());
+		}
+	}
+
+	void createPaletteCorners() {
 		prepareCorners(MenuCorners, st::buttonRadius, st::menuBg);
 		prepareCorners(BoxCorners, st::boxRadius, st::boxBg);
 		prepareCorners(BotKbOverCorners, st::dateRadius, st::msgBotKbOverBgAdd);
@@ -2262,19 +2263,14 @@ namespace {
 		prepareCorners(MessageOutSelectedCorners, msgRadius(), st::msgOutBgSelected, &st::msgOutShadowSelected);
 	}
 
+	void createCorners() {
+		::corners.resize(RoundCornersCount);
+		createMaskCorners();
+		createPaletteCorners();
+	}
+
 	void clearCorners() {
-		for (int j = 0; j < 4; ++j) {
-			for (int i = 0; i < RoundCornersCount; ++i) {
-				delete ::corners[i].p[j]; ::corners[i].p[j] = nullptr;
-			}
-			delete ::cornersMaskSmall[j]; ::cornersMaskSmall[j] = nullptr;
-			delete ::cornersMaskLarge[j]; ::cornersMaskLarge[j] = nullptr;
-		}
-		for (auto i = ::cornersMap.cbegin(), e = ::cornersMap.cend(); i != e; ++i) {
-			for (int j = 0; j < 4; ++j) {
-				delete i->p[j];
-			}
-		}
+		::corners.clear();
 		::cornersMap.clear();
 	}
 
@@ -2303,18 +2299,13 @@ namespace {
 		using Update = Window::Theme::BackgroundUpdate;
 		static auto subscription = Window::Theme::Background()->add_subscription([](const Update &update) {
 			if (update.paletteChanged()) {
-				clearCorners();
-				createCorners();
+				createPaletteCorners();
 
 				if (App::main()) {
 					App::main()->updateScrollColors();
 				}
 				HistoryLayout::serviceColorsUpdated();
 			} else if (update.type == Update::Type::New) {
-				for (int i = 0; i < 4; ++i) {
-					delete ::corners[StickerCorners].p[i]; ::corners[StickerCorners].p[i] = nullptr;
-					delete ::corners[StickerSelectedCorners].p[i]; ::corners[StickerSelectedCorners].p[i] = nullptr;
-				}
 				prepareCorners(StickerCorners, st::dateRadius, st::msgServiceBg);
 				prepareCorners(StickerSelectedCorners, st::dateRadius, st::msgServiceBgSelected);
 
@@ -2778,7 +2769,7 @@ namespace {
 		roundRect(p, rect, st::msgInBg, MessageInCorners, nullptr, parts);
 	}
 
-	QImage **cornersMask(ImageRoundRadius radius) {
+	QImage *cornersMask(ImageRoundRadius radius) {
 		switch (radius) {
 		case ImageRoundRadius::Large: return ::cornersMaskLarge;
 		case ImageRoundRadius::Small:
@@ -2788,8 +2779,8 @@ namespace {
 	}
 
 	void roundRect(Painter &p, int32 x, int32 y, int32 w, int32 h, style::color bg, const CornersPixmaps &corner, const style::color *shadow, RectParts parts) {
-		auto cornerWidth = corner.p[0]->width() / cIntRetinaFactor();
-		auto cornerHeight = corner.p[0]->height() / cIntRetinaFactor();
+		auto cornerWidth = corner.p[0].width() / cIntRetinaFactor();
+		auto cornerHeight = corner.p[0].height() / cIntRetinaFactor();
 		if (w < 2 * cornerWidth || h < 2 * cornerHeight) return;
 		if (w > 2 * cornerWidth) {
 			if (parts & RectPart::Top) {
@@ -2818,16 +2809,16 @@ namespace {
 			}
 		}
 		if (parts & RectPart::TopLeft) {
-			p.drawPixmap(x, y, *corner.p[0]);
+			p.drawPixmap(x, y, corner.p[0]);
 		}
 		if (parts & RectPart::TopRight) {
-			p.drawPixmap(x + w - cornerWidth, y, *corner.p[1]);
+			p.drawPixmap(x + w - cornerWidth, y, corner.p[1]);
 		}
 		if (parts & RectPart::BottomLeft) {
-			p.drawPixmap(x, y + h - cornerHeight, *corner.p[2]);
+			p.drawPixmap(x, y + h - cornerHeight, corner.p[2]);
 		}
 		if (parts & RectPart::BottomRight) {
-			p.drawPixmap(x + w - cornerWidth, y + h - cornerHeight, *corner.p[3]);
+			p.drawPixmap(x + w - cornerWidth, y + h - cornerHeight, corner.p[3]);
 		}
 	}
 
@@ -2837,18 +2828,18 @@ namespace {
 
 	void roundShadow(Painter &p, int32 x, int32 y, int32 w, int32 h, style::color shadow, RoundCorners index, RectParts parts) {
 		auto &corner = ::corners[index];
-		auto cornerWidth = corner.p[0]->width() / cIntRetinaFactor();
-		auto cornerHeight = corner.p[0]->height() / cIntRetinaFactor();
+		auto cornerWidth = corner.p[0].width() / cIntRetinaFactor();
+		auto cornerHeight = corner.p[0].height() / cIntRetinaFactor();
 		if (parts & RectPart::Bottom) {
 			p.fillRect(x + cornerWidth, y + h, w - 2 * cornerWidth, st::msgShadow, shadow);
 		}
 		if (parts & RectPart::BottomLeft) {
 			p.fillRect(x, y + h - cornerHeight, cornerWidth, st::msgShadow, shadow);
-			p.drawPixmap(x, y + h - cornerHeight + st::msgShadow, *corner.p[2]);
+			p.drawPixmap(x, y + h - cornerHeight + st::msgShadow, corner.p[2]);
 		}
 		if (parts & RectPart::BottomRight) {
 			p.fillRect(x + w - cornerWidth, y + h - cornerHeight, cornerWidth, st::msgShadow, shadow);
-			p.drawPixmap(x + w - cornerWidth, y + h - cornerHeight + st::msgShadow, *corner.p[3]);
+			p.drawPixmap(x + w - cornerWidth, y + h - cornerHeight + st::msgShadow, corner.p[3]);
 		}
 	}
 
@@ -2865,8 +2856,8 @@ namespace {
 
 			CornersPixmaps pixmaps;
 			for (int j = 0; j < 4; ++j) {
-				pixmaps.p[j] = new QPixmap(pixmapFromImageInPlace(std::move(images[j])));
-				pixmaps.p[j]->setDevicePixelRatio(cRetinaFactor());
+				pixmaps.p[j] = pixmapFromImageInPlace(std::move(images[j]));
+				pixmaps.p[j].setDevicePixelRatio(cRetinaFactor());
 			}
 			i = cornersMap.insert(colorKey, pixmaps);
 		}

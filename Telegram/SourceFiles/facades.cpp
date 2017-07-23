@@ -167,11 +167,6 @@ void stickersBox(const QString &name) {
 	if (MainWidget *m = main()) m->stickersBox(MTP_inputStickerSetShortName(MTP_string(name)));
 }
 
-bool forward(const PeerId &peer, ForwardWhatMessages what) {
-	if (MainWidget *m = main()) return m->onForward(peer, what);
-	return false;
-}
-
 void removeDialog(History *history) {
 	if (MainWidget *m = main()) {
 		m->removeDialog(history);
@@ -366,6 +361,9 @@ void historyMuteUpdated(History *history) {
 }
 
 void handlePendingHistoryUpdate() {
+	if (!AuthSession::Exists()) {
+		return;
+	}
 	AuthSession::Current().data().pendingHistoryResize().notify(true);
 
 	for (auto item : base::take(Global::RefPendingRepaintItems())) {
@@ -606,7 +604,7 @@ struct Data {
 
 	// config
 	int32 ChatSizeMax = 200;
-	int32 MegagroupSizeMax = 1000;
+	int32 MegagroupSizeMax = 10000;
 	int32 ForwardedCountMax = 100;
 	int32 OnlineUpdatePeriod = 120000;
 	int32 OfflineBlurTimeout = 5000;

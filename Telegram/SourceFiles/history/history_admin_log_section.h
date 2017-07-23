@@ -52,6 +52,14 @@ struct FilterValue {
 	bool allUsers = true;
 };
 
+inline bool operator==(const FilterValue &a, const FilterValue &b) {
+	return (a.flags == b.flags && a.admins == b.admins && a.allUsers == b.allUsers);
+}
+
+inline bool operator!=(const FilterValue &a, const FilterValue &b) {
+	return !(a == b);
+}
+
 class LocalIdManager {
 public:
 	LocalIdManager() = default;
@@ -72,7 +80,7 @@ private:
 
 };
 
-class Widget final : public Window::SectionWidget, private MTP::Sender {
+class Widget final : public Window::SectionWidget {
 public:
 	Widget(QWidget *parent, gsl::not_null<Window::Controller*> controller, gsl::not_null<ChannelData*> channel);
 
@@ -98,6 +106,8 @@ public:
 
 	void applyFilter(FilterValue &&value);
 
+	bool cmd_search() override;
+
 protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void paintEvent(QPaintEvent *e) override;
@@ -118,7 +128,6 @@ private:
 	object_ptr<FixedBar> _fixedBar;
 	object_ptr<Ui::PlainShadow> _fixedBarShadow;
 	object_ptr<Ui::FlatButton> _whatIsThis;
-	std::vector<gsl::not_null<UserData*>> _admins;
 
 };
 
@@ -142,8 +151,14 @@ public:
 	void setAdmins(std::vector<gsl::not_null<UserData*>> admins) {
 		_admins = std::move(admins);
 	}
+	void setAdminsCanEdit(std::vector<gsl::not_null<UserData*>> admins) {
+		_adminsCanEdit = std::move(admins);
+	}
 	std::vector<gsl::not_null<UserData*>> takeAdmins() {
 		return std::move(_admins);
+	}
+	std::vector<gsl::not_null<UserData*>> takeAdminsCanEdit() {
+		return std::move(_adminsCanEdit);
 	}
 
 	void setItems(std::vector<HistoryItemOwned> &&items, std::map<uint64, HistoryItem*> &&itemsByIds, bool upLoaded, bool downLoaded) {
@@ -154,6 +169,9 @@ public:
 	}
 	void setFilter(FilterValue &&filter) {
 		_filter = std::move(filter);
+	}
+	void setSearchQuery(QString &&query) {
+		_searchQuery = std::move(query);
 	}
 	void setIdManager(LocalIdManager &&manager) {
 		_idManager = std::move(manager);
@@ -176,17 +194,22 @@ public:
 	FilterValue takeFilter() {
 		return std::move(_filter);
 	}
+	QString takeSearchQuery() {
+		return std::move(_searchQuery);
+	}
 
 private:
 	gsl::not_null<ChannelData*> _channel;
 	int _scrollTop = 0;
 	std::vector<gsl::not_null<UserData*>> _admins;
+	std::vector<gsl::not_null<UserData*>> _adminsCanEdit;
 	std::vector<HistoryItemOwned> _items;
 	std::map<uint64, HistoryItem*> _itemsByIds;
 	bool _upLoaded = false;
 	bool _downLoaded = true;
 	LocalIdManager _idManager;
 	FilterValue _filter;
+	QString _searchQuery;
 
 };
 

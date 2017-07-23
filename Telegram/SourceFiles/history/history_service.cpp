@@ -53,7 +53,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 				result.text = lng_action_user_joined(lt_from, fromLinkText());
 			} else {
 				result.links.push_back(fromLink());
-				result.links.push_back(peerOpenClickHandler(u));
+				result.links.push_back(u->createOpenLink());
 				result.text = lng_action_add_user(lt_from, fromLinkText(), lt_user, textcmdLink(2, u->name));
 			}
 		} else if (users.isEmpty()) {
@@ -63,7 +63,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 			result.links.push_back(fromLink());
 			for (auto i = 0, l = users.size(); i != l; ++i) {
 				auto user = App::user(peerFromUser(users[i]));
-				result.links.push_back(peerOpenClickHandler(user));
+				result.links.push_back(user->createOpenLink());
 
 				auto linkText = textcmdLink(i + 2, user->name);
 				if (i == 0) {
@@ -89,7 +89,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 	auto prepareChatCreate = [this](const MTPDmessageActionChatCreate &action) {
 		auto result = PreparedText {};
 		result.links.push_back(fromLink());
-		result.text = lng_action_created_chat(lt_from, fromLinkText(), lt_title, textClean(qs(action.vtitle)));
+		result.text = lng_action_created_chat(lt_from, fromLinkText(), lt_title, TextUtilities::Clean(qs(action.vtitle)));
 		return result;
 	};
 
@@ -99,7 +99,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 			result.text = lang(lng_action_created_channel);
 		} else {
 			result.links.push_back(fromLink());
-			result.text = lng_action_created_chat(lt_from, fromLinkText(), lt_title, textClean(qs(action.vtitle)));
+			result.text = lng_action_created_chat(lt_from, fromLinkText(), lt_title, TextUtilities::Clean(qs(action.vtitle)));
 		}
 		return result;
 	};
@@ -123,7 +123,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 		} else {
 			auto user = App::user(peerFromUser(action.vuser_id));
 			result.links.push_back(fromLink());
-			result.links.push_back(peerOpenClickHandler(user));
+			result.links.push_back(user->createOpenLink());
 			result.text = lng_action_kick_user(lt_from, fromLinkText(), lt_user, textcmdLink(2, user->name));
 		}
 		return result;
@@ -143,10 +143,21 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 	auto prepareChatEditTitle = [this](const MTPDmessageActionChatEditTitle &action) {
 		auto result = PreparedText {};
 		if (isPost()) {
-			result.text = lng_action_changed_title_channel(lt_title, textClean(qs(action.vtitle)));
+			result.text = lng_action_changed_title_channel(lt_title, TextUtilities::Clean(qs(action.vtitle)));
 		} else {
 			result.links.push_back(fromLink());
-			result.text = lng_action_changed_title(lt_from, fromLinkText(), lt_title, textClean(qs(action.vtitle)));
+			result.text = lng_action_changed_title(lt_from, fromLinkText(), lt_title, TextUtilities::Clean(qs(action.vtitle)));
+		}
+		return result;
+	};
+
+	auto prepareScreenshotTaken = [this] {
+		auto result = PreparedText {};
+		if (out()) {
+			result.text = lang(lng_action_you_took_screenshot);
+		} else {
+			result.links.push_back(fromLink());
+			result.text = lng_action_took_screenshot(lt_from, fromLinkText());
 		}
 		return result;
 	};
@@ -169,6 +180,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 	case mtpc_messageActionGameScore: messageText = prepareGameScoreText(); break;
 	case mtpc_messageActionPhoneCall: Unexpected("PhoneCall type in HistoryService.");
 	case mtpc_messageActionPaymentSent: messageText = preparePaymentSentText(); break;
+	case mtpc_messageActionScreenshotTaken: messageText = prepareScreenshotTaken(); break;
 	default: messageText.text = lang(lng_message_empty); break;
 	}
 
@@ -206,6 +218,13 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 		_flags |= MTPDmessage_ClientFlag::f_is_group_migrate;
 	} break;
 	}
+}
+
+void HistoryService::setSelfDestruct(HistoryServiceSelfDestruct::Type type, int ttlSeconds) {
+	UpdateComponents(HistoryServiceSelfDestruct::Bit());
+	auto selfdestruct = Get<HistoryServiceSelfDestruct>();
+	selfdestruct->timeToLive = ttlSeconds * 1000LL;
+	selfdestruct->type = type;
 }
 
 bool HistoryService::updateDependent(bool force) {
@@ -381,10 +400,14 @@ HistoryService::PreparedText HistoryService::preparePaymentSentText() {
 	return result;
 }
 
+HistoryService::HistoryService(gsl::not_null<History*> history, const MTPDmessage &message) :
+	HistoryItem(history, message.vid.v, message.vflags.v, ::date(message.vdate), message.has_from_id() ? message.vfrom_id.v : 0) {
+	createFromMtp(message);
+}
+
 HistoryService::HistoryService(gsl::not_null<History*> history, const MTPDmessageService &message) :
 	HistoryItem(history, message.vid.v, mtpCastFlags(message.vflags.v), ::date(message.vdate), message.has_from_id() ? message.vfrom_id.v : 0) {
 	createFromMtp(message);
-	setMessageByAction(message.vaction);
 }
 
 HistoryService::HistoryService(gsl::not_null<History*> history, MsgId msgId, QDateTime date, const PreparedText &message, MTPDmessage::Flags flags, int32 from, PhotoData *photo) :
@@ -423,7 +446,7 @@ TextWithEntities HistoryService::selectedText(TextSelection selection) const {
 }
 
 QString HistoryService::inDialogsText() const {
-	return textcmdLink(1, textClean(notificationText()));
+	return textcmdLink(1, TextUtilities::Clean(notificationText()));
 }
 
 QString HistoryService::inReplyText() const {
@@ -509,6 +532,35 @@ int HistoryService::resizeContentGetHeight() {
 	return _height;
 }
 
+void HistoryService::markMediaAsReadHook() {
+	if (auto selfdestruct = Get<HistoryServiceSelfDestruct>()) {
+		if (!selfdestruct->destructAt) {
+			selfdestruct->destructAt = getms(true) + selfdestruct->timeToLive;
+			App::histories().selfDestructIn(this, selfdestruct->timeToLive);
+		}
+	}
+}
+
+TimeMs HistoryService::getSelfDestructIn(TimeMs now) {
+	if (auto selfdestruct = Get<HistoryServiceSelfDestruct>()) {
+		if (selfdestruct->destructAt > 0) {
+			if (selfdestruct->destructAt <= now) {
+				auto text = [selfdestruct] {
+					switch (selfdestruct->type) {
+					case HistoryServiceSelfDestruct::Type::Photo: return lang(lng_ttl_photo_expired);
+					case HistoryServiceSelfDestruct::Type::Video: return lang(lng_ttl_video_expired);
+					}
+					Unexpected("Type in HistoryServiceSelfDestruct::Type");
+				};
+				setServiceText({ text() });
+				return 0;
+			}
+			return selfdestruct->destructAt - now;
+		}
+	}
+	return 0;
+}
+
 bool HistoryService::hasPoint(QPoint point) const {
 	auto g = countGeometry();
 	if (g.width() < 1) {
@@ -566,6 +618,48 @@ HistoryTextState HistoryService::getState(QPoint point, HistoryStateRequest requ
 		result = _media->getState(point - QPoint(st::msgServiceMargin.left() + (g.width() - _media->maxWidth()) / 2, st::msgServiceMargin.top() + g.height() + st::msgServiceMargin.top()), request);
 	}
 	return result;
+}
+
+void HistoryService::createFromMtp(const MTPDmessage &message) {
+	auto mediaType = message.vmedia.type();
+	switch (mediaType) {
+	case mtpc_messageMediaPhoto: {
+		if (message.is_media_unread()) {
+			auto &photo = message.vmedia.c_messageMediaPhoto();
+			t_assert(photo.has_ttl_seconds());
+			setSelfDestruct(HistoryServiceSelfDestruct::Type::Photo, photo.vttl_seconds.v);
+			if (out()) {
+				setServiceText({ lang(lng_ttl_photo_sent) });
+			} else {
+				auto result = PreparedText();
+				result.links.push_back(fromLink());
+				result.text = lng_ttl_photo_received(lt_from, fromLinkText());
+				setServiceText(std::move(result));
+			}
+		} else {
+			setServiceText({ lang(lng_ttl_photo_expired) });
+		}
+	} break;
+	case mtpc_messageMediaDocument: {
+		if (message.is_media_unread()) {
+			auto &document = message.vmedia.c_messageMediaDocument();
+			t_assert(document.has_ttl_seconds());
+			setSelfDestruct(HistoryServiceSelfDestruct::Type::Video, document.vttl_seconds.v);
+			if (out()) {
+				setServiceText({ lang(lng_ttl_video_sent) });
+			} else {
+				auto result = PreparedText();
+				result.links.push_back(fromLink());
+				result.text = lng_ttl_video_received(lt_from, fromLinkText());
+				setServiceText(std::move(result));
+			}
+		} else {
+			setServiceText({ lang(lng_ttl_video_expired) });
+		}
+	} break;
+
+	default: Unexpected("Media type in HistoryService::createFromMtp()");
+	}
 }
 
 void HistoryService::createFromMtp(const MTPDmessageService &message) {
@@ -687,10 +781,7 @@ HistoryJoined::PreparedText HistoryJoined::GenerateText(gsl::not_null<History*> 
 		return { lang(history->isMegagroup() ? lng_action_you_joined_group : lng_action_you_joined) };
 	}
 	auto result = PreparedText {};
-	result.links.push_back(peerOpenClickHandler(inviter));
-	if (history->isMegagroup()) {
-		result.text = lng_action_add_you_group(lt_from, textcmdLink(1, inviter->name));
-	}
-	result.text = lng_action_add_you(lt_from, textcmdLink(1, inviter->name));
+	result.links.push_back(inviter->createOpenLink());
+	result.text = (history->isMegagroup() ? lng_action_add_you_group : lng_action_add_you)(lt_from, textcmdLink(1, inviter->name));
 	return result;
 }

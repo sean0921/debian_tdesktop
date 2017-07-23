@@ -951,13 +951,14 @@ void MediaView::onShowInFolder() {
 
 void MediaView::onForward() {
 	auto item = App::histItemById(_msgmigrated ? 0 : _channel, _msgid);
-	if (!_msgid || !item) return;
+	if (!_msgid || !item || item->id < 0 || item->serviceMsg()) return;
 
 	if (App::wnd()) {
 		close();
-		if (App::main()) {
-			App::contextItem(item);
-			App::main()->forwardLayer();
+		if (auto main = App::main()) {
+			auto items = SelectedItemSet();
+			items.insert(item->id, item);
+			main->showForwardLayer(items);
 		}
 	}
 }
@@ -1211,7 +1212,7 @@ void MediaView::displayPhoto(PhotoData *photo, HistoryItem *item) {
 	_y = (height() - _h) / 2;
 	_width = _w;
 	if (_msgid && item) {
-		_from = item->authorOriginal();
+		_from = item->peerOriginal();
 	} else {
 		_from = _user;
 	}
@@ -1365,7 +1366,7 @@ void MediaView::displayDocument(DocumentData *doc, HistoryItem *item) { // empty
 	_x = (width() - _w) / 2;
 	_y = (height() - _h) / 2;
 	if (_msgid && item) {
-		_from = item->authorOriginal();
+		_from = item->peerOriginal();
 	} else {
 		_from = _user;
 	}

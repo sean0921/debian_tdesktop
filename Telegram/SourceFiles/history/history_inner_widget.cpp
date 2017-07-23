@@ -1221,7 +1221,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			}
 		}
 		if (item && item->hasDirectLink() && isUponSelected != 2 && isUponSelected != -2) {
-			_menu->addAction(lang(lng_context_copy_post_link), _widget, SLOT(onCopyPostLink()));
+			_menu->addAction(lang(item->history()->peer->isMegagroup() ? lng_context_copy_link : lng_context_copy_post_link), _widget, SLOT(onCopyPostLink()));
 		}
 		if (isUponSelected > 1) {
 			if (selectedState.count > 0 && selectedState.canForwardCount == selectedState.count) {
@@ -1328,8 +1328,10 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		if (!linkCopyToClipboardText.isEmpty()) {
 			_menu->addAction(linkCopyToClipboardText, this, SLOT(copyContextUrl()))->setEnabled(true);
 		}
-		if (item && item->hasDirectLink() && isUponSelected != 2 && isUponSelected != -2) {
-			_menu->addAction(lang(lng_context_copy_post_link), _widget, SLOT(onCopyPostLink()));
+		if (linkCopyToClipboardText.isEmpty()) {
+			if (item && item->hasDirectLink() && isUponSelected != 2 && isUponSelected != -2) {
+				_menu->addAction(lang(item->history()->peer->isMegagroup() ? lng_context_copy_link : lng_context_copy_post_link), _widget, SLOT(onCopyPostLink()));
+			}
 		}
 		if (isUponSelected > 1) {
 			if (selectedState.count > 0 && selectedState.count == selectedState.canForwardCount) {
@@ -1522,7 +1524,7 @@ TextWithEntities HistoryInner::getSelectedText() const {
 		int y = itemTop(item);
 		if (y >= 0) {
 			part.text.append(item->author()->name).append(time);
-			appendTextWithEntities(part, std::move(unwrapped));
+			TextUtilities::Append(part, std::move(unwrapped));
 			texts.insert(y, part);
 			fullSize += size;
 		}
@@ -1532,7 +1534,7 @@ TextWithEntities HistoryInner::getSelectedText() const {
 	auto sep = qsl("\n\n");
 	result.text.reserve(fullSize + (texts.size() - 1) * sep.size());
 	for (auto i = texts.begin(), e = texts.end(); i != e; ++i) {
-		appendTextWithEntities(result, std::move(i.value()));
+		TextUtilities::Append(result, std::move(i.value()));
 		if (i + 1 != e) {
 			result.text.append(sep);
 		}

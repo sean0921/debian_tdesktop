@@ -41,6 +41,20 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "observer_peer.h"
 #include "auth_session.h"
 
+namespace {
+
+constexpr auto kMaxGroupChannelTitle = 255;
+constexpr auto kMaxChannelDescription = 255;
+constexpr auto kMaxBioLength = 70;
+
+style::InputField CreateBioFieldStyle() {
+	auto result = st::newGroupDescription;
+	result.textMargins.setRight(st::boxTextFont->spacew + st::boxTextFont->width(QString::number(kMaxBioLength)));
+	return result;
+}
+
+} // namespace
+
 class RevokePublicLinkBox::Inner : public TWidget, private MTP::Sender {
 public:
 	Inner(QWidget *parent, base::lambda<void()> revokeCallback);
@@ -173,9 +187,9 @@ void AddContactBox::onSubmit() {
 void AddContactBox::onSave() {
 	if (_addRequest) return;
 
-	QString firstName = prepareText(_first->getLastText());
-	QString lastName = prepareText(_last->getLastText());
-	QString phone = _phone->getLastText().trimmed();
+	auto firstName = TextUtilities::PrepareForSending(_first->getLastText());
+	auto lastName = TextUtilities::PrepareForSending(_last->getLastText());
+	auto phone = _phone->getLastText().trimmed();
 	if (firstName.isEmpty() && lastName.isEmpty()) {
 		if (_invertOrder) {
 			_last->setFocus();
@@ -290,12 +304,12 @@ GroupInfoBox::GroupInfoBox(QWidget*, CreatingGroupType creating, bool fromTypeCh
 void GroupInfoBox::prepare() {
 	setMouseTracking(true);
 
-	_title->setMaxLength(MaxGroupChannelTitle);
+	_title->setMaxLength(kMaxGroupChannelTitle);
 
 	if (_creating == CreatingGroupChannel) {
 		_description.create(this, st::newGroupDescription, langFactory(lng_create_group_description));
 		_description->show();
-		_description->setMaxLength(MaxChannelDescription);
+		_description->setMaxLength(kMaxChannelDescription);
 
 		connect(_description, SIGNAL(resized()), this, SLOT(onDescriptionResized()));
 		connect(_description, SIGNAL(submitted(bool)), this, SLOT(onNext()));
@@ -368,8 +382,8 @@ void GroupInfoBox::onNameSubmit() {
 void GroupInfoBox::onNext() {
 	if (_creationRequestId) return;
 
-	auto title = prepareText(_title->getLastText());
-	auto description = _description ? prepareText(_description->getLastText(), true) : QString();
+	auto title = TextUtilities::PrepareForSending(_title->getLastText());
+	auto description = _description ? TextUtilities::PrepareForSending(_description->getLastText(), TextUtilities::PrepareTextOption::CheckLinks) : QString();
 	if (title.isEmpty()) {
 		_title->setFocus();
 		_title->showError();
@@ -459,7 +473,7 @@ SetupChannelBox::SetupChannelBox(QWidget*, ChannelData *channel, bool existing)
 , _privacyGroup(std::make_shared<Ui::RadioenumGroup<Privacy>>(Privacy::Public))
 , _public(this, _privacyGroup, Privacy::Public, lang(channel->isMegagroup() ? lng_create_public_group_title : lng_create_public_channel_title), st::defaultBoxCheckbox)
 , _private(this, _privacyGroup, Privacy::Private, lang(channel->isMegagroup() ? lng_create_private_group_title : lng_create_private_channel_title), st::defaultBoxCheckbox)
-, _aboutPublicWidth(st::boxWideWidth - st::boxPadding.left() - st::boxButtonPadding.right() - st::newGroupPadding.left() - st::defaultBoxCheckbox.textPosition.x())
+, _aboutPublicWidth(st::boxWideWidth - st::boxPadding.left() - st::boxButtonPadding.right() - st::newGroupPadding.left() - st::defaultRadio.diameter - st::defaultBoxCheckbox.textPosition.x())
 , _aboutPublic(st::defaultTextStyle, lang(channel->isMegagroup() ? lng_create_public_group_about : lng_create_public_channel_about), _defaultOptions, _aboutPublicWidth)
 , _aboutPrivate(st::defaultTextStyle, lang(channel->isMegagroup() ? lng_create_private_group_about : lng_create_private_channel_about), _defaultOptions, _aboutPublicWidth)
 , _link(this, st::setupChannelLink, base::lambda<QString()>(), channel->username, true) {
@@ -482,6 +496,11 @@ void SetupChannelBox::prepare() {
 	connect(&_checkTimer, SIGNAL(timeout()), this, SLOT(onCheck()));
 
 	_privacyGroup->setChangedCallback([this](Privacy value) { privacyChanged(value); });
+	subscribe(Notify::PeerUpdated(), Notify::PeerUpdatedHandler(Notify::PeerUpdate::Flag::InviteLinkChanged, [this](const Notify::PeerUpdate &update) {
+		if (update.peer == _channel) {
+			rtlupdate(_invitationLink);
+		}
+	}));
 
 	updateMaxHeight();
 }
@@ -523,10 +542,10 @@ void SetupChannelBox::paintEvent(QPaintEvent *e) {
 	p.fillRect(e->rect(), st::boxBg);
 	p.setPen(st::newGroupAboutFg);
 
-	QRect aboutPublic(st::boxPadding.left() + st::newGroupPadding.left() + st::defaultBoxCheckbox.textPosition.x(), _public->bottomNoMargins(), _aboutPublicWidth, _aboutPublicHeight);
+	QRect aboutPublic(st::boxPadding.left() + st::newGroupPadding.left() + st::defaultRadio.diameter + st::defaultBoxCheckbox.textPosition.x(), _public->bottomNoMargins(), _aboutPublicWidth, _aboutPublicHeight);
 	_aboutPublic.drawLeft(p, aboutPublic.x(), aboutPublic.y(), aboutPublic.width(), width());
 
-	QRect aboutPrivate(st::boxPadding.left() + st::newGroupPadding.left() + st::defaultBoxCheckbox.textPosition.x(), _private->bottomNoMargins(), _aboutPublicWidth, _aboutPublicHeight);
+	QRect aboutPrivate(st::boxPadding.left() + st::newGroupPadding.left() + st::defaultRadio.diameter + st::defaultBoxCheckbox.textPosition.x(), _private->bottomNoMargins(), _aboutPublicWidth, _aboutPublicHeight);
 	_aboutPrivate.drawLeft(p, aboutPrivate.x(), aboutPrivate.y(), aboutPrivate.width(), width());
 
 	if (!_channel->isMegagroup() || !_link->isHidden()) {
@@ -541,7 +560,8 @@ void SetupChannelBox::paintEvent(QPaintEvent *e) {
 			option.setWrapMode(QTextOption::WrapAnywhere);
 			p.setFont(_linkOver ? st::boxTextFont->underline() : st::boxTextFont);
 			p.setPen(st::defaultLinkButton.color);
-			p.drawText(_invitationLink, _channel->inviteLink(), option);
+			auto inviteLinkText = _channel->inviteLink().isEmpty() ? lang(lng_group_invite_create) : _channel->inviteLink();
+			p.drawText(_invitationLink, inviteLinkText, option);
 		}
 	} else {
 		if (!_errorText.isEmpty()) {
@@ -573,8 +593,12 @@ void SetupChannelBox::mouseMoveEvent(QMouseEvent *e) {
 
 void SetupChannelBox::mousePressEvent(QMouseEvent *e) {
 	if (_linkOver) {
-		QGuiApplication::clipboard()->setText(_channel->inviteLink());
-		Ui::Toast::Show(lang(lng_create_channel_link_copied));
+		if (_channel->inviteLink().isEmpty()) {
+			App::api()->exportInviteLink(_channel);
+		} else {
+			QGuiApplication::clipboard()->setText(_channel->inviteLink());
+			Ui::Toast::Show(lang(lng_create_channel_link_copied));
+		}
 	}
 }
 
@@ -695,7 +719,7 @@ void SetupChannelBox::privacyChanged(Privacy value) {
 }
 
 void SetupChannelBox::onUpdateDone(const MTPBool &result) {
-	_channel->setName(textOneLine(_channel->name), _sentUsername);
+	_channel->setName(TextUtilities::SingleLine(_channel->name), _sentUsername);
 	closeBox();
 }
 
@@ -705,7 +729,7 @@ bool SetupChannelBox::onUpdateFail(const RPCError &error) {
 	_saveRequestId = 0;
 	QString err(error.type());
 	if (err == "USERNAME_NOT_MODIFIED" || _sentUsername == _channel->username) {
-		_channel->setName(textOneLine(_channel->name), textOneLine(_sentUsername));
+		_channel->setName(TextUtilities::SingleLine(_channel->name), TextUtilities::SingleLine(_sentUsername));
 		closeBox();
 		return true;
 	} else if (err == "USERNAME_INVALID") {
@@ -818,8 +842,8 @@ void EditNameTitleBox::prepare() {
 	if (_invertOrder) {
 		setTabOrder(_last, _first);
 	}
-	_first->setMaxLength(MaxGroupChannelTitle);
-	_last->setMaxLength(MaxGroupChannelTitle);
+	_first->setMaxLength(kMaxGroupChannelTitle);
+	_last->setMaxLength(kMaxGroupChannelTitle);
 
 	connect(_first, SIGNAL(submitted(bool)), this, SLOT(onSubmit()));
 	connect(_last, SIGNAL(submitted(bool)), this, SLOT(onSubmit()));
@@ -872,7 +896,8 @@ void EditNameTitleBox::resizeEvent(QResizeEvent *e) {
 void EditNameTitleBox::onSave() {
 	if (_requestId) return;
 
-	QString first = prepareText(_first->getLastText()), last = prepareText(_last->getLastText());
+	auto first = TextUtilities::PrepareForSending(_first->getLastText());
+	auto last = TextUtilities::PrepareForSending(_last->getLastText());
 	if (first.isEmpty() && last.isEmpty()) {
 		if (_invertOrder) {
 			_last->setFocus();
@@ -904,10 +929,11 @@ void EditNameTitleBox::onSaveSelfDone(const MTPUser &user) {
 bool EditNameTitleBox::onSaveSelfFail(const RPCError &error) {
 	if (MTP::isDefaultHandledError(error)) return false;
 
-	QString err(error.type());
-	QString first = textOneLine(_first->getLastText().trimmed()), last = textOneLine(_last->getLastText().trimmed());
+	auto err = error.type();
+	auto first = TextUtilities::SingleLine(_first->getLastText().trimmed());
+	auto last = TextUtilities::SingleLine(_last->getLastText().trimmed());
 	if (err == "NAME_NOT_MODIFIED") {
-		App::self()->setName(first, last, QString(), textOneLine(App::self()->username));
+		App::self()->setName(first, last, QString(), TextUtilities::SingleLine(App::self()->username));
 		closeBox();
 		return true;
 	} else if (err == "FIRSTNAME_INVALID") {
@@ -948,6 +974,76 @@ void EditNameTitleBox::onSaveChatDone(const MTPUpdates &updates) {
 	closeBox();
 }
 
+EditBioBox::EditBioBox(QWidget*, gsl::not_null<UserData*> self) : BoxContent()
+, _dynamicFieldStyle(CreateBioFieldStyle())
+, _self(self)
+, _bio(this, _dynamicFieldStyle, langFactory(lng_bio_placeholder), _self->about())
+, _countdown(this, QString(), Ui::FlatLabel::InitType::Simple, st::editBioCountdownLabel)
+, _about(this, lang(lng_bio_about), Ui::FlatLabel::InitType::Simple, st::aboutRevokePublicLabel) {
+}
+
+void EditBioBox::prepare() {
+	setTitle(langFactory(lng_bio_title));
+
+	addButton(langFactory(lng_settings_save), [this] { save(); });
+	addButton(langFactory(lng_cancel), [this] { closeBox(); });
+	_bio->setMaxLength(kMaxBioLength);
+	_bio->setCtrlEnterSubmit(Ui::CtrlEnterSubmit::Both);
+	auto cursor = _bio->textCursor();
+	cursor.setPosition(_bio->getLastText().size());
+	_bio->setTextCursor(cursor);
+	connect(_bio, &Ui::InputArea::submitted, this, [this](bool ctrlShiftEnter) { save(); });
+	connect(_bio, &Ui::InputArea::resized, this, [this] { updateMaxHeight(); });
+	connect(_bio, &Ui::InputArea::changed, this, [this] { handleBioUpdated(); });
+	handleBioUpdated();
+	updateMaxHeight();
+}
+
+void EditBioBox::updateMaxHeight() {
+	auto newHeight = st::contactPadding.top() + _bio->height() + st::boxLittleSkip + _about->height() + st::boxPadding.bottom() + st::contactPadding.bottom();
+	setDimensions(st::boxWideWidth, newHeight);
+}
+
+void EditBioBox::handleBioUpdated() {
+	auto text = _bio->getLastText();
+	if (text.indexOf('\n') >= 0) {
+		auto position = _bio->textCursor().position();
+		_bio->setText(text.replace('\n', ' '));
+		auto cursor = _bio->textCursor();
+		cursor.setPosition(position);
+		_bio->setTextCursor(cursor);
+	}
+	auto countLeft = qMax(kMaxBioLength - text.size(), 0);
+	_countdown->setText(QString::number(countLeft));
+}
+
+void EditBioBox::setInnerFocus() {
+	_bio->setFocusFast();
+}
+
+void EditBioBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+
+	_bio->resize(width() - st::boxPadding.left() - st::newGroupInfoPadding.left() - st::boxPadding.right(), _bio->height());
+	_bio->moveToLeft(st::boxPadding.left() + st::newGroupInfoPadding.left(), st::contactPadding.top());
+	_countdown->moveToRight(st::boxPadding.right(), _bio->y() + _dynamicFieldStyle.textMargins.top());
+	_about->moveToLeft(st::boxPadding.left(), _bio->y() + _bio->height() + st::boxLittleSkip);
+}
+
+void EditBioBox::save() {
+	if (_requestId) return;
+
+	auto text = TextUtilities::PrepareForSending(_bio->getLastText());
+	_sentBio = text;
+
+	auto flags = MTPaccount_UpdateProfile::Flag::f_about;
+	_requestId = request(MTPaccount_UpdateProfile(MTP_flags(flags), MTPstring(), MTPstring(), MTP_string(text))).done([this](const MTPUser &result) {
+		App::feedUsers(MTP_vector<MTPUser>(1, result));
+		_self->setAbout(_sentBio);
+		closeBox();
+	}).send();
+}
+
 EditChannelBox::EditChannelBox(QWidget*, gsl::not_null<ChannelData*> channel)
 : _channel(channel)
 , _title(this, st::defaultInputField, langFactory(_channel->isMegagroup() ? lng_dlg_new_group_name : lng_dlg_new_channel_name), _channel->name)
@@ -969,8 +1065,8 @@ void EditChannelBox::prepare() {
 
 	setMouseTracking(true);
 
-	_title->setMaxLength(MaxGroupChannelTitle);
-	_description->setMaxLength(MaxChannelDescription);
+	_title->setMaxLength(kMaxGroupChannelTitle);
+	_description->setMaxLength(kMaxChannelDescription);
 
 	connect(_description, SIGNAL(resized()), this, SLOT(onDescriptionResized()));
 	connect(_description, SIGNAL(submitted(bool)), this, SLOT(onSave()));
@@ -1073,7 +1169,8 @@ void EditChannelBox::paintEvent(QPaintEvent *e) {
 void EditChannelBox::onSave() {
 	if (_saveTitleRequestId || _saveDescriptionRequestId || _saveSignRequestId || _saveInvitesRequestId) return;
 
-	QString title = prepareText(_title->getLastText()), description = prepareText(_description->getLastText(), true);
+	auto title = TextUtilities::PrepareForSending(_title->getLastText());
+	auto description = TextUtilities::PrepareForSending(_description->getLastText(), TextUtilities::PrepareTextOption::CheckLinks);
 	if (title.isEmpty()) {
 		_title->setFocus();
 		_title->showError();

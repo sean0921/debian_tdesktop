@@ -87,7 +87,7 @@ void ApiWrap::addLocalChangelogs(int oldAppVersion) {
 	auto addedSome = false;
 	auto addLocalChangelog = [this, &addedSome](const QString &text) {
 		auto textWithEntities = TextWithEntities { text };
-		textParseEntities(textWithEntities.text, TextParseLinks, &textWithEntities.entities);
+		TextUtilities::ParseEntities(textWithEntities, TextParseLinks);
 		App::wnd()->serviceNotification(textWithEntities, MTP_messageMediaEmpty(), unixtime());
 		addedSome = true;
 	};
@@ -101,6 +101,9 @@ void ApiWrap::addLocalChangelogs(int oldAppVersion) {
 		};
 		addLocalAlphaChangelog(1001008, "\xE2\x80\x94 Toggle night mode in the main menu.\n");
 		addLocalAlphaChangelog(1001010, "\xE2\x80\x94 Filter added to channel and supergroup event log.\n\xE2\x80\x94 Search by username in privacy exceptions editor fixed.\n\xE2\x80\x94 Adding admins in channels fixed.");
+		addLocalAlphaChangelog(1001011, "\xE2\x80\x94 Send **bold** and __italic__ text in your messages (in addition to already supported `monospace` and ```multiline monospace```).\n\xE2\x80\x94 Search in channel and supergroup admin event log.\n\xE2\x80\x94 Ban members from right click menu in supergroup admin event log.");
+		addLocalAlphaChangelog(1001012, "\xE2\x80\x94 Click on forwarded messages bar to change the recipient chat in case you chose a wrong one first.\n\xE2\x80\x94 Quickly share posts from channels and media messages from bots.\n\xE2\x80\x94 Search in large supergroup members by name.\n\xE2\x80\x94 Search in channel members by name if you're a channel admin.\n\xE2\x80\x94 Copy links to messages in public supergroups.");
+		addLocalAlphaChangelog(1001014, "\xE2\x80\x94 Bug fixes and other minor improvements.");
 	}
 	if (!addedSome) {
 		auto text = lng_new_version_wrap(lt_version, str_const_toString(AppVersionStr), lt_changes, lang(lng_new_version_minor), lt_link, qsl("https://desktop.telegram.org/changelog")).trimmed();
@@ -728,17 +731,17 @@ void ApiWrap::requestSelfParticipant(ChannelData *channel) {
 	_selfParticipantRequests.insert(channel, requestId);
 }
 
-void ApiWrap::kickParticipant(PeerData *peer, UserData *user) {
+void ApiWrap::kickParticipant(PeerData *peer, UserData *user, const MTPChannelBannedRights &currentRights) {
 	auto kick = KickRequest(peer, user);
 	if (_kickRequests.contains(kick)) return;
 
 	if (auto channel = peer->asChannel()) {
 		auto rights = ChannelData::KickedRestrictedRights();
-		auto requestId = request(MTPchannels_EditBanned(channel->inputChannel, user->inputUser, rights)).done([this, channel, user, rights](const MTPUpdates &result) {
+		auto requestId = request(MTPchannels_EditBanned(channel->inputChannel, user->inputUser, rights)).done([this, channel, user, currentRights, rights](const MTPUpdates &result) {
 			applyUpdates(result);
 
 			_kickRequests.remove(KickRequest(channel, user));
-			channel->applyEditBanned(user, rights);
+			channel->applyEditBanned(user, currentRights, rights);
 		}).fail([this, kick](const RPCError &error) {
 			_kickRequests.remove(kick);
 		}).send();
@@ -1177,7 +1180,7 @@ void ApiWrap::saveDraftsToCloud() {
 		if (!textWithTags.tags.isEmpty()) {
 			flags |= MTPmessages_SaveDraft::Flag::f_entities;
 		}
-		auto entities = linksToMTP(ConvertTextTagsToEntities(textWithTags.tags), true);
+		auto entities = TextUtilities::EntitiesToMTP(ConvertTextTagsToEntities(textWithTags.tags), TextUtilities::ConvertOption::SkipLocal);
 
 		cloudDraft->saveRequestId = request(MTPmessages_SaveDraft(MTP_flags(flags), MTP_int(cloudDraft->msgId), history->peer->input, MTP_string(textWithTags.text), entities)).done([this, history](const MTPBool &result, mtpRequestId requestId) {
 			if (auto cloudDraft = history->cloudDraft()) {
@@ -1525,6 +1528,123 @@ void ApiWrap::stickersSaveOrder() {
 			Global::SetLastStickersUpdate(0);
 			App::main()->updateStickers();
 		}).send();
+	}
+}
+
+void ApiWrap::applyUpdatesNoPtsCheck(const MTPUpdates &updates) {
+	switch (updates.type()) {
+	case mtpc_updateShortMessage: {
+		auto &d = updates.c_updateShortMessage();
+		auto flags = mtpCastFlags(d.vflags.v) | MTPDmessage::Flag::f_from_id;
+		App::histories().addNewMessage(MTP_message(MTP_flags(flags), d.vid, d.is_out() ? MTP_int(AuthSession::CurrentUserId()) : d.vuser_id, MTP_peerUser(d.is_out() ? d.vuser_id : MTP_int(AuthSession::CurrentUserId())), d.vfwd_from, d.vvia_bot_id, d.vreply_to_msg_id, d.vdate, d.vmessage, MTP_messageMediaEmpty(), MTPnullMarkup, d.has_entities() ? d.ventities : MTPnullEntities, MTPint(), MTPint(), MTPstring()), NewMessageUnread);
+	} break;
+
+	case mtpc_updateShortChatMessage: {
+		auto &d = updates.c_updateShortChatMessage();
+		auto flags = mtpCastFlags(d.vflags.v) | MTPDmessage::Flag::f_from_id;
+		App::histories().addNewMessage(MTP_message(MTP_flags(flags), d.vid, d.vfrom_id, MTP_peerChat(d.vchat_id), d.vfwd_from, d.vvia_bot_id, d.vreply_to_msg_id, d.vdate, d.vmessage, MTP_messageMediaEmpty(), MTPnullMarkup, d.has_entities() ? d.ventities : MTPnullEntities, MTPint(), MTPint(), MTPstring()), NewMessageUnread);
+	} break;
+
+	case mtpc_updateShortSentMessage: {
+		auto &d = updates.c_updateShortSentMessage();
+		Q_UNUSED(d); // Sent message data was applied anyway.
+	} break;
+
+	default: Unexpected("Type in applyUpdatesNoPtsCheck()");
+	}
+}
+
+void ApiWrap::applyUpdateNoPtsCheck(const MTPUpdate &update) {
+	switch (update.type()) {
+	case mtpc_updateNewMessage: {
+		auto &d = update.c_updateNewMessage();
+		auto needToAdd = true;
+		if (d.vmessage.type() == mtpc_message) { // index forwarded messages to links _overview
+			if (App::checkEntitiesAndViewsUpdate(d.vmessage.c_message())) { // already in blocks
+				LOG(("Skipping message, because it is already in blocks!"));
+				needToAdd = false;
+			}
+		}
+		if (needToAdd) {
+			App::histories().addNewMessage(d.vmessage, NewMessageUnread);
+		}
+	} break;
+
+	case mtpc_updateReadMessagesContents: {
+		auto &d = update.c_updateReadMessagesContents();
+		auto &v = d.vmessages.v;
+		for (auto i = 0, l = v.size(); i < l; ++i) {
+			if (auto item = App::histItemById(NoChannel, v.at(i).v)) {
+				if (item->isMediaUnread()) {
+					item->markMediaRead();
+					Ui::repaintHistoryItem(item);
+
+					if (item->out() && item->history()->peer->isUser()) {
+						auto when = App::main()->requestingDifference() ? 0 : unixtime();
+						item->history()->peer->asUser()->madeAction(when);
+					}
+				}
+			}
+		}
+	} break;
+
+	case mtpc_updateReadHistoryInbox: {
+		auto &d = update.c_updateReadHistoryInbox();
+		App::feedInboxRead(peerFromMTP(d.vpeer), d.vmax_id.v);
+	} break;
+
+	case mtpc_updateReadHistoryOutbox: {
+		auto &d = update.c_updateReadHistoryOutbox();
+		auto peerId = peerFromMTP(d.vpeer);
+		auto when = App::main()->requestingDifference() ? 0 : unixtime();
+		App::feedOutboxRead(peerId, d.vmax_id.v, when);
+	} break;
+
+	case mtpc_updateWebPage: {
+		auto &d = update.c_updateWebPage();
+		Q_UNUSED(d); // Web page was updated anyway.
+	} break;
+
+	case mtpc_updateDeleteMessages: {
+		auto &d = update.c_updateDeleteMessages();
+		App::feedWereDeleted(NoChannel, d.vmessages.v);
+	} break;
+
+	case mtpc_updateNewChannelMessage: {
+		auto &d = update.c_updateNewChannelMessage();
+		auto needToAdd = true;
+		if (d.vmessage.type() == mtpc_message) { // index forwarded messages to links _overview
+			if (App::checkEntitiesAndViewsUpdate(d.vmessage.c_message())) { // already in blocks
+				LOG(("Skipping message, because it is already in blocks!"));
+				needToAdd = false;
+			}
+		}
+		if (needToAdd) {
+			App::histories().addNewMessage(d.vmessage, NewMessageUnread);
+		}
+	} break;
+
+	case mtpc_updateEditChannelMessage: {
+		auto &d = update.c_updateEditChannelMessage();
+		App::updateEditedMessage(d.vmessage);
+	} break;
+
+	case mtpc_updateEditMessage: {
+		auto &d = update.c_updateEditMessage();
+		App::updateEditedMessage(d.vmessage);
+	} break;
+
+	case mtpc_updateChannelWebPage: {
+		auto &d = update.c_updateChannelWebPage();
+		Q_UNUSED(d); // Web page was updated anyway.
+	} break;
+
+	case mtpc_updateDeleteChannelMessages: {
+		auto &d = update.c_updateDeleteChannelMessages();
+		App::feedWereDeleted(d.vchannel_id.v, d.vmessages.v);
+	} break;
+
+	default: Unexpected("Type in applyUpdateNoPtsCheck()");
 	}
 }
 

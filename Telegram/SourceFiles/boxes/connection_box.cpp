@@ -145,9 +145,9 @@ void ConnectionBox::updateControlsPosition() {
 	}
 
 	if (inputy) {
-		_hostInput->moveToLeft(st::boxPadding.left() + st::boxOptionListPadding.left() + st::defaultBoxCheckbox.textPosition.x() - st::defaultInputField.textMargins.left(), inputy);
+		_hostInput->moveToLeft(st::boxPadding.left() + st::boxOptionListPadding.left() + st::defaultCheck.diameter + st::defaultBoxCheckbox.textPosition.x() - st::defaultInputField.textMargins.left(), inputy);
 		_portInput->moveToRight(st::boxPadding.right(), inputy);
-		_userInput->moveToLeft(st::boxPadding.left() + st::boxOptionListPadding.left() + st::defaultBoxCheckbox.textPosition.x() - st::defaultInputField.textMargins.left(), _hostInput->y() + _hostInput->height() + st::boxOptionInputSkip);
+		_userInput->moveToLeft(st::boxPadding.left() + st::boxOptionListPadding.left() + st::defaultCheck.diameter + st::defaultBoxCheckbox.textPosition.x() - st::defaultInputField.textMargins.left(), _hostInput->y() + _hostInput->height() + st::boxOptionInputSkip);
 		_passwordInput->moveToRight(st::boxPadding.right(), _userInput->y());
 	}
 
@@ -264,7 +264,7 @@ AutoDownloadBox::AutoDownloadBox(QWidget *parent)
 , _gifPrivate(this, lang(lng_media_auto_private_chats), !(cAutoDownloadGif() & dbiadNoPrivate), st::defaultBoxCheckbox)
 , _gifGroups(this, lang(lng_media_auto_groups), !(cAutoDownloadGif() & dbiadNoGroups), st::defaultBoxCheckbox)
 , _gifPlay(this, lang(lng_media_auto_play), cAutoPlayGif(), st::defaultBoxCheckbox)
-, _sectionHeight(st::boxTitleHeight + 2 * (st::defaultBoxCheckbox.height + st::setLittleSkip)) {
+, _sectionHeight(st::boxTitleHeight + 2 * (st::defaultCheck.diameter + st::setLittleSkip)) {
 }
 
 void AutoDownloadBox::prepare() {

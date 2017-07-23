@@ -267,7 +267,21 @@ inline const QString &emptyUsername() {
 	return empty;
 }
 
-ClickHandlerPtr peerOpenClickHandler(PeerData *peer);
+class PeerData;
+
+class PeerClickHandler : public ClickHandler {
+public:
+	PeerClickHandler(gsl::not_null<PeerData*> peer);
+	void onClick(Qt::MouseButton button) const override;
+
+	gsl::not_null<PeerData*> peer() const {
+		return _peer;
+	}
+
+private:
+	gsl::not_null<PeerData*> _peer;
+
+};
 
 class UserData;
 class ChatData;
@@ -375,9 +389,10 @@ public:
 		return QString();
 	}
 
+	ClickHandlerPtr createOpenLink();
 	const ClickHandlerPtr &openLink() {
 		if (!_openLink) {
-			_openLink = peerOpenClickHandler(this);
+			_openLink = createOpenLink();
 		}
 		return _openLink;
 	}
@@ -681,15 +696,18 @@ public:
 	int32 current() const{
 		return _good;
 	}
-	bool updated(ChannelData *channel, int32 pts, int32 count);
 	bool updated(ChannelData *channel, int32 pts, int32 count, const MTPUpdates &updates);
 	bool updated(ChannelData *channel, int32 pts, int32 count, const MTPUpdate &update);
+	bool updated(ChannelData *channel, int32 pts, int32 count);
+	bool updateAndApply(ChannelData *channel, int32 pts, int32 count, const MTPUpdates &updates);
+	bool updateAndApply(ChannelData *channel, int32 pts, int32 count, const MTPUpdate &update);
+	bool updateAndApply(ChannelData *channel, int32 pts, int32 count);
 	void applySkippedUpdates(ChannelData *channel);
 	void clearSkippedUpdates();
 
 private:
 	bool check(ChannelData *channel, int32 pts, int32 count); // return false if need to save that update and apply later
-	uint64 ptsKey(PtsSkippedQueue queue);
+	uint64 ptsKey(PtsSkippedQueue queue, int32 pts);
 	void checkForWaiting(ChannelData *channel);
 	QMap<uint64, PtsSkippedQueue> _queue;
 	QMap<uint64, MTPUpdate> _updateQueue;
@@ -697,6 +715,7 @@ private:
 	int32 _good, _last, _count;
 	int32 _applySkippedLevel;
 	bool _requesting, _waitingForSkipped, _waitingForShortPoll;
+	uint32 _skippedKey = 0;
 };
 
 struct MegagroupInfo {
@@ -805,8 +824,8 @@ public:
 	static bool IsRestrictedForever(TimeId until) {
 		return !until || (until == kRestrictUntilForever);
 	}
-	void applyEditAdmin(gsl::not_null<UserData*> user, const MTPChannelAdminRights &rights);
-	void applyEditBanned(gsl::not_null<UserData*> user, const MTPChannelBannedRights &rights);
+	void applyEditAdmin(gsl::not_null<UserData*> user, const MTPChannelAdminRights &oldRights, const MTPChannelAdminRights &newRights);
+	void applyEditBanned(gsl::not_null<UserData*> user, const MTPChannelBannedRights &oldRights, const MTPChannelBannedRights &newRights);
 
 	int32 date = 0;
 	int version = 0;
@@ -923,15 +942,16 @@ public:
 		_ptsWaiter.init(pts);
 	}
 	void ptsReceived(int32 pts) {
-		if (_ptsWaiter.updated(this, pts, 0)) {
-			_ptsWaiter.applySkippedUpdates(this);
-		}
+		_ptsWaiter.updateAndApply(this, pts, 0);
 	}
-	bool ptsUpdated(int32 pts, int32 count) {
-		return _ptsWaiter.updated(this, pts, count);
+	bool ptsUpdateAndApply(int32 pts, int32 count) {
+		return _ptsWaiter.updateAndApply(this, pts, count);
 	}
-	bool ptsUpdated(int32 pts, int32 count, const MTPUpdate &update) {
-		return _ptsWaiter.updated(this, pts, count, update);
+	bool ptsUpdateAndApply(int32 pts, int32 count, const MTPUpdate &update) {
+		return _ptsWaiter.updateAndApply(this, pts, count, update);
+	}
+	bool ptsUpdateAndApply(int32 pts, int32 count, const MTPUpdates &updates) {
+		return _ptsWaiter.updateAndApply(this, pts, count, updates);
 	}
 	int32 pts() const {
 		return _ptsWaiter.current();
@@ -944,9 +964,6 @@ public:
 	}
 	void ptsSetRequesting(bool isRequesting) {
 		return _ptsWaiter.setRequesting(isRequesting);
-	}
-	void ptsApplySkippedUpdates() {
-		return _ptsWaiter.applySkippedUpdates(this);
 	}
 	void ptsWaitingForShortPoll(int32 ms) { // < 0 - not waiting
 		return _ptsWaiter.setWaitingForShortPoll(this, ms);

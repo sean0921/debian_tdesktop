@@ -136,7 +136,7 @@ std::unique_ptr<Result> Result::create(uint64 queryId, const MTPBotInlineResult 
 
 	case mtpc_botInlineMessageText: {
 		auto &r = message->c_botInlineMessageText();
-		auto entities = r.has_entities() ? entitiesFromMTP(r.ventities.v) : EntitiesInText();
+		auto entities = r.has_entities() ? TextUtilities::EntitiesFromMTP(r.ventities.v) : EntitiesInText();
 		result->sendData = std::make_unique<internal::SendText>(qs(r.vmessage), entities, r.is_no_webpage());
 		if (result->_type == Type::Photo) {
 			result->createPhoto();
@@ -279,7 +279,7 @@ bool Result::hasThumbDisplay() const {
 	return false;
 };
 
-void Result::addToHistory(History *history, MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate, UserId viaBotId, MsgId replyToId) const {
+void Result::addToHistory(History *history, MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate, UserId viaBotId, MsgId replyToId, const QString &postAuthor) const {
 	flags |= MTPDmessage_ClientFlag::f_from_inline_bot;
 
 	MTPReplyMarkup markup = MTPnullMarkup;
@@ -287,7 +287,7 @@ void Result::addToHistory(History *history, MTPDmessage::Flags flags, MsgId msgI
 		flags |= MTPDmessage::Flag::f_reply_markup;
 		markup = *_mtpKeyboard;
 	}
-	sendData->addToHistory(this, history, flags, msgId, fromId, mtpDate, viaBotId, replyToId, markup);
+	sendData->addToHistory(this, history, flags, msgId, fromId, mtpDate, viaBotId, replyToId, postAuthor, markup);
 }
 
 QString Result::getErrorOnSend(History *history) const {

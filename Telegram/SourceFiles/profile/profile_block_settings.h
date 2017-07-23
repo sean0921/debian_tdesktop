@@ -62,9 +62,6 @@ private:
 	void refreshInviteLinkButton();
 
 	object_ptr<Ui::Checkbox> _enableNotifications;
-
-	// In groups: creator of non-deactivated groups can see this link.
-	// In channels: creator of supergroup can see this link.
 	object_ptr<Ui::LeftOutlineButton> _manageAdmins = { nullptr };
 	object_ptr<Ui::LeftOutlineButton> _recentActions = { nullptr };
 	object_ptr<Ui::LeftOutlineButton> _manageBannedUsers = { nullptr };

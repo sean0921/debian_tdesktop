@@ -199,12 +199,10 @@ public:
 	}
 
 	void clear();
-	~Text() {
-		clear();
-	}
+	~Text();
 
 private:
-	using TextBlocks = QVector<ITextBlock*>;
+	using TextBlocks = std::vector<std::unique_ptr<ITextBlock>>;
 	using TextLinks = QVector<ClickHandlerPtr>;
 
 	uint16 countBlockEnd(const TextBlocks::const_iterator &i, const TextBlocks::const_iterator &e) const;
@@ -257,15 +255,6 @@ inline TextSelection shiftSelection(TextSelection selection, const Text &byText)
 inline TextSelection unshiftSelection(TextSelection selection, const Text &byText) {
 	return unshiftSelection(selection, byText.length());
 }
-
-void initLinkSets();
-const QSet<int32> &validProtocols();
-const QSet<int32> &validTopDomains();
-const QRegularExpression &reDomain();
-const QRegularExpression &reMailName();
-const QRegularExpression &reMailStart();
-const QRegularExpression &reHashtag();
-const QRegularExpression &reBotCommand();
 
 // textcmd
 QString textcmdSkipBlock(ushort w, ushort h);

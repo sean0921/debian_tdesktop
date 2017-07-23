@@ -115,7 +115,7 @@ ReplyKeyboard::ReplyKeyboard(const HistoryItem *item, StylePtr &&s)
 				auto str = row.at(j).text;
 				button.type = row.at(j).type;
 				button.link = MakeShared<ReplyMarkupClickHandler>(item, i, j);
-				button.text.setText(_st->textStyle(), textOneLine(str), _textPlainOptions);
+				button.text.setText(_st->textStyle(), TextUtilities::SingleLine(str), _textPlainOptions);
 				button.characters = str.isEmpty() ? 1 : str.size();
 			}
 			_rows.push_back(newRow);
@@ -929,13 +929,27 @@ bool HistoryItem::suggestDeleteAllReport() const {
 	return !isPost() && !out() && from()->isUser() && toHistoryMessage();
 }
 
+bool HistoryItem::hasDirectLink() const {
+	if (id <= 0) {
+		return false;
+	}
+	if (auto channel = _history->peer->asChannel()) {
+		return channel->isPublic();
+	}
+	return false;
+}
+
 QString HistoryItem::directLink() const {
 	if (hasDirectLink()) {
-		auto query = _history->peer->asChannel()->username + '/' + QString::number(id);
-		if (auto media = getMedia()) {
-			if (auto document = media->getDocument()) {
-				if (document->isRoundVideo()) {
-					return qsl("https://telesco.pe/") + query;
+		auto channel = _history->peer->asChannel();
+		t_assert(channel != nullptr);
+		auto query = channel->username + '/' + QString::number(id);
+		if (!channel->isMegagroup()) {
+			if (auto media = getMedia()) {
+				if (auto document = media->getDocument()) {
+					if (document->isRoundVideo()) {
+						return qsl("https://telesco.pe/") + query;
+					}
 				}
 			}
 		}
@@ -1141,12 +1155,12 @@ QString HistoryItem::inDialogsText() const {
 		if (emptyText()) {
 			return _media ? _media->inDialogsText() : QString();
 		}
-		return textClean(_text.originalText());
+		return TextUtilities::Clean(_text.originalText());
 	};
 	auto plainText = getText();
 	if ((!_history->peer->isUser() || out()) && !isPost() && !isEmpty()) {
 		auto fromText = author()->isSelf() ? lang(lng_from_you) : author()->shortName();
-		auto fromWrapped = textcmdLink(1, lng_dialogs_text_from_wrapped(lt_from, textClean(fromText)));
+		auto fromWrapped = textcmdLink(1, lng_dialogs_text_from_wrapped(lt_from, TextUtilities::Clean(fromText)));
 		return lng_dialogs_text_with_from(lt_from_part, fromWrapped, lt_message, plainText);
 	}
 	return plainText;

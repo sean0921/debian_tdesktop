@@ -41,7 +41,7 @@ namespace Layout {
 namespace {
 
 TextParseOptions _documentNameOptions = {
-	TextParseMultiline | TextParseRichText | TextParseLinks | TextParseHashtags | TextParseMentions | TextParseBotCommands | TextParseMono, // flags
+	TextParseMultiline | TextParseRichText | TextParseLinks | TextParseHashtags | TextParseMentions | TextParseBotCommands | TextParseMarkdown, // flags
 	0, // maxw
 	0, // maxh
 	Qt::LayoutDirectionAuto, // dir
@@ -506,7 +506,7 @@ Voice::Voice(DocumentData *voice, HistoryItem *parent, const style::OverviewFile
 	setDocumentLinks(_data);
 
 	updateName();
-	QString d = textcmdLink(1, textRichPrepare(langDateTime(date(_data->date))));
+	QString d = textcmdLink(1, TextUtilities::EscapeForRichParsing(langDateTime(date(_data->date))));
 	TextParseOptions opts = { TextParseRichText, 0, 0, Qt::LayoutDirectionAuto };
 	_details.setText(st::defaultTextStyle, lng_date_and_duration(lt_date, d, lt_duration, formatDurationText(_data->voice()->duration)), opts);
 	_details.setLink(1, goToMessageClickHandler(parent));
@@ -858,9 +858,9 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 				}
 			}
 			if (selected || context->selecting) {
-				QRect check(rthumb.topLeft() + QPoint(rtl() ? 0 : (rthumb.width() - st::defaultCheckbox.diameter), rthumb.height() - st::defaultCheckbox.diameter), QSize(st::defaultCheckbox.diameter, st::defaultCheckbox.diameter));
+				QRect check(rthumb.topLeft() + QPoint(rtl() ? 0 : (rthumb.width() - st::defaultCheck.diameter), rthumb.height() - st::defaultCheck.diameter), QSize(st::defaultCheck.diameter, st::defaultCheck.diameter));
 				p.fillRect(check, selected ? st::overviewFileChecked : st::overviewFileCheck);
-				st::defaultCheckbox.checkIcon.paint(p, QPoint(rthumb.width() - st::defaultCheckbox.diameter, rthumb.y() + rthumb.height() - st::defaultCheckbox.diameter), _width);
+				st::defaultCheck.icon.paint(p, QPoint(rthumb.width() - st::defaultCheck.diameter, rthumb.y() + rthumb.height() - st::defaultCheck.diameter), _width);
 			}
 		}
 	}

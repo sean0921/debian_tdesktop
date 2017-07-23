@@ -23,9 +23,29 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "boxes/abstract_box.h"
 #include "core/single_timer.h"
 #include "ui/effects/round_checkbox.h"
-#include "boxes/members_box.h"
 
-class EditAdminBox;
+enum class MembersFilter {
+	Recent,
+	Admins,
+};
+using MembersAlreadyIn = OrderedSet<UserData*>;
+
+// Not used for now.
+//
+//class MembersAddButton : public Ui::RippleButton {
+//public:
+//	MembersAddButton(QWidget *parent, const style::TwoIconButton &st);
+//
+//protected:
+//	void paintEvent(QPaintEvent *e) override;
+//
+//	QImage prepareRippleMask() const override;
+//	QPoint prepareRippleStartPosition() const override;
+//
+//private:
+//	const style::TwoIconButton &_st;
+//
+//};
 
 namespace Dialogs {
 class Row;
@@ -252,8 +272,6 @@ private:
 	void updateSelectedRow();
 	int getRowTopWithPeer(PeerData *peer) const;
 	void updateRowWithPeer(PeerData *peer);
-	void addAdminDone(MTPChannelAdminRights rights, const MTPUpdates &result, mtpRequestId req);
-	bool addAdminFail(const RPCError &error, mtpRequestId req);
 
 	void paintDialog(Painter &p, TimeMs ms, PeerData *peer, ContactData *data, bool sel);
 	void paintDisabledCheckUserpic(Painter &p, PeerData *peer, int x, int y, int outerWidth) const;
@@ -274,7 +292,6 @@ private:
 		return (_chat != nullptr) || (_creating != CreatingGroupNone && (!_channel || _membersFilter != MembersFilter::Admins));
 	}
 	void changeMultiSelectCheckState();
-	void addSelectedAsChannelAdmin();
 	void shareBotGameToSelected();
 	void addBotToSelectedGroup();
 
@@ -299,9 +316,6 @@ private:
 	base::lambda<void()> _allAdminsChangedCallback;
 
 	PeerData *_addToPeer = nullptr;
-	UserData *_addAdmin = nullptr;
-	mtpRequestId _addAdminRequestId = 0;
-	QPointer<EditAdminBox> _addAdminBox;
 
 	int32 _time;
 

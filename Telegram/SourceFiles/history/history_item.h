@@ -119,14 +119,15 @@ struct HistoryMessageViews : public RuntimeComponent<HistoryMessageViews> {
 };
 
 struct HistoryMessageSigned : public RuntimeComponent<HistoryMessageSigned> {
-	void create(UserData *from, const QDateTime &date);
+	void create(const QString &author, const QString &date);
 	int maxWidth() const;
 
+	QString _author;
 	Text _signature;
 };
 
 struct HistoryMessageEdited : public RuntimeComponent<HistoryMessageEdited> {
-	void create(const QDateTime &editDate, const QDateTime &date);
+	void create(const QDateTime &editDate, const QString &date);
 	int maxWidth() const;
 
 	QDateTime _editDate;
@@ -137,8 +138,8 @@ struct HistoryMessageForwarded : public RuntimeComponent<HistoryMessageForwarded
 	void create(const HistoryMessageVia *via) const;
 
 	QDateTime _originalDate;
-	PeerData *_authorOriginal = nullptr;
-	PeerData *_fromOriginal = nullptr;
+	PeerData *_originalPeer = nullptr;
+	QString _originalAuthor;
 	MsgId _originalId = 0;
 	mutable Text _text = { 1 };
 };
@@ -578,7 +579,14 @@ public:
 	}
 	void markMediaRead() {
 		_flags &= ~MTPDmessage::Flag::f_media_unread;
+		markMediaAsReadHook();
 	}
+
+	// Zero result means this message is not self-destructing right now.
+	virtual TimeMs getSelfDestructIn(TimeMs now) {
+		return 0;
+	}
+
 	bool definesReplyKeyboard() const {
 		if (auto markup = Get<HistoryMessageReplyMarkup>()) {
 			if (markup->flags & MTPDreplyKeyboardMarkup_ClientFlag::f_inline) {
@@ -692,6 +700,14 @@ public:
 
 	virtual void drawInfo(Painter &p, int32 right, int32 bottom, int32 width, bool selected, InfoDisplayType type) const {
 	}
+	virtual ClickHandlerPtr fastShareLink() const {
+		return ClickHandlerPtr();
+	}
+	virtual bool displayFastShare() const {
+		return false;
+	}
+	virtual void drawFastShare(Painter &p, int left, int top, int outerWidth) const {
+	}
 	virtual void setViewsCount(int32 count) {
 	}
 	virtual void setId(MsgId newId);
@@ -709,9 +725,7 @@ public:
 	bool suggestBanReport() const;
 	bool suggestDeleteAllReport() const;
 
-	bool hasDirectLink() const {
-		return id > 0 && _history->peer->isChannel() && _history->peer->asChannel()->isPublic() && !_history->peer->isMegagroup();
-	}
+	bool hasDirectLink() const;
 	QString directLink() const;
 
 	int y() const {
@@ -788,17 +802,27 @@ public:
 		}
 		return date;
 	}
+	PeerData *peerOriginal() const {
+		if (auto forwarded = Get<HistoryMessageForwarded>()) {
+			return forwarded->_originalPeer;
+		}
+		return history()->peer;
+	}
 	PeerData *fromOriginal() const {
 		if (auto forwarded = Get<HistoryMessageForwarded>()) {
-			return forwarded->_fromOriginal;
+			if (auto user = forwarded->_originalPeer->asUser()) {
+				return user;
+			}
 		}
 		return from();
 	}
-	PeerData *authorOriginal() const {
+	QString authorOriginal() const {
 		if (auto forwarded = Get<HistoryMessageForwarded>()) {
-			return forwarded->_authorOriginal;
+			return forwarded->_originalAuthor;
+		} else if (auto msgsigned = Get<HistoryMessageSigned>()) {
+			return msgsigned->_author;
 		}
-		return author();
+		return QString();
 	}
 	MsgId idOriginal() const {
 		if (auto forwarded = Get<HistoryMessageForwarded>()) {
@@ -901,12 +925,15 @@ public:
 protected:
 	HistoryItem(History *history, MsgId msgId, MTPDmessage::Flags flags, QDateTime msgDate, int32 from);
 
-	// to completely create history item we need to call
-	// a virtual method, it can not be done from constructor
+	// To completely create history item we need to call
+	// a virtual method, it can not be done from constructor.
 	virtual void finishCreate();
 
-	// called from resizeGetHeight() when MTPDmessage_ClientFlag::f_pending_init_dimensions is set
+	// Called from resizeGetHeight() when MTPDmessage_ClientFlag::f_pending_init_dimensions is set.
 	virtual void initDimensions() = 0;
+
+	virtual void markMediaAsReadHook() {
+	}
 
 	virtual int resizeContentGetHeight() = 0;
 

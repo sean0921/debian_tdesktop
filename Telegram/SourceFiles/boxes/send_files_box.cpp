@@ -244,7 +244,7 @@ void SendFilesBox::prepare() {
 		auto compressed = (_compressConfirm == CompressConfirm::Auto) ? cCompressPastedImage() : (_compressConfirm == CompressConfirm::Yes);
 		auto text = lng_send_images_compress(lt_count, _files.size());
 		_compressed.create(this, text, compressed, st::defaultBoxCheckbox);
-		connect(_compressed, SIGNAL(changed()), this, SLOT(onCompressedChange()));
+		subscribe(_compressed->checkedChanged, [this](bool checked) { onCompressedChange(); });
 	}
 	if (_caption) {
 		_caption->setMaxLength(MaxPhotoCaption);
@@ -438,7 +438,7 @@ void SendFilesBox::onSend(bool ctrlShiftEnter) {
 	_confirmed = true;
 	if (_confirmedCallback) {
 		auto compressed = _compressed ? _compressed->checked() : false;
-		auto caption = _caption ? prepareText(_caption->getLastText(), true) : QString();
+		auto caption = _caption ? TextUtilities::PrepareForSending(_caption->getLastText(), TextUtilities::PrepareTextOption::CheckLinks) : QString();
 		_confirmedCallback(_files, _animated ? QImage() : _image, std::move(_information), compressed, caption, ctrlShiftEnter);
 	}
 	closeBox();
@@ -766,7 +766,7 @@ void EditCaptionBox::onSave(bool ctrlShiftEnter) {
 	if (!sentEntities.v.isEmpty()) {
 		flags |= MTPmessages_EditMessage::Flag::f_entities;
 	}
-	auto text = prepareText(_field->getLastText(), true);
+	auto text = TextUtilities::PrepareForSending(_field->getLastText(), TextUtilities::PrepareTextOption::CheckLinks);
 	_saveRequestId = MTP::send(MTPmessages_EditMessage(MTP_flags(flags), item->history()->peer->input, MTP_int(item->id), MTP_string(text), MTPnullMarkup, sentEntities), rpcDone(&EditCaptionBox::saveDone), rpcFail(&EditCaptionBox::saveFail));
 }
 

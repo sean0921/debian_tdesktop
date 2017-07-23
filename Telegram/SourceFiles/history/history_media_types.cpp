@@ -49,7 +49,7 @@ TextParseOptions _webpageTitleOptions = {
 	Qt::LayoutDirectionAuto, // dir
 };
 TextParseOptions _webpageDescriptionOptions = {
-	TextParseLinks | TextParseMentions | TextParseHashtags | TextParseMultiline | TextParseRichText | TextParseMono, // flags
+	TextParseLinks | TextParseMentions | TextParseHashtags | TextParseMultiline | TextParseRichText | TextParseMarkdown, // flags
 	0, // maxw
 	0, // maxh
 	Qt::LayoutDirectionAuto, // dir
@@ -76,12 +76,17 @@ inline void initTextOptions() {
 
 bool needReSetInlineResultDocument(const MTPMessageMedia &media, DocumentData *existing) {
 	if (media.type() == mtpc_messageMediaDocument) {
-		if (auto document = App::feedDocument(media.c_messageMediaDocument().vdocument)) {
-			if (document == existing) {
-				return false;
-			} else {
-				document->collectLocalData(existing);
+		auto &mediaDocument = media.c_messageMediaDocument();
+		if (mediaDocument.has_document() && !mediaDocument.has_ttl_seconds()) {
+			if (auto document = App::feedDocument(mediaDocument.vdocument)) {
+				if (document == existing) {
+					return false;
+				} else {
+					document->collectLocalData(existing);
+				}
 			}
+		} else {
+			LOG(("API Error: Got MTPMessageMediaDocument without document or with ttl_seconds in needReSetInlineResultDocument()"));
 		}
 	}
 	return true;
@@ -130,7 +135,7 @@ TextWithEntities captionedSelectedText(const QString &attachType, const Text &ca
 	result.text.append(qstr("[ ")).append(attachType).append(qstr(" ]"));
 	if (!caption.isEmpty()) {
 		result.text.append(qstr("\n"));
-		appendTextWithEntities(result, std::move(original));
+		TextUtilities::Append(result, std::move(original));
 	}
 	return result;
 }
@@ -147,11 +152,11 @@ QString captionedNotificationText(const QString &attachType, const Text &caption
 
 QString captionedInDialogsText(const QString &attachType, const Text &caption) {
 	if (caption.isEmpty()) {
-		return textcmdLink(1, textClean(attachType));
+		return textcmdLink(1, TextUtilities::Clean(attachType));
 	}
 
-	auto captionText = textClean(caption.originalText());
-	auto attachTypeWrapped = textcmdLink(1, lng_dialogs_text_media_wrapped(lt_media, textClean(attachType)));
+	auto captionText = TextUtilities::Clean(caption.originalText());
+	auto attachTypeWrapped = textcmdLink(1, lng_dialogs_text_media_wrapped(lt_media, TextUtilities::Clean(attachType)));
 	return lng_dialogs_text_media(lt_media_part, attachTypeWrapped, lt_caption, captionText);
 }
 
@@ -453,14 +458,20 @@ void HistoryPhoto::draw(Painter &p, const QRect &r, TextSelection selection, Tim
 	}
 
 	// date
-	if (_caption.isEmpty()) {
-		if (notChild && (_data->uploading() || App::hoveredItem() == _parent)) {
-			int32 fullRight = skipx + width, fullBottom = skipy + height;
-			_parent->drawInfo(p, fullRight, fullBottom, 2 * skipx + width, selected, InfoDisplayOverImage);
-		}
-	} else {
+	if (!_caption.isEmpty()) {
 		p.setPen(outbg ? (selected ? st::historyTextOutFgSelected : st::historyTextOutFg) : (selected ? st::historyTextInFgSelected : st::historyTextInFg));
 		_caption.draw(p, st::msgPadding.left(), skipy + height + st::mediaPadding.bottom() + st::mediaCaptionSkip, captionw, style::al_left, 0, -1, selection);
+	} else if (notChild) {
+		auto fullRight = skipx + width;
+		auto fullBottom = skipy + height;
+		if (_data->uploading() || App::hoveredItem() == _parent) {
+			_parent->drawInfo(p, fullRight, fullBottom, 2 * skipx + width, selected, InfoDisplayOverImage);
+		}
+		if (!bubble && _parent->displayFastShare()) {
+			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			_parent->drawFastShare(p, fastShareLeft, fastShareTop, 2 * skipx + width);
+		}
 	}
 }
 
@@ -469,7 +480,7 @@ HistoryTextState HistoryPhoto::getState(QPoint point, HistoryStateRequest reques
 
 	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) return result;
 	int skipx = 0, skipy = 0, width = _width, height = _height;
-	bool bubble = _parent->hasBubble();
+	auto bubble = _parent->hasBubble();
 
 	if (bubble) {
 		skipx = st::mediaPadding.left();
@@ -502,21 +513,32 @@ HistoryTextState HistoryPhoto::getState(QPoint point, HistoryStateRequest reques
 		} else {
 			result.link = _savel;
 		}
-		if (_caption.isEmpty() && _parent->getMedia() == this) {
-			auto fullRight = skipx + width;
-			auto fullBottom = skipy + height;
-			if (_parent->pointInTime(fullRight, fullBottom, point, InfoDisplayOverImage)) {
-				result.cursor = HistoryInDateCursorState;
+	}
+	if (_caption.isEmpty() && _parent->getMedia() == this) {
+		auto fullRight = skipx + width;
+		auto fullBottom = skipy + height;
+		if (_parent->pointInTime(fullRight, fullBottom, point, InfoDisplayOverImage)) {
+			result.cursor = HistoryInDateCursorState;
+		}
+		if (!bubble && _parent->displayFastShare()) {
+			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			if (QRect(fastShareLeft, fastShareTop, st::historyFastShareSize, st::historyFastShareSize).contains(point)) {
+				result.link = _parent->fastShareLink();
 			}
 		}
-		return result;
 	}
 	return result;
 }
 
 void HistoryPhoto::updateSentMedia(const MTPMessageMedia &media) {
 	if (media.type() == mtpc_messageMediaPhoto) {
-		auto &photo = media.c_messageMediaPhoto().vphoto;
+		auto &mediaPhoto = media.c_messageMediaPhoto();
+		if (!mediaPhoto.has_photo() || mediaPhoto.has_ttl_seconds()) {
+			LOG(("Api Error: Got MTPMessageMediaPhoto without photo or with ttl_seconds in updateSentMedia()"));
+			return;
+		}
+		auto &photo = mediaPhoto.vphoto;
 		App::feedPhoto(photo, _data);
 
 		if (photo.type() == mtpc_photo) {
@@ -564,12 +586,17 @@ void HistoryPhoto::updateSentMedia(const MTPMessageMedia &media) {
 
 bool HistoryPhoto::needReSetInlineResultMedia(const MTPMessageMedia &media) {
 	if (media.type() == mtpc_messageMediaPhoto) {
-		if (auto existing = App::feedPhoto(media.c_messageMediaPhoto().vphoto)) {
-			if (existing == _data) {
-				return false;
-			} else {
-				// collect data
+		auto &photo = media.c_messageMediaPhoto();
+		if (photo.has_photo() && !photo.has_ttl_seconds()) {
+			if (auto existing = App::feedPhoto(photo.vphoto)) {
+				if (existing == _data) {
+					return false;
+				} else {
+					// collect data
+				}
 			}
+		} else {
+			LOG(("API Error: Got MTPMessageMediaPhoto without photo or with ttl_seconds in needReSetInlineResultMedia()"));
 		}
 	}
 	return false;
@@ -830,14 +857,17 @@ void HistoryVideo::draw(Painter &p, const QRect &r, TextSelection selection, Tim
 	p.drawTextLeft(statusX, statusY, _width, _statusText, statusW - 2 * st::msgDateImgPadding.x());
 
 	// date
-	if (_caption.isEmpty()) {
-		if (_parent->getMedia() == this) {
-			int32 fullRight = skipx + width, fullBottom = skipy + height;
-			_parent->drawInfo(p, fullRight, fullBottom, 2 * skipx + width, selected, InfoDisplayOverImage);
-		}
-	} else {
+	if (!_caption.isEmpty()) {
 		p.setPen(outbg ? (selected ? st::historyTextOutFgSelected : st::historyTextOutFg) : (selected ? st::historyTextInFgSelected : st::historyTextInFg));
 		_caption.draw(p, st::msgPadding.left(), skipy + height + st::mediaPadding.bottom() + st::mediaCaptionSkip, captionw, style::al_left, 0, -1, selection);
+	} else if (_parent->getMedia() == this) {
+		auto fullRight = skipx + width, fullBottom = skipy + height;
+		_parent->drawInfo(p, fullRight, fullBottom, 2 * skipx + width, selected, InfoDisplayOverImage);
+		if (!bubble && _parent->displayFastShare()) {
+			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			_parent->drawFastShare(p, fastShareLeft, fastShareTop, 2 * skipx + width);
+		}
 	}
 }
 
@@ -874,14 +904,20 @@ HistoryTextState HistoryVideo::getState(QPoint point, HistoryStateRequest reques
 		} else {
 			result.link = loaded ? _openl : (_data->loading() ? _cancell : _savel);
 		}
-		if (_caption.isEmpty() && _parent->getMedia() == this) {
-			auto fullRight = skipx + width;
-			auto fullBottom = skipy + height;
-			if (_parent->pointInTime(fullRight, fullBottom, point, InfoDisplayOverImage)) {
-				result.cursor = HistoryInDateCursorState;
+	}
+	if (_caption.isEmpty() && _parent->getMedia() == this) {
+		auto fullRight = skipx + width;
+		auto fullBottom = skipy + height;
+		if (_parent->pointInTime(fullRight, fullBottom, point, InfoDisplayOverImage)) {
+			result.cursor = HistoryInDateCursorState;
+		}
+		if (!bubble && _parent->displayFastShare()) {
+			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			if (QRect(fastShareLeft, fastShareTop, st::historyFastShareSize, st::historyFastShareSize).contains(point)) {
+				result.link = _parent->fastShareLink();
 			}
 		}
-		return result;
 	}
 	return result;
 }
@@ -952,7 +988,12 @@ void HistoryVideo::detachFromParent() {
 
 void HistoryVideo::updateSentMedia(const MTPMessageMedia &media) {
 	if (media.type() == mtpc_messageMediaDocument) {
-		App::feedDocument(media.c_messageMediaDocument().vdocument, _data);
+		auto &mediaDocument = media.c_messageMediaDocument();
+		if (!mediaDocument.has_document() || mediaDocument.has_ttl_seconds()) {
+			LOG(("Api Error: Got MTPMessageMediaDocument without document or with ttl_seconds in HistoryVideo::updateSentMedia()"));
+			return;
+		}
+		App::feedDocument(mediaDocument.vdocument, _data);
 	}
 }
 
@@ -1116,7 +1157,7 @@ void HistoryDocument::initDimensions() {
 
 	if (thumbed) {
 		_minh = st::msgFileThumbPadding.top() + st::msgFileThumbSize + st::msgFileThumbPadding.bottom();
-		if (!captioned && _parent->Has<HistoryMessageSigned>()) {
+		if (!captioned && (_parent->Has<HistoryMessageSigned>() || _parent->Has<HistoryMessageEdited>())) {
 			_minh += st::msgDateFont->height - st::msgDateDelta.y();
 		}
 	} else {
@@ -1727,7 +1768,12 @@ void HistoryDocument::detachFromParent() {
 
 void HistoryDocument::updateSentMedia(const MTPMessageMedia &media) {
 	if (media.type() == mtpc_messageMediaDocument) {
-		App::feedDocument(media.c_messageMediaDocument().vdocument, _data);
+		auto &mediaDocument = media.c_messageMediaDocument();
+		if (!mediaDocument.has_document() || mediaDocument.has_ttl_seconds()) {
+			LOG(("Api Error: Got MTPMessageMediaDocument without document or with ttl_seconds in HistoryDocument::updateSentMedia()"));
+			return;
+		}
+		App::feedDocument(mediaDocument.vdocument, _data);
 		if (!_data->data().isEmpty()) {
 			if (_data->voice()) {
 				Local::writeAudio(_data->mediaKey(), _data->data());
@@ -1750,7 +1796,6 @@ HistoryGif::HistoryGif(gsl::not_null<HistoryItem*> parent, DocumentData *documen
 , _data(document)
 , _caption(st::minPhotoSize - st::msgPadding.left() - st::msgPadding.right()) {
 	setDocumentLinks(_data, true);
-	_openInMediaviewLink = MakeShared<DocumentOpenClickHandler>(_data);
 
 	setStatusSize(FileStatusSizeReady);
 
@@ -1774,6 +1819,9 @@ HistoryGif::HistoryGif(gsl::not_null<HistoryItem*> parent, const HistoryGif &oth
 void HistoryGif::initDimensions() {
 	if (_caption.hasSkipBlock()) {
 		_caption.setSkipBlock(_parent->skipBlockWidth(), _parent->skipBlockHeight());
+	}
+	if (!_openInMediaviewLink) {
+		_openInMediaviewLink = MakeShared<DocumentOpenClickHandler>(_data);
 	}
 
 	bool bubble = _parent->hasBubble();
@@ -2158,30 +2206,40 @@ void HistoryGif::draw(Painter &p, const QRect &r, TextSelection selection, TimeM
 			}
 		}
 	}
-	if (!_caption.isEmpty()) {
+	if (!isRound && !_caption.isEmpty()) {
 		p.setPen(outbg ? (selected ? st::historyTextOutFgSelected : st::historyTextOutFg) : (selected ? st::historyTextInFgSelected : st::historyTextInFg));
 		_caption.draw(p, st::msgPadding.left(), skipy + height + st::mediaPadding.bottom() + st::mediaCaptionSkip, captionw, style::al_left, 0, -1, selection);
-	} else if (!isChildMedia && (isRound || _data->uploading() || App::hoveredItem() == _parent)) {
+	} else if (!isChildMedia) {
 		auto fullRight = skipx + usex + usew;
 		auto fullBottom = skipy + height;
+		auto maxRight = _parent->history()->width - st::msgMargin.left();
+		if (_parent->history()->canHaveFromPhotos()) {
+			maxRight -= st::msgMargin.right();
+		} else {
+			maxRight -= st::msgMargin.left();
+		}
 		if (isRound && !outbg) {
 			auto infoWidth = _parent->infoWidth();
 
 			// This is just some arbitrary point,
 			// the main idea is to make info left aligned here.
 			fullRight += infoWidth - st::normalFont->height;
-
-			auto maxRight = _parent->history()->width - st::msgMargin.left();
-			if (_parent->history()->canHaveFromPhotos()) {
-				maxRight -= st::msgMargin.right();
-			} else {
-				maxRight -= st::msgMargin.left();
-			}
 			if (fullRight > maxRight) {
 				fullRight = maxRight;
 			}
 		}
-		_parent->drawInfo(p, fullRight, fullBottom, 2 * skipx + width, selected, isRound ? InfoDisplayOverBackground : InfoDisplayOverImage);
+		if (isRound || _data->uploading() || App::hoveredItem() == _parent) {
+			_parent->drawInfo(p, fullRight, fullBottom, 2 * skipx + width, selected, isRound ? InfoDisplayOverBackground : InfoDisplayOverImage);
+		}
+		if (!bubble && _parent->displayFastShare()) {
+			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			if (fastShareLeft + st::historyFastShareSize > maxRight) {
+				fastShareLeft = (fullRight - st::historyFastShareSize - st::msgDateImgDelta);
+				fastShareTop -= (st::msgDateImgDelta + st::msgDateImgPadding.y() + st::msgDateFont->height + st::msgDateImgPadding.y());
+			}
+			_parent->drawFastShare(p, fastShareLeft, fastShareTop, 2 * skipx + width);
+		}
 	}
 }
 
@@ -2210,8 +2268,9 @@ HistoryTextState HistoryGif::getState(QPoint point, HistoryStateRequest request)
 		width -= st::mediaPadding.left() + st::mediaPadding.right();
 		height -= skipy + st::mediaPadding.bottom();
 	}
-	auto out = _parent->out(), isPost = _parent->isPost();
+	bool out = _parent->out(), isPost = _parent->isPost(), outbg = out && !isPost;
 	auto isChildMedia = (_parent->getMedia() != this);
+	auto isRound = _data->isRoundVideo();
 	auto usew = width, usex = 0;
 	auto separateRoundVideo = isSeparateRoundVideo();
 	auto via = separateRoundVideo ? _parent->Get<HistoryMessageVia>() : nullptr;
@@ -2288,14 +2347,42 @@ HistoryTextState HistoryGif::getState(QPoint point, HistoryStateRequest request)
 		} else {
 			result.link = _openInMediaviewLink;
 		}
+	}
+	if (isRound || _caption.isEmpty()) {
+		auto fullRight = usex + skipx + usew;
+		auto fullBottom = skipy + height;
+		auto maxRight = _parent->history()->width - st::msgMargin.left();
+		if (_parent->history()->canHaveFromPhotos()) {
+			maxRight -= st::msgMargin.right();
+		} else {
+			maxRight -= st::msgMargin.left();
+		}
+		if (isRound && !outbg) {
+			auto infoWidth = _parent->infoWidth();
+
+			// This is just some arbitrary point,
+			// the main idea is to make info left aligned here.
+			fullRight += infoWidth - st::normalFont->height;
+			if (fullRight > maxRight) {
+				fullRight = maxRight;
+			}
+		}
 		if (!isChildMedia) {
-			auto fullRight = usex + skipx + usew;
-			auto fullBottom = skipy + height;
-			if (_parent->pointInTime(fullRight, fullBottom, point, InfoDisplayOverImage)) {
+			if (_parent->pointInTime(fullRight, fullBottom, point, isRound ? InfoDisplayOverBackground : InfoDisplayOverImage)) {
 				result.cursor = HistoryInDateCursorState;
 			}
 		}
-		return result;
+		if (!bubble && _parent->displayFastShare()) {
+			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			if (fastShareLeft + st::historyFastShareSize > maxRight) {
+				fastShareLeft = (fullRight - st::historyFastShareSize - st::msgDateImgDelta);
+				fastShareTop -= st::msgDateImgDelta + st::msgDateImgPadding.y() + st::msgDateFont->height + st::msgDateImgPadding.y();
+			}
+			if (QRect(fastShareLeft, fastShareTop, st::historyFastShareSize, st::historyFastShareSize).contains(point)) {
+				result.link = _parent->fastShareLink();
+			}
+		}
 	}
 	return result;
 }
@@ -2427,7 +2514,12 @@ void HistoryGif::detachFromParent() {
 
 void HistoryGif::updateSentMedia(const MTPMessageMedia &media) {
 	if (media.type() == mtpc_messageMediaDocument) {
-		App::feedDocument(media.c_messageMediaDocument().vdocument, _data);
+		auto &mediaDocument = media.c_messageMediaDocument();
+		if (!mediaDocument.has_document() || mediaDocument.has_ttl_seconds()) {
+			LOG(("Api Error: Got MTPMessageMediaDocument without document or with ttl_seconds in HistoryGif::updateSentMedia()"));
+			return;
+		}
+		App::feedDocument(mediaDocument.vdocument, _data);
 	}
 }
 
@@ -2635,8 +2727,9 @@ void HistorySticker::draw(Painter &p, const QRect &r, TextSelection selection, T
 	}
 
 	if (!childmedia) {
-		_parent->drawInfo(p, usex + usew, _height, usex * 2 + usew, selected, InfoDisplayOverBackground);
-
+		auto fullRight = usex + usew;
+		auto fullBottom = _height;
+		_parent->drawInfo(p, fullRight, fullBottom, usex * 2 + usew, selected, InfoDisplayOverBackground);
 		if (via || reply) {
 			int rectw = _width - usew - st::msgReplyPadding.left();
 			int recth = st::msgReplyPadding.top() + st::msgReplyPadding.bottom();
@@ -2647,11 +2740,8 @@ void HistorySticker::draw(Painter &p, const QRect &r, TextSelection selection, T
 				recth += st::msgReplyBarSize.height();
 			}
 			int rectx = isPost ? (usew + st::msgReplyPadding.left()) : (out ? 0 : (usew + st::msgReplyPadding.left()));
-			int recty = _height - recth;
+			int recty = st::msgDateImgDelta;
 			if (rtl()) rectx = _width - rectx - rectw;
-
-			// Make the bottom of the rect at the same level as the bottom of the info rect.
-			recty -= st::msgDateImgDelta;
 
 			App::roundRect(p, rectx, recty, rectw, recth, selected ? st::msgServiceBgSelected : st::msgServiceBg, selected ? StickerSelectedCorners : StickerCorners);
 			p.setPen(st::msgServiceFg);
@@ -2670,6 +2760,11 @@ void HistorySticker::draw(Painter &p, const QRect &r, TextSelection selection, T
 				}
 				reply->paint(p, _parent, rectx, recty, rectw, flags);
 			}
+		}
+		if (_parent->displayFastShare()) {
+			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			_parent->drawFastShare(p, fastShareLeft, fastShareTop, 2 * usex + usew);
 		}
 	}
 }
@@ -2702,11 +2797,8 @@ HistoryTextState HistorySticker::getState(QPoint point, HistoryStateRequest requ
 			recth += st::msgReplyBarSize.height();
 		}
 		int rectx = isPost ? (usew + st::msgReplyPadding.left()) : (out ? 0 : (usew + st::msgReplyPadding.left()));
-		int recty = _height - recth;
+		int recty = st::msgDateImgDelta;
 		if (rtl()) rectx = _width - rectx - rectw;
-
-		// Make the bottom of the rect at the same level as the bottom of the info rect.
-		recty -= st::msgDateImgDelta;
 
 		if (via) {
 			int viah = st::msgReplyPadding.top() + st::msgServiceNameFont->height + (reply ? 0 : st::msgReplyPadding.bottom());
@@ -2726,8 +2818,17 @@ HistoryTextState HistorySticker::getState(QPoint point, HistoryStateRequest requ
 		}
 	}
 	if (_parent->getMedia() == this) {
-		if (_parent->pointInTime(usex + usew, _height, point, InfoDisplayOverImage)) {
+		auto fullRight = usex + usew;
+		auto fullBottom = _height;
+		if (_parent->pointInTime(fullRight, fullBottom, point, InfoDisplayOverImage)) {
 			result.cursor = HistoryInDateCursorState;
+		}
+		if (_parent->displayFastShare()) {
+			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			if (QRect(fastShareLeft, fastShareTop, st::historyFastShareSize, st::historyFastShareSize).contains(point)) {
+				result.link = _parent->fastShareLink();
+			}
 		}
 	}
 
@@ -2765,7 +2866,12 @@ void HistorySticker::detachFromParent() {
 
 void HistorySticker::updateSentMedia(const MTPMessageMedia &media) {
 	if (media.type() == mtpc_messageMediaDocument) {
-		App::feedDocument(media.c_messageMediaDocument().vdocument, _data);
+		auto &mediaDocument = media.c_messageMediaDocument();
+		if (!mediaDocument.has_document() || mediaDocument.has_ttl_seconds()) {
+			LOG(("Api Error: Got MTPMessageMediaDocument without document or with ttl_seconds in HistorySticker::updateSentMedia()"));
+			return;
+		}
+		App::feedDocument(mediaDocument.vdocument, _data);
 		if (!_data->data().isEmpty()) {
 			Local::writeStickerImage(_data->mediaKey(), _data->data());
 		}
@@ -3004,8 +3110,6 @@ HistoryCall::HistoryCall(gsl::not_null<HistoryItem*> parent, const MTPDmessageAc
 			_duration = 0;
 		}
 	}
-
-	Calls::Current().newServiceMessage().notify(_parent->fullId());
 }
 
 HistoryCall::FinishReason HistoryCall::GetReason(const MTPDmessageActionPhoneCall &call) {
@@ -3164,7 +3268,7 @@ void HistoryWebPage::initDimensions() {
 	}
 
 	// init layout
-	auto title = textOneLine(_data->title.isEmpty() ? _data->author : _data->title);
+	auto title = TextUtilities::SingleLine(_data->title.isEmpty() ? _data->author : _data->title);
 	if (!_data->description.text.isEmpty() && title.isEmpty() && _data->siteName.isEmpty() && !_data->url.isEmpty()) {
 		_data->siteName = siteNameFromUrl(_data->url);
 	}
@@ -3642,7 +3746,7 @@ TextWithEntities HistoryWebPage::selectedText(TextSelection selection) const {
 	}
 
 	titleResult.text += '\n';
-	appendTextWithEntities(titleResult, std::move(descriptionResult));
+	TextUtilities::Append(titleResult, std::move(descriptionResult));
 	return titleResult;
 }
 
@@ -3700,7 +3804,7 @@ void HistoryGame::initDimensions() {
 		_openl = MakeShared<ReplyMarkupClickHandler>(_parent, 0, 0);
 	}
 
-	auto title = textOneLine(_data->title);
+	auto title = TextUtilities::SingleLine(_data->title);
 
 	// init attach
 	if (!_attach) {
@@ -3728,7 +3832,7 @@ void HistoryGame::initDimensions() {
 			}
 			auto marked = TextWithEntities { text };
 			auto parseFlags = TextParseLinks | TextParseMultiline | TextParseRichText;
-			textParseEntities(marked.text, parseFlags, &marked.entities);
+			TextUtilities::ParseEntities(marked, parseFlags);
 			_description.setMarkedText(st::webPageDescriptionStyle, marked, _webpageDescriptionOptions);
 		}
 	}
@@ -4042,7 +4146,7 @@ TextWithEntities HistoryGame::selectedText(TextSelection selection) const {
 	}
 
 	titleResult.text += '\n';
-	appendTextWithEntities(titleResult, std::move(descriptionResult));
+	TextUtilities::Append(titleResult, std::move(descriptionResult));
 	return titleResult;
 }
 
@@ -4156,10 +4260,10 @@ void HistoryInvoice::fillFromData(const MTPDmessageMediaInvoice &data) {
 	if (!description.isEmpty()) {
 		auto marked = TextWithEntities { description };
 		auto parseFlags = TextParseLinks | TextParseMultiline | TextParseRichText;
-		textParseEntities(marked.text, parseFlags, &marked.entities);
+		TextUtilities::ParseEntities(marked, parseFlags);
 		_description.setMarkedText(st::webPageDescriptionStyle, marked, _webpageDescriptionOptions);
 	}
-	auto title = textOneLine(qs(data.vtitle));
+	auto title = TextUtilities::SingleLine(qs(data.vtitle));
 	if (!title.isEmpty()) {
 		_title.setText(st::webPageTitleStyle, title, _webpageTitleOptions);
 	}
@@ -4435,7 +4539,7 @@ TextWithEntities HistoryInvoice::selectedText(TextSelection selection) const {
 	}
 
 	titleResult.text += '\n';
-	appendTextWithEntities(titleResult, std::move(descriptionResult));
+	TextUtilities::Append(titleResult, std::move(descriptionResult));
 	return titleResult;
 }
 
@@ -4460,12 +4564,12 @@ HistoryLocation::HistoryLocation(gsl::not_null<HistoryItem*> parent, const Locat
 , _description(st::msgMinWidth)
 , _link(MakeShared<LocationClickHandler>(coords)) {
 	if (!title.isEmpty()) {
-		_title.setText(st::webPageTitleStyle, textClean(title), _webpageTitleOptions);
+		_title.setText(st::webPageTitleStyle, TextUtilities::Clean(title), _webpageTitleOptions);
 	}
 	if (!description.isEmpty()) {
-		auto marked = TextWithEntities { textClean(description) };
+		auto marked = TextWithEntities { TextUtilities::Clean(description) };
 		auto parseFlags = TextParseLinks | TextParseMultiline | TextParseRichText;
-		textParseEntities(marked.text, parseFlags, &marked.entities);
+		TextUtilities::ParseEntities(marked, parseFlags);
 		_description.setMarkedText(st::webPageDescriptionStyle, marked, _webpageDescriptionOptions);
 	}
 }
@@ -4612,8 +4716,14 @@ void HistoryLocation::draw(Painter &p, const QRect &r, TextSelection selection, 
 	}
 
 	if (_parent->getMedia() == this) {
-		int32 fullRight = skipx + width, fullBottom = _height - (skipx ? st::mediaPadding.bottom() : 0);
+		auto fullRight = skipx + width;
+		auto fullBottom = _height - (skipx ? st::mediaPadding.bottom() : 0);
 		_parent->drawInfo(p, fullRight, fullBottom, skipx * 2 + width, selected, InfoDisplayOverImage);
+		if (!bubble && _parent->displayFastShare()) {
+			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			_parent->drawFastShare(p, fastShareLeft, fastShareTop, 2 * skipx + width);
+		}
 	}
 }
 
@@ -4664,11 +4774,19 @@ HistoryTextState HistoryLocation::getState(QPoint point, HistoryStateRequest req
 	}
 	if (QRect(skipx, skipy, width, height).contains(point) && _data) {
 		result.link = _link;
-
+	}
+	if (_parent->getMedia() == this) {
 		auto fullRight = skipx + width;
 		auto fullBottom = _height - (skipx ? st::mediaPadding.bottom() : 0);
 		if (_parent->pointInTime(fullRight, fullBottom, point, InfoDisplayOverImage)) {
 			result.cursor = HistoryInDateCursorState;
+		}
+		if (!bubble && _parent->displayFastShare()) {
+			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			if (QRect(fastShareLeft, fastShareTop, st::historyFastShareSize, st::historyFastShareSize).contains(point)) {
+				result.link = _parent->fastShareLink();
+			}
 		}
 	}
 	result.symbol += symbolAdd;
@@ -4700,7 +4818,7 @@ TextWithEntities HistoryLocation::selectedText(TextSelection selection) const {
 		TextWithEntities result = { qsl("[ ") + lang(lng_maps_point) + qsl(" ]\n"), EntitiesInText() };
 		auto info = selectedText(AllTextSelection);
 		if (!info.text.isEmpty()) {
-			appendTextWithEntities(result, std::move(info));
+			TextUtilities::Append(result, std::move(info));
 			result.text.append('\n');
 		}
 		result.text += _link->dragText();
@@ -4715,7 +4833,7 @@ TextWithEntities HistoryLocation::selectedText(TextSelection selection) const {
 		return titleResult;
 	}
 	titleResult.text += '\n';
-	appendTextWithEntities(titleResult, std::move(descriptionResult));
+	TextUtilities::Append(titleResult, std::move(descriptionResult));
 	return titleResult;
 }
 

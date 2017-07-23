@@ -533,13 +533,6 @@ void MainWindow::checkHistoryActivation() {
 	}
 }
 
-void MainWindow::layerHidden() {
-	destroyLayerDelayed();
-	hideMediaview();
-	setInnerFocus();
-	checkHistoryActivation();
-}
-
 bool MainWindow::contentOverlapped(const QRect &globalRect) {
 	if (_main && _main->contentOverlapped(globalRect)) return true;
 	if (_layerBg && _layerBg->contentOverlapped(globalRect)) return true;
@@ -589,7 +582,7 @@ bool MainWindow::eventFilter(QObject *object, QEvent *e) {
 		return true;
 
 	case QEvent::Shortcut:
-		DEBUG_LOG(("Shortcut event catched: %1").arg(static_cast<QShortcutEvent*>(e)->key().toString()));
+		DEBUG_LOG(("Shortcut event caught: %1").arg(static_cast<QShortcutEvent*>(e)->key().toString()));
 		if (Shortcuts::launch(static_cast<QShortcutEvent*>(e)->shortcutId())) {
 			return true;
 		}
@@ -739,7 +732,11 @@ void MainWindow::noLayerStack(LayerStackWidget *was) {
 
 void MainWindow::layerFinishedHide(LayerStackWidget *was) {
 	if (was == _layerBg) {
-		QTimer::singleShot(0, this, SLOT(layerHidden()));
+		destroyLayerDelayed();
+		InvokeQueued(this, [this] {
+			setInnerFocus();
+			checkHistoryActivation();
+		});
 	}
 }
 

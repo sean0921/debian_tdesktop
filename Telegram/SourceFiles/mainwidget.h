@@ -238,7 +238,8 @@ public:
 
 	int32 dlgsWidth() const;
 
-	void forwardLayer(int forwardSelected = 0); // -1 - send paths
+	void showForwardLayer(const SelectedItemSet &items);
+	void showSendPathsLayer();
 	void deleteLayer(int selectedCount = 0); // 0 - context item
 	void cancelUploadLayer();
 	void shareContactLayer(UserData *contact);
@@ -246,7 +247,8 @@ public:
 	void inlineSwitchLayer(const QString &botAndQuery);
 	void hiderLayer(object_ptr<HistoryHider> h);
 	void noHider(HistoryHider *destroyed);
-	bool onForward(const PeerId &peer, ForwardWhatMessages what);
+	bool setForwardDraft(PeerId peer, ForwardWhatMessages what);
+	bool setForwardDraft(PeerId peer, const SelectedItemSet &items);
 	bool onShareUrl(const PeerId &peer, const QString &url, const QString &text);
 	bool onInlineSwitchChosen(const PeerId &peer, const QString &botAndQuery);
 	void onShareContact(const PeerId &peer, UserData *contact);
@@ -373,6 +375,12 @@ public:
 
 	void gotRangeDifference(ChannelData *channel, const MTPupdates_ChannelDifference &diff);
 	void onSelfParticipantUpdated(ChannelData *channel);
+
+	// Mayde public for ApiWrap, while it is still here.
+	// Better would be for this to be moved to ApiWrap.
+	bool requestingDifference() const {
+		return _ptsWaiter.requesting();
+	}
 
 	bool contentOverlapped(const QRect &globalRect);
 
@@ -527,7 +535,7 @@ private:
 	Window::SectionSlideParams prepareOverviewAnimation();
 	Window::SectionSlideParams prepareDialogsAnimation();
 
-	void startWithSelf(const MTPVector<MTPUser> &users);
+	void startWithSelf(const MTPUserFull &user);
 
 	void saveSectionInStack();
 
@@ -582,13 +590,9 @@ private:
 	QPoint getFloatPlayerHiddenPosition(QPoint position, QSize size, RectPart side) const;
 	RectPart getFloatPlayerSide(QPoint center) const;
 
-	bool ptsUpdated(int32 pts, int32 ptsCount);
-	bool ptsUpdated(int32 pts, int32 ptsCount, const MTPUpdates &updates);
-	bool ptsUpdated(int32 pts, int32 ptsCount, const MTPUpdate &update);
-	void ptsApplySkippedUpdates();
-	bool requestingDifference() const {
-		return _ptsWaiter.requesting();
-	}
+	bool ptsUpdateAndApply(int32 pts, int32 ptsCount, const MTPUpdates &updates);
+	bool ptsUpdateAndApply(int32 pts, int32 ptsCount, const MTPUpdate &update);
+	bool ptsUpdateAndApply(int32 pts, int32 ptsCount);
 	bool getDifferenceTimeChanged(ChannelData *channel, int32 ms, ChannelGetDifferenceTime &channelCurTime, TimeMs &curTime);
 
 	void viewsIncrementDone(QVector<MTPint> ids, const MTPVector<MTPint> &result, mtpRequestId req);

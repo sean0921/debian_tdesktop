@@ -26,6 +26,8 @@ namespace Ui {
 class FlatLabel;
 class LinkButton;
 class Checkbox;
+class Radiobutton;
+class RadiobuttonGroup;
 } // namespace Ui
 
 class CalendarBox;
@@ -47,11 +49,15 @@ protected:
 	}
 
 	template <typename Widget>
-	QPointer<Widget> addControl(object_ptr<Widget> row);
+	QPointer<Widget> addControl(object_ptr<Widget> widget, QMargins margin);
+
+	void removeControl(QPointer<TWidget> widget);
 
 	bool hasAdminRights() const {
 		return _hasAdminRights;
 	}
+
+	class Divider;
 
 private:
 	gsl::not_null<ChannelData*> _channel;
@@ -65,9 +71,11 @@ private:
 
 class EditAdminBox : public EditParticipantBox {
 public:
-	EditAdminBox(QWidget*, gsl::not_null<ChannelData*> channel, gsl::not_null<UserData*> user, bool hasAdminRights, const MTPChannelAdminRights &rights, base::lambda<void(MTPChannelAdminRights)> callback);
+	EditAdminBox(QWidget*, gsl::not_null<ChannelData*> channel, gsl::not_null<UserData*> user, const MTPChannelAdminRights &rights);
 
-	static MTPChannelAdminRights DefaultRights(gsl::not_null<ChannelData*> channel);
+	void setSaveCallback(base::lambda<void(MTPChannelAdminRights, MTPChannelAdminRights)> callback) {
+		_saveCallback = std::move(callback);
+	}
 
 protected:
 	void prepare() override;
@@ -76,12 +84,17 @@ private:
 	using Flag = MTPDchannelAdminRights::Flag;
 	using Flags = MTPDchannelAdminRights::Flags;
 
+	static MTPChannelAdminRights DefaultRights(gsl::not_null<ChannelData*> channel);
+
+	bool canSave() const {
+		return !!_saveCallback;
+	}
 	void applyDependencies(QPointer<Ui::Checkbox> changed);
 	void refreshAboutAddAdminsText();
 
-	MTPChannelAdminRights _rights;
+	const MTPChannelAdminRights _oldRights;
 	std::vector<std::pair<Flag, Flag>> _dependencies;
-	base::lambda<void(MTPChannelAdminRights)> _saveCallback;
+	base::lambda<void(MTPChannelAdminRights, MTPChannelAdminRights)> _saveCallback;
 
 	std::map<Flags, QPointer<Ui::Checkbox>> _checkboxes;
 	QPointer<Ui::FlatLabel> _aboutAddAdmins;
@@ -93,9 +106,11 @@ private:
 
 class EditRestrictedBox : public EditParticipantBox {
 public:
-	EditRestrictedBox(QWidget*, gsl::not_null<ChannelData*> channel, gsl::not_null<UserData*> user, bool hasAdminRights, const MTPChannelBannedRights &rights, base::lambda<void(MTPChannelBannedRights)> callback);
+	EditRestrictedBox(QWidget*, gsl::not_null<ChannelData*> channel, gsl::not_null<UserData*> user, bool hasAdminRights, const MTPChannelBannedRights &rights);
 
-	static MTPChannelBannedRights DefaultRights(gsl::not_null<ChannelData*> channel);
+	void setSaveCallback(base::lambda<void(MTPChannelBannedRights, MTPChannelBannedRights)> callback) {
+		_saveCallback = std::move(callback);
+	}
 
 protected:
 	void prepare() override;
@@ -104,20 +119,35 @@ private:
 	using Flag = MTPDchannelBannedRights::Flag;
 	using Flags = MTPDchannelBannedRights::Flags;
 
+	static MTPChannelBannedRights DefaultRights(gsl::not_null<ChannelData*> channel);
+
+	bool canSave() const {
+		return !!_saveCallback;
+	}
 	void applyDependencies(QPointer<Ui::Checkbox> changed);
 	void showRestrictUntil();
-	void setRestrictUntil(int32 until);
+	void setRestrictUntil(TimeId until);
 	bool isUntilForever() {
 		return ChannelData::IsRestrictedForever(_until);
 	}
+	void clearVariants();
+	void createUntilGroup();
+	void createUntilVariants();
+	TimeId getRealUntilValue() const;
 
-	MTPChannelBannedRights _rights;
-	int32 _until = 0;
+	const MTPChannelBannedRights _oldRights;
+	TimeId _until = 0;
 	std::vector<std::pair<Flag, Flag>> _dependencies;
-	base::lambda<void(MTPChannelBannedRights)> _saveCallback;
+	base::lambda<void(MTPChannelBannedRights, MTPChannelBannedRights)> _saveCallback;
 
 	std::map<Flags, QPointer<Ui::Checkbox>> _checkboxes;
-	QPointer<Ui::LinkButton> _restrictUntil;
+
+	std::shared_ptr<Ui::RadiobuttonGroup> _untilGroup;
+	QVector<QPointer<Ui::Radiobutton>> _untilVariants;
 	QPointer<CalendarBox> _restrictUntilBox;
+
+	static constexpr auto kUntilOneDay = -1;
+	static constexpr auto kUntilOneWeek = -2;
+	static constexpr auto kUntilCustom = -3;
 
 };

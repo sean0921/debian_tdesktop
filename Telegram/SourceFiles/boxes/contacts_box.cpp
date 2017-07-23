@@ -46,6 +46,34 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "auth_session.h"
 #include "storage/file_download.h"
 
+// Not used for now.
+//
+//MembersAddButton::MembersAddButton(QWidget *parent, const style::TwoIconButton &st) : RippleButton(parent, st.ripple)
+//, _st(st) {
+//	resize(_st.width, _st.height);
+//	setCursor(style::cur_pointer);
+//}
+//
+//void MembersAddButton::paintEvent(QPaintEvent *e) {
+//	Painter p(this);
+//
+//	auto ms = getms();
+//	auto over = isOver();
+//	auto down = isDown();
+//
+//	((over || down) ? _st.iconBelowOver : _st.iconBelow).paint(p, _st.iconPosition, width());
+//	paintRipple(p, _st.rippleAreaPosition.x(), _st.rippleAreaPosition.y(), ms);
+//	((over || down) ? _st.iconAboveOver : _st.iconAbove).paint(p, _st.iconPosition, width());
+//}
+//
+//QImage MembersAddButton::prepareRippleMask() const {
+//	return Ui::RippleAnimation::ellipseMask(QSize(_st.rippleAreaSize, _st.rippleAreaSize));
+//}
+//
+//QPoint MembersAddButton::prepareRippleStartPosition() const {
+//	return mapFromGlobal(QCursor::pos()) - _st.rippleAreaPosition;
+//}
+
 QString PeerFloodErrorText(PeerFloodType type) {
 	auto link = textcmdLink(Messenger::Instance().createInternalLinkFull(qsl("spambot")), lang(lng_cant_more_info));
 	if (type == PeerFloodType::InviteGroup) {
@@ -630,7 +658,7 @@ ContactsBox::Inner::Inner(QWidget *parent, UserData *bot) : TWidget(parent)
 void ContactsBox::Inner::init() {
 	subscribe(AuthSession::CurrentDownloaderTaskFinished(), [this] { update(); });
 	connect(_addContactLnk, SIGNAL(clicked()), App::wnd(), SLOT(onShowAddContact()));
-	connect(_allAdmins, SIGNAL(changed()), this, SLOT(onAllAdminsChanged()));
+	subscribe(_allAdmins->checkedChanged, [this](bool checked) { onAllAdminsChanged(); });
 
 	_rowsTop = st::contactsMarginTop;
 	setAttribute(Qt::WA_OpaquePaintEvent);
@@ -743,37 +771,6 @@ void ContactsBox::Inner::onAllAdminsChanged() {
 		_allAdminsChangedCallback();
 	}
 	update();
-}
-
-void ContactsBox::Inner::addAdminDone(MTPChannelAdminRights rights, const MTPUpdates &result, mtpRequestId req) {
-	if (App::main()) App::main()->sentUpdatesReceived(result);
-	if (req != _addAdminRequestId) return;
-
-	_addAdminRequestId = 0;
-	if (_addAdmin && _channel) {
-		_channel->applyEditAdmin(_addAdmin, rights);
-	}
-	if (_addAdminBox) _addAdminBox->closeBox();
-	emit adminAdded();
-}
-
-bool ContactsBox::Inner::addAdminFail(const RPCError &error, mtpRequestId req) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	if (req != _addAdminRequestId) return true;
-
-	_addAdminRequestId = 0;
-	if (_addAdminBox) _addAdminBox->closeBox();
-	if (error.type() == "USERS_TOO_MUCH") {
-		Ui::show(Box<MaxInviteBox>(_channel->inviteLink()), KeepOtherLayers);
-	} else if (error.type() == "ADMINS_TOO_MUCH") {
-		Ui::show(Box<InformBox>(lang(lng_channel_admins_too_much)), KeepOtherLayers);
-	} else if (error.type() == qstr("USER_RESTRICTED")) {
-		Ui::show(Box<InformBox>(lang(lng_cant_do_this)), KeepOtherLayers);
-	} else  {
-		emit adminAdded();
-	}
-	return true;
 }
 
 void ContactsBox::Inner::saving(bool flag) {
@@ -1238,9 +1235,12 @@ void ContactsBox::Inner::leaveEventHook(QEvent *e) {
 }
 
 void ContactsBox::Inner::mouseMoveEvent(QMouseEvent *e) {
-	_mouseSelection = true;
-	_lastMousePos = e->globalPos();
-	updateSelection();
+	auto position = e->globalPos();
+	if (_mouseSelection || _lastMousePos != position) {
+		_mouseSelection = true;
+		_lastMousePos = e->globalPos();
+		updateSelection();
+	}
 }
 
 void ContactsBox::Inner::mousePressEvent(QMouseEvent *e) {
@@ -1409,7 +1409,7 @@ void ContactsBox::Inner::chooseParticipant() {
 		changeMultiSelectCheckState();
 	} else {
 		if (_channel && _membersFilter == MembersFilter::Admins) {
-			addSelectedAsChannelAdmin();
+			Unexpected("Not supported any more");
 		} else if (sharingBotGame()) {
 			shareBotGameToSelected();
 		} else if (bot()) {
@@ -1420,70 +1420,6 @@ void ContactsBox::Inner::chooseParticipant() {
 		}
 	}
 	update();
-}
-
-void ContactsBox::Inner::addSelectedAsChannelAdmin() {
-	auto peer = selectedPeer();
-	if (!peer) {
-		return;
-	}
-
-	_addAdmin = peer->asUser();
-	t_assert(_addAdmin != nullptr);
-
-	if (_addAdminRequestId) {
-		MTP::cancel(_addAdminRequestId);
-		_addAdminRequestId = 0;
-	}
-	if (_addAdminBox) _addAdminBox->deleteLater();
-
-	auto showBox = [this](auto &&currentRights, bool hasAdminRights) {
-		_addAdminBox = Ui::show(Box<EditAdminBox>(_channel, _addAdmin, hasAdminRights, currentRights, base::lambda_guarded(this, [this](const MTPChannelAdminRights &rights) {
-			if (_addAdminRequestId) return;
-			_addAdminRequestId = MTP::send(MTPchannels_EditAdmin(_channel->inputChannel, _addAdmin->inputUser, rights), rpcDone(&Inner::addAdminDone, rights), rpcFail(&Inner::addAdminFail));
-		})), KeepOtherLayers);
-	};
-
-	auto loadedRights = [this]() -> const MegagroupInfo::Admin * {
-		if (_channel->isMegagroup()) {
-			auto it = _channel->mgInfo->lastAdmins.constFind(_addAdmin);
-			if (it != _channel->mgInfo->lastAdmins.cend()) {
-				return &it.value();
-			}
-		}
-		return nullptr;
-	};
-
-	if (auto rights = loadedRights()) {
-		if (rights->canEdit) {
-			showBox(rights->rights, true);
-		} else {
-			Ui::show(Box<InformBox>(lang(lng_error_cant_edit_admin)), KeepOtherLayers);
-		}
-	} else {
-		// We don't have current rights yet.
-		_addAdminRequestId = MTP::send(MTPchannels_GetParticipant(_channel->inputChannel, _addAdmin->inputUser), ::rpcDone(base::lambda_guarded(this, [this, showBox](const MTPchannels_ChannelParticipant &result) {
-			Expects(result.type() == mtpc_channels_channelParticipant);
-			auto &participant = result.c_channels_channelParticipant();
-			App::feedUsers(participant.vusers);
-			_addAdminRequestId = 0;
-			if (participant.vparticipant.type() == mtpc_channelParticipantAdmin) {
-				if (participant.vparticipant.c_channelParticipantAdmin().is_can_edit()) {
-					showBox(participant.vparticipant.c_channelParticipantAdmin().vadmin_rights, true);
-				} else {
-					Ui::show(Box<InformBox>(lang(lng_error_cant_edit_admin)), KeepOtherLayers);
-				}
-			} else {
-				showBox(EditAdminBox::DefaultRights(_channel), false);
-			}
-		})), ::rpcFail(base::lambda_guarded(this, [this](const RPCError &error) {
-			if (MTP::isDefaultHandledError(error)) {
-				return false;
-			}
-			_addAdminRequestId = 0;
-			return true;
-		})));
-	}
 }
 
 void ContactsBox::Inner::shareBotGameToSelected() {
@@ -1535,7 +1471,7 @@ void ContactsBox::Inner::changeCheckState(ContactData *data, PeerData *peer) {
 	} else if (selectedCount() < ((_channel && _channel->isMegagroup()) ? Global::MegagroupSizeMax() : Global::ChatSizeMax())) {
 		changePeerCheckState(data, peer, true);
 	} else if (_channel && !_channel->isMegagroup()) {
-		Ui::show(Box<MaxInviteBox>(_channel->inviteLink()), KeepOtherLayers);
+		Ui::show(Box<MaxInviteBox>(_channel), KeepOtherLayers);
 	} else if (!_channel && selectedCount() >= Global::ChatSizeMax() && selectedCount() < Global::MegagroupSizeMax()) {
 		Ui::show(Box<InformBox>(lng_profile_add_more_after_upgrade(lt_count, Global::MegagroupSizeMax())), KeepOtherLayers);
 	}
@@ -1621,22 +1557,11 @@ void ContactsBox::Inner::updateSelection() {
 
 void ContactsBox::Inner::updateFilter(QString filter) {
 	_lastQuery = filter.toLower().trimmed();
-	filter = textSearchKey(filter);
+
+	auto words = TextUtilities::PrepareSearchWords(_lastQuery);
+	filter = words.isEmpty() ? QString() : words.join(' ');
 
 	_time = unixtime();
-	QStringList f;
-	if (!filter.isEmpty()) {
-		QStringList filterList = filter.split(cWordSplit(), QString::SkipEmptyParts);
-		int l = filterList.size();
-
-		f.reserve(l);
-		for (int i = 0; i < l; ++i) {
-			QString filterName = filterList[i].trimmed();
-			if (filterName.isEmpty()) continue;
-			f.push_back(filterName);
-		}
-		filter = f.join(' ');
-	}
 	if (_filter != filter) {
 		_filter = filter;
 
@@ -1655,10 +1580,10 @@ void ContactsBox::Inner::updateFilter(QString filter) {
 		} else {
 			if (!_addContactLnk->isHidden()) _addContactLnk->hide();
 			if (!_allAdmins->isHidden()) _allAdmins->hide();
-			QStringList::const_iterator fb = f.cbegin(), fe = f.cend(), fi;
+			QStringList::const_iterator fb = words.cbegin(), fe = words.cend(), fi;
 
 			_filtered.clear();
-			if (!f.isEmpty()) {
+			if (!words.isEmpty()) {
 				const Dialogs::List *toFilter = nullptr;
 				if (!_contacts->isEmpty()) {
 					for (fi = fb; fi != fe; ++fi) {
