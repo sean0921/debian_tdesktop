@@ -1,16 +1,14 @@
 Description: Eliminates dependencies from static Qt and other libraries
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Forwarded: no
-Last-Update: 2017-07-06
+Last-Update: 2017-07-23
 
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
-@@ -39,6 +39,13 @@ int main(int argc, char *argv[]) {
+@@ -39,6 +39,11 @@ int main(int argc, char *argv[]) {
  	Logs::start(); // must be started before Platform is started
  	Platform::start(); // must be started before QApplication is created
  
-+	// I don't know why path is not in QT_PLUGIN_PATH by default
-+	QCoreApplication::addLibraryPath("/usr/lib/" DEB_HOST_MULTIARCH "/qt5/plugins");
 +	// without this Telegram doesn't start on Ubuntu 17.04 due GTK errors
 +	setenv("QT_STYLE_OVERRIDE", "qwerty", false);
 +	// Telegram doesn't start when extraordinary theme is set, see launchpad.net/bugs/1680943
@@ -303,7 +301,7 @@ Last-Update: 2017-07-06
      'cflags_cc': [
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -570,7 +570,6 @@
+@@ -568,7 +568,6 @@
  <(src_loc)/overviewwidget.h
  <(src_loc)/passcodewidget.cpp
  <(src_loc)/passcodewidget.h
@@ -311,7 +309,7 @@ Last-Update: 2017-07-06
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -580,14 +579,7 @@
+@@ -578,14 +577,7 @@
  <(src_loc)/structs.cpp
  <(src_loc)/structs.h
  
@@ -337,3 +335,11 @@ Last-Update: 2017-07-06
      },
      'includes': [
        'common_executable.gypi',
+--- a/Telegram/Resources/qrc/telegram_linux.qrc
++++ b/Telegram/Resources/qrc/telegram_linux.qrc
+@@ -1,5 +1,4 @@
+ <RCC>
+   <qresource prefix="/qt">
+-    <file alias="etc/qt.conf">../etc/qt_linux.conf</file>
+   </qresource>
+ </RCC>
