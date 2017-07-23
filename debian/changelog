@@ -2,6 +2,7 @@ telegram-desktop (1.1.15-1) unstable; urgency=medium
 
   * New upstream release
   * Fix build for Qt 5.9 (closes: #867578)
+  * Exclude qt.conf file from resources
 
  -- Nicholas Guriev <guriev-ns@ya.ru>  Sun, 23 Jul 2017 20:04:17 +0300
 
