@@ -25,6 +25,11 @@ Files: Telegram/Resources/fonts/OpenSans-*.ttf
 Copyright: Steve Matteson
 License: Apache-2.0
 
+Files: Telegram/Resources/emoji_autocomplete.json
+Copyright: 2017 EmojiOne Inc.
+License: Expat
+Comment: See https://github.com/emojione/emojione/tree/master/extras/alpha-codes
+
 Files: Telegram/gyp/PrecompiledHeader.cmake
 Copyright: 2009-2013 Lars Christensen <larsch@belunktum.dk>
 License: Expat
