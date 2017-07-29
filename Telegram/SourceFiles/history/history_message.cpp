@@ -177,6 +177,7 @@ void FastShareMessage(gsl::not_null<HistoryItem*> item) {
 		OrderedSet<mtpRequestId> requests;
 	};
 	auto data = MakeShared<ShareData>(item->fullId());
+	auto isGame = item->getMessageBot() && item->getMedia() && (item->getMedia()->type() == MediaTypeGame);
 
 	auto canCopyLink = item->hasDirectLink();
 	if (!canCopyLink) {
@@ -264,10 +265,10 @@ void FastShareMessage(gsl::not_null<HistoryItem*> item) {
 			}
 		}
 	};
-	auto filterCallback = [](PeerData *peer) {
+	auto filterCallback = [isGame](PeerData *peer) {
 		if (peer->canWrite()) {
 			if (auto channel = peer->asChannel()) {
-				return !channel->isBroadcast();
+				return isGame ? (!channel->isBroadcast()) : true;
 			}
 			return true;
 		}
@@ -371,19 +372,20 @@ int HistoryMessageEdited::maxWidth() const {
 
 void HistoryMessageForwarded::create(const HistoryMessageVia *via) const {
 	QString text;
+	auto fromChannel = (_originalSender->isChannel() && !_originalSender->isMegagroup());
 	if (!_originalAuthor.isEmpty()) {
-		text = lng_forwarded_signed(lt_channel, App::peerName(_originalPeer), lt_user, _originalAuthor);
+		text = lng_forwarded_signed(lt_channel, App::peerName(_originalSender), lt_user, _originalAuthor);
 	} else {
-		text = App::peerName(_originalPeer);
+		text = App::peerName(_originalSender);
 	}
 	if (via) {
-		if (_originalPeer->isChannel()) {
+		if (fromChannel) {
 			text = lng_forwarded_channel_via(lt_channel, textcmdLink(1, text), lt_inline_bot, textcmdLink(2, '@' + via->_bot->username));
 		} else {
 			text = lng_forwarded_via(lt_user, textcmdLink(1, text), lt_inline_bot, textcmdLink(2, '@' + via->_bot->username));
 		}
 	} else {
-		if (_originalPeer->isChannel()) {
+		if (fromChannel) {
 			text = lng_forwarded_channel(lt_channel, textcmdLink(1, text));
 		} else {
 			text = lng_forwarded(lt_user, textcmdLink(1, text));
@@ -391,7 +393,7 @@ void HistoryMessageForwarded::create(const HistoryMessageVia *via) const {
 	}
 	TextParseOptions opts = { TextParseRichText, 0, 0, Qt::LayoutDirectionAuto };
 	_text.setText(st::fwdTextStyle, text, opts);
-	_text.setLink(1, (_originalId && _originalPeer->isChannel()) ? goToMessageClickHandler(_originalPeer, _originalId) : _originalPeer->openLink());
+	_text.setLink(1, fromChannel ? goToMessageClickHandler(_originalSender, _originalId) : _originalSender->openLink());
 	if (via) {
 		_text.setLink(2, via->_lnk);
 	}
@@ -610,7 +612,7 @@ HistoryMessage::HistoryMessage(gsl::not_null<History*> history, const MTPDmessag
 		auto &f = msg.vfwd_from.c_messageFwdHeader();
 		config.originalDate = ::date(f.vdate);
 		if (f.has_from_id() || f.has_channel_id()) {
-			config.peerIdOriginal = f.has_channel_id() ? peerFromChannel(f.vchannel_id) : peerFromUser(f.vfrom_id);
+			config.senderOriginal = f.has_channel_id() ? peerFromChannel(f.vchannel_id) : peerFromUser(f.vfrom_id);
 			if (f.has_channel_post()) config.originalId = f.vchannel_post.v;
 			if (f.has_post_author()) config.authorOriginal = qs(f.vpost_author);
 		}
@@ -657,10 +659,10 @@ HistoryMessage::HistoryMessage(gsl::not_null<History*> history, MsgId id, MTPDme
 	if (fwd->Has<HistoryMessageForwarded>() || !fwd->history()->peer->isSelf()) {
 		// Server doesn't add "fwd_from" to non-forwarded messages from chat with yourself.
 		config.originalDate = fwd->dateOriginal();
-		auto peerOriginal = fwd->peerOriginal();
-		config.peerIdOriginal = peerOriginal->id;
+		auto senderOriginal = fwd->senderOriginal();
+		config.senderOriginal = senderOriginal->id;
 		config.authorOriginal = fwd->authorOriginal();
-		if (peerOriginal->isChannel()) {
+		if (senderOriginal->isChannel()) {
 			config.originalId = fwd->idOriginal();
 		}
 	}
@@ -843,7 +845,7 @@ void HistoryMessage::createComponents(const CreateConfig &config) {
 	if (displayEditedBadge(hasViaBot || hasInlineMarkup())) {
 		mask |= HistoryMessageEdited::Bit();
 	}
-	if (config.peerIdOriginal) {
+	if (config.senderOriginal) {
 		mask |= HistoryMessageForwarded::Bit();
 	}
 	if (config.mtpMarkup) {
@@ -880,7 +882,7 @@ void HistoryMessage::createComponents(const CreateConfig &config) {
 	}
 	if (auto forwarded = Get<HistoryMessageForwarded>()) {
 		forwarded->_originalDate = config.originalDate;
-		forwarded->_originalPeer = App::peer(config.peerIdOriginal);
+		forwarded->_originalSender = App::peer(config.senderOriginal);
 		forwarded->_originalId = config.originalId;
 		forwarded->_originalAuthor = config.authorOriginal;
 	}
@@ -1236,7 +1238,7 @@ bool HistoryMessage::displayForwardedFrom() const {
 			|| !_media
 			|| !_media->isDisplayed()
 			|| !_media->hideForwardedFrom()
-			|| forwarded->_originalPeer->isChannel();
+			|| forwarded->_originalSender->isChannel();
 	}
 	return false;
 }
