@@ -1,0 +1,4 @@
+# Most of the reports with this tag are not really spelling mistakes for
+# English. Those words are parts of localized strings or an image which are in
+# builtin resources.
+telegram-desktop binary: spelling-error-in-binary
