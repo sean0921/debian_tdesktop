@@ -1,7 +1,7 @@
 Description: Eliminates dependencies from static Qt and other libraries
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Forwarded: no
-Last-Update: 2017-07-23
+Last-Update: 2017-07-29
 
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
@@ -41,15 +41,15 @@ Last-Update: 2017-07-23
  
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
-@@ -33,6 +33,7 @@
-       'submodules_loc': '../ThirdParty',
+@@ -34,6 +34,7 @@
        'minizip_loc': '<(submodules_loc)/minizip',
        'sp_media_key_tap_loc': '<(submodules_loc)/SPMediaKeyTap',
+       'emoji_suggestions_loc': '<(submodules_loc)/emoji_suggestions',
 +      'triplet': '<!(dpkg-architecture -q DEB_HOST_MULTIARCH)',
        'style_files': [
          '<(res_loc)/colors.palette',
          '<(res_loc)/basic.style',
-@@ -78,12 +79,9 @@
+@@ -79,12 +80,9 @@
        'codegen.gyp:codegen_lang',
        'codegen.gyp:codegen_numbers',
        'codegen.gyp:codegen_style',
@@ -62,7 +62,7 @@ Last-Update: 2017-07-23
        'AL_ALEXT_PROTOTYPES',
        'TGVOIP_USE_CXX11_LIB',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-@@ -92,17 +90,9 @@
+@@ -93,18 +91,10 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -75,6 +75,7 @@ Last-Update: 2017-07-23
 -      '<(libs_loc)/opus/include',
 -      '<(minizip_loc)',
 -      '<(sp_media_key_tap_loc)',
+       '<(emoji_suggestions_loc)',
 -      '<(submodules_loc)/GSL/include',
 -      '<(submodules_loc)/variant/include',
 +      '/usr/include/minizip',
@@ -301,7 +302,7 @@ Last-Update: 2017-07-23
      'cflags_cc': [
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -568,7 +568,6 @@
+@@ -571,7 +571,6 @@
  <(src_loc)/overviewwidget.h
  <(src_loc)/passcodewidget.cpp
  <(src_loc)/passcodewidget.h
@@ -309,9 +310,9 @@ Last-Update: 2017-07-23
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -578,14 +577,7 @@
- <(src_loc)/structs.cpp
- <(src_loc)/structs.h
+@@ -583,14 +582,7 @@
+ <(emoji_suggestions_loc)/emoji_suggestions.cpp
+ <(emoji_suggestions_loc)/emoji_suggestions.h
  
 -platforms: !win
 -<(minizip_loc)/crypt.h
