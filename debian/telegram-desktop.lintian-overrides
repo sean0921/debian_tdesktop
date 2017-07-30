@@ -1,4 +1,15 @@
 # Most of the reports with this tag are not really spelling mistakes for
-# English. Those words are parts of localized strings or an image which are in
-# builtin resources.
-telegram-desktop binary: spelling-error-in-binary
+# English. These words are parts of localized strings which are in builtin
+# resources.
+telegram-desktop binary: spelling-error-in-binary usr/bin/telegram-desktop ment *
+telegram-desktop binary: spelling-error-in-binary usr/bin/telegram-desktop Lenght *
+telegram-desktop binary: spelling-error-in-binary usr/bin/telegram-desktop posible *
+telegram-desktop binary: spelling-error-in-binary usr/bin/telegram-desktop requiere *
+telegram-desktop binary: spelling-error-in-binary usr/bin/telegram-desktop Tage *
+telegram-desktop binary: spelling-error-in-binary usr/bin/telegram-desktop Programm *
+telegram-desktop binary: spelling-error-in-binary usr/bin/telegram-desktop acess *
+telegram-desktop binary: spelling-error-in-binary usr/bin/telegram-desktop coment *
+telegram-desktop binary: spelling-error-in-binary usr/bin/telegram-desktop possibile *
+telegram-desktop binary: spelling-error-in-binary usr/bin/telegram-desktop proces *
+# And this is a piece of an image with emoji.
+telegram-desktop binary: spelling-error-in-binary usr/bin/telegram-desktop jave *
