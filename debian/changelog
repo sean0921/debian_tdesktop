@@ -1,3 +1,11 @@
+telegram-desktop (1.1.18-1) unstable; urgency=medium
+
+  * New upstream release
+  * Refresh a patch
+  * Add lintian override
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sun, 30 Jul 2017 08:50:28 +0300
+
 telegram-desktop (1.1.15-1) unstable; urgency=medium
 
   * New upstream release
