@@ -23,7 +23,7 @@ DEFINITIONS += \
 	TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME
 export CPPFLAGS += $(DEFINITIONS:%=-D%) -Winvalid-pch
 
-# Workaround for hurd, see bugs.debian.org/799356
+# Workaround for non-Linux, see bugs.debian.org/799356
 ifneq ($(DEB_HOST_ARCH_OS),linux)
  EXTRA_GYP_FLAGS += --no-parallel
 endif
