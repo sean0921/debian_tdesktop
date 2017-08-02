@@ -24,7 +24,7 @@ DEFINITIONS += \
 export CPPFLAGS += $(DEFINITIONS:%=-D%) -Winvalid-pch
 
 # Workaround for hurd, see bugs.debian.org/799356
-ifeq ($(DEB_HOST_ARCH),hurd-i386)
+ifneq ($(DEB_HOST_ARCH_OS),linux)
  EXTRA_GYP_FLAGS += --no-parallel
 endif
 
