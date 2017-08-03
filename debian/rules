@@ -1,14 +1,15 @@
 #!/usr/bin/make -f
 # -*- makefile -*-
 
-# Rules for building Debian package. Based on the follow files:
-#  * doc/building-cmake.md
+# Rules for building Debian package. Based on the following files:
+#  * docs/building-cmake.md
 #  * Telegram/gyp/refresh.sh
 #  * Telegram/Patches/gyp.diff
 # Please recheck this file if they are changed in future versions.
 
 export DEB_BUILD_MAINT_OPTIONS += hardening=+all
 include /usr/share/dpkg/default.mk
+OUT = obj-$(DEB_HOST_GNU_TYPE)
 
 ifeq (,$(filter noopt,$(DEB_BUILD_OPTIONS)))
  BUILD_MODE = Release
@@ -16,34 +17,38 @@ else
  BUILD_MODE = Debug
 endif
 
-DEFINITIONS += \
+GYPFLAGS += \
+	--format=cmake \
+	--depth=Telegram/gyp \
+	--generator-output=../.. \
+	-Goutput_dir=$(OUT) \
+	-Gconfig=$(BUILD_MODE)
+
+EXTRA_MACROS += \
 	DEBIAN_API_ID \
 	TDESKTOP_DISABLE_AUTOUPDATE \
 	TDESKTOP_DISABLE_CRASH_REPORTS \
 	TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME
 
-# Workarounds for non-Linux
+# Workarounds for non-Linux systems
 ifneq ($(DEB_HOST_ARCH_OS),linux)
- DEFINITIONS += Q_OS_LINUX  # brilliant bluff :)
- EXTRA_GYP_FLAGS += --no-parallel  # see bugs.debian.org/799356
+ EXTRA_MACROS += Q_OS_LINUX  # brilliant bluff :)
+ GYPFLAGS += --no-parallel  # see bugs.debian.org/799356
 endif
 
-export CPPFLAGS += $(DEFINITIONS:%=-D%) -Winvalid-pch
+export CPPFLAGS += $(EXTRA_MACROS:%=-D%)
+export CXXFLAGS += -Werror=invalid-pch
 
+# We use an alternate source directory as fallback when an user tries to clear
+# a clean tree.
 %:
-	dh $@ --sourcedirectory=out/$(BUILD_MODE)
+	dh $@ --sourcedirectory=$(OUT)/$(BUILD_MODE) || dh $@
 
+# We patch CMakeLists.txt instead gyp utility. $NUM is the number of the line
+# before penultimate one in the generated CMakeLists.txt file. The following sed
+# script inserts all lines from debian/CMakeLists.inj file.
 override_dh_auto_configure:
-	gyp --format=cmake --depth=Telegram/gyp --generator-output=../.. \
-	  -Goutput_dir=out -Gconfig=$(BUILD_MODE) Telegram/gyp/Telegram.gyp \
-	  $(EXTRA_GYP_FLAGS)
-	@# Patch CMakeLists.txt instead gyp utility. $NUM is the number of the line
-	@# before penultimate one in the generated CMakeLists.txt file. The follow
-	@# sed script inserts all lines from debian/CMakeLists.inj file.
-	NUM=$$((`wc -l < out/$(BUILD_MODE)/CMakeLists.txt` - 2)); \
-	  sed -i "$$NUM r debian/CMakeLists.inj" out/$(BUILD_MODE)/CMakeLists.txt
+	gyp $(GYPFLAGS) Telegram/gyp/Telegram.gyp
+	NUM=$$((`wc -l < $(OUT)/$(BUILD_MODE)/CMakeLists.txt` - 2)); \
+	sed -i "$$NUM r debian/CMakeLists.inj" $(OUT)/$(BUILD_MODE)/CMakeLists.txt
 	dh_auto_configure
-
-override_dh_auto_clean:
-	dh_auto_clean || dh_auto_clean --sourcedirectory=$(CURDIR)
-	rm -rf out
