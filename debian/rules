@@ -21,12 +21,14 @@ DEFINITIONS += \
 	TDESKTOP_DISABLE_AUTOUPDATE \
 	TDESKTOP_DISABLE_CRASH_REPORTS \
 	TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME
-export CPPFLAGS += $(DEFINITIONS:%=-D%) -Winvalid-pch
 
-# Workaround for non-Linux, see bugs.debian.org/799356
+# Workarounds for non-Linux
 ifneq ($(DEB_HOST_ARCH_OS),linux)
- EXTRA_GYP_FLAGS += --no-parallel
+ DEFINITIONS += Q_OS_LINUX  # brilliant bluff :)
+ EXTRA_GYP_FLAGS += --no-parallel  # see bugs.debian.org/799356
 endif
+
+export CPPFLAGS += $(DEFINITIONS:%=-D%) -Winvalid-pch
 
 %:
 	dh $@ --sourcedirectory=out/$(BUILD_MODE)

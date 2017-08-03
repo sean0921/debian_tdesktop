@@ -3,12 +3,10 @@ Description: Fix build for various architectures
  * Remove the build_config.h file
    - Some macros are moved to the basic_types.h file
    - The ARCH_CPU_32_BITS macro is replaced with _LP64 and others
- * Define the Q_OS_LINUX macro for non-Linux systems
-   (we need a real solution for that)
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Bug: https://github.com/telegramdesktop/tdesktop/issues/3167
 Bug-Debian: https://bugs.debian.org/859057
-Last-Update: 2017-08-02
+Last-Update: 2017-08-03
 
 --- a/Telegram/SourceFiles/config.h
 +++ b/Telegram/SourceFiles/config.h
@@ -81,16 +79,6 @@ Last-Update: 2017-08-02
  
  #ifdef SHIFTED_USE_32BIT
  
---- a/Telegram/gyp/settings_linux.gypi
-+++ b/Telegram/gyp/settings_linux.gypi
-@@ -61,6 +61,7 @@
-       'defines': [
-         '_REENTRANT',
-         'QT_PLUGIN',
-+        'Q_OS_LINUX',  # genius!
-       ],
-       'cflags_c': [
-         '<@(linux_common_flags)',
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
 @@ -1,4 +1,3 @@
