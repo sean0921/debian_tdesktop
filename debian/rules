@@ -7,7 +7,7 @@
 #  * Telegram/Patches/gyp.diff
 # Please recheck this file if they are changed in future versions.
 
-include /usr/share/dpkg/architecture.mk
+include /usr/share/dpkg/default.mk
 OUT = obj-$(DEB_HOST_GNU_TYPE)
 
 ifeq (,$(filter noopt,$(DEB_BUILD_OPTIONS)))
@@ -35,12 +35,9 @@ ifneq ($(DEB_HOST_ARCH_OS),linux)
  GYPFLAGS += --no-parallel  # see bugs.debian.org/799356
 endif
 
-DEB_BUILD_MAINT_OPTIONS = hardening=+all
-DEB_CPPFLAGS_MAINT_APPEND = $(EXTRA_MACROS:%=-D%)
-DEB_CXXFLAGS_MAINT_APPEND = -Werror=invalid-pch
-
-DPKG_EXPORT_BUILDFLAGS = 1
-include /usr/share/dpkg/buildflags.mk
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_CPPFLAGS_MAINT_APPEND = $(EXTRA_MACROS:%=-D%)
+export DEB_CXXFLAGS_MAINT_APPEND = -Werror=invalid-pch
 
 # We use a default source directory as fallback when an user tries to clear a
 # clean tree or when the clean target is called twice in a row. In this case,
