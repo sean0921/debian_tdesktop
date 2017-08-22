@@ -20,6 +20,7 @@ GYPFLAGS += \
 	--format=cmake \
 	--depth=Telegram/gyp \
 	--generator-output=../.. \
+	-Duse_packed_resources \
 	-Goutput_dir=$(OUT) \
 	-Gconfig=$(BUILD_MODE)
 
