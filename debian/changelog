@@ -1,3 +1,13 @@
+telegram-desktop (1.1.19-2) unstable; urgency=medium
+
+  * Fix CVE-2016-10351 by applying Fix-Insecure-cWorkingDir-permissions.patch
+    - Set 700 permissions for the working directory on every start
+  * Apply Packed-resources.patch to reduce amount of required memory for
+    building (closes: #860510)
+  * Some refactoring the debian/rules file
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Thu, 31 Aug 2017 23:46:47 +0300
+
 telegram-desktop (1.1.19-1) unstable; urgency=medium
 
   * New upstream release
