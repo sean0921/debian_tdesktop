@@ -40,12 +40,16 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 export DEB_CPPFLAGS_MAINT_APPEND = $(EXTRA_MACROS:%=-D%)
 export DEB_CXXFLAGS_MAINT_APPEND = -Werror=invalid-pch
 
+# A generated CMake config will be placed in the next "source" directory.
+%:
+	dh $@ --sourcedirectory=$(OUT)/$(BUILD_MODE)
+
 # We use a default source directory as fallback when an user tries to clear a
 # clean tree or when the clean target is called twice in a row. In this case,
 # debhelper says that the source directory doesn't exist so we omit the
 # sourcedirectory parameter.
-%:
-	dh $@ --sourcedirectory=$(OUT)/$(BUILD_MODE) || dh $@
+override_dh_auto_clean:
+	dh_auto_clean || dh_auto_clean --sourcedirectory=$(CURDIR)
 
 # We paste the content of CMakeLists.inj into the generated CMakeLists.txt file
 # instead of patching gyp utility. $NUM is the number of the line before
