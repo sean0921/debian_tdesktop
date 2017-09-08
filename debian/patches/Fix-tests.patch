@@ -1,0 +1,54 @@
+Description: Avoid some incompatible with catch framework
+ Catch::Session::run has a strange signature:
+ int run( int argc, char* const argv[] )
+ and doesn't accept an array of const char* so we have to remove const modifiers
+ and ignore compiler warnings.
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Last-Update: 2017-09-08
+
+--- a/Telegram/SourceFiles/base/tests_main.cpp
++++ b/Telegram/SourceFiles/base/tests_main.cpp
+@@ -20,7 +20,6 @@ Copyright (c) 2014-2017 John Preston, ht
+ */
+ #define CATCH_CONFIG_RUNNER
+ #include "catch.hpp"
+-#include "reporters/catch_reporter_compact.hpp"
+ #include <QFile>
+ 
+ namespace Catch {
+@@ -81,8 +80,8 @@ namespace Catch {
+ 
+ } // end namespace Catch
+ 
+-int main(int argc, const char *argv[]) {
+-	const char *catch_argv[] = { argv[0], "-r", "minimal" };
++int main(int argc, char *argv[]) {
++	char *catch_argv[] = { argv[0], "-r", "minimal" };
+ 	constexpr auto catch_argc = sizeof(catch_argv) / sizeof(catch_argv[0]);
+ 	auto result = Catch::Session().run(catch_argc, catch_argv);
+ 	if (result == 0) {
+--- a/Telegram/gyp/Telegram.gyp
++++ b/Telegram/gyp/Telegram.gyp
+@@ -80,7 +80,6 @@
+       'codegen.gyp:codegen_lang',
+       'codegen.gyp:codegen_numbers',
+       'codegen.gyp:codegen_style',
+-      'tests/tests.gyp:tests',
+     ],
+ 
+     'defines': [
+@@ -139,5 +138,14 @@
+         ],
+       }],
+     ],
++  },{
++    # TODO: Make this target more respectful of the `notest` build profile.
++    # There should be no tests when the default target is executed.
++    'target_name': 'check',
++    'type': 'none',
++    'dependencies': [
++      'Telegram',
++      'tests/tests.gyp:tests',
++    ],
+   }],
+ }

@@ -5,3 +5,4 @@ Remove-useless-flags.patch
 Various-build-fixes.patch
 Packed-resources.patch
 Fix-Insecure-cWorkingDir-permissions.patch
+Fix-tests.patch

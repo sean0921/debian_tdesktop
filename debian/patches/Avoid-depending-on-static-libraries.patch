@@ -3,6 +3,14 @@ Author: Nicholas Guriev <guriev-ns@ya.ru>
 Forwarded: no
 Last-Update: 2017-07-29
 
+--- a/Telegram/Resources/qrc/telegram_linux.qrc
++++ b/Telegram/Resources/qrc/telegram_linux.qrc
+@@ -1,5 +1,4 @@
+ <RCC>
+   <qresource prefix="/qt">
+-    <file alias="etc/qt.conf">../etc/qt_linux.conf</file>
+   </qresource>
+ </RCC>
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
 @@ -39,6 +39,11 @@ int main(int argc, char *argv[]) {
@@ -41,18 +49,10 @@ Last-Update: 2017-07-29
  
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
-@@ -34,6 +34,7 @@
-       'minizip_loc': '<(submodules_loc)/minizip',
-       'sp_media_key_tap_loc': '<(submodules_loc)/SPMediaKeyTap',
-       'emoji_suggestions_loc': '<(submodules_loc)/emoji_suggestions',
-+      'triplet': '<!(dpkg-architecture -q DEB_HOST_MULTIARCH)',
-       'style_files': [
-         '<(res_loc)/colors.palette',
-         '<(res_loc)/basic.style',
-@@ -79,12 +80,9 @@
-       'codegen.gyp:codegen_lang',
+@@ -80,12 +80,9 @@
        'codegen.gyp:codegen_numbers',
        'codegen.gyp:codegen_style',
+       'tests/tests.gyp:tests',
 -      'utils.gyp:Updater',
 -      '../ThirdParty/libtgvoip/libtgvoip.gyp:libtgvoip',
      ],
@@ -62,7 +62,7 @@ Last-Update: 2017-07-29
        'AL_ALEXT_PROTOTYPES',
        'TGVOIP_USE_CXX11_LIB',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-@@ -93,18 +91,10 @@
+@@ -94,18 +91,10 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -84,40 +84,16 @@ Last-Update: 2017-07-29
      ],
      'sources': [
        '<@(qrc_files)',
---- a/Telegram/gyp/codegen.gyp
-+++ b/Telegram/gyp/codegen.gyp
-@@ -26,6 +26,7 @@
-     'variables': {
-       'src_loc': '../SourceFiles',
-       'mac_target': '10.10',
-+      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
-     },
-     'includes': [
-       'common_executable.gypi',
-@@ -63,6 +64,7 @@
-     'variables': {
-       'src_loc': '../SourceFiles',
-       'mac_target': '10.10',
-+      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
-     },
-     'includes': [
-       'common_executable.gypi',
-@@ -104,6 +106,7 @@
-     'variables': {
-       'src_loc': '../SourceFiles',
-       'mac_target': '10.10',
-+      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
-     },
-     'includes': [
-       'common_executable.gypi',
-@@ -141,6 +144,7 @@
-     'variables': {
-       'src_loc': '../SourceFiles',
-       'mac_target': '10.10',
-+      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
-     },
-     'includes': [
-       'common_executable.gypi',
+--- a/Telegram/gyp/common.gypi
++++ b/Telegram/gyp/common.gypi
+@@ -104,6 +104,7 @@
+ 
+     'library%': 'static_library',
+ 
++    'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
+   },
+ 
+   'configurations': {
 --- a/Telegram/gyp/qt.gypi
 +++ b/Telegram/gyp/qt.gypi
 @@ -27,25 +27,21 @@
@@ -226,15 +202,15 @@ Last-Update: 2017-07-29
 -        '<(linux_lib_ssl)',
 -        '<(linux_lib_crypto)',
 -        '<!@(python -c "for s in \'<(linux_lib_icu)\'.split(\' \'): print(s)")',
--        'xcb',
-+        'crypto',
-         'X11',
--        'X11-xcb',
--        'dbus-1',
--        'dl',
--        'gthread-2.0',
-         'glib-2.0',
-         'pthread',
+-        '-lxcb',
++        '-lcrypto',
+         '-lX11',
+-        '-lX11-xcb',
+-        '-ldbus-1',
+-        '-ldl',
+-        '-lgthread-2.0',
+         '-lglib-2.0',
+         '-lpthread',
        ],
 @@ -238,7 +201,6 @@
          '<(qt_loc)/mkspecs/linux-g++',
@@ -302,7 +278,7 @@ Last-Update: 2017-07-29
      'cflags_cc': [
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -571,7 +571,6 @@
+@@ -586,7 +586,6 @@
  <(src_loc)/overviewwidget.h
  <(src_loc)/passcodewidget.cpp
  <(src_loc)/passcodewidget.h
@@ -310,7 +286,7 @@ Last-Update: 2017-07-29
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -583,14 +582,7 @@
+@@ -598,14 +597,7 @@
  <(emoji_suggestions_loc)/emoji_suggestions.cpp
  <(emoji_suggestions_loc)/emoji_suggestions.h
  
@@ -326,21 +302,3 @@ Last-Update: 2017-07-29
  
  platforms: mac
  <(sp_media_key_tap_loc)/SPMediaKeyTap.m
---- a/Telegram/gyp/utils.gyp
-+++ b/Telegram/gyp/utils.gyp
-@@ -69,6 +69,7 @@
-       'libs_loc': '../../../Libraries',
-       'src_loc': '../SourceFiles',
-       'mac_target': '10.10',
-+      'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
-     },
-     'includes': [
-       'common_executable.gypi',
---- a/Telegram/Resources/qrc/telegram_linux.qrc
-+++ b/Telegram/Resources/qrc/telegram_linux.qrc
-@@ -1,5 +1,4 @@
- <RCC>
-   <qresource prefix="/qt">
--    <file alias="etc/qt.conf">../etc/qt_linux.conf</file>
-   </qresource>
- </RCC>
