@@ -1,9 +1,11 @@
 Description: Remove unwanted compiler flags
  * -Werror flag is removed because of fatal warnings in Qt
  * Debian packages are compiled with second optimization level
+ * Disable mandatory LTO
+   - This is temporary workaround to avoid FTBFS on mips64el. For other
+     architectures LTO is enabled by the d/rules file.
 Author: Nicholas Guriev <guriev-ns@ya.ru>
-Forwarded: no
-Last-Update: 2017-04-19
+Last-Update: 2017-09-14
 
 --- a/Telegram/gyp/settings_linux.gypi
 +++ b/Telegram/gyp/settings_linux.gypi
@@ -17,21 +19,22 @@ Last-Update: 2017-04-19
            '-Wno-unused-variable',
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -69,17 +69,14 @@
+@@ -72,18 +72,12 @@
      'configurations': {
        'Release': {
          'cflags': [
 -          '-Ofast',
-           '-flto',
+-          '-flto',
            '-fno-strict-aliasing',
          ],
          'cflags_cc': [
 -          '-Ofast',
-           '-flto',
+-          '-flto',
            '-fno-strict-aliasing',
          ],
          'ldflags': [
 -          '-Ofast',
-           '-flto',
+-          '-flto',
          ],
        },
+     },

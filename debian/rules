@@ -12,6 +12,10 @@ OUT = obj-$(DEB_HOST_GNU_TYPE)
 
 ifeq (,$(filter noopt,$(DEB_BUILD_OPTIONS)))
  BUILD_MODE = Release
+ ifneq ($(DEB_HOST_ARCH),mips64el)
+  DEB_CXXFLAGS_MAINT_APPEND = -flto
+  DEB_LDFLAGS_MAINT_APPEND = -flto
+ endif
 else
  BUILD_MODE = Debug
 endif
@@ -37,8 +41,9 @@ ifneq ($(DEB_HOST_ARCH_OS),linux)
 endif
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
-export DEB_CPPFLAGS_MAINT_APPEND = $(EXTRA_MACROS:%=-D%)
-export DEB_CXXFLAGS_MAINT_APPEND = -Werror=invalid-pch
+export DEB_CPPFLAGS_MAINT_APPEND += $(EXTRA_MACROS:%=-D%)
+export DEB_CXXFLAGS_MAINT_APPEND += -Werror=invalid-pch
+export DEB_LDFLAGS_MAINT_APPEND
 
 # A generated CMake config will be placed in the next "source" directory.
 %:
