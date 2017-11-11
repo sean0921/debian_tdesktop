@@ -55,6 +55,7 @@ export DEB_LDFLAGS_MAINT_APPEND
 # sourcedirectory parameter.
 override_dh_auto_clean:
 	dh_auto_clean || dh_auto_clean --sourcedirectory=$(CURDIR)
+	rm -f Telegram/gyp/tests/*.test
 
 # We paste the content of CMakeLists.inj into the generated CMakeLists.txt file
 # instead of patching gyp utility. $NUM is the number of the line before
