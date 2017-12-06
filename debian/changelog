@@ -1,3 +1,9 @@
+telegram-desktop (1.1.23-3) unstable; urgency=medium
+
+  * Add Fix-text-duplicating.patch (closes: #883454)
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Wed, 06 Dec 2017 09:16:38 +0300
+
 telegram-desktop (1.1.23-2) unstable; urgency=medium
 
   * Add Use-OpenSSL-v1.1.patch to migrate to OpenSSL 1.1 (closes: #859852)
