@@ -7,3 +7,4 @@ Packed-resources.patch
 Fix-Insecure-cWorkingDir-permissions.patch
 Fix-tests.patch
 Use-OpenSSL-v1.1.patch
+Fix-text-duplicating.patch
