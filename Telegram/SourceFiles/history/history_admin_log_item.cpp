@@ -25,6 +25,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "history/history_admin_log_inner.h"
 #include "lang/lang_keys.h"
 #include "boxes/sticker_set_box.h"
+#include "core/tl_help.h"
+#include "base/overload.h"
 #include "messenger.h"
 
 namespace AdminLog {
@@ -48,13 +50,44 @@ MTPMessage PrepareLogMessage(const MTPMessage &message, MsgId newId, int32 newDa
 	case mtpc_messageEmpty: return MTP_messageEmpty(MTP_int(newId));
 	case mtpc_messageService: {
 		auto &data = message.c_messageService();
-		auto flags = data.vflags.v & ~(MTPDmessageService::Flag::f_out | MTPDmessageService::Flag::f_post/* | MTPDmessageService::Flag::f_reply_to_msg_id*/);
-		return MTP_messageService(MTP_flags(flags), MTP_int(newId), data.vfrom_id, data.vto_id, data.vreply_to_msg_id, MTP_int(newDate), data.vaction);
+		auto removeFlags = MTPDmessageService::Flag::f_out
+			| MTPDmessageService::Flag::f_post
+			/* | MTPDmessageService::Flag::f_reply_to_msg_id*/;
+		auto flags = data.vflags.v & ~removeFlags;
+		return MTP_messageService(
+			MTP_flags(flags),
+			MTP_int(newId),
+			data.vfrom_id,
+			data.vto_id,
+			data.vreply_to_msg_id,
+			MTP_int(newDate),
+			data.vaction);
 	} break;
 	case mtpc_message: {
 		auto &data = message.c_message();
-		auto flags = data.vflags.v & ~(MTPDmessage::Flag::f_out | MTPDmessage::Flag::f_post | MTPDmessage::Flag::f_reply_to_msg_id | MTPDmessage::Flag::f_edit_date);
-		return MTP_message(MTP_flags(flags), MTP_int(newId), data.vfrom_id, data.vto_id, data.vfwd_from, data.vvia_bot_id, data.vreply_to_msg_id, MTP_int(newDate), data.vmessage, data.vmedia, data.vreply_markup, data.ventities, data.vviews, data.vedit_date, MTP_string(""));
+		auto removeFlags = MTPDmessage::Flag::f_out
+			| MTPDmessage::Flag::f_post
+			| MTPDmessage::Flag::f_reply_to_msg_id
+			| MTPDmessage::Flag::f_edit_date
+			| MTPDmessage::Flag::f_grouped_id;
+		auto flags = data.vflags.v & ~removeFlags;
+		return MTP_message(
+			MTP_flags(flags),
+			MTP_int(newId),
+			data.vfrom_id,
+			data.vto_id,
+			data.vfwd_from,
+			data.vvia_bot_id,
+			data.vreply_to_msg_id,
+			MTP_int(newDate),
+			data.vmessage,
+			data.vmedia,
+			data.vreply_markup,
+			data.ventities,
+			data.vviews,
+			data.vedit_date,
+			MTP_string(""),
+			data.vgrouped_id);
 	} break;
 	}
 	Unexpected("Type in PrepareLogMessage()");
@@ -188,7 +221,14 @@ auto GenerateUserString(MTPint userId) {
 	// User name in "User name (@username)" format with entities.
 	auto user = App::user(userId.v);
 	auto name = TextWithEntities { App::peerName(user) };
-	name.entities.push_back(EntityInText(EntityInTextMentionName, 0, name.text.size(), QString::number(user->id) + '.' + QString::number(user->access)));
+	auto entityData = QString::number(user->id)
+		+ '.'
+		+ QString::number(user->accessHash());
+	name.entities.push_back(EntityInText(
+		EntityInTextMentionName,
+		0,
+		name.text.size(),
+		entityData));
 	auto username = user->userName();
 	if (username.isEmpty()) {
 		return name;
@@ -198,43 +238,52 @@ auto GenerateUserString(MTPint userId) {
 	return lng_admin_log_user_with_username__generic(lt_name, name, lt_mention, mention);
 }
 
-auto GenerateParticipantChangeTextInner(not_null<ChannelData*> channel, const MTPChannelParticipant &participant, const MTPChannelParticipant *oldParticipant) {
+auto GenerateParticipantChangeTextInner(
+		not_null<ChannelData*> channel,
+		const MTPChannelParticipant &participant,
+		const MTPChannelParticipant *oldParticipant) {
 	auto oldType = oldParticipant ? oldParticipant->type() : 0;
 
-	auto resultForParticipant = [channel, oldParticipant, oldType](auto &&data) {
+	auto readResult = base::overload([&](const MTPDchannelParticipantCreator &data) {
+		// No valid string here :(
+		return lng_admin_log_invited__generic(
+			lt_user,
+			GenerateUserString(data.vuser_id));
+	}, [&](const MTPDchannelParticipantAdmin &data) {
+		auto user = GenerateUserString(data.vuser_id);
+		return GenerateAdminChangeText(
+			channel,
+			user,
+			&data.vadmin_rights,
+			(oldType == mtpc_channelParticipantAdmin)
+				? &oldParticipant->c_channelParticipantAdmin().vadmin_rights
+				: nullptr);
+	}, [&](const MTPDchannelParticipantBanned &data) {
+		auto user = GenerateUserString(data.vuser_id);
+		return GenerateBannedChangeText(
+			user,
+			&data.vbanned_rights,
+			(oldType == mtpc_channelParticipantBanned)
+				? &oldParticipant->c_channelParticipantBanned().vbanned_rights
+				: nullptr);
+	}, [&](const auto &data) {
 		auto user = GenerateUserString(data.vuser_id);
 		if (oldType == mtpc_channelParticipantAdmin) {
-			return GenerateAdminChangeText(channel, user, nullptr, &oldParticipant->c_channelParticipantAdmin().vadmin_rights);
+			return GenerateAdminChangeText(
+				channel,
+				user,
+				nullptr,
+				&oldParticipant->c_channelParticipantAdmin().vadmin_rights);
 		} else if (oldType == mtpc_channelParticipantBanned) {
-			return GenerateBannedChangeText(user, nullptr, &oldParticipant->c_channelParticipantBanned().vbanned_rights);
+			return GenerateBannedChangeText(
+				user,
+				nullptr,
+				&oldParticipant->c_channelParticipantBanned().vbanned_rights);
 		}
 		return lng_admin_log_invited__generic(lt_user, user);
-	};
+	});
 
-	switch (participant.type()) {
-	case mtpc_channelParticipantCreator: {
-		// No valid string here :(
-		auto &data = participant.c_channelParticipantCreator();
-		return lng_admin_log_invited__generic(lt_user, GenerateUserString(data.vuser_id));
-	} break;
-
-	case mtpc_channelParticipant: return resultForParticipant(participant.c_channelParticipant());
-	case mtpc_channelParticipantSelf: return resultForParticipant(participant.c_channelParticipantSelf());
-
-	case mtpc_channelParticipantAdmin: {
-		auto &data = participant.c_channelParticipantAdmin();
-		auto user = GenerateUserString(data.vuser_id);
-		return GenerateAdminChangeText(channel, user, &data.vadmin_rights, (oldType == mtpc_channelParticipantAdmin) ? &oldParticipant->c_channelParticipantAdmin().vadmin_rights : nullptr);
-	} break;
-
-	case mtpc_channelParticipantBanned: {
-		auto &data = participant.c_channelParticipantBanned();
-		auto user = GenerateUserString(data.vuser_id);
-		return GenerateBannedChangeText(user, &data.vbanned_rights, (oldType == mtpc_channelParticipantBanned) ? &oldParticipant->c_channelParticipantBanned().vbanned_rights : nullptr);
-	} break;
-	}
-
-	Unexpected("Participant type in GenerateParticipantChangeTextInner()");
+	return TLHelp::VisitChannelParticipant(participant, readResult);
 }
 
 TextWithEntities GenerateParticipantChangeText(not_null<ChannelData*> channel, const MTPChannelParticipant &participant, const MTPChannelParticipant *oldParticipant = nullptr) {
@@ -332,14 +381,18 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 
 	auto createToggleInvites = [&](const MTPDchannelAdminLogEventActionToggleInvites &action) {
 		auto enabled = (action.vnew_value.type() == mtpc_boolTrue);
-		auto text = (enabled ? lng_admin_log_invites_enabled : lng_admin_log_invites_disabled)(lt_from, fromLinkText);
-		addSimpleServiceMessage(text);
+		auto text = (enabled
+			? lng_admin_log_invites_enabled
+			: lng_admin_log_invites_disabled);
+		addSimpleServiceMessage(text(lt_from, fromLinkText));
 	};
 
 	auto createToggleSignatures = [&](const MTPDchannelAdminLogEventActionToggleSignatures &action) {
 		auto enabled = (action.vnew_value.type() == mtpc_boolTrue);
-		auto text = (enabled ? lng_admin_log_signatures_enabled : lng_admin_log_signatures_disabled)(lt_from, fromLinkText);
-		addSimpleServiceMessage(text);
+		auto text = (enabled
+			? lng_admin_log_signatures_enabled
+			: lng_admin_log_signatures_disabled);
+		addSimpleServiceMessage(text(lt_from, fromLinkText));
 	};
 
 	auto createUpdatePinned = [&](const MTPDchannelAdminLogEventActionUpdatePinned &action) {
@@ -386,13 +439,17 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 	};
 
 	auto createParticipantJoin = [&]() {
-		auto text = (channel->isMegagroup() ? lng_admin_log_participant_joined : lng_admin_log_participant_joined_channel)(lt_from, fromLinkText);
-		addSimpleServiceMessage(text);
+		auto text = (channel->isMegagroup()
+			? lng_admin_log_participant_joined
+			: lng_admin_log_participant_joined_channel);
+		addSimpleServiceMessage(text(lt_from, fromLinkText));
 	};
 
 	auto createParticipantLeave = [&]() {
-		auto text = (channel->isMegagroup() ? lng_admin_log_participant_left : lng_admin_log_participant_left_channel)(lt_from, fromLinkText);
-		addSimpleServiceMessage(text);
+		auto text = (channel->isMegagroup()
+			? lng_admin_log_participant_left
+			: lng_admin_log_participant_left_channel);
+		addSimpleServiceMessage(text(lt_from, fromLinkText));
 	};
 
 	auto createParticipantInvite = [&](const MTPDchannelAdminLogEventActionParticipantInvite &action) {
@@ -441,22 +498,77 @@ void GenerateItems(not_null<History*> history, LocalIdManager &idManager, const 
 		}
 	};
 
+	auto createTogglePreHistoryHidden = [&](const MTPDchannelAdminLogEventActionTogglePreHistoryHidden &action) {
+		auto hidden = (action.vnew_value.type() == mtpc_boolTrue);
+		auto text = (hidden
+			? lng_admin_log_history_made_hidden
+			: lng_admin_log_history_made_visible);
+		addSimpleServiceMessage(text(lt_from, fromLinkText));
+	};
+
 	switch (action.type()) {
-	case mtpc_channelAdminLogEventActionChangeTitle: createChangeTitle(action.c_channelAdminLogEventActionChangeTitle()); break;
-	case mtpc_channelAdminLogEventActionChangeAbout: createChangeAbout(action.c_channelAdminLogEventActionChangeAbout()); break;
-	case mtpc_channelAdminLogEventActionChangeUsername: createChangeUsername(action.c_channelAdminLogEventActionChangeUsername()); break;
-	case mtpc_channelAdminLogEventActionChangePhoto: createChangePhoto(action.c_channelAdminLogEventActionChangePhoto()); break;
-	case mtpc_channelAdminLogEventActionToggleInvites: createToggleInvites(action.c_channelAdminLogEventActionToggleInvites()); break;
-	case mtpc_channelAdminLogEventActionToggleSignatures: createToggleSignatures(action.c_channelAdminLogEventActionToggleSignatures()); break;
-	case mtpc_channelAdminLogEventActionUpdatePinned: createUpdatePinned(action.c_channelAdminLogEventActionUpdatePinned()); break;
-	case mtpc_channelAdminLogEventActionEditMessage: createEditMessage(action.c_channelAdminLogEventActionEditMessage()); break;
-	case mtpc_channelAdminLogEventActionDeleteMessage: createDeleteMessage(action.c_channelAdminLogEventActionDeleteMessage()); break;
-	case mtpc_channelAdminLogEventActionParticipantJoin: createParticipantJoin(); break;
-	case mtpc_channelAdminLogEventActionParticipantLeave: createParticipantLeave(); break;
-	case mtpc_channelAdminLogEventActionParticipantInvite: createParticipantInvite(action.c_channelAdminLogEventActionParticipantInvite()); break;
-	case mtpc_channelAdminLogEventActionParticipantToggleBan: createParticipantToggleBan(action.c_channelAdminLogEventActionParticipantToggleBan()); break;
-	case mtpc_channelAdminLogEventActionParticipantToggleAdmin: createParticipantToggleAdmin(action.c_channelAdminLogEventActionParticipantToggleAdmin()); break;
-	case mtpc_channelAdminLogEventActionChangeStickerSet: createChangeStickerSet(action.c_channelAdminLogEventActionChangeStickerSet()); break;
+	case mtpc_channelAdminLogEventActionChangeTitle:
+		createChangeTitle(
+			action.c_channelAdminLogEventActionChangeTitle());
+		break;
+	case mtpc_channelAdminLogEventActionChangeAbout:
+		createChangeAbout(
+			action.c_channelAdminLogEventActionChangeAbout());
+		break;
+	case mtpc_channelAdminLogEventActionChangeUsername:
+		createChangeUsername(
+			action.c_channelAdminLogEventActionChangeUsername());
+		break;
+	case mtpc_channelAdminLogEventActionChangePhoto:
+		createChangePhoto(
+			action.c_channelAdminLogEventActionChangePhoto());
+		break;
+	case mtpc_channelAdminLogEventActionToggleInvites:
+		createToggleInvites(
+			action.c_channelAdminLogEventActionToggleInvites());
+		break;
+	case mtpc_channelAdminLogEventActionToggleSignatures:
+		createToggleSignatures(
+			action.c_channelAdminLogEventActionToggleSignatures());
+		break;
+	case mtpc_channelAdminLogEventActionUpdatePinned:
+		createUpdatePinned(
+			action.c_channelAdminLogEventActionUpdatePinned());
+		break;
+	case mtpc_channelAdminLogEventActionEditMessage:
+		createEditMessage(
+			action.c_channelAdminLogEventActionEditMessage());
+		break;
+	case mtpc_channelAdminLogEventActionDeleteMessage:
+		createDeleteMessage(
+			action.c_channelAdminLogEventActionDeleteMessage());
+		break;
+	case mtpc_channelAdminLogEventActionParticipantJoin:
+		createParticipantJoin();
+		break;
+	case mtpc_channelAdminLogEventActionParticipantLeave:
+		createParticipantLeave();
+		break;
+	case mtpc_channelAdminLogEventActionParticipantInvite:
+		createParticipantInvite(
+			action.c_channelAdminLogEventActionParticipantInvite());
+		break;
+	case mtpc_channelAdminLogEventActionParticipantToggleBan:
+		createParticipantToggleBan(
+			action.c_channelAdminLogEventActionParticipantToggleBan());
+		break;
+	case mtpc_channelAdminLogEventActionParticipantToggleAdmin:
+		createParticipantToggleAdmin(
+			action.c_channelAdminLogEventActionParticipantToggleAdmin());
+		break;
+	case mtpc_channelAdminLogEventActionChangeStickerSet:
+		createChangeStickerSet(
+			action.c_channelAdminLogEventActionChangeStickerSet());
+		break;
+	case mtpc_channelAdminLogEventActionTogglePreHistoryHidden:
+		createTogglePreHistoryHidden(
+			action.c_channelAdminLogEventActionTogglePreHistoryHidden());
+		break;
 	default: Unexpected("channelAdminLogEventAction type in AdminLog::Item::Item()");
 	}
 }

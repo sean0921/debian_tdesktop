@@ -20,8 +20,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "base/weak_unique_ptr.h"
+#include "base/weak_ptr.h"
 #include "base/timer.h"
+#include "ui/rp_widget.h"
 
 namespace Ui {
 class IconButton;
@@ -34,9 +35,9 @@ namespace Calls {
 
 class Call;
 
-class TopBar : public TWidget, private base::Subscriber {
+class TopBar : public Ui::RpWidget, private base::Subscriber {
 public:
-	TopBar(QWidget *parent, const base::weak_unique_ptr<Call> &call);
+	TopBar(QWidget *parent, const base::weak_ptr<Call> &call);
 
 	~TopBar();
 
@@ -53,7 +54,7 @@ private:
 	void startDurationUpdateTimer(TimeMs currentDuration);
 	void setMuted(bool mute);
 
-	base::weak_unique_ptr<Call> _call;
+	base::weak_ptr<Call> _call;
 
 	bool _muted = false;
 	object_ptr<Ui::LabelSimple> _durationLabel;

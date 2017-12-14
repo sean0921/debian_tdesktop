@@ -28,6 +28,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
+#include "ui/empty_userpic.h"
 #include "styles/style_history.h"
 #include "styles/style_boxes.h"
 #include "media/media_clip_reader.h"
@@ -199,10 +200,18 @@ void SendFilesBox::prepareDocumentLayout() {
 			}
 		}
 
-		auto nameString = DocumentData::composeNameString(filename, songTitle, songPerformer);
-		_nameText.setText(st::semiboldTextStyle, nameString, _textNameOptions);
+		auto nameString = DocumentData::ComposeNameString(
+			filename,
+			songTitle,
+			songPerformer);
+		_nameText.setText(
+			st::semiboldTextStyle,
+			nameString,
+			_textNameOptions);
 		_statusText = formatSizeText(fileinfo.size());
-		_statusWidth = qMax(_nameText.maxWidth(), st::normalFont->width(_statusText));
+		_statusWidth = qMax(
+			_nameText.maxWidth(),
+			st::normalFont->width(_statusText));
 	}
 }
 
@@ -227,7 +236,9 @@ SendFilesBox::SendFilesBox(QWidget*, const QString &phone, const QString &firstn
 	_nameText.setText(st::semiboldTextStyle, name, _textNameOptions);
 	_statusText = _contactPhone;
 	_statusWidth = qMax(_nameText.maxWidth(), st::normalFont->width(_statusText));
-	_contactPhotoEmpty.set(0, name);
+	_contactPhotoEmpty = std::make_unique<Ui::EmptyUserpic>(
+		Data::PeerUserpicColor(0),
+		name);
 }
 
 void SendFilesBox::prepare() {
@@ -392,7 +403,7 @@ void SendFilesBox::paintEvent(QPaintEvent *e) {
 				auto &icon = _fileIsAudio ? st::historyFileOutPlay : _fileIsImage ? st::historyFileOutImage : st::historyFileOutDocument;
 				icon.paintInCenter(p, inner);
 			} else {
-				_contactPhotoEmpty.paint(p, x + st::msgFilePadding.left(), y + st::msgFilePadding.top(), width(), st::msgFileSize);
+				_contactPhotoEmpty->paint(p, x + st::msgFilePadding.left(), y + st::msgFilePadding.top(), width(), st::msgFileSize);
 			}
 		} else {
 			QRect rthumb(rtlrect(x + st::msgFileThumbPadding.left(), y + st::msgFileThumbPadding.top(), st::msgFileThumbSize, st::msgFileThumbSize, width()));
@@ -449,6 +460,8 @@ void SendFilesBox::onSend(bool ctrlShiftEnter) {
 	closeBox();
 }
 
+SendFilesBox::~SendFilesBox() = default;
+
 EditCaptionBox::EditCaptionBox(QWidget*, HistoryMedia *media, FullMsgId msgId) : _msgId(msgId) {
 	Expects(media->canEditCaption());
 
@@ -504,15 +517,19 @@ EditCaptionBox::EditCaptionBox(QWidget*, HistoryMedia *media, FullMsgId msgId) :
 		}
 
 		if (doc) {
-			if (doc->voice()) {
-				_name.setText(st::semiboldTextStyle, lang(lng_media_audio), _textNameOptions);
-			} else {
-				_name.setText(st::semiboldTextStyle, doc->composeNameString(), _textNameOptions);
-			}
+			auto nameString = doc->isVoiceMessage()
+				? lang(lng_media_audio)
+				: doc->composeNameString();
+			_name.setText(
+				st::semiboldTextStyle,
+				nameString,
+				_textNameOptions);
 			_status = formatSizeText(doc->size);
-			_statusw = qMax(_name.maxWidth(), st::normalFont->width(_status));
+			_statusw = qMax(
+				_name.maxWidth(),
+				st::normalFont->width(_status));
 			_isImage = doc->isImage();
-			_isAudio = (doc->voice() || doc->song());
+			_isAudio = (doc->isVoiceMessage() || doc->isAudioFile());
 		}
 	} else {
 		int32 maxW = 0, maxH = 0;
@@ -766,7 +783,17 @@ void EditCaptionBox::onSave(bool ctrlShiftEnter) {
 		flags |= MTPmessages_EditMessage::Flag::f_entities;
 	}
 	auto text = TextUtilities::PrepareForSending(_field->getLastText(), TextUtilities::PrepareTextOption::CheckLinks);
-	_saveRequestId = MTP::send(MTPmessages_EditMessage(MTP_flags(flags), item->history()->peer->input, MTP_int(item->id), MTP_string(text), MTPnullMarkup, sentEntities), rpcDone(&EditCaptionBox::saveDone), rpcFail(&EditCaptionBox::saveFail));
+	_saveRequestId = MTP::send(
+		MTPmessages_EditMessage(
+			MTP_flags(flags),
+			item->history()->peer->input,
+			MTP_int(item->id),
+			MTP_string(text),
+			MTPnullMarkup,
+			sentEntities,
+			MTP_inputGeoPointEmpty()),
+		rpcDone(&EditCaptionBox::saveDone),
+		rpcFail(&EditCaptionBox::saveFail));
 }
 
 void EditCaptionBox::saveDone(const MTPUpdates &updates) {

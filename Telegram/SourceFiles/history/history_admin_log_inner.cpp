@@ -35,6 +35,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "auth_session.h"
 #include "ui/widgets/popup_menu.h"
 #include "core/file_utilities.h"
+#include "core/tl_help.h"
+#include "base/overload.h"
 #include "lang/lang_keys.h"
 #include "boxes/edit_participant_box.h"
 
@@ -205,7 +207,11 @@ void InnerWidget::enumerateDates(Method method) {
 	enumerateItems<EnumItemsDirection::BottomToTop>(dateCallback);
 }
 
-InnerWidget::InnerWidget(QWidget *parent, not_null<Window::Controller*> controller, not_null<ChannelData*> channel) : TWidget(parent)
+InnerWidget::InnerWidget(
+	QWidget *parent,
+	not_null<Window::Controller*> controller,
+	not_null<ChannelData*> channel)
+: RpWidget(parent)
 , _controller(controller)
 , _channel(channel)
 , _history(App::history(channel))
@@ -213,11 +219,12 @@ InnerWidget::InnerWidget(QWidget *parent, not_null<Window::Controller*> controll
 , _emptyText(st::historyAdminLogEmptyWidth - st::historyAdminLogEmptyPadding.left() - st::historyAdminLogEmptyPadding.left()) {
 	setMouseTracking(true);
 	_scrollDateHideTimer.setCallback([this] { scrollDateHideByTimer(); });
-	subscribe(Auth().data().repaintLogEntry(), [this](not_null<const HistoryItem*> historyItem) {
-		if (_history == historyItem->history()) {
-			repaintItem(historyItem);
-		}
-	});
+	Auth().data().itemRepaintRequest()
+		| rpl::start_with_next([this](auto item) {
+			if (item->isLogEntry() && _history == item->history()) {
+				repaintItem(item);
+			}
+		}, lifetime());
 	subscribe(Auth().data().pendingHistoryResize(), [this] { handlePendingHistoryResize(); });
 	subscribe(Auth().data().queryItemVisibility(), [this](const AuthSessionData::ItemVisibilityQuery &query) {
 		if (_history != query.item->history() || !query.item->isLogEntry() || !isVisible()) {
@@ -233,7 +240,9 @@ InnerWidget::InnerWidget(QWidget *parent, not_null<Window::Controller*> controll
 	requestAdmins();
 }
 
-void InnerWidget::setVisibleTopBottom(int visibleTop, int visibleBottom) {
+void InnerWidget::visibleTopBottomUpdated(
+		int visibleTop,
+		int visibleBottom) {
 	auto scrolledUp = (visibleTop < _visibleTop);
 	_visibleTop = visibleTop;
 	_visibleBottom = visibleBottom;
@@ -335,29 +344,43 @@ void InnerWidget::applySearch(const QString &query) {
 }
 
 void InnerWidget::requestAdmins() {
-	request(MTPchannels_GetParticipants(_channel->inputChannel, MTP_channelParticipantsAdmins(), MTP_int(0), MTP_int(kMaxChannelAdmins))).done([this](const MTPchannels_ChannelParticipants &result) {
-		Expects(result.type() == mtpc_channels_channelParticipants);
-		auto &participants = result.c_channels_channelParticipants();
-		App::feedUsers(participants.vusers);
-		for (auto &participant : participants.vparticipants.v) {
-			auto getUserId = [&participant] {
-				switch (participant.type()) {
-				case mtpc_channelParticipant: return participant.c_channelParticipant().vuser_id.v;
-				case mtpc_channelParticipantSelf: return participant.c_channelParticipantSelf().vuser_id.v;
-				case mtpc_channelParticipantAdmin: return participant.c_channelParticipantAdmin().vuser_id.v;
-				case mtpc_channelParticipantCreator: return participant.c_channelParticipantCreator().vuser_id.v;
-				case mtpc_channelParticipantBanned: return participant.c_channelParticipantBanned().vuser_id.v;
-				default: Unexpected("Type in AdminLog::Widget::showFilter()");
-				}
-			};
-			if (auto user = App::userLoaded(getUserId())) {
+	auto participantsHash = 0;
+	request(MTPchannels_GetParticipants(
+		_channel->inputChannel,
+		MTP_channelParticipantsAdmins(),
+		MTP_int(0),
+		MTP_int(kMaxChannelAdmins),
+		MTP_int(participantsHash)
+	)).done([this](const MTPchannels_ChannelParticipants &result) {
+		auto readCanEdit = base::overload([](const MTPDchannelParticipantAdmin &v) {
+			return v.is_can_edit();
+		}, [](auto &&) {
+			return false;
+		});
+		Auth().api().parseChannelParticipants(_channel, result, [&](
+				int availableCount,
+				const QVector<MTPChannelParticipant> &list) {
+			auto filtered = (
+				list
+			) | ranges::view::transform([&](const MTPChannelParticipant &p) {
+				return std::make_pair(
+					TLHelp::ReadChannelParticipantUserId(p),
+					TLHelp::VisitChannelParticipant(p, readCanEdit));
+			}) | ranges::view::transform([&](auto &&pair) {
+				return std::make_pair(
+					App::userLoaded(pair.first),
+					pair.second);
+			}) | ranges::view::filter([&](auto &&pair) {
+				return (pair.first != nullptr);
+			});
+
+			for (auto [user, canEdit] : filtered) {
 				_admins.push_back(user);
-				auto canEdit = (participant.type() == mtpc_channelParticipantAdmin) && (participant.c_channelParticipantAdmin().is_can_edit());
 				if (canEdit) {
 					_adminsCanEdit.push_back(user);
 				}
 			}
-		}
+		});
 		if (_admins.empty()) {
 			_admins.push_back(App::self());
 		}
@@ -801,9 +824,9 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	auto lnkPhoto = dynamic_cast<PhotoClickHandler*>(_contextMenuLink.data());
 	auto lnkDocument = dynamic_cast<DocumentClickHandler*>(_contextMenuLink.data());
 	auto lnkPeer = dynamic_cast<PeerClickHandler*>(_contextMenuLink.data());
-	auto lnkIsVideo = lnkDocument ? lnkDocument->document()->isVideo() : false;
-	auto lnkIsAudio = lnkDocument ? (lnkDocument->document()->voice() != nullptr) : false;
-	auto lnkIsSong = lnkDocument ? (lnkDocument->document()->song() != nullptr) : false;
+	auto lnkIsVideo = lnkDocument ? lnkDocument->document()->isVideoFile() : false;
+	auto lnkIsVoice = lnkDocument ? lnkDocument->document()->isVoiceMessage() : false;
+	auto lnkIsAudio = lnkDocument ? lnkDocument->document()->isAudioFile() : false;
 	if (lnkPhoto || lnkDocument) {
 		if (isUponSelected > 0) {
 			_menu->addAction(lang(lng_context_copy_selected), [this] { copySelectedText(); })->setEnabled(true);
@@ -828,7 +851,7 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				if (!document->filepath(DocumentData::FilePathResolveChecked).isEmpty()) {
 					_menu->addAction(lang((cPlatform() == dbipMac || cPlatform() == dbipMacOld) ? lng_context_show_in_finder : lng_context_show_in_folder), [this] { showContextInFolder(); })->setEnabled(true);
 				}
-				_menu->addAction(lang(lnkIsVideo ? lng_context_save_video : (lnkIsAudio ? lng_context_save_audio : (lnkIsSong ? lng_context_save_audio_file : lng_context_save_file))), App::LambdaDelayed(st::defaultDropdownMenu.menu.ripple.hideDuration, this, [this, document] {
+				_menu->addAction(lang(lnkIsVideo ? lng_context_save_video : (lnkIsVoice ? lng_context_save_audio : (lnkIsAudio ? lng_context_save_audio_file : lng_context_save_file))), App::LambdaDelayed(st::defaultDropdownMenu.menu.ripple.hideDuration, this, [this, document] {
 					saveDocumentToFile(document);
 				}))->setEnabled(true);
 			}
@@ -1031,24 +1054,35 @@ void InnerWidget::suggestRestrictUser(not_null<UserData*> user) {
 					(*weakBox)->closeBox();
 				}
 			});
-			*weakBox = Ui::show(std::move(box), KeepOtherLayers);
+			*weakBox = Ui::show(
+				std::move(box),
+				LayerOption::KeepOther);
 		};
 		if (base::contains(_admins, user)) {
 			editRestrictions(true, MTP_channelBannedRights(MTP_flags(0), MTP_int(0)));
 		} else {
 			request(MTPchannels_GetParticipant(_channel->inputChannel, user->inputUser)).done([this, editRestrictions](const MTPchannels_ChannelParticipant &result) {
 				Expects(result.type() == mtpc_channels_channelParticipant);
+
 				auto &participant = result.c_channels_channelParticipant();
 				App::feedUsers(participant.vusers);
 				auto type = participant.vparticipant.type();
 				if (type == mtpc_channelParticipantBanned) {
-					editRestrictions(false, participant.vparticipant.c_channelParticipantBanned().vbanned_rights);
+					auto &banned = participant.vparticipant.c_channelParticipantBanned();
+					editRestrictions(false, banned.vbanned_rights);
 				} else {
-					auto hasAdminRights = (type == mtpc_channelParticipantAdmin || type == mtpc_channelParticipantCreator);
-					editRestrictions(hasAdminRights, MTP_channelBannedRights(MTP_flags(0), MTP_int(0)));
+					auto hasAdminRights = (type == mtpc_channelParticipantAdmin)
+						|| (type == mtpc_channelParticipantCreator);
+					auto bannedRights = MTP_channelBannedRights(
+						MTP_flags(0),
+						MTP_int(0));
+					editRestrictions(hasAdminRights, bannedRights);
 				}
 			}).fail([this, editRestrictions](const RPCError &error) {
-				editRestrictions(false, MTP_channelBannedRights(MTP_flags(0), MTP_int(0)));
+				auto bannedRights = MTP_channelBannedRights(
+					MTP_flags(0),
+					MTP_int(0));
+				editRestrictions(false, bannedRights);
 			}).send();
 		}
 	});
@@ -1250,9 +1284,11 @@ void InnerWidget::updateSelected() {
 
 	auto itemPoint = QPoint();
 	auto begin = std::rbegin(_items), end = std::rend(_items);
-	auto from = (point.y() >= _itemsTop && point.y() < _itemsTop + _itemsHeight) ? std::lower_bound(begin, end, point.y(), [this](auto &elem, int top) {
-		return this->itemTop(elem) + elem->height() <= top;
-	}) : end;
+	auto from = (point.y() >= _itemsTop && point.y() < _itemsTop + _itemsHeight)
+		? std::lower_bound(begin, end, point.y(), [this](auto &elem, int top) {
+			return this->itemTop(elem) + elem->height() <= top;
+		})
+		: end;
 	auto item = (from != end) ? from->get() : nullptr;
 	if (item) {
 		App::mousedItem(item);

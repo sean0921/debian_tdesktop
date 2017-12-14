@@ -30,6 +30,13 @@ windowDefaultHeight: 600px;
 windowShadow: icon {{ "window_shadow", windowShadowFg }};
 windowShadowShift: 1px;
 
+columnMinimalWidthLeft: 260px;
+columnMaximalWidthLeft: 540px;
+columnMinimalWidthMain: 380px;
+columnDesiredWidthMain: 512px;
+columnMinimalWidthThird: 292px;
+columnMaximalWidthThird: 392px;
+
 adaptiveChatWideWidth: 880px;
 
 notifyBorder: windowShadowFgFallback;
@@ -97,13 +104,16 @@ mainMenuWidth: 274px;
 mainMenuCoverHeight: 134px;
 mainMenuUserpicLeft: 24px;
 mainMenuUserpicTop: 20px;
-mainMenuUserpicSize: 48px;
+mainMenuUserpic: UserpicButton(defaultUserpicButton) {
+	size: size(48px, 48px);
+	photoSize: 48px;
+}
 mainMenuCloudButton: IconButton {
 	width: 64px;
 	height: 64px;
 
 	icon: icon {
-		{ "menu_cloud", mainMenuCloudFg },
+//		{ "menu_cloud", mainMenuCloudFg },
 	};
 	iconPosition: point(22px, 22px);
 }
@@ -236,58 +246,6 @@ titleButtonCloseIconActiveOver: icon {
 	{ size(25px, 21px), titleButtonCloseBgActiveOver },
 	{ "title_button_close", titleButtonCloseFgActiveOver, point(5px, 4px) },
 };
-
-// Legacy top bar.
-topBarHeight: 54px;
-topBarMenuPosition: point(-2px, 35px);
-topBarDuration: 200;
-topBarBackward: icon {{ "title_back", menuIconFg }};
-topBarForwardAlpha: 0.6;
-topBarBack: icon {{ "title_back", lightButtonFg }};
-topBarArrowPadding: margins(39px, 8px, 17px, 8px);
-topBarMinPadding: 5px;
-topBarButton: RoundButton(defaultLightButton) {
-	width: -18px;
-	padding: margins(0px, 10px, 12px, 10px);
-}
-topBarClearButton: RoundButton(defaultLightButton) {
-	width: -18px;
-}
-topBarSearch: IconButton {
-	width: 40px;
-	height: topBarHeight;
-
-	icon: icon {{ "title_search-flip_horizontal", menuIconFg }};
-	iconOver: icon {{ "title_search-flip_horizontal", menuIconFgOver }};
-	iconPosition: point(11px, 19px);
-
-	rippleAreaPosition: point(0px, 7px);
-	rippleAreaSize: 40px;
-	ripple: RippleAnimation(defaultRippleAnimation) {
-		color: windowBgOver;
-	}
-}
-topBarCall: IconButton(topBarSearch) {
-	icon: icon {{ "add_contact_phone", menuIconFg }};
-	iconOver: icon {{ "add_contact_phone", menuIconFgOver }};
-}
-topBarCallSkip: 4px;
-topBarMenuToggle: IconButton(topBarSearch) {
-	width: 44px;
-
-	icon: icon {{ "title_menu_dots", menuIconFg }};
-	iconOver: icon {{ "title_menu_dots", menuIconFgOver }};
-	iconPosition: point(16px, 17px);
-
-	rippleAreaPosition: point(0px, 7px);
-}
-topBarActionSkip: 10px;
-
-topBarInfoButton: PeerAvatarButton {
-	size: topBarHeight;
-	photoSize: 42px;
-}
-topBarSlideDuration: 200;
 
 themeEditorSampleSize: size(90px, 51px);
 themeEditorMargin: margins(17px, 10px, 17px, 10px);

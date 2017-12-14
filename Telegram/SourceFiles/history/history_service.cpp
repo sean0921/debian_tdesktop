@@ -28,6 +28,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "history/history_message.h"
 #include "auth_session.h"
 #include "window/notifications_manager.h"
+#include "storage/storage_shared_media.h"
 
 namespace {
 
@@ -162,6 +163,12 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 		return result;
 	};
 
+	auto prepareCustomAction = [&](const MTPDmessageActionCustomAction &action) {
+		auto result = PreparedText {};
+		result.text = qs(action.vmessage);
+		return result;
+	};
+
 	auto messageText = PreparedText {};
 
 	switch (action.type()) {
@@ -181,6 +188,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 	case mtpc_messageActionPhoneCall: Unexpected("PhoneCall type in HistoryService.");
 	case mtpc_messageActionPaymentSent: messageText = preparePaymentSentText(); break;
 	case mtpc_messageActionScreenshotTaken: messageText = prepareScreenshotTaken(); break;
+	case mtpc_messageActionCustomAction: messageText = prepareCustomAction(action.c_messageActionCustomAction()); break;
 	default: messageText.text = lang(lng_message_empty); break;
 	}
 
@@ -240,12 +248,18 @@ bool HistoryService::updateDependent(bool force) {
 	if (!dependent->lnk) {
 		dependent->lnk = goToMessageClickHandler(history()->peer, dependent->msgId);
 	}
-	bool gotDependencyItem = false;
+	auto gotDependencyItem = false;
 	if (!dependent->msg) {
 		dependent->msg = App::histItemById(channelId(), dependent->msgId);
 		if (dependent->msg) {
-			App::historyRegDependency(this, dependent->msg);
-			gotDependencyItem = true;
+			if (dependent->msg->isEmpty()) {
+				// Really it is deleted.
+				dependent->msg = nullptr;
+				force = true;
+			} else {
+				App::historyRegDependency(this, dependent->msg);
+				gotDependencyItem = true;
+			}
 		}
 	}
 	if (dependent->msg) {
@@ -276,7 +290,7 @@ HistoryService::PreparedText HistoryService::preparePinnedText() {
 			case MediaTypeFile: return lang(lng_action_pinned_media_file);
 			case MediaTypeGif: {
 				if (auto document = media->getDocument()) {
-					if (document->isRoundVideo()) {
+					if (document->isVideoMessage()) {
 						return lang(lng_action_pinned_media_video_message);
 					}
 				}
@@ -679,7 +693,10 @@ void HistoryService::createFromMtp(const MTPDmessageService &message) {
 		if (auto dependent = GetDependentData()) {
 			dependent->msgId = message.vreply_to_msg_id.v;
 			if (!updateDependent()) {
-				Auth().api().requestMessageData(history()->peer->asChannel(), dependent->msgId, HistoryDependentItemCallback(fullId()));
+				Auth().api().requestMessageData(
+					history()->peer->asChannel(),
+					dependent->msgId,
+					HistoryDependentItemCallback(fullId()));
 			}
 		}
 	}
@@ -721,20 +738,11 @@ void HistoryService::removeMedia() {
 	}
 }
 
-int32 HistoryService::addToOverview(AddToOverviewMethod method) {
-	if (!indexInOverview()) return 0;
-
-	int32 result = 0;
+Storage::SharedMediaTypesMask HistoryService::sharedMediaTypes() const {
 	if (auto media = getMedia()) {
-		result |= media->addToOverview(method);
+		return media->sharedMediaTypes();
 	}
-	return result;
-}
-
-void HistoryService::eraseFromOverview() {
-	if (auto media = getMedia()) {
-		media->eraseFromOverview();
-	}
+	return {};
 }
 
 void HistoryService::updateDependentText() {
@@ -778,7 +786,14 @@ HistoryJoined::HistoryJoined(not_null<History*> history, const QDateTime &invite
 
 HistoryJoined::PreparedText HistoryJoined::GenerateText(not_null<History*> history, not_null<UserData*> inviter) {
 	if (inviter->id == Auth().userPeerId()) {
-		return { lang(history->isMegagroup() ? lng_action_you_joined_group : lng_action_you_joined) };
+		if (history->isMegagroup()) {
+			auto self = App::user(Auth().userPeerId());
+			auto result = PreparedText {};
+			result.links.push_back(self->createOpenLink());
+			result.text = lng_action_user_joined(lt_from, textcmdLink(1, self->name));
+			return result;
+		}
+		return { lang(lng_action_you_joined) };
 	}
 	auto result = PreparedText {};
 	result.links.push_back(inviter->createOpenLink());

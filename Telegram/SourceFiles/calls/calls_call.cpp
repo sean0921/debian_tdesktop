@@ -451,7 +451,11 @@ void Call::createAndStartController(const MTPDphoneCall &call) {
 
 	voip_config_t config = { 0 };
 	config.data_saving = DATA_SAVING_NEVER;
+#ifdef Q_OS_MAC
+	config.enableAEC = (QSysInfo::macVersion() < QSysInfo::MV_10_7);
+#else // Q_OS_MAC
 	config.enableAEC = true;
+#endif // Q_OS_MAC
 	config.enableNS = true;
 	config.enableAGC = true;
 	config.init_timeout = Global::CallConnectTimeoutMs() / 1000;
@@ -597,7 +601,7 @@ void Call::setState(State state) {
 			break;
 		case State::Ended:
 			_delegate->playSound(Delegate::Sound::Ended);
-			// [[fallthrough]]
+			[[fallthrough]];
 		case State::EndedByOtherDevice:
 			_delegate->callFinished(this);
 			break;
@@ -661,14 +665,14 @@ void Call::handleRequestError(const RPCError &error) {
 	} else if (error.type() == qstr("PARTICIPANT_VERSION_OUTDATED")) {
 		Ui::show(Box<InformBox>(lng_call_error_outdated(lt_user, App::peerName(_user))));
 	} else if (error.type() == qstr("CALL_PROTOCOL_LAYER_INVALID")) {
-		Ui::show(Box<InformBox>(lng_call_error_incompatible(lt_user, App::peerName(_user))));
+		Ui::show(Box<InformBox>(Lang::Hard::CallErrorIncompatible().replace("{user}", App::peerName(_user))));
 	}
 	finish(FinishType::Failed);
 }
 
 void Call::handleControllerError(int error) {
 	if (error == TGVOIP_ERROR_INCOMPATIBLE) {
-		Ui::show(Box<InformBox>(lng_call_error_incompatible(lt_user, App::peerName(_user))));
+		Ui::show(Box<InformBox>(Lang::Hard::CallErrorIncompatible().replace("{user}", App::peerName(_user))));
 	} else if (error == TGVOIP_ERROR_AUDIO_IO) {
 		Ui::show(Box<InformBox>(lang(lng_call_error_audio_io)));
 	}

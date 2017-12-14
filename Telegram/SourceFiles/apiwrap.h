@@ -20,13 +20,21 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
+#include <rpl/event_stream.h>
 #include "base/timer.h"
 #include "core/single_timer.h"
 #include "mtproto/sender.h"
 #include "base/flat_map.h"
 #include "base/flat_set.h"
+#include "chat_helpers/stickers.h"
 
 class AuthSession;
+
+namespace Storage {
+enum class SharedMediaType : char;
+} // namespace Storage
+
+enum class SparseIdsLoadDirection;
 
 namespace Api {
 
@@ -53,10 +61,14 @@ public:
 	void requestFullPeer(PeerData *peer);
 	void requestPeer(PeerData *peer);
 	void requestPeers(const QList<PeerData*> &peers);
-	void requestLastParticipants(ChannelData *channel, bool fromStart = true);
-	void requestBots(ChannelData *channel);
-	void requestParticipantsCountDelayed(ChannelData *channel);
+	void requestLastParticipants(not_null<ChannelData*> channel);
+	void requestBots(not_null<ChannelData*> channel);
+	void requestAdmins(not_null<ChannelData*> channel);
+	void requestParticipantsCountDelayed(not_null<ChannelData*> channel);
 
+	void requestChannelMembersForAdd(
+		not_null<ChannelData*> channel,
+		base::lambda<void(const MTPchannels_ChannelParticipants&)> callback);
 	void processFullPeer(PeerData *peer, const MTPmessages_ChatFull &result);
 	void processFullPeer(UserData *user, const MTPUserFull &result);
 
@@ -89,6 +101,8 @@ public:
 	void handlePrivacyChange(mtpTypeId keyTypeId, const MTPVector<MTPPrivacyRule> &rules);
 	int onlineTillFromStatus(const MTPUserStatus &status, int currentOnlineTill);
 
+	void clearHistory(not_null<PeerData*> peer);
+
 	base::Observable<PeerData*> &fullPeerUpdated() {
 		return _fullPeerUpdated;
 	}
@@ -108,6 +122,70 @@ public:
 		bool adminsEnabled,
 		base::flat_set<not_null<UserData*>> &&admins);
 
+	using SliceType = SparseIdsLoadDirection;
+	void requestSharedMedia(
+		not_null<PeerData*> peer,
+		Storage::SharedMediaType type,
+		MsgId messageId,
+		SliceType slice);
+	void requestSharedMediaCount(
+			not_null<PeerData*> peer,
+			Storage::SharedMediaType type);
+
+	void requestUserPhotos(
+		not_null<UserData*> user,
+		PhotoId afterId);
+
+	void stickerSetInstalled(uint64 setId) {
+		_stickerSetInstalled.fire_copy(setId);
+	}
+	auto stickerSetInstalled() const {
+		return _stickerSetInstalled.events();
+	}
+	void readFeaturedSetDelayed(uint64 setId);
+
+	void parseChannelParticipants(
+		not_null<ChannelData*> channel,
+		const MTPchannels_ChannelParticipants &result,
+		base::lambda<void(
+			int availableCount,
+			const QVector<MTPChannelParticipant> &list)> callbackList,
+		base::lambda<void()> callbackNotModified = nullptr);
+	void parseRecentChannelParticipants(
+		not_null<ChannelData*> channel,
+		const MTPchannels_ChannelParticipants &result,
+		base::lambda<void(
+			int availableCount,
+			const QVector<MTPChannelParticipant> &list)> callbackList,
+		base::lambda<void()> callbackNotModified = nullptr);
+
+	struct SendOptions {
+		SendOptions(not_null<History*> history) : history(history) {
+		}
+
+		not_null<History*> history;
+		MsgId replyTo = 0;
+		WebPageId webPageId = 0;
+		bool clearDraft = false;
+		bool generateLocal = true;
+	};
+	rpl::producer<SendOptions> sendActions() const {
+		return _sendActions.events();
+	}
+	void sendAction(const SendOptions &options);
+	void forwardMessages(
+		HistoryItemsList &&items,
+		const SendOptions &options,
+		base::lambda_once<void()> &&successCallback = nullptr);
+	void shareContact(
+		const QString &phone,
+		const QString &firstName,
+		const QString &lastName,
+		const SendOptions &options);
+	void shareContact(not_null<UserData*> user, const SendOptions &options);
+	void readServerHistory(not_null<History*> history);
+	void readServerHistoryForce(not_null<History*> history);
+
 	~ApiWrap();
 
 private:
@@ -117,6 +195,7 @@ private:
 		Callbacks callbacks;
 	};
 	using MessageDataRequests = QMap<MsgId, MessageDataRequest>;
+	using SharedMediaType = Storage::SharedMediaType;
 
 	void requestAppChangelogs();
 	void addLocalChangelogs(int oldAppVersion);
@@ -127,13 +206,27 @@ private:
 
 	void resolveMessageDatas();
 	void gotMessageDatas(ChannelData *channel, const MTPmessages_Messages &result, mtpRequestId requestId);
+	void finalizeMessageDataRequest(
+		ChannelData *channel,
+		mtpRequestId requestId);
 
 	QVector<MTPint> collectMessageIds(const MessageDataRequests &requests);
 	MessageDataRequests *messageDataRequests(ChannelData *channel, bool onlyExisting = false);
 
 	void gotChatFull(PeerData *peer, const MTPmessages_ChatFull &result, mtpRequestId req);
 	void gotUserFull(UserData *user, const MTPUserFull &result, mtpRequestId req);
-	void lastParticipantsDone(ChannelData *peer, const MTPchannels_ChannelParticipants &result, mtpRequestId req);
+	void applyLastParticipantsList(
+		not_null<ChannelData*> channel,
+		int availableCount,
+		const QVector<MTPChannelParticipant> &list);
+	void applyBotsList(
+		not_null<ChannelData*> channel,
+		int availableCount,
+		const QVector<MTPChannelParticipant> &list);
+	void applyAdminsList(
+		not_null<ChannelData*> channel,
+		int availableCount,
+		const QVector<MTPChannelParticipant> &list);
 	void resolveWebPages();
 	void gotWebPages(ChannelData *channel, const MTPmessages_Messages &result, mtpRequestId req);
 	void gotStickerSet(uint64 setId, const MTPmessages_StickerSet &result);
@@ -148,10 +241,48 @@ private:
 	void requestFavedStickers(TimeId now);
 	void requestFeaturedStickers(TimeId now);
 	void requestSavedGifs(TimeId now);
+	void readFeaturedSets();
 
 	void cancelEditChatAdmins(not_null<ChatData*> chat);
 	void saveChatAdmins(not_null<ChatData*> chat);
 	void sendSaveChatAdminsRequests(not_null<ChatData*> chat);
+	void refreshChannelAdmins(
+		not_null<ChannelData*> channel,
+		const QVector<MTPChannelParticipant> &participants);
+
+	template <typename Callback>
+	void requestMessageAfterDate(
+		not_null<PeerData*> peer,
+		const QDate &date,
+		Callback &&callback);
+
+	void sharedMediaDone(
+		not_null<PeerData*> peer,
+		SharedMediaType type,
+		MsgId messageId,
+		SliceType slice,
+		const MTPmessages_Messages &result);
+
+	void userPhotosDone(
+		not_null<UserData*> user,
+		PhotoId photoId,
+		const MTPphotos_Photos &result);
+
+	void sendSharedContact(
+		const QString &phone,
+		const QString &firstName,
+		const QString &lastName,
+		UserId userId,
+		const SendOptions &options);
+
+	void sendReadRequest(not_null<PeerData*> peer, MsgId upTo);
+	int applyAffectedHistory(
+		not_null<PeerData*> peer,
+		const MTPmessages_AffectedHistory &result);
+	void applyAffectedMessages(const MTPmessages_AffectedMessages &result);
+	void applyAffectedMessages(
+		not_null<PeerData*> peer,
+		const MTPmessages_AffectedMessages &result);
 
 	not_null<AuthSession*> _session;
 	mtpRequestId _changelogSubscription = 0;
@@ -166,7 +297,12 @@ private:
 
 	PeerRequests _participantsRequests;
 	PeerRequests _botsRequests;
+	PeerRequests _adminsRequests;
 	base::DelayedCallTimer _participantsCountRequestTimer;
+
+	ChannelData *_channelMembersForAdd = nullptr;
+	mtpRequestId _channelMembersForAddRequestId = 0;
+	base::lambda<void(const MTPchannels_ChannelParticipants&)> _channelMembersForAddCallback;
 
 	typedef QPair<PeerData*, UserData*> KickRequest;
 	typedef QMap<KickRequest, mtpRequestId> KickRequests;
@@ -188,7 +324,7 @@ private:
 	QMap<History*, mtpRequestId> _draftsSaveRequestIds;
 	base::Timer _draftsSaveTimer;
 
-	OrderedSet<mtpRequestId> _stickerSetDisenableRequests;
+	base::flat_set<mtpRequestId> _stickerSetDisenableRequests;
 	Stickers::Order _stickersOrder;
 	mtpRequestId _stickersReorderRequestId = 0;
 	mtpRequestId _stickersClearRecentRequestId = 0;
@@ -199,16 +335,49 @@ private:
 	mtpRequestId _featuredStickersUpdateRequest = 0;
 	mtpRequestId _savedGifsUpdateRequest = 0;
 
+	base::Timer _featuredSetsReadTimer;
+	base::flat_set<uint64> _featuredSetsRead;
+
 	QMap<mtpTypeId, mtpRequestId> _privacySaveRequests;
 
 	mtpRequestId _contactsStatusesRequestId = 0;
 
 	base::flat_map<not_null<History*>, mtpRequestId> _unreadMentionsRequests;
 
-	base::flat_map<not_null<ChatData*>, mtpRequestId> _chatAdminsEnabledRequests;
-	base::flat_map<not_null<ChatData*>, base::flat_set<not_null<UserData*>>> _chatAdminsToSave;
-	base::flat_map<not_null<ChatData*>, base::flat_set<mtpRequestId>> _chatAdminsSaveRequests;
+	base::flat_map<
+		not_null<ChatData*>,
+		mtpRequestId> _chatAdminsEnabledRequests;
+	base::flat_map<
+		not_null<ChatData*>,
+		base::flat_set<not_null<UserData*>>> _chatAdminsToSave;
+	base::flat_map<
+		not_null<ChatData*>,
+		base::flat_set<mtpRequestId>> _chatAdminsSaveRequests;
+
+	base::flat_map<std::tuple<
+		not_null<PeerData*>,
+		SharedMediaType,
+		MsgId,
+		SliceType>, mtpRequestId> _sharedMediaRequests;
+
+	base::flat_map<not_null<UserData*>, mtpRequestId> _userPhotosRequests;
+
+	rpl::event_stream<SendOptions> _sendActions;
+
+	struct ReadRequest {
+		ReadRequest(mtpRequestId requestId, MsgId upTo)
+		: requestId(requestId)
+		, upTo(upTo) {
+		}
+
+		mtpRequestId requestId = 0;
+		MsgId upTo = 0;
+	};
+	base::flat_map<not_null<PeerData*>, ReadRequest> _readRequests;
+	base::flat_map<not_null<PeerData*>, MsgId> _readRequestsPending;
 
 	base::Observable<PeerData*> _fullPeerUpdated;
+
+	rpl::event_stream<uint64> _stickerSetInstalled;
 
 };

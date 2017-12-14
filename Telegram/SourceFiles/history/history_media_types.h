@@ -22,12 +22,20 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 #include "history/history_media.h"
 #include "ui/effects/radial_animation.h"
+#include "data/data_document.h"
+#include "data/data_photo.h"
+#include "data/data_web_page.h"
+#include "data/data_game.h"
 
 namespace Media {
 namespace Clip {
 class Playback;
 } // namespace Clip
 } // namespace Media
+
+namespace Ui {
+class EmptyUserpic;
+} // namespace Ui
 
 void HistoryInitMedia();
 
@@ -63,7 +71,7 @@ protected:
 		}
 		if (inlinegif) {
 			save = MakeShared<GifOpenClickHandler>(document);
-		} else if (document->voice()) {
+		} else if (document->isVoiceMessage()) {
 			save = MakeShared<DocumentOpenClickHandler>(document);
 		} else {
 			save = MakeShared<DocumentSaveClickHandler>(document);
@@ -140,7 +148,9 @@ public:
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
 	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT {
+	[[nodiscard]] TextSelection adjustSelection(
+			TextSelection selection,
+			TextSelectType type) const override {
 		return _caption.adjustSelection(selection, type);
 	}
 	uint16 fullSelectionLength() const override {
@@ -154,8 +164,7 @@ public:
 	QString inDialogsText() const override;
 	TextWithEntities selectedText(TextSelection selection) const override;
 
-	int32 addToOverview(AddToOverviewMethod method) override;
-	void eraseFromOverview() override;
+	Storage::SharedMediaTypesMask sharedMediaTypes() const override;
 
 	PhotoData *photo() const {
 		return _data;
@@ -225,7 +234,9 @@ public:
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
 	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT {
+	[[nodiscard]] TextSelection adjustSelection(
+			TextSelection selection,
+			TextSelectType type) const override {
 		return _caption.adjustSelection(selection, type);
 	}
 	uint16 fullSelectionLength() const override {
@@ -239,8 +250,7 @@ public:
 	QString inDialogsText() const override;
 	TextWithEntities selectedText(TextSelection selection) const override;
 
-	int32 addToOverview(AddToOverviewMethod method) override;
-	void eraseFromOverview() override;
+	Storage::SharedMediaTypesMask sharedMediaTypes() const override;
 
 	DocumentData *getDocument() override {
 		return _data;
@@ -363,7 +373,11 @@ public:
 	HistoryDocument(not_null<HistoryItem*> parent, DocumentData *document, const QString &caption);
 	HistoryDocument(not_null<HistoryItem*> parent, const HistoryDocument &other);
 	HistoryMediaType type() const override {
-		return _data->voice() ? MediaTypeVoiceFile : (_data->song() ? MediaTypeMusicFile : MediaTypeFile);
+		return _data->isVoiceMessage()
+			? MediaTypeVoiceFile
+			: (_data->isSong()
+				? MediaTypeMusicFile
+				: MediaTypeFile);
 	}
 	std::unique_ptr<HistoryMedia> clone(HistoryItem *newParent) const override {
 		return std::make_unique<HistoryDocument>(newParent, *this);
@@ -376,7 +390,9 @@ public:
 	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 	void updatePressed(QPoint point) override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT {
+	[[nodiscard]] TextSelection adjustSelection(
+			TextSelection selection,
+			TextSelectType type) const override {
 		if (auto captioned = Get<HistoryDocumentCaptioned>()) {
 			return captioned->_caption.adjustSelection(selection, type);
 		}
@@ -396,8 +412,7 @@ public:
 	QString inDialogsText() const override;
 	TextWithEntities selectedText(TextSelection selection) const override;
 
-	int32 addToOverview(AddToOverviewMethod method) override;
-	void eraseFromOverview() override;
+	Storage::SharedMediaTypesMask sharedMediaTypes() const override;
 
 	bool uploading() const override {
 		return _data->uploading();
@@ -434,7 +449,7 @@ public:
 	}
 	QMargins bubbleMargins() const override;
 	bool hideForwardedFrom() const override {
-		return _data->song();
+		return _data->isSong();
 	}
 	bool canEditCaption() const override {
 		return true;
@@ -488,7 +503,9 @@ public:
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
 	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT {
+	[[nodiscard]] TextSelection adjustSelection(
+			TextSelection selection,
+			TextSelectType type) const override {
 		return _caption.adjustSelection(selection, type);
 	}
 	uint16 fullSelectionLength() const override {
@@ -502,8 +519,7 @@ public:
 	QString inDialogsText() const override;
 	TextWithEntities selectedText(TextSelection selection) const override;
 
-	int32 addToOverview(AddToOverviewMethod method) override;
-	void eraseFromOverview() override;
+	Storage::SharedMediaTypesMask sharedMediaTypes() const override;
 
 	bool uploading() const override {
 		return _data->uploading();
@@ -544,7 +560,7 @@ public:
 		return isBubbleBottom() && _caption.isEmpty();
 	}
 	bool canEditCaption() const override {
-		return !_data->isRoundVideo();
+		return !_data->isVideoMessage();
 	}
 	bool isReadyForOpen() const override {
 		return _data->loaded();
@@ -700,6 +716,8 @@ public:
 		return _phone;
 	}
 
+	~HistoryContact();
+
 private:
 	int32 _userId = 0;
 	UserData *_contact = nullptr;
@@ -707,7 +725,7 @@ private:
 	int _phonew = 0;
 	QString _fname, _lname, _phone;
 	Text _name;
-	EmptyUserpic _photoEmpty;
+	std::unique_ptr<Ui::EmptyUserpic> _photoEmpty;
 
 	ClickHandlerPtr _linkl;
 	int _linkw = 0;
@@ -787,7 +805,9 @@ public:
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
 	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT;
+	[[nodiscard]] TextSelection adjustSelection(
+		TextSelection selection,
+		TextSelectType type) const override;
 	uint16 fullSelectionLength() const override {
 		return _title.length() + _description.length();
 	}
@@ -894,7 +914,9 @@ public:
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
 	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT;
+	[[nodiscard]] TextSelection adjustSelection(
+		TextSelection selection,
+		TextSelectType type) const override;
 	uint16 fullSelectionLength() const override {
 		return _title.length() + _description.length();
 	}
@@ -1003,12 +1025,14 @@ public:
 	QString getTitle() const {
 		return _title.originalText();
 	}
-	static QString fillAmountAndCurrency(int amount, const QString &currency);
+	static QString fillAmountAndCurrency(uint64 amount, const QString &currency);
 
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
 	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT;
+	[[nodiscard]] TextSelection adjustSelection(
+		TextSelection selection,
+		TextSelectType type) const override;
 	uint16 fullSelectionLength() const override {
 		return _title.length() + _description.length();
 	}
@@ -1094,7 +1118,9 @@ public:
 	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
 	HistoryTextState getState(QPoint point, HistoryStateRequest request) const override;
 
-	TextSelection adjustSelection(TextSelection selection, TextSelectType type) const override WARN_UNUSED_RESULT;
+	[[nodiscard]] TextSelection adjustSelection(
+		TextSelection selection,
+		TextSelectType type) const override;
 	uint16 fullSelectionLength() const override {
 		return _title.length() + _description.length();
 	}

@@ -20,6 +20,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
+#include "ui/rp_widget.h"
+
 class AudioMsgId;
 
 namespace Ui {
@@ -41,7 +43,7 @@ class PlayButton;
 class VolumeWidget;
 struct TrackState;
 
-class Widget : public TWidget, private base::Subscriber {
+class Widget : public Ui::RpWidget, private base::Subscriber {
 public:
 	Widget(QWidget *parent);
 
@@ -118,6 +120,8 @@ private:
 	object_ptr<Ui::PlainShadow> _shadow = { nullptr };
 	object_ptr<Ui::FilledSlider> _playbackSlider;
 	std::unique_ptr<Clip::Playback> _playback;
+
+	rpl::lifetime _playlistChangesLifetime;
 
 };
 

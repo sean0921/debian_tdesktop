@@ -20,6 +20,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #include "media/player/media_player_widget.h"
 
+#include "data/data_document.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/continuous_sliders.h"
 #include "ui/widgets/shadow.h"
@@ -84,14 +85,14 @@ QPoint Widget::PlayButton::prepareRippleStartPosition() const {
 	return QPoint(mapFromGlobal(QCursor::pos()) - st::mediaPlayerButton.rippleAreaPosition);
 }
 
-Widget::Widget(QWidget *parent) : TWidget(parent)
+Widget::Widget(QWidget *parent) : RpWidget(parent)
 , _nameLabel(this, st::mediaPlayerName)
 , _timeLabel(this, st::mediaPlayerTime)
 , _playPause(this)
 , _volumeToggle(this, st::mediaPlayerVolumeToggle)
 , _repeatTrack(this, st::mediaPlayerRepeatButton)
 , _close(this, st::mediaPlayerClose)
-, _shadow(this, st::shadowFg)
+, _shadow(this)
 , _playbackSlider(this, st::mediaPlayerPlayback)
 , _playback(std::make_unique<Clip::Playback>()) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
@@ -141,11 +142,6 @@ Widget::Widget(QWidget *parent) : TWidget(parent)
 	subscribe(instance()->repeatChangedNotifier(), [this](AudioMsgId::Type type) {
 		if (type == _type) {
 			updateRepeatTrackIcon();
-		}
-	});
-	subscribe(instance()->playlistChangedNotifier(), [this](AudioMsgId::Type type) {
-		if (type == _type) {
-			handlePlaylistUpdate();
 		}
 	});
 	subscribe(instance()->updatedNotifier(), [this](const TrackState &state) {
@@ -252,8 +248,8 @@ void Widget::handleSeekFinished(float64 progress) {
 	_seekPositionMs = -1;
 
 	auto state = mixer()->currentState(_type);
-	if (state.id && state.length) {
-		mixer()->seek(_type, qRound(progress * state.length));
+	if (state.id && state.length && state.frequency) {
+		mixer()->seek(_type, qRound(progress * state.length * 1000. / state.frequency));
 	}
 
 	instance()->stopSeeking(_type);
@@ -394,6 +390,11 @@ void Widget::setType(AudioMsgId::Type type) {
 		handleSongChange();
 		handleSongUpdate(mixer()->currentState(_type));
 		updateOverLabelsState(_labelsOver);
+		_playlistChangesLifetime = instance()->playlistChanges(
+			_type
+		) | rpl::start_with_next([=] {
+			handlePlaylistUpdate();
+		});
 	}
 }
 
@@ -430,20 +431,21 @@ void Widget::handleSongUpdate(const TrackState &state) {
 void Widget::updateTimeText(const TrackState &state) {
 	QString time;
 	qint64 position = 0, length = 0, display = 0;
-	auto frequency = state.frequency;
+	const auto frequency = state.frequency;
+	const auto document = state.id.audio();
 	if (!IsStoppedOrStopping(state.state)) {
 		display = position = state.position;
 		length = state.length;
 	} else if (state.length) {
 		display = state.length;
-	} else if (state.id.audio()->song()) {
-		display = (state.id.audio()->song()->duration * frequency);
+	} else if (const auto song = document->song()) {
+		display = (song->duration * frequency);
 	}
 
 	_lastDurationMs = (state.length * 1000LL) / frequency;
 
-	if (state.id.audio()->loading()) {
-		_time = QString::number(qRound(state.id.audio()->progress() * 100)) + '%';
+	if (document->loading()) {
+		_time = QString::number(qRound(document->progress() * 100)) + '%';
 		_playbackSlider->setDisabled(true);
 	} else {
 		display = display / frequency;
@@ -469,13 +471,14 @@ void Widget::updateTimeLabel() {
 }
 
 void Widget::handleSongChange() {
-	auto current = instance()->current(_type);
-	if (!current || !current.audio()) {
+	const auto current = instance()->current(_type);
+	const auto document = current.audio();
+	if (!current || !document) {
 		return;
 	}
 
 	TextWithEntities textWithEntities;
-	if (current.audio()->voice() || current.audio()->isRoundVideo()) {
+	if (document->isVoiceMessage() || document->isVideoMessage()) {
 		if (auto item = App::histItemById(current.contextId())) {
 			auto name = App::peerName(item->fromOriginal());
 			auto date = [item] {
@@ -496,12 +499,19 @@ void Widget::handleSongChange() {
 			textWithEntities.text = lang(lng_media_audio);
 		}
 	} else {
-		auto song = current.audio()->song();
+		const auto song = document->song();
 		if (!song || song->performer.isEmpty()) {
-			textWithEntities.text = (!song || song->title.isEmpty()) ? (current.audio()->name.isEmpty() ? qsl("Unknown Track") : current.audio()->name) : song->title;
+			textWithEntities.text = (!song || song->title.isEmpty())
+				? (document->filename().isEmpty()
+					? qsl("Unknown Track")
+					: document->filename())
+				: song->title;
 		} else {
-			auto title = song->title.isEmpty() ? qsl("Unknown Track") : TextUtilities::Clean(song->title);
-			textWithEntities.text = song->performer + QString::fromUtf8(" \xe2\x80\x93 ") + title;
+			auto title = song->title.isEmpty()
+				? qsl("Unknown Track")
+				: TextUtilities::Clean(song->title);
+			auto dash = QString::fromUtf8(" \xe2\x80\x93 ");
+			textWithEntities.text = song->performer + dash + title;
 			textWithEntities.entities.append({ EntityInTextBold, 0, song->performer.size(), QString() });
 		}
 	}
@@ -511,15 +521,12 @@ void Widget::handleSongChange() {
 }
 
 void Widget::handlePlaylistUpdate() {
-	auto current = instance()->current(_type);
-	auto playlist = instance()->playlist(_type);
-	auto index = playlist.indexOf(current.contextId());
-	if (!current || index < 0) {
+	const auto previousEnabled = instance()->previousAvailable(_type);
+	const auto nextEnabled = instance()->nextAvailable(_type);
+	if (!previousEnabled && !nextEnabled) {
 		destroyPrevNextButtons();
 	} else {
 		createPrevNextButtons();
-		auto previousEnabled = (index > 0);
-		auto nextEnabled = (index + 1 < playlist.size());
 		_previousTrack->setIconOverride(previousEnabled ? nullptr : &st::mediaPlayerPreviousDisabledIcon);
 		_previousTrack->setRippleColorOverride(previousEnabled ? nullptr : &st::mediaPlayerBg);
 		_previousTrack->setCursor(previousEnabled ? style::cur_pointer : style::cur_default);

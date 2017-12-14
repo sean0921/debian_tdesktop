@@ -20,11 +20,14 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #include "inline_bots/inline_bot_layout_item.h"
 
+#include "data/data_photo.h"
+#include "data/data_document.h"
 #include "core/click_handler_types.h"
 #include "inline_bots/inline_bot_result.h"
 #include "inline_bots/inline_bot_layout_internal.h"
 #include "storage/localstorage.h"
 #include "mainwidget.h"
+#include "ui/empty_userpic.h"
 
 namespace InlineBots {
 namespace Layout {
@@ -151,7 +154,10 @@ ImagePtr ItemBase::getResultThumb() const {
 
 QPixmap ItemBase::getResultContactAvatar(int width, int height) const {
 	if (_result->_type == Result::Type::Contact) {
-		auto result = EmptyUserpic(qHash(_result->_id) % kUserColorsCount, _result->getLayoutTitle()).generate(width);
+		auto result = Ui::EmptyUserpic(
+			Data::PeerUserpicColor(qHash(_result->_id)),
+			_result->getLayoutTitle()
+		).generate(width);
 		if (result.height() != height * cIntRetinaFactor()) {
 			result = result.scaled(QSize(width, height) * cIntRetinaFactor(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 		}

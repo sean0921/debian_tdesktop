@@ -22,7 +22,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 bool _debug = false;
 
-wstring updaterName, updaterDir, updateTo, exeName;
+wstring updaterName, updaterDir, updateTo, exeName, customWorkingDir, customKeyFile;
 
 bool equal(const wstring &a, const wstring &b) {
 	return !_wcsicmp(a.c_str(), b.c_str());
@@ -30,18 +30,26 @@ bool equal(const wstring &a, const wstring &b) {
 
 void updateError(const WCHAR *msg, DWORD errorCode) {
 	WCHAR errMsg[2048];
-	LPWSTR errorText = NULL, errorTextDefault = L"(Unknown error)";
-	FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, errorCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPWSTR)&errorText, 0, 0);
-	if (!errorText) {
-		errorText = errorTextDefault;
-	}
+	LPWSTR errorTextFormatted = nullptr;
+	auto formatFlags = FORMAT_MESSAGE_FROM_SYSTEM
+		| FORMAT_MESSAGE_ALLOCATE_BUFFER
+		| FORMAT_MESSAGE_IGNORE_INSERTS;
+	FormatMessage(
+		formatFlags,
+		NULL,
+		errorCode,
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		(LPWSTR)&errorTextFormatted,
+		0,
+		0);
+	auto errorText = errorTextFormatted
+		? errorTextFormatted
+		: L"(Unknown error)";
 	wsprintf(errMsg, L"%s, error code: %d\nError message: %s", msg, errorCode, errorText);
 
 	MessageBox(0, errMsg, L"Update error!", MB_ICONERROR);
 
-	if (errorText != errorTextDefault) {
-		LocalFree(errorText);
-	}
+	LocalFree(errorTextFormatted);
 }
 
 HANDLE _logFile = 0;
@@ -309,20 +317,20 @@ void updateRegistry() {
 								WCHAR nameStr[bufSize], dateStr[bufSize], publisherStr[bufSize], icongroupStr[bufSize];
 								SYSTEMTIME stLocalTime;
 								GetLocalTime(&stLocalTime);
-								RegSetValueEx(rkey, L"DisplayVersion", 0, REG_SZ, (BYTE*)versionStr, ((versionLen / 2) + 1) * sizeof(WCHAR));
+								RegSetValueEx(rkey, L"DisplayVersion", 0, REG_SZ, (const BYTE*)versionStr, ((versionLen / 2) + 1) * sizeof(WCHAR));
 								wsprintf(nameStr, L"Telegram Desktop version %s", versionStr);
-								RegSetValueEx(rkey, L"DisplayName", 0, REG_SZ, (BYTE*)nameStr, (wcslen(nameStr) + 1) * sizeof(WCHAR));
+								RegSetValueEx(rkey, L"DisplayName", 0, REG_SZ, (const BYTE*)nameStr, (wcslen(nameStr) + 1) * sizeof(WCHAR));
 								wsprintf(publisherStr, L"Telegram Messenger LLP");
-								RegSetValueEx(rkey, L"Publisher", 0, REG_SZ, (BYTE*)publisherStr, (wcslen(publisherStr) + 1) * sizeof(WCHAR));
+								RegSetValueEx(rkey, L"Publisher", 0, REG_SZ, (const BYTE*)publisherStr, (wcslen(publisherStr) + 1) * sizeof(WCHAR));
 								wsprintf(icongroupStr, L"Telegram Desktop");
-								RegSetValueEx(rkey, L"Inno Setup: Icon Group", 0, REG_SZ, (BYTE*)icongroupStr, (wcslen(icongroupStr) + 1) * sizeof(WCHAR));
+								RegSetValueEx(rkey, L"Inno Setup: Icon Group", 0, REG_SZ, (const BYTE*)icongroupStr, (wcslen(icongroupStr) + 1) * sizeof(WCHAR));
 								wsprintf(dateStr, L"%04d%02d%02d", stLocalTime.wYear, stLocalTime.wMonth, stLocalTime.wDay);
-								RegSetValueEx(rkey, L"InstallDate", 0, REG_SZ, (BYTE*)dateStr, (wcslen(dateStr) + 1) * sizeof(WCHAR));
+								RegSetValueEx(rkey, L"InstallDate", 0, REG_SZ, (const BYTE*)dateStr, (wcslen(dateStr) + 1) * sizeof(WCHAR));
 
-								WCHAR *appURL = L"https://desktop.telegram.org";
-								RegSetValueEx(rkey, L"HelpLink", 0, REG_SZ, (BYTE*)appURL, (wcslen(appURL) + 1) * sizeof(WCHAR));
-								RegSetValueEx(rkey, L"URLInfoAbout", 0, REG_SZ, (BYTE*)appURL, (wcslen(appURL) + 1) * sizeof(WCHAR));
-								RegSetValueEx(rkey, L"URLUpdateInfo", 0, REG_SZ, (BYTE*)appURL, (wcslen(appURL) + 1) * sizeof(WCHAR));
+								const WCHAR *appURL = L"https://desktop.telegram.org";
+								RegSetValueEx(rkey, L"HelpLink", 0, REG_SZ, (const BYTE*)appURL, (wcslen(appURL) + 1) * sizeof(WCHAR));
+								RegSetValueEx(rkey, L"URLInfoAbout", 0, REG_SZ, (const BYTE*)appURL, (wcslen(appURL) + 1) * sizeof(WCHAR));
+								RegSetValueEx(rkey, L"URLUpdateInfo", 0, REG_SZ, (const BYTE*)appURL, (wcslen(appURL) + 1) * sizeof(WCHAR));
 							}
 						}
 					}
@@ -348,6 +356,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE prevInstance, LPWSTR cmdPara
 	args = CommandLineToArgvW(GetCommandLine(), &argsCount);
 	if (args) {
 		for (int i = 1; i < argsCount; ++i) {
+			writeLog(std::wstring(L"Argument: ") + args[i]);
 			if (equal(args[i], L"-update")) {
 				needupdate = true;
 			} else if (equal(args[i], L"-autostart")) {
@@ -360,17 +369,25 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE prevInstance, LPWSTR cmdPara
 			} else if (equal(args[i], L"-testmode")) {
 				testmode = true;
 			} else if (equal(args[i], L"-writeprotected") && ++i < argsCount) {
+				writeLog(std::wstring(L"Argument: ") + args[i]);
 				writeprotected = true;
 				updateTo = args[i];
-				for (int i = 0, l = updateTo.size(); i < l; ++i) {
-					if (updateTo[i] == L'/') {
-						updateTo[i] = L'\\';
+				for (int j = 0, l = updateTo.size(); j < l; ++j) {
+					if (updateTo[j] == L'/') {
+						updateTo[j] = L'\\';
 					}
 				}
+			} else if (equal(args[i], L"-workdir") && ++i < argsCount) {
+				writeLog(std::wstring(L"Argument: ") + args[i]);
+				customWorkingDir = args[i];
+			} else if (equal(args[i], L"-key") && ++i < argsCount) {
+				writeLog(std::wstring(L"Argument: ") + args[i]);
+				customKeyFile = args[i];
 			} else if (equal(args[i], L"-exename") && ++i < argsCount) {
+				writeLog(std::wstring(L"Argument: ") + args[i]);
 				exeName = args[i];
-				for (int i = 0, l = exeName.size(); i < l; ++i) {
-					if (exeName[i] == L'/' || exeName[i] == L'\\') {
+				for (int j = 0, l = exeName.size(); j < l; ++j) {
+					if (exeName[j] == L'/' || exeName[j] == L'\\') {
 						exeName = L"Telegram.exe";
 						break;
 					}
@@ -383,6 +400,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE prevInstance, LPWSTR cmdPara
 		if (needupdate) writeLog(L"Need to update!");
 		if (autostart) writeLog(L"From autostart!");
 		if (writeprotected) writeLog(L"Write Protected folder!");
+		if (!customWorkingDir.empty()) writeLog(L"Will pass custom working dir: " + customWorkingDir);
 
 		updaterName = args[0];
 		writeLog(L"Updater name is: " + updaterName);
@@ -420,6 +438,13 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE prevInstance, LPWSTR cmdPara
 	if (debug) targs += L" -debug";
 	if (startintray) targs += L" -startintray";
 	if (testmode) targs += L" -testmode";
+	if (!customWorkingDir.empty()) {
+		targs += L" -workdir \"" + customWorkingDir + L"\"";
+	}
+	if (!customKeyFile.empty()) {
+		targs += L" -key \"" + customKeyFile + L"\"";
+	}
+	writeLog(L"Result arguments: " + targs);
 
 	bool executed = false;
 	if (writeprotected) { // run un-elevated

@@ -20,8 +20,6 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-void InitFromCommandLine(int argc, char *argv[]);
-
 extern bool gDebug;
 inline bool cDebug() {
 #if defined _DEBUG
@@ -55,8 +53,6 @@ inline bool rtl() {
 	return cRtl();
 }
 
-DeclareReadSetting(QString, Arguments);
-
 DeclareSetting(bool, AlphaVersion);
 DeclareSetting(uint64, BetaVersion);
 DeclareSetting(uint64, RealBetaVersion);
@@ -79,7 +75,12 @@ DeclareReadSetting(LaunchMode, LaunchMode);
 DeclareSetting(QString, WorkingDir);
 inline void cForceWorkingDir(const QString &newDir) {
 	cSetWorkingDir(newDir);
-	if (!gWorkingDir.isEmpty()) QDir().mkpath(gWorkingDir);
+	if (!gWorkingDir.isEmpty()) {
+		QDir().mkpath(gWorkingDir);
+		QFile::setPermissions(gWorkingDir,
+			QFileDevice::ReadUser | QFileDevice::WriteUser | QFileDevice::ExeUser);
+	}
+
 }
 DeclareReadSetting(QString, ExeName);
 DeclareReadSetting(QString, ExeDir);
@@ -163,23 +164,14 @@ DeclareSetting(RecentEmojiPreload, RecentEmojiPreload);
 DeclareRefSetting(EmojiColorVariants, EmojiVariants);
 
 class DocumentData;
-typedef QVector<DocumentData*> StickerPack;
 
-typedef QList<QPair<DocumentData*, int16> > RecentStickerPackOld;
-typedef QVector<QPair<uint64, ushort> > RecentStickerPreload;
-typedef QVector<QPair<DocumentData*, ushort> > RecentStickerPack;
+typedef QList<QPair<DocumentData*, int16>> RecentStickerPackOld;
+typedef QVector<QPair<uint64, ushort>> RecentStickerPreload;
+typedef QVector<QPair<DocumentData*, ushort>> RecentStickerPack;
 DeclareSetting(RecentStickerPreload, RecentStickersPreload);
 DeclareRefSetting(RecentStickerPack, RecentStickers);
 
-RecentStickerPack &cGetRecentStickers();
-
-typedef QMap<EmojiPtr, StickerPack> StickersByEmojiMap;
-
-typedef QVector<DocumentData*> SavedGifs;
-DeclareRefSetting(SavedGifs, SavedGifs);
-DeclareSetting(TimeMs, LastSavedGifsUpdate);
-
-typedef QList<QPair<QString, ushort> > RecentHashtagPack;
+typedef QList<QPair<QString, ushort>> RecentHashtagPack;
 DeclareRefSetting(RecentHashtagPack, RecentWriteHashtags);
 DeclareSetting(RecentHashtagPack, RecentSearchHashtags);
 
@@ -205,41 +197,6 @@ inline bool passcodeCanTry() {
 	return dt >= 30000;
 }
 
-inline void incrementRecentHashtag(RecentHashtagPack &recent, const QString &tag) {
-	RecentHashtagPack::iterator i = recent.begin(), e = recent.end();
-	for (; i != e; ++i) {
-		if (i->first == tag) {
-			++i->second;
-		if (qAbs(i->second) > 0x4000) {
-			for (RecentHashtagPack::iterator j = recent.begin(); j != e; ++j) {
-				if (j->second > 1) {
-					j->second /= 2;
-				} else if (j->second > 0) {
-					j->second = 1;
-				}
-			}
-		}
-			for (; i != recent.begin(); --i) {
-				if (qAbs((i - 1)->second) > qAbs(i->second)) {
-					break;
-				}
-				qSwap(*i, *(i - 1));
-			}
-			break;
-		}
-	}
-	if (i == e) {
-		while (recent.size() >= 64) recent.pop_back();
-		recent.push_back(qMakePair(tag, 1));
-		for (i = recent.end() - 1; i != recent.begin(); --i) {
-			if ((i - 1)->second > i->second) {
-				break;
-			}
-			qSwap(*i, *(i - 1));
-		}
-	}
-}
-
 DeclareSetting(QStringList, SendPaths);
 DeclareSetting(QString, StartUrl);
 
@@ -250,6 +207,7 @@ DeclareSetting(int32, IntRetinaFactor);
 DeclareReadSetting(DBIPlatform, Platform);
 DeclareReadSetting(QString, PlatformString);
 DeclareReadSetting(bool, IsElCapitan);
+DeclareReadSetting(bool, IsSnowLeopard);
 DeclareReadSetting(QUrl, UpdateURL);
 
 DeclareSetting(int, OtherOnline);
@@ -272,5 +230,3 @@ DeclareSetting(int32, AutoDownloadPhoto);
 DeclareSetting(int32, AutoDownloadAudio);
 DeclareSetting(int32, AutoDownloadGif);
 DeclareSetting(bool, AutoPlayGif);
-
-void settingsParseArgs(int argc, char *argv[]);

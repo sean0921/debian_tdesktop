@@ -20,6 +20,10 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
+#include <rpl/producer.h>
+#include <rpl/filter.h>
+#include <rpl/then.h>
+#include <rpl/range.h>
 #include "base/observer.h"
 #include "base/flags.h"
 
@@ -43,7 +47,6 @@ struct PeerUpdate {
 		PhotoChanged              = (1 << 2),
 		AboutChanged              = (1 << 3),
 		NotificationsEnabled      = (1 << 4),
-		SharedMediaChanged        = (1 << 5),
 		MigrationChanged          = (1 << 6),
 		PinnedChanged             = (1 << 7),
 		RestrictionReasonChanged  = (1 << 8),
@@ -81,11 +84,7 @@ struct PeerUpdate {
 	Flags flags = 0;
 
 	// NameChanged data
-	PeerData::Names oldNames;
 	PeerData::NameFirstChars oldNameFirstChars;
-
-	// SharedMediaChanged data
-	int32 mediaTypesMask = 0;
 
 };
 
@@ -96,13 +95,6 @@ inline void peerUpdatedDelayed(PeerData *peer, PeerUpdate::Flags events) {
 	peerUpdatedDelayed(update);
 }
 void peerUpdatedSendDelayed();
-
-inline void mediaOverviewUpdated(PeerData *peer, MediaOverviewType type) {
-	PeerUpdate update(peer);
-	update.flags |= PeerUpdate::Flag::SharedMediaChanged;
-	update.mediaTypesMask |= (1 << type);
-	peerUpdatedDelayed(update);
-}
 
 class PeerUpdatedHandler {
 public:
@@ -121,5 +113,16 @@ private:
 
 };
 base::Observable<PeerUpdate, PeerUpdatedHandler> &PeerUpdated();
+
+rpl::producer<PeerUpdate> PeerUpdateViewer(
+	PeerUpdate::Flags flags);
+
+rpl::producer<PeerUpdate> PeerUpdateViewer(
+	not_null<PeerData*> peer,
+	PeerUpdate::Flags flags);
+
+rpl::producer<PeerUpdate> PeerUpdateValue(
+	not_null<PeerData*> peer,
+	PeerUpdate::Flags flags);
 
 } // namespace Notify

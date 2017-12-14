@@ -20,6 +20,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #include "platform/linux/linux_desktop_environment.h"
 
+#include <QDBusInterface>
+
 namespace Platform {
 namespace DesktopEnvironment {
 namespace {
@@ -71,6 +73,8 @@ Type Compute() {
 			return Type::KDE3;
 		} else if (desktopSession.indexOf(qstr("xfce")) >= 0 || desktopSession == qstr("xubuntu")) {
 			return Type::XFCE;
+		} else if (desktopSession == qstr("awesome")) {
+			return Type::Awesome;
 		}
 	}
 
@@ -100,6 +104,7 @@ Type ComputeAndLog() {
 		case Type::Unity: return "Unity";
 		case Type::XFCE: return "XFCE";
 		case Type::Pantheon: return "Pantheon";
+		case Type::Awesome: return "Awesome";
 		}
 		return QString::number(static_cast<int>(result));
 	};
@@ -116,11 +121,12 @@ Type Get() {
 }
 
 bool TryQtTrayIcon() {
-	return !IsPantheon();
+	return !IsPantheon() && !IsAwesome();
 }
 
 bool PreferAppIndicatorTrayIcon() {
-	return IsXFCE() || IsUnity();
+	return IsXFCE() || IsUnity() ||
+	       (IsGnome() && QDBusInterface("org.kde.StatusNotifierWatcher", "/").isValid());
 }
 
 bool TryUnityCounter() {

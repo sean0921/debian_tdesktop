@@ -23,6 +23,16 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "base/runtime_composer.h"
 #include "base/flags.h"
 
+namespace base {
+template <typename Enum>
+class enum_mask;
+} // namespace base
+
+namespace Storage {
+enum class SharedMediaType : char;
+using SharedMediaTypesMask = base::enum_mask<SharedMediaType>;
+} // namespace Storage
+
 namespace Ui {
 class RippleAnimation;
 } // namespace Ui
@@ -80,6 +90,8 @@ struct HistoryTextState {
 		afterSymbol = state.afterSymbol;
 		symbol = state.symbol;
 		return *this;
+	}
+	HistoryTextState(ClickHandlerPtr link) : link(link) {
 	}
 	HistoryCursorState cursor = HistoryDefaultCursorState;
 	ClickHandlerPtr link;
@@ -143,9 +155,16 @@ struct HistoryMessageForwarded : public RuntimeComponent<HistoryMessageForwarded
 	QString _originalAuthor;
 	MsgId _originalId = 0;
 	mutable Text _text = { 1 };
+
+	PeerData *_savedFromPeer = nullptr;
+	MsgId _savedFromMsgId = 0;
 };
 
 struct HistoryMessageReply : public RuntimeComponent<HistoryMessageReply> {
+	HistoryMessageReply() = default;
+	HistoryMessageReply(const HistoryMessageReply &other) = delete;
+	HistoryMessageReply(HistoryMessageReply &&other) = delete;
+	HistoryMessageReply &operator=(const HistoryMessageReply &other) = delete;
 	HistoryMessageReply &operator=(HistoryMessageReply &&other) {
 		replyToMsgId = other.replyToMsgId;
 		std::swap(replyToMsg, other.replyToMsg);
@@ -504,6 +523,9 @@ public:
 	virtual bool notificationReady() const {
 		return true;
 	}
+	virtual void applyGroupAdminChanges(
+		const base::flat_map<UserId, bool> &changes) {
+	}
 
 	UserData *viaBot() const {
 		if (auto via = Get<HistoryMessageVia>()) {
@@ -575,9 +597,7 @@ public:
 	bool mentionsMe() const {
 		return _flags & MTPDmessage::Flag::f_mentioned;
 	}
-	bool isMediaUnread() const {
-		return _flags & MTPDmessage::Flag::f_media_unread;
-	}
+	bool isMediaUnread() const;
 	void markMediaRead();
 
 	// Zero result means this message is not self-destructing right now.
@@ -622,15 +642,13 @@ public:
 	bool isPost() const {
 		return _flags & MTPDmessage::Flag::f_post;
 	}
-	bool indexInOverview() const {
+	bool indexInUnreadMentions() const {
 		return (id > 0);
 	}
 	bool isSilent() const {
 		return _flags & MTPDmessage::Flag::f_silent;
 	}
-	bool hasOutLayout() const {
-		return out() && !isPost();
-	}
+	bool hasOutLayout() const;
 	virtual int32 viewsCount() const {
 		return hasViews() ? 1 : -1;
 	}
@@ -642,11 +660,15 @@ public:
 		return false;
 	}
 
-	virtual HistoryTextState getState(QPoint point, HistoryStateRequest request) const WARN_UNUSED_RESULT = 0;
+	[[nodiscard]] virtual HistoryTextState getState(
+		QPoint point,
+		HistoryStateRequest request) const = 0;
 	virtual void updatePressed(QPoint point) {
 	}
 
-	virtual TextSelection adjustSelection(TextSelection selection, TextSelectType type) const WARN_UNUSED_RESULT {
+	[[nodiscard]] virtual TextSelection adjustSelection(
+			TextSelection selection,
+			TextSelectType type) const {
 		return selection;
 	}
 
@@ -665,11 +687,13 @@ public:
 	}
 	virtual void updateReplyMarkup(const MTPReplyMarkup *markup) {
 	}
-	virtual int32 addToOverview(AddToOverviewMethod method) {
-		return 0;
+
+	virtual void addToUnreadMentions(AddToUnreadMentionsMethod method) {
 	}
-	virtual void eraseFromOverview() {
+	virtual void eraseFromUnreadMentions() {
 	}
+	virtual Storage::SharedMediaTypesMask sharedMediaTypes() const;
+
 	virtual bool hasBubble() const {
 		return false;
 	}
@@ -703,13 +727,13 @@ public:
 
 	virtual void drawInfo(Painter &p, int32 right, int32 bottom, int32 width, bool selected, InfoDisplayType type) const {
 	}
-	virtual ClickHandlerPtr fastShareLink() const {
+	virtual ClickHandlerPtr rightActionLink() const {
 		return ClickHandlerPtr();
 	}
-	virtual bool displayFastShare() const {
+	virtual bool displayRightAction() const {
 		return false;
 	}
-	virtual void drawFastShare(Painter &p, int left, int top, int outerWidth) const {
+	virtual void drawRightAction(Painter &p, int left, int top, int outerWidth) const {
 	}
 	virtual void setViewsCount(int32 count) {
 	}
@@ -728,6 +752,7 @@ public:
 		return _text.isEmpty();
 	}
 
+	bool isPinned() const;
 	bool canPin() const;
 	bool canForward() const;
 	bool canEdit(const QDateTime &cur) const;
@@ -800,9 +825,6 @@ public:
 		return 0;
 	}
 
-	bool hasFromName() const {
-		return (!out() || isPost()) && !history()->peer->isUser();
-	}
 	PeerData *author() const {
 		return isPost() ? history()->peer : from();
 	}
@@ -963,15 +985,13 @@ protected:
 	int _indexInBlock = -1;
 	MTPDmessage::Flags _flags = 0;
 
-	mutable int32 _authorNameVersion = 0;
-
 	HistoryItem *previousItem() const {
 		if (_block && _indexInBlock >= 0) {
 			if (_indexInBlock > 0) {
 				return _block->items.at(_indexInBlock - 1);
 			}
 			if (auto previous = _block->previousBlock()) {
-				Assert(!previous->items.isEmpty());
+				Assert(!previous->items.empty());
 				return previous->items.back();
 			}
 		}
@@ -983,7 +1003,7 @@ protected:
 				return _block->items.at(_indexInBlock + 1);
 			}
 			if (auto next = _block->nextBlock()) {
-				Assert(!next->items.isEmpty());
+				Assert(!next->items.empty());
 				return next->items.front();
 			}
 		}
@@ -1034,10 +1054,12 @@ protected:
 		return nullptr;
 	}
 
-	TextSelection skipTextSelection(TextSelection selection) const WARN_UNUSED_RESULT {
+	[[nodiscard]] TextSelection skipTextSelection(
+			TextSelection selection) const {
 		return internal::unshiftSelection(selection, _text);
 	}
-	TextSelection unskipTextSelection(TextSelection selection) const WARN_UNUSED_RESULT {
+	[[nodiscard]] TextSelection unskipTextSelection(
+			TextSelection selection) const {
 		return internal::shiftSelection(selection, _text);
 	}
 

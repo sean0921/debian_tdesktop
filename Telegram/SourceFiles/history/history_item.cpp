@@ -30,9 +30,13 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_history.h"
 #include "ui/effects/ripple_animation.h"
 #include "storage/file_upload.h"
+#include "storage/storage_facade.h"
+#include "storage/storage_shared_media.h"
 #include "auth_session.h"
 #include "media/media_audio.h"
 #include "messenger.h"
+#include "mainwindow.h"
+#include "window/window_controller.h"
 
 namespace {
 
@@ -612,8 +616,7 @@ HistoryItem::HistoryItem(
 , date(date)
 , _history(history)
 , _from(from ? App::user(from) : history->peer)
-, _flags(flags | MTPDmessage_ClientFlag::f_pending_init_dimensions | MTPDmessage_ClientFlag::f_pending_resize)
-, _authorNameVersion(author()->nameVersion) {
+, _flags(flags | MTPDmessage_ClientFlag::f_pending_init_dimensions | MTPDmessage_ClientFlag::f_pending_resize) {
 }
 
 void HistoryItem::finishCreate() {
@@ -645,9 +648,9 @@ void HistoryItem::finishEditionToEmpty() {
 	finishEdition(-1);
 
 	_history->removeNotification(this);
-	if (history()->isChannel()) {
-		if (history()->peer->isMegagroup() && history()->peer->asChannel()->mgInfo->pinnedMsgId == id) {
-			history()->peer->asChannel()->mgInfo->pinnedMsgId = 0;
+	if (auto channel = history()->peer->asChannel()) {
+		if (channel->pinnedMessageId() == id) {
+			channel->clearPinnedMessage();
 		}
 	}
 	if (history()->lastKeyboardId == id) {
@@ -663,6 +666,17 @@ void HistoryItem::finishEditionToEmpty() {
 	if (auto previous = previousItem()) {
 		previous->nextItemChanged();
 	}
+}
+
+bool HistoryItem::isMediaUnread() const {
+	if (!mentionsMe() && _history->peer->isChannel()) {
+		auto now = ::date(unixtime());
+		auto passed = date.secsTo(now);
+		if (passed >= Global::ChannelsReadMediaPeriod()) {
+			return false;
+		}
+	}
+	return _flags & MTPDmessage::Flag::f_media_unread;
 }
 
 void HistoryItem::markMediaRead() {
@@ -681,7 +695,7 @@ void HistoryItem::clickHandlerActiveChanged(const ClickHandlerPtr &p, bool activ
 		}
 	}
 	App::hoveredLinkItem(active ? this : nullptr);
-	Ui::repaintHistoryItem(this);
+	Auth().data().requestItemRepaint(this);
 }
 
 void HistoryItem::clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) {
@@ -691,7 +705,7 @@ void HistoryItem::clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pres
 		}
 	}
 	App::pressedLinkItem(pressed ? this : nullptr);
-	Ui::repaintHistoryItem(this);
+	Auth().data().requestItemRepaint(this);
 }
 
 void HistoryItem::addLogEntryOriginal(WebPageId localId, const QString &label, const TextWithEntities &content) {
@@ -707,14 +721,22 @@ void HistoryItem::destroy() {
 		Assert(detached());
 	} else {
 		// All this must be done for all items manually in History::clear(false)!
-		eraseFromOverview();
+		eraseFromUnreadMentions();
+		if (IsServerMsgId(id)) {
+			if (auto types = sharedMediaTypes()) {
+				Auth().storage().remove(Storage::SharedMediaRemoveOne(
+					history()->peer->id,
+					types,
+					id));
+			}
+		}
 
 		auto wasAtBottom = history()->loadedAtBottom();
 		_history->removeNotification(this);
 		detach();
-		if (history()->isChannel()) {
-			if (history()->peer->isMegagroup() && history()->peer->asChannel()->mgInfo->pinnedMsgId == id) {
-				history()->peer->asChannel()->mgInfo->pinnedMsgId = 0;
+		if (auto channel = history()->peer->asChannel()) {
+			if (channel->pinnedMessageId() == id) {
+				channel->clearPinnedMessage();
 			}
 		}
 		if (history()->lastMsg == this) {
@@ -748,6 +770,10 @@ void HistoryItem::detachFast() {
 	_indexInBlock = -1;
 }
 
+Storage::SharedMediaTypesMask HistoryItem::sharedMediaTypes() const {
+	return {};
+}
+
 void HistoryItem::previousItemChanged() {
 	Expects(!isLogEntry());
 	recountDisplayDate();
@@ -762,11 +788,18 @@ void HistoryItem::nextItemChanged() {
 
 bool HistoryItem::computeIsAttachToPrevious(not_null<HistoryItem*> previous) {
 	if (!Has<HistoryMessageDate>() && !Has<HistoryMessageUnreadBar>()) {
-		return !isPost() && !previous->isPost()
+		const auto possible = !isPost() && !previous->isPost()
 			&& !serviceMsg() && !previous->serviceMsg()
 			&& !isEmpty() && !previous->isEmpty()
-			&& previous->from() == from()
 			&& (qAbs(previous->date.secsTo(date)) < kAttachMessageToPreviousSecondsDelta);
+		if (possible) {
+			if (history()->peer->isSelf()) {
+				return previous->senderOriginal() == senderOriginal()
+					&& (previous->Has<HistoryMessageForwarded>() == Has<HistoryMessageForwarded>());
+			} else {
+				return previous->from() == from();
+			}
+		}
 	}
 	return false;
 }
@@ -819,11 +852,18 @@ void HistoryItem::setId(MsgId newId) {
 	}
 }
 
+bool HistoryItem::isPinned() const {
+	if (auto channel = _history->peer->asChannel()) {
+		return (channel->pinnedMessageId() == id);
+	}
+	return false;
+}
+
 bool HistoryItem::canPin() const {
-	if (id < 0 || !_history->peer->isMegagroup() || !toHistoryMessage()) {
+	if (id < 0 || !toHistoryMessage()) {
 		return false;
 	}
-	if (auto channel = _history->peer->asMegagroup()) {
+	if (auto channel = _history->peer->asChannel()) {
 		return channel->canPinMessages();
 	}
 	return false;
@@ -846,7 +886,15 @@ bool HistoryItem::canForward() const {
 
 bool HistoryItem::canEdit(const QDateTime &cur) const {
 	auto messageToMyself = _history->peer->isSelf();
-	auto messageTooOld = messageToMyself ? false : (date.secsTo(cur) >= Global::EditTimeLimit());
+	auto canPinInMegagroup = [&] {
+		if (auto megagroup = _history->peer->asMegagroup()) {
+			return megagroup->canPinMessages();
+		}
+		return false;
+	}();
+	auto messageTooOld = (messageToMyself || canPinInMegagroup)
+		? false
+		: (date.secsTo(cur) >= Global::EditTimeLimit());
 	if (id < 0 || messageTooOld) {
 		return false;
 	}
@@ -907,6 +955,12 @@ bool HistoryItem::canDeleteForEveryone(const QDateTime &cur) const {
 	}
 	if (history()->peer->isChannel()) {
 		return false;
+	} else if (auto user = history()->peer->asUser()) {
+		// Bots receive all messages and there is no sense in revoking them.
+		// See https://github.com/telegramdesktop/tdesktop/issues/3818
+		if (user->botInfo) {
+			return false;
+		}
 	}
 	if (!toHistoryMessage()) {
 		return false;
@@ -963,7 +1017,7 @@ QString HistoryItem::directLink() const {
 		if (!channel->isMegagroup()) {
 			if (auto media = getMedia()) {
 				if (auto document = media->getDocument()) {
-					if (document->isRoundVideo()) {
+					if (document->isVideoMessage()) {
 						return qsl("https://telesco.pe/") + query;
 					}
 				}
@@ -972,6 +1026,13 @@ QString HistoryItem::directLink() const {
 		return Messenger::Instance().createInternalLinkFull(query);
 	}
 	return QString();
+}
+
+bool HistoryItem::hasOutLayout() const {
+	if (history()->peer->isSelf()) {
+		return !Has<HistoryMessageForwarded>();
+	}
+	return out() && !isPost();
 }
 
 bool HistoryItem::unread() const {
@@ -1087,14 +1148,19 @@ void HistoryItem::clipCallback(Media::Clip::Notification notification) {
 		}
 		if (!stopped) {
 			setPendingInitDimensions();
-			Notify::historyItemLayoutChanged(this);
+			if (detached()) {
+				// We still want to handle our pending initDimensions and
+				// resize state even if we're detached in history.
+				_history->setHasPendingResizedItems();
+			}
+			Auth().data().markItemLayoutChanged(this);
 			Global::RefPendingRepaintItems().insert(this);
 		}
 	} break;
 
 	case NotificationRepaint: {
 		if (!reader->currentDisplayed()) {
-			Ui::repaintHistoryItem(this);
+			Auth().data().requestItemRepaint(this);
 		}
 	} break;
 	}
@@ -1128,7 +1194,7 @@ void HistoryItem::audioTrackUpdated() {
 
 void HistoryItem::recountDisplayDate() {
 	Expects(!isLogEntry());
-	setDisplayDate(([this]() {
+	setDisplayDate([&] {
 		if (isEmpty()) {
 			return false;
 		}
@@ -1137,7 +1203,7 @@ void HistoryItem::recountDisplayDate() {
 			return previous->isEmpty() || (previous->date.date() != date.date());
 		}
 		return true;
-	})());
+	}());
 }
 
 void HistoryItem::setDisplayDate(bool displayDate) {
@@ -1173,12 +1239,19 @@ QString HistoryItem::inDialogsText(DrawInDialog way) const {
 		}
 		return TextUtilities::Clean(_text.originalText());
 	};
-	auto plainText = getText();
-	if ((!_history->peer->isUser() || out())
-		&& !isPost()
-		&& !isEmpty()
-		&& (way != DrawInDialog::WithoutSender)) {
-		auto fromText = author()->isSelf() ? lang(lng_from_you) : author()->shortName();
+	const auto plainText = getText();
+	const auto sender = [&]() -> PeerData* {
+		if (isPost() || isEmpty() || (way == DrawInDialog::WithoutSender)) {
+			return nullptr;
+		} else if (!_history->peer->isUser() || out()) {
+			return author();
+		} else if (_history->peer->isSelf() && !hasOutLayout()) {
+			return senderOriginal();
+		}
+		return nullptr;
+	}();
+	if (sender) {
+		auto fromText = sender->isSelf() ? lang(lng_from_you) : sender->shortName();
 		auto fromWrapped = textcmdLink(1, lng_dialogs_text_from_wrapped(lt_from, TextUtilities::Clean(fromText)));
 		return lng_dialogs_text_with_from(lt_from_part, fromWrapped, lt_message, plainText);
 	}
@@ -1220,7 +1293,10 @@ ClickHandlerPtr goToMessageClickHandler(PeerData *peer, MsgId msgId) {
 			if (current && current->history()->peer == peer) {
 				App::main()->pushReplyReturn(current);
 			}
-			Ui::showPeerHistory(peer, msgId, Ui::ShowWay::Forward);
+			App::wnd()->controller()->showPeerHistory(
+				peer,
+				Window::SectionShow::Way::Forward,
+				msgId);
 		}
 	});
 }

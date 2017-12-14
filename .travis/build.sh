@@ -27,6 +27,9 @@ GYP_PATH="$BUILD/gyp"
 GYP_CACHE_VERSION="3"
 GYP_PATCH="$UPSTREAM/Telegram/Patches/gyp.diff"
 
+RANGE_PATH="$BUILD/range-v3"
+RANGE_CACHE_VERSION="3"
+
 VA_PATH="$BUILD/libva"
 VA_CACHE_VERSION="3"
 
@@ -85,6 +88,9 @@ build() {
   # Patched GYP (supports cmake precompiled headers)
   getGYP
 
+  # Range v3
+  getRange
+
   # Guideline Support Library
   getGSL
 
@@ -116,6 +122,10 @@ build() {
 
   if [[ $BUILD_VERSION == *"disable_unity_integration"* ]]; then
     GYP_DEFINES+=",TDESKTOP_DISABLE_UNITY_INTEGRATION"
+  fi
+
+  if [[ $BUILD_VERSION == *"disable_gtk_integration"* ]]; then
+    GYP_DEFINES+=",TDESKTOP_DISABLE_GTK_INTEGRATION"
   fi
 
   info_msg "Build defines: ${GYP_DEFINES}"
@@ -172,6 +182,52 @@ buildXkbCommon() {
   make $MAKE_ARGS
   sudo make install
   sudo ldconfig
+}
+
+getRange() {
+  travisStartFold "Getting range-v3"
+
+  local RANGE_CACHE="$CACHE/range-v3"
+  local RANGE_CACHE_FILE="$RANGE_CACHE/.cache.txt"
+  local RANGE_CACHE_KEY="${RANGE_CACHE_VERSION}"
+  local RANGE_CACHE_OUTDATED="1"
+
+  if [ ! -d "$RANGE_CACHE" ]; then
+    mkdir -p "$RANGE_CACHE"
+  fi
+
+  ln -sf "$RANGE_CACHE" "$RANGE_PATH"
+
+  if [ -f "$RANGE_CACHE_FILE" ]; then
+    local RANGE_CACHE_KEY_FOUND=`tail -n 1 $RANGE_CACHE_FILE`
+    if [ "$RANGE_CACHE_KEY" == "$RANGE_CACHE_KEY_FOUND" ]; then
+      RANGE_CACHE_OUTDATED="0"
+    else
+      info_msg "Cache key '$RANGE_CACHE_KEY_FOUND' does not match '$RANGE_CACHE_KEY', getting range-v3"
+    fi
+  fi
+  if [ "$RANGE_CACHE_OUTDATED" == "1" ]; then
+    buildRange
+    sudo echo $RANGE_CACHE_KEY > "$RANGE_CACHE_FILE"
+  else
+    info_msg "Using cached range-v3"
+  fi
+}
+
+buildRange() {
+  info_msg "Downloading range-v3"
+
+  if [ -d "$EXTERNAL/range-v3" ]; then
+    rm -rf "$EXTERNAL/range-v3"
+  fi
+  cd $RANGE_PATH
+  rm -rf *
+
+  cd "$EXTERNAL"
+  git clone --depth=1 https://github.com/ericniebler/range-v3
+
+  cd "$EXTERNAL/range-v3"
+  cp -r * "$RANGE_PATH/"
 }
 
 getVa() {
@@ -315,6 +371,8 @@ buildFFmpeg() {
   git clone https://git.ffmpeg.org/ffmpeg.git
 
   cd "$EXTERNAL/ffmpeg"
+  git checkout release/3.4
+
   ./configure \
       --prefix=$FFMPEG_PATH \
       --disable-debug \
@@ -542,6 +600,11 @@ buildCustomQt() {
   git apply "$QT_PATCH"
   cd ..
 
+  cd "$EXTERNAL/qt${QT_VERSION}/qtbase/src/plugins/platforminputcontexts"
+  git clone https://github.com/telegramdesktop/fcitx.git
+  git clone https://github.com/telegramdesktop/hime.git
+  cd ../../../..
+
   ./configure -prefix $QT_PATH -release -opensource -confirm-license -qt-zlib \
               -qt-libpng -qt-libjpeg -qt-freetype -qt-harfbuzz -qt-pcre -qt-xcb \
               -qt-xkbcommon-x11 -no-opengl -no-gtkstyle -static \
@@ -617,6 +680,7 @@ buildTelegram() {
       -Dlinux_path_vdpau=$VDPAU_PATH \
       -Dlinux_path_ffmpeg=$FFMPEG_PATH \
       -Dlinux_path_openal=$OPENAL_PATH \
+      -Dlinux_path_range=$RANGE_PATH \
       -Dlinux_path_qt=$QT_PATH \
       -Dlinux_path_breakpad=$BREAKPAD_PATH \
       -Dlinux_path_libexif_lib=/usr/local/lib \

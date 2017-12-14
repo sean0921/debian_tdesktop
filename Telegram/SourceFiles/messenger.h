@@ -24,6 +24,17 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "mtproto/auth_key.h"
 #include "base/timer.h"
 
+class AuthSession;
+class AuthSessionData;
+class MainWidget;
+class FileUploader;
+class Translator;
+class MediaView;
+
+namespace Core {
+class Launcher;
+} // namespace Core
+
 namespace App {
 void quit();
 } // namespace App
@@ -35,17 +46,6 @@ class AuthKey;
 using AuthKeyPtr = std::shared_ptr<AuthKey>;
 using AuthKeysList = std::vector<AuthKeyPtr>;
 } // namespace MTP
-
-class AuthSession;
-class AuthSessionData;
-class MainWidget;
-class FileUploader;
-class Translator;
-class MediaView;
-
-namespace Local {
-struct StoredAuthSession;
-} // namespace Local
 
 namespace Media {
 namespace Audio {
@@ -63,12 +63,16 @@ class Messenger final : public QObject, public RPCSender, private base::Subscrib
 	Q_OBJECT
 
 public:
-	Messenger();
+	Messenger(not_null<Core::Launcher*> launcher);
 
 	Messenger(const Messenger &other) = delete;
 	Messenger &operator=(const Messenger &other) = delete;
 
 	~Messenger();
+
+	not_null<Core::Launcher*> launcher() const {
+		return _launcher;
+	}
 
 	// Windows interface.
 	MainWindow *getActiveWindow() const;
@@ -112,7 +116,7 @@ public:
 	void setMtpMainDcId(MTP::DcId mainDcId);
 	void setMtpKey(MTP::DcId dcId, const MTP::AuthKey::Data &keyData);
 	void setAuthSessionUserId(UserId userId);
-	void setAuthSessionFromStorage(std::unique_ptr<Local::StoredAuthSession> data);
+	void setAuthSessionFromStorage(std::unique_ptr<AuthSessionData> data);
 	AuthSessionData *getAuthSessionData();
 
 	// Serialization.
@@ -154,7 +158,7 @@ public:
 	void checkStartUrl();
 	bool openLocalUrl(const QString &url);
 
-	void uploadProfilePhoto(const QImage &tosend, const PeerId &peerId);
+	void uploadProfilePhoto(QImage &&tosend, const PeerId &peerId);
 	void regPhotoUpdate(const PeerId &peer, const FullMsgId &msgId);
 	bool isPhotoUpdating(const PeerId &peer);
 	void cancelPhotoUpdate(const PeerId &peer);
@@ -163,7 +167,7 @@ public:
 	void chatPhotoCleared(PeerId peer, const MTPUpdates &updates);
 	void selfPhotoDone(const MTPphotos_Photo &result);
 	void chatPhotoDone(PeerId peerId, const MTPUpdates &updates);
-	bool peerPhotoFail(PeerId peerId, const RPCError &e);
+	bool peerPhotoFailed(PeerId peerId, const RPCError &e);
 	void peerClearPhoto(PeerId peer);
 
 	void writeUserConfigIn(TimeMs ms);
@@ -177,6 +181,9 @@ public:
 	base::Observable<void> &passcodedChanged() {
 		return _passcodedChanged;
 	}
+
+	void registerLeaveSubscription(QWidget *widget);
+	void unregisterLeaveSubscription(QWidget *widget);
 
 	void quitPreventFinished();
 
@@ -221,6 +228,8 @@ private:
 
 	void loggedOut();
 
+	not_null<Core::Launcher*> _launcher;
+
 	QMap<FullMsgId, PeerId> photoUpdates;
 
 	QMap<MTP::DcId, TimeMs> killDownloadSessionTimes;
@@ -249,5 +258,15 @@ private:
 	QImage _logoNoMargin;
 
 	base::DelayedCallTimer _callDelayedTimer;
+
+	struct LeaveSubscription {
+		LeaveSubscription(QPointer<QWidget> pointer, rpl::lifetime &&subscription)
+		: pointer(pointer), subscription(std::move(subscription)) {
+		}
+
+		QPointer<QWidget> pointer;
+		rpl::lifetime subscription;
+	};
+	std::vector<LeaveSubscription> _leaveSubscriptions;
 
 };

@@ -22,7 +22,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 #include "boxes/peer_list_box.h"
 #include "base/flat_set.h"
-#include "base/weak_unique_ptr.h"
+#include "base/weak_ptr.h"
 
 // Not used for now.
 //
@@ -47,13 +47,20 @@ public:
 
 	void setActionLink(const QString &action);
 
-	void lazyInitialize() override;
+	void lazyInitialize(const style::PeerListItem &st) override;
 
 private:
 	void refreshActionLink();
 	QSize actionSize() const override;
 	QMargins actionMargins() const override;
-	void paintAction(Painter &p, TimeMs ms, int x, int y, int outerWidth, bool actionSelected) override;
+	void paintAction(
+		Painter &p,
+		TimeMs ms,
+		int x,
+		int y,
+		int outerWidth,
+		bool selected,
+		bool actionSelected) override;
 
 	QString _action;
 	int _actionWidth = 0;
@@ -83,9 +90,13 @@ private:
 
 };
 
-class ChatsListBoxController : public PeerListController, protected base::Subscriber {
+class ChatsListBoxController
+	: public PeerListController
+	, protected base::Subscriber {
 public:
-	ChatsListBoxController(std::unique_ptr<PeerListSearchController> searchController = std::make_unique<PeerListGlobalSearchController>());
+	ChatsListBoxController(
+		std::unique_ptr<PeerListSearchController> searchController
+			= std::make_unique<PeerListGlobalSearchController>());
 
 	void prepare() override final;
 	std::unique_ptr<PeerListRow> createSearchRow(not_null<PeerData*> peer) override final;
@@ -200,7 +211,7 @@ private:
 
 };
 
-class AddBotToGroupBoxController : public ChatsListBoxController, public base::enable_weak_from_this {
+class AddBotToGroupBoxController : public ChatsListBoxController, public base::has_weak_ptr {
 public:
 	static void Start(not_null<UserData*> bot);
 
@@ -226,5 +237,26 @@ private:
 	void addBotToGroup(not_null<PeerData*> chat);
 
 	not_null<UserData*> _bot;
+
+};
+
+class ChooseRecipientBoxController : public ChatsListBoxController {
+public:
+	ChooseRecipientBoxController(
+		base::lambda_once<void(not_null<PeerData*>)> callback);
+
+	void rowClicked(not_null<PeerListRow*> row) override;
+
+	bool respectSavedMessagesChat() const override {
+		return true;
+	}
+
+protected:
+	void prepareViewHook() override;
+	std::unique_ptr<Row> createRow(
+		not_null<History*> history) override;
+
+private:
+	base::lambda_once<void(not_null<PeerData*>)> _callback;
 
 };

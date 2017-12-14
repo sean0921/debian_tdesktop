@@ -21,10 +21,15 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #pragma once
 
 #include "ui/widgets/buttons.h"
+#include "ui/widgets/tooltip.h"
 #include "styles/style_window.h"
 #include "styles/style_widgets.h"
 
 class PeerData;
+
+namespace Window {
+class Controller;
+} // namespace Window
 
 namespace Ui {
 
@@ -98,7 +103,7 @@ public:
 	}
 	void setType(Type state);
 	void setRecordActive(bool recordActive);
-	void finishAnimation();
+	void finishAnimating();
 
 	void setRecordStartCallback(base::lambda<void()> callback) {
 		_recordStartCallback = std::move(callback);
@@ -144,38 +149,111 @@ private:
 
 };
 
-class PeerAvatarButton : public AbstractButton {
+class UserpicButton : public RippleButton {
 public:
-	PeerAvatarButton(QWidget *parent,PeerData *peer, const style::PeerAvatarButton &st);
+	enum class Role {
+		ChangePhoto,
+		OpenPhoto,
+		OpenProfile,
+		Custom,
+	};
 
-	void setPeer(PeerData *peer) {
-		_peer = peer;
-		update();
+	UserpicButton(
+		QWidget *parent,
+		PeerId peerForCrop,
+		Role role,
+		const style::UserpicButton &st);
+	UserpicButton(
+		QWidget *parent,
+		not_null<Window::Controller*> controller,
+		not_null<PeerData*> peer,
+		Role role,
+		const style::UserpicButton &st);
+
+	void switchChangePhotoOverlay(bool enabled);
+	void showSavedMessagesOnSelf(bool enabled);
+
+	QImage takeResultImage() {
+		return std::move(_result);
 	}
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
+	void mouseMoveEvent(QMouseEvent *e) override;
+	void leaveEventHook(QEvent *e) override;
+
+	void onStateChanged(State was, StateChangeSource source) override;
+
+	QImage prepareRippleMask() const override;
+	QPoint prepareRippleStartPosition() const override;
 
 private:
+	void prepare();
+	void setImage(QImage &&image);
+	void setupPeerViewers();
+	void startAnimation();
+	void processPeerPhoto();
+	void processNewPeerPhoto();
+	void startNewPhotoShowing();
+	void prepareUserpicPixmap();
+	QPoint countPhotoPosition() const;
+	void startChangeOverlayAnimation();
+	void updateCursorInChangeOverlay(QPoint localPos);
+	void setCursorInChangeOverlay(bool inOverlay);
+	void updateCursor();
+	bool showSavedMessages() const;
+
+	void grabOldUserpic();
+	void setClickHandlerByRole();
+	void openPeerPhoto();
+	void changePhotoLazy();
+	void uploadNewPeerPhoto();
+
+	const style::UserpicButton &_st;
+	Window::Controller *_controller = nullptr;
 	PeerData *_peer = nullptr;
-	const style::PeerAvatarButton &_st;
+	PeerId _peerForCrop = 0;
+	Role _role = Role::ChangePhoto;
+	bool _notShownYet = true;
+	bool _waiting = false;
+	QPixmap _userpic, _oldUserpic;
+	bool _userpicHasImage = false;
+	bool _userpicCustom = false;
+	StorageKey _userpicUniqueKey;
+	Animation _a_appearance;
+	QImage _result;
+
+	bool _showSavedMessagesOnSelf = false;
+	bool _canOpenPhoto = false;
+	bool _cursorInChangeOverlay = false;
+	bool _changeOverlayEnabled = false;
+	Animation _changeOverlayShown;
 
 };
 
-class NewAvatarButton : public RippleButton {
+class SilentToggle : public Ui::IconButton, public Ui::AbstractTooltipShower {
 public:
-	NewAvatarButton(QWidget *parent, int size, QPoint position);
+	SilentToggle(QWidget *parent, not_null<ChannelData*> channel);
 
-	void setImage(const QImage &image);
+	void setChecked(bool checked);
+	bool checked() const {
+		return _checked;
+	}
+
+	// AbstractTooltipShower interface
+	QString tooltipText() const override;
+	QPoint tooltipPos() const override;
 
 protected:
-	void paintEvent(QPaintEvent *e) override;
-
-	QImage prepareRippleMask() const override;
+	void mouseMoveEvent(QMouseEvent *e) override;
+	void mouseReleaseEvent(QMouseEvent *e) override;
+	void leaveEventHook(QEvent *e) override;
 
 private:
-	QPixmap _image;
-	QPoint _position;
+	void refreshIconOverrides();
+
+	not_null<ChannelData*> _channel;
+	bool _checked = false;
 
 };
 
