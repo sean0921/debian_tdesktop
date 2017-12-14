@@ -9,9 +9,9 @@ Last-Update: 2017-09-14
 
 --- a/Telegram/gyp/settings_linux.gypi
 +++ b/Telegram/gyp/settings_linux.gypi
-@@ -25,7 +25,6 @@
+@@ -24,7 +24,6 @@
+         'linux_common_flags': [
            '-pipe',
-           '-g',
            '-Wall',
 -          '-Werror',
            '-W',
@@ -19,22 +19,34 @@ Last-Update: 2017-09-14
            '-Wno-unused-variable',
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -72,18 +72,12 @@
+@@ -76,16 +76,11 @@
      'configurations': {
        'Release': {
-         'cflags': [
+         'cflags_c': [
 -          '-Ofast',
--          '-flto',
            '-fno-strict-aliasing',
          ],
          'cflags_cc': [
 -          '-Ofast',
--          '-flto',
            '-fno-strict-aliasing',
          ],
-         'ldflags': [
+-        'ldflags': [
 -          '-Ofast',
--          '-flto',
-         ],
+-        ],
        },
      },
+     'conditions': [
+@@ -95,13 +90,6 @@
+         'cflags_c': [ '-g' ],
+         'cflags_cc': [ '-g' ],
+         'ldflags': [ '-g' ],
+-        'configurations': {
+-          'Release': {
+-            'cflags_c': [ '-flto' ],
+-            'cflags_cc': [ '-flto' ],
+-            'ldflags': [ '-flto' ],
+-          },
+-        },
+       }, {
+         'ldflags': [
+           '-Wl,-wrap,__divmoddi4',

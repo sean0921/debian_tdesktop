@@ -13,33 +13,31 @@ Last-Update: 2017-07-29
  </RCC>
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
-@@ -39,6 +39,11 @@ int main(int argc, char *argv[]) {
- 	Logs::start(); // must be started before Platform is started
- 	Platform::start(); // must be started before QApplication is created
+@@ -21,6 +21,9 @@
+ #include "core/launcher.h"
  
-+	// without this Telegram doesn't start on Ubuntu 17.04 due GTK errors
-+	setenv("QT_STYLE_OVERRIDE", "qwerty", false);
+ int main(int argc, char *argv[]) {
 +	// Telegram doesn't start when extraordinary theme is set, see launchpad.net/bugs/1680943
 +	unsetenv("QT_QPA_PLATFORMTHEME");
 +
- 	int result = 0;
- 	{
- 		Application app(argc, argv);
+ 	const auto launcher = Core::Launcher::Create(argc, argv);
+ 	return launcher ? launcher->exec() : 1;
+ }
 --- a/Telegram/SourceFiles/platform/linux/linux_libs.h
 +++ b/Telegram/SourceFiles/platform/linux/linux_libs.h
-@@ -29,7 +29,7 @@ extern "C" {
+@@ -30,7 +30,7 @@ extern "C" {
  } // extern "C"
  
  #ifndef TDESKTOP_DISABLE_UNITY_INTEGRATION
 -#include <unity/unity/unity.h>
 +typedef void UnityLauncherEntry;
  #endif // !TDESKTOP_DISABLE_UNITY_INTEGRATION
+ #endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
  
- namespace Platform {
 --- a/Telegram/SourceFiles/ui/text/text_block.cpp
 +++ b/Telegram/SourceFiles/ui/text/text_block.cpp
-@@ -330,7 +330,7 @@ TextBlock::TextBlock(const style::font &
- 		SignalHandlers::setCrashAnnotationRef("CrashString", &part);
+@@ -332,7 +332,7 @@ TextBlock::TextBlock(const style::font &
+ 		CrashReports::SetAnnotationRef("CrashString", &part);
  
  		QStackTextEngine engine(part, blockFont->f);
 -		QTextLayout layout(&engine);
@@ -49,7 +47,7 @@ Last-Update: 2017-07-29
  
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
-@@ -80,12 +80,9 @@
+@@ -82,12 +82,9 @@
        'codegen.gyp:codegen_numbers',
        'codegen.gyp:codegen_style',
        'tests/tests.gyp:tests',
@@ -62,17 +60,17 @@ Last-Update: 2017-07-29
        'AL_ALEXT_PROTOTYPES',
        'TGVOIP_USE_CXX11_LIB',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-@@ -94,18 +91,10 @@
+@@ -96,18 +93,10 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
 -      '<(libs_loc)/breakpad/src',
 -      '<(libs_loc)/lzma/C',
--      '<(libs_loc)/libexif-0.6.20',
--      '<(libs_loc)/zlib-1.2.8',
+-      '<(libs_loc)/zlib',
 -      '<(libs_loc)/ffmpeg',
 -      '<(libs_loc)/openal-soft/include',
 -      '<(libs_loc)/opus/include',
+-      '<(libs_loc)/range-v3/include',
 -      '<(minizip_loc)',
 -      '<(sp_media_key_tap_loc)',
        '<(emoji_suggestions_loc)',
@@ -94,6 +92,17 @@ Last-Update: 2017-07-29
    },
  
    'configurations': {
+--- a/Telegram/gyp/linux_glibc_wraps.gyp
++++ b/Telegram/gyp/linux_glibc_wraps.gyp
+@@ -27,7 +27,7 @@
+     'sources': [
+       '../SourceFiles/platform/linux/linux_glibc_wraps.c',
+     ],
+-    'conditions': [[ '"<!(uname -p)" == "x86_64"', {
++    'conditions': [[ '"<!(dpkg-architecture -q DEB_HOST_ARCH_BITS)" == "64"', {
+       'sources': [
+         '../SourceFiles/platform/linux/linux_glibc_wraps_64.c',
+       ],
 --- a/Telegram/gyp/qt.gypi
 +++ b/Telegram/gyp/qt.gypi
 @@ -27,25 +27,21 @@
@@ -124,7 +133,7 @@ Last-Update: 2017-07-29
              }]
            ]
          },
-@@ -85,32 +81,12 @@
+@@ -85,32 +81,13 @@
              ],
            }],
            [ 'build_linux', {
@@ -141,7 +150,7 @@ Last-Update: 2017-07-29
 -              'qgenericbearer',
 -              'qnmbearer',
                '<@(qt_libs)',
--              'Qt5DBus',
+               'Qt5DBus',
                'Qt5Core',
 -              'qtpcre',
 -              'Xi',
@@ -160,7 +169,7 @@ Last-Update: 2017-07-29
              ],
            }],
          ],
-@@ -140,11 +116,6 @@
+@@ -140,11 +117,6 @@
      # '<!@(python <(DEPTH)/list_sources.py [sources] <(qt_moc_list_sources_arg))'
      # where [sources] contains all your source files
      'qt_moc_list_sources_arg': '--moc-prefix SHARED_INTERMEDIATE_DIR/<(_target_name)/moc/moc_',
@@ -168,17 +177,18 @@ Last-Update: 2017-07-29
 -    'linux_path_xkbcommon%': '/usr/local',
 -    'linux_lib_ssl%': '/usr/local/ssl/lib/libssl.a',
 -    'linux_lib_crypto%': '/usr/local/ssl/lib/libcrypto.a',
--    'linux_lib_icu%': '/usr/lib/libicutu.a /usr/lib/libicui18n.a /usr/lib/libicuuc.a /usr/lib/libicudata.a',
+-    'linux_lib_icu%': 'libicutu.a libicui18n.a libicuuc.a libicudata.a',
    },
  
    'configurations': {
-@@ -193,13 +164,13 @@
+@@ -193,14 +165,14 @@
    },
  
    'include_dirs': [
 -    '<(qt_loc)/include',
 -    '<(qt_loc)/include/QtCore',
 -    '<(qt_loc)/include/QtGui',
+-    '<(qt_loc)/include/QtDBus',
 -    '<(qt_loc)/include/QtCore/<(qt_version)',
 -    '<(qt_loc)/include/QtGui/<(qt_version)',
 -    '<(qt_loc)/include/QtCore/<(qt_version)/QtCore',
@@ -186,6 +196,7 @@ Last-Update: 2017-07-29
 +    '/usr/include/<(triplet)/qt5',
 +    '/usr/include/<(triplet)/qt5/QtCore',
 +    '/usr/include/<(triplet)/qt5/QtGui',
++    '/usr/include/<(triplet)/qt5/QtDBus',
 +    '/usr/include/<(triplet)/qt5/QtCore/<(qt_version)/',
 +    '/usr/include/<(triplet)/qt5/QtGui/<(qt_version)/',
 +    '/usr/include/<(triplet)/qt5/QtCore/<(qt_version)/QtCore',
@@ -193,10 +204,10 @@ Last-Update: 2017-07-29
    ],
    'library_dirs': [
      '<(qt_loc)/lib',
-@@ -220,17 +191,9 @@
-         '<(qt_loc)/plugins/platforminputcontexts',
+@@ -225,17 +197,9 @@
        ],
        'libraries': [
+         '<(PRODUCT_DIR)/obj.target/liblinux_glibc_wraps.a',
 -        '<(linux_path_xkbcommon)/lib/libxkbcommon.a',
          '<@(qt_libs_release)',
 -        '<(linux_lib_ssl)',
@@ -212,26 +223,26 @@ Last-Update: 2017-07-29
          '-lglib-2.0',
          '-lpthread',
        ],
-@@ -238,7 +201,6 @@
+@@ -243,7 +207,6 @@
          '<(qt_loc)/mkspecs/linux-g++',
        ],
        'ldflags': [
 -        '-static-libstdc++',
          '-pthread',
-         '-g',
          '-rdynamic',
+       ],
 --- a/Telegram/gyp/settings_linux.gypi
 +++ b/Telegram/gyp/settings_linux.gypi
-@@ -39,7 +39,7 @@
+@@ -38,7 +38,7 @@
          ],
        },
        'conditions': [
 -        [ '"<!(uname -p)" == "x86_64"', {
-+        [ '"<!(dpkg-architecture -q DEB_HOST_GNU_CPU)" == "x86_64"', {
++        [ '"<!(dpkg-architecture -q DEB_HOST_ARCH_BITS)" == "64"', {
            'defines': [
              'Q_OS_LINUX64',
            ],
-@@ -61,7 +61,6 @@
+@@ -60,7 +60,6 @@
        ],
        'defines': [
          '_REENTRANT',
@@ -241,7 +252,7 @@ Last-Update: 2017-07-29
        'cflags_c': [
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -52,25 +52,15 @@
+@@ -53,25 +53,15 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
@@ -276,17 +287,26 @@ Last-Update: 2017-07-29
  #      '<!(pkg-config 2> /dev/null --libs <@(pkgconfig_libs))',
      ],
      'cflags_cc': [
+@@ -99,7 +89,7 @@
+       },
+     },
+     'conditions': [
+-      [ '"<!(uname -p)" == "x86_64"', {
++      [ '"<!(dpkg-architecture -q DEB_HOST_ARCH_BITS)" == "64"', {
+         # 32 bit version can't be linked with debug info or LTO,
+         # virtual memory exhausted :(
+         'cflags_c': [ '-g' ],
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -586,7 +586,6 @@
- <(src_loc)/overviewwidget.h
+@@ -683,7 +683,6 @@
+ <(src_loc)/observer_peer.h
  <(src_loc)/passcodewidget.cpp
  <(src_loc)/passcodewidget.h
 -<(src_loc)/qt_static_plugins.cpp
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -598,14 +597,7 @@
+@@ -693,14 +692,7 @@
  <(emoji_suggestions_loc)/emoji_suggestions.cpp
  <(emoji_suggestions_loc)/emoji_suggestions.h
  

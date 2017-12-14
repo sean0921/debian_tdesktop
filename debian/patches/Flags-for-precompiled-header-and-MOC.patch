@@ -3,10 +3,9 @@ Author: Nicholas Guriev <guriev-ns@ya.ru>
 Forwarded: no
 Last-Update: 2017-03-31
 
-diff --git a/Telegram/gyp/PrecompiledHeader.cmake b/Telegram/gyp/PrecompiledHeader.cmake
 --- a/Telegram/gyp/PrecompiledHeader.cmake
 +++ b/Telegram/gyp/PrecompiledHeader.cmake
-@@ -112,7 +112,7 @@ function(add_precompiled_header _target _input)
+@@ -112,7 +112,7 @@ function(add_precompiled_header _target
        set(_compiler_FLAGS "@${_pch_c_flags_file}")
        add_custom_command(
          OUTPUT "${_output_c}"
@@ -15,7 +14,7 @@ diff --git a/Telegram/gyp/PrecompiledHeader.cmake b/Telegram/gyp/PrecompiledHead
          DEPENDS "${_pchfile}" "${_pch_c_flags_file}"
          IMPLICIT_DEPENDS C "${_pch_header}"
          COMMENT "Precompiling ${_name} for ${_target} (C)")
-@@ -123,7 +123,7 @@ function(add_precompiled_header _target _input)
+@@ -123,7 +123,7 @@ function(add_precompiled_header _target
        set(_compiler_FLAGS "@${_pch_cpp_flags_file}")
        add_custom_command(
          OUTPUT "${_output_cxx}"
@@ -24,10 +23,9 @@ diff --git a/Telegram/gyp/PrecompiledHeader.cmake b/Telegram/gyp/PrecompiledHead
          DEPENDS "${_pchfile}" "${_pch_cpp_flags_file}"
          IMPLICIT_DEPENDS CXX "${_pch_header}"
          COMMENT "Precompiling ${_name} for ${_target} (C++)")
-diff --git a/Telegram/gyp/qt.gypi b/Telegram/gyp/qt.gypi
---- a/Telegram/gyp/qt.gypi
-+++ b/Telegram/gyp/qt.gypi
-@@ -228,6 +228,7 @@
+--- a/Telegram/gyp/qt_moc.gypi
++++ b/Telegram/gyp/qt_moc.gypi
+@@ -30,6 +30,7 @@
        # Silence "Note: No relevant classes found. No output generated."
        '--no-notes',
  
