@@ -18,13 +18,14 @@ Build-Depends:
  libmsgsl-dev,
  libopenal-dev,
  libopus-dev (>=1.1),
+ librange-v3-dev,
  libssl-dev (>=1.0.1),
  libswscale-dev (>=7:3.2),
  libtgvoip-dev,
  qtbase5-dev (>=5.5),
  qtbase5-private-dev (>=5.5),
  zlib1g-dev (>=1:1.2.8),
-Standards-Version: 4.1.1
+Standards-Version: 4.1.2
 Homepage: https://desktop.telegram.org
 Vcs-Git: https://anonscm.debian.org/git/collab-maint/telegram-desktop.git
 Vcs-Browser: https://anonscm.debian.org/git/collab-maint/telegram-desktop.git
