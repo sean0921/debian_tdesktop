@@ -47,6 +47,16 @@ Last-Update: 2017-08-03
 +#else
 +#define FORCE_INLINE inline
 +#endif
+--- a/Telegram/SourceFiles/rpl/details/callable.h
++++ b/Telegram/SourceFiles/rpl/details/callable.h
+@@ -20,7 +20,6 @@
+ */
+ #pragma once
+ 
+-#include "base/build_config.h"
+ #include <tuple>
+ 
+ namespace rpl {
 --- a/Telegram/SourceFiles/ui/animation.h
 +++ b/Telegram/SourceFiles/ui/animation.h
 @@ -181,9 +181,10 @@ FORCE_INLINE int interpolate(int a, int
