@@ -40,6 +40,12 @@ ifneq ($(DEB_HOST_ARCH_OS),linux)
  GYPFLAGS += --no-parallel  # see bugs.debian.org/799356
 endif
 
+ifeq ($(DEB_HOST_ARCH_BITS),32)
+ # GCC reaches the theoretical maximum of allocated virtual memory when it
+ # generates debugging information. So unfortunately, we have to turn this off.
+ export DEB_CXXFLAGS_MAINT_STRIP += "-g"
+endif
+
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 export DEB_CPPFLAGS_MAINT_APPEND += $(EXTRA_MACROS:%=-D%)
 export DEB_CXXFLAGS_MAINT_APPEND += -Werror=invalid-pch
