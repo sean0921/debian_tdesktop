@@ -30,6 +30,7 @@ GYPFLAGS += \
 
 EXTRA_MACROS += \
 	DEBIAN_API_ID \
+	RPL_CONSUMER_TYPE_ERASED_ALWAYS \
 	TDESKTOP_DISABLE_AUTOUPDATE \
 	TDESKTOP_DISABLE_CRASH_REPORTS \
 	TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME
@@ -38,14 +39,6 @@ EXTRA_MACROS += \
 ifneq ($(DEB_HOST_ARCH_OS),linux)
  EXTRA_MACROS += Q_OS_LINUX  # brilliant bluff :)
  GYPFLAGS += --no-parallel  # see bugs.debian.org/799356
-endif
-
-ifneq (,$(filter $(DEB_HOST_ARCH_CPU), \
-	arm i386 mips mipsel ppc64el hppa m68k powerpc sh4 sparc64))
- # GCC reaches the theoretical maximum of allocated virtual memory when it
- # generates debugging information. So unfortunately, we have to turn this off.
- # The list above contains the CPU names on which this issue was observed.
- export DEB_CXXFLAGS_MAINT_STRIP += -g
 endif
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
