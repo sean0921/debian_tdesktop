@@ -12,6 +12,7 @@ Build-Depends:
  libavcodec-dev (>=7:3.2),
  libavformat-dev (>=7:3.2),
  libdee-dev,
+ libgtk2.0-dev,
  liblzma-dev,
  libmapbox-variant-dev,
  libminizip-dev (>=1.1),
