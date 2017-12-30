@@ -58,6 +58,7 @@ private:
 
 	virtual bool launchUpdater(UpdaterLaunch action) = 0;
 
+	int executeApplication();
 
 	int _argc;
 	char **_argv;

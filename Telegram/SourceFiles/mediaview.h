@@ -32,6 +32,9 @@ struct TrackState;
 namespace Clip {
 class Controller;
 } // namespace Clip
+namespace View {
+class GroupThumbs;
+} // namespace View
 } // namespace Media
 
 namespace Ui {
@@ -50,7 +53,7 @@ namespace Notify {
 struct PeerUpdate;
 } // namespace Notify
 
-class MediaView : public TWidget, private base::Subscriber, public RPCSender, public ClickHandlerHost {
+class MediaView : public TWidget, private base::Subscriber, public ClickHandlerHost {
 	Q_OBJECT
 
 public:
@@ -158,6 +161,8 @@ private:
 	Entity entityForUserPhotos(int index) const;
 	Entity entityForSharedMedia(int index) const;
 	Entity entityByIndex(int index) const;
+	Entity entityForItemId(const FullMsgId &itemId) const;
+	bool moveToEntity(const Entity &entity, int preloadDelta = 0);
 	void setContext(base::optional_variant<
 		not_null<HistoryItem*>,
 		not_null<PeerData*>> context);
@@ -171,6 +176,7 @@ private:
 	using SharedMediaKey = SharedMediaWithLastSlice::Key;
 	base::optional<SharedMediaType> sharedMediaType() const;
 	base::optional<SharedMediaKey> sharedMediaKey() const;
+	base::optional<SharedMediaType> computeOverviewType() const;
 	bool validSharedMedia() const;
 	void validateSharedMedia();
 	void handleSharedMediaUpdate(SharedMediaWithLastSlice &&update);
@@ -182,13 +188,16 @@ private:
 	void validateUserPhotos();
 	void handleUserPhotosUpdate(UserPhotosSlice &&update);
 
+	void refreshCaption(HistoryItem *item);
 	void refreshMediaViewer();
 	void refreshNavVisibility();
+	void refreshGroupThumbs();
 
 	void dropdownHidden();
 	void updateDocSize();
 	void updateControls();
 	void updateActions();
+	void resizeCenteredControls();
 
 	void displayPhoto(not_null<PhotoData*> photo, HistoryItem *item);
 	void displayDocument(DocumentData *document, HistoryItem *item);
@@ -201,9 +210,11 @@ private:
 	void updateVideoPlaybackState(const Media::Player::TrackState &state);
 	void updateSilentVideoPlaybackState();
 	void restartVideoAtSeekPosition(TimeMs positionMs);
+	void toggleVideoPaused();
 
 	void createClipController();
-	void setClipControllerGeometry();
+	void refreshClipControllerGeometry();
+	void refreshCaptionGeometry();
 
 	void initAnimation();
 	void createClipReader();
@@ -223,9 +234,6 @@ private:
 	void radialStart();
 	TimeMs radialTimeShift() const;
 
-	void deletePhotosDone(const MTPVector<MTPlong> &result);
-	bool deletePhotosFail(const RPCError &error);
-
 	void updateHeader();
 	void snapXY();
 
@@ -243,6 +251,9 @@ private:
 	void updateOverRect(OverState state);
 	bool updateOverState(OverState newState);
 	float64 overLevel(OverState control) const;
+
+	void checkGroupThumbsAnimation();
+	void initGroupThumbs();
 
 	QBrush _transparentBrush;
 
@@ -270,6 +281,11 @@ private:
 	bool _fullScreenVideo = false;
 	int _fullScreenZoomCache = 0;
 
+	std::unique_ptr<Media::View::GroupThumbs> _groupThumbs;
+	QRect _groupThumbsRect;
+	int _groupThumbsAvailableWidth = 0;
+	int _groupThumbsLeft = 0;
+	int _groupThumbsTop = 0;
 	Text _caption;
 	QRect _captionRect;
 

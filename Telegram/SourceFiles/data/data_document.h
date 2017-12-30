@@ -125,6 +125,9 @@ public:
 	int32 loadOffset() const;
 	bool uploading() const;
 
+	void setWaitingForAlbum();
+	bool waitingForAlbum() const;
+
 	QByteArray data() const;
 	const FileLocation &location(bool check = false) const;
 	void setLocation(const FileLocation &loc);
@@ -241,7 +244,8 @@ public:
 	int32 size = 0;
 
 	FileStatus status = FileReady;
-	int32 uploadOffset = 0;
+
+	std::unique_ptr<Data::UploadState> uploadingData;
 
 	int32 md5[8];
 
@@ -309,17 +313,20 @@ private:
 VoiceWaveform documentWaveformDecode(const QByteArray &encoded5bit);
 QByteArray documentWaveformEncode5bit(const VoiceWaveform &waveform);
 
-class DocumentClickHandler : public LeftButtonClickHandler {
+class DocumentClickHandler : public FileClickHandler {
 public:
-	DocumentClickHandler(DocumentData *document)
-	: _document(document) {
+	DocumentClickHandler(
+		not_null<DocumentData*> document,
+		FullMsgId context = FullMsgId())
+	: FileClickHandler(context)
+	, _document(document) {
 	}
-	DocumentData *document() const {
+	not_null<DocumentData*> document() const {
 		return _document;
 	}
 
 private:
-	DocumentData *_document;
+	not_null<DocumentData*> _document;
 
 };
 
@@ -327,7 +334,7 @@ class DocumentSaveClickHandler : public DocumentClickHandler {
 public:
 	using DocumentClickHandler::DocumentClickHandler;
 	static void doSave(
-		DocumentData *document,
+		not_null<DocumentData*> document,
 		bool forceSavingAs = false);
 
 protected:
@@ -339,7 +346,7 @@ class DocumentOpenClickHandler : public DocumentClickHandler {
 public:
 	using DocumentClickHandler::DocumentClickHandler;
 	static void doOpen(
-		DocumentData *document,
+		not_null<DocumentData*> document,
 		HistoryItem *context,
 		ActionOnLoad action = ActionOnLoadOpen);
 

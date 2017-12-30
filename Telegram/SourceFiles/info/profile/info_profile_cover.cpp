@@ -23,6 +23,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include <rpl/never.h>
 #include <rpl/combine.h>
 #include "data/data_photo.h"
+#include "data/data_peer_values.h"
 #include "info/profile/info_profile_values.h"
 #include "info/info_controller.h"
 #include "info/info_memento.h"
@@ -173,17 +174,18 @@ SectionWithToggle *SectionWithToggle::setToggleShown(
 	_toggle->hide();
 	_toggle->lower();
 	_toggle->setCheckAlignment(style::al_right);
-	widthValue()
-		| rpl::start_with_next([this](int newValue) {
-			_toggle->setGeometry(0, 0, newValue, height());
-		}, _toggle->lifetime());
-	std::move(shown)
-		| rpl::start_with_next([this](bool shown) {
-			if (_toggle->isHidden() == shown) {
-				_toggle->setVisible(shown);
-				_toggleShown.fire_copy(shown);
-			}
-		}, lifetime());
+	widthValue(
+	) | rpl::start_with_next([this](int newValue) {
+		_toggle->setGeometry(0, 0, newValue, height());
+	}, _toggle->lifetime());
+	std::move(
+		shown
+	) | rpl::start_with_next([this](bool shown) {
+		if (_toggle->isHidden() == shown) {
+			_toggle->setVisible(shown);
+			_toggleShown.fire_copy(shown);
+		}
+	}, lifetime());
 	return this;
 }
 
@@ -202,9 +204,9 @@ bool SectionWithToggle::toggled() const {
 
 rpl::producer<bool> SectionWithToggle::toggledValue() const {
 	if (_toggle) {
-		return rpl::single(_toggle->checked())
-			| rpl::then(
-				base::ObservableViewer(_toggle->checkedChanged));
+		return rpl::single(
+			_toggle->checked()
+		) | rpl::then(base::ObservableViewer(_toggle->checkedChanged));
 	}
 	return rpl::never<bool>();
 }
@@ -267,52 +269,60 @@ void Cover::setupChildGeometry() {
 	//rpl::combine(
 	//	toggleShownValue(),
 	//	widthValue(),
-	//	_2)
+	//	_2
+	//) | rpl::map([](bool shown, int width) {
 	rpl::combine(
 		toggleShownValue(),
-		widthValue())
-		| rpl::map([](bool shown, int width) { return width; })
-		| rpl::start_with_next([this](int newWidth) {
-			_userpic->moveToLeft(
-				st::infoProfilePhotoLeft,
-				st::infoProfilePhotoTop,
-				newWidth);
-			refreshNameGeometry(newWidth);
-			refreshStatusGeometry(newWidth);
-		}, lifetime());
+		widthValue()
+	) | rpl::map([](bool shown, int width) {
+		return width;
+	}) | rpl::start_with_next([this](int newWidth) {
+		_userpic->moveToLeft(
+			st::infoProfilePhotoLeft,
+			st::infoProfilePhotoTop,
+			newWidth);
+		refreshNameGeometry(newWidth);
+		refreshStatusGeometry(newWidth);
+	}, lifetime());
 }
 
 Cover *Cover::setOnlineCount(rpl::producer<int> &&count) {
-	std::move(count)
-		| rpl::start_with_next([this](int count) {
-			_onlineCount = count;
-			refreshStatusText();
-		}, lifetime());
+	std::move(
+		count
+	) | rpl::start_with_next([this](int count) {
+		_onlineCount = count;
+		refreshStatusText();
+	}, lifetime());
 	return this;
 }
 
 void Cover::initViewers() {
 	using Flag = Notify::PeerUpdate::Flag;
-	Notify::PeerUpdateValue(_peer, Flag::NameChanged)
-		| rpl::start_with_next(
-			[this] { refreshNameText(); },
-			lifetime());
-	Notify::PeerUpdateValue(_peer,
-		Flag::UserOnlineChanged | Flag::MembersChanged)
-		| rpl::start_with_next(
-			[this] { refreshStatusText(); },
-			lifetime());
+	Notify::PeerUpdateValue(
+		_peer,
+		Flag::NameChanged
+	) | rpl::start_with_next(
+		[this] { refreshNameText(); },
+		lifetime());
+	Notify::PeerUpdateValue(
+		_peer,
+		Flag::UserOnlineChanged | Flag::MembersChanged
+	) | rpl::start_with_next(
+		[this] { refreshStatusText(); },
+		lifetime());
 	if (!_peer->isUser()) {
-		Notify::PeerUpdateValue(_peer,
-			Flag::ChannelRightsChanged | Flag::ChatCanEdit)
-			| rpl::start_with_next(
-				[this] { refreshUploadPhotoOverlay(); },
-				lifetime());
-	}
-	VerifiedValue(_peer)
-		| rpl::start_with_next(
-			[this](bool verified) { setVerified(verified); },
+		Notify::PeerUpdateValue(
+			_peer,
+			Flag::ChannelRightsChanged | Flag::ChatCanEdit
+		) | rpl::start_with_next(
+			[this] { refreshUploadPhotoOverlay(); },
 			lifetime());
+	}
+	VerifiedValue(
+		_peer
+	) | rpl::start_with_next(
+		[this](bool verified) { setVerified(verified); },
+		lifetime());
 }
 
 void Cover::refreshUploadPhotoOverlay() {
@@ -334,11 +344,11 @@ void Cover::setVerified(bool verified) {
 		_verifiedCheck.create(this);
 		_verifiedCheck->show();
 		_verifiedCheck->resize(st::infoVerifiedCheck.size());
-		_verifiedCheck->paintRequest()
-			| rpl::start_with_next([check = _verifiedCheck.data()] {
-				Painter p(check);
-				st::infoVerifiedCheck.paint(p, 0, 0, check->width());
-			}, _verifiedCheck->lifetime());
+		_verifiedCheck->paintRequest(
+		) | rpl::start_with_next([check = _verifiedCheck.data()] {
+			Painter p(check);
+			st::infoVerifiedCheck.paint(p, 0, 0, check->width());
+		}, _verifiedCheck->lifetime());
 	} else {
 		_verifiedCheck.destroy();
 	}
@@ -360,11 +370,11 @@ void Cover::refreshStatusText() {
 	auto statusText = [&] {
 		auto currentTime = unixtime();
 		if (auto user = _peer->asUser()) {
-			const auto result = App::onlineText(user, currentTime, true);
-			const auto showOnline = App::onlineColorUse(user, currentTime);
-			const auto updateIn = App::onlineWillChangeIn(user, currentTime);
+			const auto result = Data::OnlineTextFull(user, currentTime);
+			const auto showOnline = Data::OnlineTextActive(user, currentTime);
+			const auto updateIn = Data::OnlineChangeTimeout(user, currentTime);
 			if (showOnline) {
-				_refreshStatusTimer.callOnce(updateIn * 1000LL);
+				_refreshStatusTimer.callOnce(updateIn);
 			}
 			return showOnline
 				? textcmdLink(1, result)
@@ -389,7 +399,7 @@ void Cover::refreshStatusText() {
 	}();
 	_status->setRichText(statusText);
 	if (hasMembersLink) {
-		_status->setLink(1, MakeShared<LambdaClickHandler>([=] {
+		_status->setLink(1, std::make_shared<LambdaClickHandler>([=] {
 			_controller->showSection(Info::Memento(
 				_controller->peerId(),
 				Section::Type::Members));
@@ -464,22 +474,24 @@ void SharedMediaCover::createLabel() {
 	//rpl::combine(
 	//	toggleShownValue(),
 	//	widthValue(),
-	//	_2)
+	//	_2
+	//) | rpl::map([](bool shown, int width) {
 	rpl::combine(
 		toggleShownValue(),
-		widthValue())
-		| rpl::map([](bool shown, int width) { return width; })
-		| rpl::start_with_next([this, weak = label.data()](int newWidth) {
-			auto availableWidth = newWidth
-				- st::infoBlockHeaderPosition.x()
-				- st::infoSharedMediaButton.padding.right()
-				- toggleSkip();
-			weak->resizeToWidth(availableWidth);
-			weak->moveToLeft(
-				st::infoBlockHeaderPosition.x(),
-				st::infoBlockHeaderPosition.y(),
-				newWidth);
-		}, label->lifetime());
+		widthValue()
+	) | rpl::map([](bool shown, int width) {
+		return width;
+	}) | rpl::start_with_next([this, weak = label.data()](int newWidth) {
+		auto availableWidth = newWidth
+			- st::infoBlockHeaderPosition.x()
+			- st::infoSharedMediaButton.padding.right()
+			- toggleSkip();
+		weak->resizeToWidth(availableWidth);
+		weak->moveToLeft(
+			st::infoBlockHeaderPosition.x(),
+			st::infoBlockHeaderPosition.y(),
+			newWidth);
+	}, label->lifetime());
 }
 
 } // namespace Profile

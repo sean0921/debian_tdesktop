@@ -31,23 +31,25 @@ template <typename ChangeType, typename Error, typename Generator>
 inline auto FlagsValueWithMask(
 		rpl::producer<ChangeType, Error, Generator> &&value,
 		typename ChangeType::Type mask) {
-	return std::move(value)
-		| rpl::filter([mask](const ChangeType &change) {
-			return change.diff & mask;
-		})
-		| rpl::map([mask](const ChangeType &change) {
-			return change.value & mask;
-		});
+	return std::move(
+		value
+	) | rpl::filter([mask](const ChangeType &change) {
+		return change.diff & mask;
+	}) | rpl::map([mask](const ChangeType &change) {
+		return change.value & mask;
+	});
 }
 
 template <typename ChangeType, typename Error, typename Generator>
 inline auto SingleFlagValue(
 		rpl::producer<ChangeType, Error, Generator> &&value,
 		typename ChangeType::Enum flag) {
-	return FlagsValueWithMask(std::move(value), flag)
-		| rpl::map([flag](typename ChangeType::Type value) {
-			return !!value;
-		});
+	return FlagsValueWithMask(
+		std::move(value),
+		flag
+	) | rpl::map([flag](typename ChangeType::Type value) {
+		return !!value;
+	});
 }
 
 template <
@@ -120,5 +122,14 @@ rpl::producer<bool> CanWriteValue(UserData *user);
 rpl::producer<bool> CanWriteValue(ChatData *chat);
 rpl::producer<bool> CanWriteValue(ChannelData *channel);
 rpl::producer<bool> CanWriteValue(not_null<PeerData*> peer);
+
+TimeId SortByOnlineValue(not_null<UserData*> user, TimeId now);
+TimeMs OnlineChangeTimeout(TimeId online, TimeId now);
+TimeMs OnlineChangeTimeout(not_null<UserData*> user, TimeId now);
+QString OnlineText(TimeId online, TimeId now);
+QString OnlineText(not_null<UserData*> user, TimeId now);
+QString OnlineTextFull(not_null<UserData*> user, TimeId now);
+bool OnlineTextActive(TimeId online, TimeId now);
+bool OnlineTextActive(not_null<UserData*> user, TimeId now);
 
 } // namespace Data

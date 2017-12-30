@@ -44,6 +44,9 @@ public:
 	int32 loadOffset() const;
 	bool uploading() const;
 
+	void setWaitingForAlbum();
+	bool waitingForAlbum() const;
+
 	void forget();
 	ImagePtr makeReplyPreview();
 
@@ -57,25 +60,22 @@ public:
 	PeerData *peer = nullptr; // for chat and channel photos connection
 	// geo, caption
 
-	struct UploadingData {
-		UploadingData(int size) : size(size) {
-		}
-		int offset = 0;
-		int size = 0;
-	};
-	std::unique_ptr<UploadingData> uploadingData;
+	std::unique_ptr<Data::UploadState> uploadingData;
 
 private:
 	void notifyLayoutChanged() const;
 
 };
 
-class PhotoClickHandler : public LeftButtonClickHandler {
+class PhotoClickHandler : public FileClickHandler {
 public:
 	PhotoClickHandler(
 		not_null<PhotoData*> photo,
+		FullMsgId context = FullMsgId(),
 		PeerData *peer = nullptr)
-	: _photo(photo), _peer(peer) {
+	: FileClickHandler(context)
+	, _photo(photo)
+	, _peer(peer) {
 	}
 	not_null<PhotoData*> photo() const {
 		return _photo;
@@ -86,7 +86,7 @@ public:
 
 private:
 	not_null<PhotoData*> _photo;
-	PeerData *_peer;
+	PeerData *_peer = nullptr;
 
 };
 

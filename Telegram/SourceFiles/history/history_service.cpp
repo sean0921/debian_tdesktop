@@ -26,22 +26,17 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "history/history_service_layout.h"
 #include "history/history_media_types.h"
 #include "history/history_message.h"
+#include "history/history_item_components.h"
 #include "auth_session.h"
 #include "window/notifications_manager.h"
 #include "storage/storage_shared_media.h"
+#include "ui/text_options.h"
 
 namespace {
 
 constexpr auto kPinnedMessageTextLimit = 16;
 
 } // namespace
-
-TextParseOptions _historySrvOptions = {
-	TextParseLinks | TextParseMentions | TextParseHashtags/* | TextParseMultiline*/ | TextParseRichText, // flags
-	0, // maxw
-	0, // maxh
-	Qt::LayoutDirectionAuto, // lang-dependent
-};
 
 void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 	auto prepareChatAddUserText = [this](const MTPDmessageActionChatAddUser &action) {
@@ -286,6 +281,9 @@ HistoryService::PreparedText HistoryService::preparePinnedText() {
 			switch (media ? media->type() : MediaTypeCount) {
 			case MediaTypePhoto: return lang(lng_action_pinned_media_photo);
 			case MediaTypeVideo: return lang(lng_action_pinned_media_video);
+			case MediaTypeGrouped: return lang(media->getPhoto()
+				? lng_action_pinned_media_photo
+				: lng_action_pinned_media_video);
 			case MediaTypeContact: return lang(lng_action_pinned_media_contact);
 			case MediaTypeFile: return lang(lng_action_pinned_media_file);
 			case MediaTypeGif: {
@@ -354,9 +352,15 @@ HistoryService::PreparedText HistoryService::prepareGameScoreText() {
 
 	auto computeGameTitle = [gamescore, &result]() -> QString {
 		if (gamescore && gamescore->msg) {
-			if (auto media = gamescore->msg->getMedia()) {
+			if (const auto media = gamescore->msg->getMedia()) {
 				if (media->type() == MediaTypeGame) {
-					result.links.push_back(MakeShared<ReplyMarkupClickHandler>(gamescore->msg, 0, 0));
+					const auto row = 0;
+					const auto column = 0;
+					result.links.push_back(
+						std::make_shared<ReplyMarkupClickHandler>(
+							row,
+							column,
+							gamescore->msg->fullId()));
 					auto titleText = static_cast<HistoryGame*>(media)->game()->title;
 					return textcmdLink(result.links.size(), titleText);
 				}
@@ -368,21 +372,37 @@ HistoryService::PreparedText HistoryService::prepareGameScoreText() {
 		return QString();
 	};
 
-	auto scoreNumber = gamescore ? gamescore->score : 0;
+	const auto scoreNumber = gamescore ? gamescore->score : 0;
 	if (_from->isSelf()) {
 		auto gameTitle = computeGameTitle();
 		if (gameTitle.isEmpty()) {
-			result.text = lng_action_game_you_scored_no_game(lt_count, scoreNumber);
+			result.text = lng_action_game_you_scored_no_game(
+				lt_count,
+				scoreNumber);
 		} else {
-			result.text = lng_action_game_you_scored(lt_count, scoreNumber, lt_game, gameTitle);
+			result.text = lng_action_game_you_scored(
+				lt_count,
+				scoreNumber,
+				lt_game,
+				gameTitle);
 		}
 	} else {
 		result.links.push_back(fromLink());
 		auto gameTitle = computeGameTitle();
 		if (gameTitle.isEmpty()) {
-			result.text = lng_action_game_score_no_game(lt_count, scoreNumber, lt_from, fromLinkText());
+			result.text = lng_action_game_score_no_game(
+				lt_count,
+				scoreNumber,
+				lt_from,
+				fromLinkText());
 		} else {
-			result.text = lng_action_game_score(lt_count, scoreNumber, lt_from, fromLinkText(), lt_game, gameTitle);
+			result.text = lng_action_game_score(
+				lt_count,
+				scoreNumber,
+				lt_from,
+				fromLinkText(),
+				lt_game,
+				gameTitle);
 		}
 	}
 	return result;
@@ -469,7 +489,10 @@ QString HistoryService::inReplyText() const {
 }
 
 void HistoryService::setServiceText(const PreparedText &prepared) {
-	_text.setText(st::serviceTextStyle, prepared.text, _historySrvOptions);
+	_text.setText(
+		st::serviceTextStyle,
+		prepared.text,
+		Ui::ItemTextServiceOptions());
 	auto linkIndex = 0;
 	for_const (auto &link, prepared.links) {
 		// Link indices start with 1.
@@ -594,7 +617,7 @@ bool HistoryService::hasPoint(QPoint point) const {
 }
 
 HistoryTextState HistoryService::getState(QPoint point, HistoryStateRequest request) const {
-	HistoryTextState result;
+	auto result = HistoryTextState(this);
 
 	auto g = countGeometry();
 	if (g.width() < 1) {
@@ -618,7 +641,10 @@ HistoryTextState HistoryService::getState(QPoint point, HistoryStateRequest requ
 	if (trect.contains(point)) {
 		auto textRequest = request.forText();
 		textRequest.align = style::al_center;
-		result = _text.getState(point - trect.topLeft(), trect.width(), textRequest);
+		result = HistoryTextState(this, _text.getState(
+			point - trect.topLeft(),
+			trect.width(),
+			textRequest));
 		if (auto gamescore = Get<HistoryServiceGameScore>()) {
 			if (!result.link && result.cursor == HistoryInTextCursorState && g.contains(point)) {
 				result.link = gamescore->lnk;

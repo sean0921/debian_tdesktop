@@ -97,14 +97,15 @@ private:
 	QString _originalUrl, _readable;
 
 };
-typedef QSharedPointer<TextClickHandler> TextClickHandlerPtr;
 
 class HiddenUrlClickHandler : public UrlClickHandler {
 public:
 	HiddenUrlClickHandler(QString url) : UrlClickHandler(url, false) {
 	}
 	QString copyToClipboardContextItemText() const override {
-		return url().isEmpty() ? QString() : UrlClickHandler::copyToClipboardContextItemText();
+		return url().isEmpty()
+			? QString()
+			: UrlClickHandler::copyToClipboardContextItemText();
 	}
 
 	static void doOpen(QString url);

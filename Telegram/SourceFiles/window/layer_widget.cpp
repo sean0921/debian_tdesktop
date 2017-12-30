@@ -405,7 +405,7 @@ void LayerStackWidget::setCacheImages() {
 	auto bodyCache = QPixmap(), mainMenuCache = QPixmap();
 	auto specialLayerCache = QPixmap();
 	if (_specialLayer) {
-		myEnsureResized(_specialLayer);
+		Ui::SendPendingMoveResizeEvents(_specialLayer);
 		auto sides = RectPart::Left | RectPart::Right;
 		if (_specialLayer->y() > 0) {
 			sides |= RectPart::Top;
@@ -425,7 +425,7 @@ void LayerStackWidget::setCacheImages() {
 	if (_mainMenu) {
 		setAttribute(Qt::WA_OpaquePaintEvent, false);
 		hideChildren();
-		bodyCache = myGrab(App::wnd()->bodyWidget());
+		bodyCache = Ui::GrabWidget(App::wnd()->bodyWidget());
 		showChildren();
 		mainMenuCache = Ui::Shadow::grab(_mainMenu, st::boxRoundShadow, RectPart::Right);
 	}
@@ -733,7 +733,7 @@ void LayerStackWidget::initChildLayer(LayerWidget *layer) {
 	layer->setClosedCallback([this, layer] { onLayerClosed(layer); });
 	layer->setResizedCallback([this] { onLayerResized(); });
 	connect(layer, SIGNAL(destroyed(QObject*)), this, SLOT(onLayerDestroyed(QObject*)));
-	myEnsureResized(layer);
+	Ui::SendPendingMoveResizeEvents(layer);
 	layer->parentResized();
 }
 
@@ -983,7 +983,7 @@ QPixmap MediaPreviewWidget::currentImage() const {
 			if (_gif && _gif->started()) {
 				auto s = currentDimensions();
 				auto paused = _controller->isGifPausedAtLeastFor(Window::GifPauseReason::MediaPreview);
-				return _gif->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, ImageRoundCorner::None, paused ? 0 : getms());
+				return _gif->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, RectPart::None, paused ? 0 : getms());
 			}
 			if (_cacheStatus != CacheThumbLoaded && _document->thumb->loaded()) {
 				QSize s = currentDimensions();
@@ -1022,7 +1022,7 @@ void MediaPreviewWidget::clipCallback(Media::Clip::Notification notification) {
 
 		if (_gif && _gif->ready() && !_gif->started()) {
 			QSize s = currentDimensions();
-			_gif->start(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, ImageRoundCorner::None);
+			_gif->start(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, RectPart::None);
 		}
 
 		update();

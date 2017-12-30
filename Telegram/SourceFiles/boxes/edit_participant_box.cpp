@@ -24,9 +24,11 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/buttons.h"
-#include "styles/style_boxes.h"
+#include "ui/text_options.h"
 #include "ui/special_buttons.h"
 #include "boxes/calendar_box.h"
+#include "data/data_peer_values.h"
+#include "styles/style_boxes.h"
 
 namespace {
 
@@ -127,7 +129,10 @@ EditParticipantBox::Inner::Inner(
 	st::rightsPhotoButton)
 , _hasAdminRights(hasAdminRights) {
 	_userPhoto->setPointerCursor(false);
-	_userName.setText(st::rightsNameStyle, App::peerName(_user), _textNameOptions);
+	_userName.setText(
+		st::rightsNameStyle,
+		App::peerName(_user),
+		Ui::NameTextOptions());
 }
 
 void EditParticipantBox::Inner::removeControl(QPointer<TWidget> widget) {
@@ -176,7 +181,7 @@ void EditParticipantBox::Inner::paintEvent(QPaintEvent *e) {
 			auto seesAllMessages = (_user->botInfo->readsAllHistory || _hasAdminRights);
 			return lang(seesAllMessages ? lng_status_bot_reads_all : lng_status_bot_not_reads_all);
 		}
-		return App::onlineText(_user->onlineTill, unixtime());
+		return Data::OnlineText(_user->onlineTill, unixtime());
 	};
 	p.setFont(st::contactsStatusFont);
 	p.setPen(st::contactsStatusFg);

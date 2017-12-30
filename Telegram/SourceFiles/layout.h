@@ -24,13 +24,39 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 constexpr auto FullSelection = TextSelection { 0xFFFF, 0xFFFF };
 
-extern TextParseOptions _textNameOptions, _textDlgOptions;
-extern TextParseOptions _historyTextOptions, _historyBotOptions, _historyTextNoMonoOptions, _historyBotNoMonoOptions;
+inline bool IsSubGroupSelection(TextSelection selection) {
+	return (selection.from == 0xFFFF) && (selection.to != 0xFFFF);
+}
 
-const TextParseOptions &itemTextOptions(History *h, PeerData *f);
-const TextParseOptions &itemTextOptions(const HistoryItem *item);
-const TextParseOptions &itemTextNoMonoOptions(History *h, PeerData *f);
-const TextParseOptions &itemTextNoMonoOptions(const HistoryItem *item);
+inline bool IsGroupItemSelection(
+		TextSelection selection,
+		int index) {
+	Expects(index >= 0 && index < 0x0F);
+
+	return IsSubGroupSelection(selection) && (selection.to & (1 << index));
+}
+
+[[nodiscard]] inline TextSelection AddGroupItemSelection(
+		TextSelection selection,
+		int index) {
+	Expects(index >= 0 && index < 0x0F);
+
+	const auto bit = uint16(1U << index);
+	return TextSelection(
+		0xFFFF,
+		IsSubGroupSelection(selection) ? (selection.to | bit) : bit);
+}
+
+[[nodiscard]] inline TextSelection RemoveGroupItemSelection(
+		TextSelection selection,
+		int index) {
+	Expects(index >= 0 && index < 0x0F);
+
+	const auto bit = uint16(1U << index);
+	return IsSubGroupSelection(selection)
+		? TextSelection(0xFFFF, selection.to & ~bit)
+		: selection;
+}
 
 enum RoundCorners {
 	SmallMaskCorners = 0x00, // for images

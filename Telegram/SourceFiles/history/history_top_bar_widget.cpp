@@ -37,52 +37,15 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "auth_session.h"
 #include "lang/lang_keys.h"
 #include "ui/special_buttons.h"
+#include "ui/unread_badge.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/dropdown_menu.h"
-#include "dialogs/dialogs_layout.h"
 #include "window/window_controller.h"
 #include "window/window_peer_menu.h"
 #include "calls/calls_instance.h"
+#include "data/data_peer_values.h"
 #include "observer_peer.h"
 #include "apiwrap.h"
-
-class HistoryTopBarWidget::UnreadBadge : public Ui::RpWidget {
-public:
-	using RpWidget::RpWidget;
-
-	void setText(const QString &text, bool active) {
-		_text = text;
-		_active = active;
-		update();
-	}
-
-protected:
-	void paintEvent(QPaintEvent *e) override;
-
-private:
-	QString _text;
-	bool _active = false;
-
-};
-
-void HistoryTopBarWidget::UnreadBadge::paintEvent(QPaintEvent *e) {
-	if (_text.isEmpty()) {
-		return;
-	}
-
-	Painter p(this);
-
-	Dialogs::Layout::UnreadBadgeStyle unreadSt;
-	unreadSt.muted = !_active;
-	auto unreadRight = width();
-	auto unreadTop = 0;
-	Dialogs::Layout::paintUnreadCount(
-		p,
-		_text,
-		unreadRight,
-		unreadTop,
-		unreadSt);
-}
 
 HistoryTopBarWidget::HistoryTopBarWidget(
 	QWidget *parent,
@@ -114,26 +77,26 @@ HistoryTopBarWidget::HistoryTopBarWidget(
 
 	rpl::combine(
 		_controller->historyPeer.value(),
-		_controller->searchInPeer.value())
-		| rpl::combine_previous(std::make_tuple(nullptr, nullptr))
-		| rpl::map([](
-				const std::tuple<PeerData*, PeerData*> &previous,
-				const std::tuple<PeerData*, PeerData*> &current) {
-			auto peer = std::get<0>(current);
-			auto searchPeer = std::get<1>(current);
-			auto peerChanged = (peer != std::get<0>(previous));
-			auto searchInPeer
-				= (peer != nullptr) && (peer == searchPeer);
-			return std::make_tuple(searchInPeer, peerChanged);
-		})
-		| rpl::start_with_next([this](
-				bool searchInHistoryPeer,
-				bool peerChanged) {
-			auto animated = peerChanged
-				? anim::type::instant
-				: anim::type::normal;
-			_search->setForceRippled(searchInHistoryPeer, animated);
-		}, lifetime());
+		_controller->searchInPeer.value()
+	) | rpl::combine_previous(
+		std::make_tuple(nullptr, nullptr)
+	) | rpl::map([](
+			const std::tuple<PeerData*, PeerData*> &previous,
+			const std::tuple<PeerData*, PeerData*> &current) {
+		auto peer = std::get<0>(current);
+		auto searchPeer = std::get<1>(current);
+		auto peerChanged = (peer != std::get<0>(previous));
+		auto searchInPeer
+			= (peer != nullptr) && (peer == searchPeer);
+		return std::make_tuple(searchInPeer, peerChanged);
+	}) | rpl::start_with_next([this](
+			bool searchInHistoryPeer,
+			bool peerChanged) {
+		auto animated = peerChanged
+			? anim::type::instant
+			: anim::type::normal;
+		_search->setForceRippled(searchInHistoryPeer, animated);
+	}, lifetime());
 
 	subscribe(Adaptive::Changed(), [this] { updateAdaptiveLayout(); });
 	if (Adaptive::OneColumn()) {
@@ -163,10 +126,10 @@ HistoryTopBarWidget::HistoryTopBarWidget(
 
 	rpl::combine(
 		Auth().data().thirdSectionInfoEnabledValue(),
-		Auth().data().tabbedReplacedWithInfoValue())
-		| rpl::start_with_next(
-			[this] { updateInfoToggleActive(); },
-			lifetime());
+		Auth().data().tabbedReplacedWithInfoValue()
+	) | rpl::start_with_next(
+		[this] { updateInfoToggleActive(); },
+		lifetime());
 
 	setCursor(style::cur_pointer);
 	updateControlsVisibility();
@@ -664,12 +627,12 @@ void HistoryTopBarWidget::updateOnlineDisplay() {
 	if (!_historyPeer) return;
 
 	QString text;
-	int32 t = unixtime();
+	const auto now = unixtime();
 	bool titlePeerTextOnline = false;
-	if (auto user = _historyPeer->asUser()) {
-		text = App::onlineText(user, t);
-		titlePeerTextOnline = App::onlineColorUse(user, t);
-	} else if (auto chat = _historyPeer->asChat()) {
+	if (const auto user = _historyPeer->asUser()) {
+		text = Data::OnlineText(user, now);
+		titlePeerTextOnline = Data::OnlineTextActive(user, now);
+	} else if (const auto chat = _historyPeer->asChat()) {
 		if (!chat->amIn()) {
 			text = lang(lng_chat_status_unaccessible);
 		} else if (chat->participants.empty()) {
@@ -684,7 +647,7 @@ void HistoryTopBarWidget::updateOnlineDisplay() {
 			auto online = 0;
 			auto onlyMe = true;
 			for (auto [user, v] : chat->participants) {
-				if (user->onlineTill > t) {
+				if (user->onlineTill > now) {
 					++online;
 					if (onlyMe && user != App::self()) onlyMe = false;
 				}
@@ -707,7 +670,7 @@ void HistoryTopBarWidget::updateOnlineDisplay() {
 			auto online = 0;
 			bool onlyMe = true;
 			for (auto &participant : std::as_const(channel->mgInfo->lastParticipants)) {
-				if (participant->onlineTill > t) {
+				if (participant->onlineTill > now) {
 					++online;
 					if (onlyMe && participant != App::self()) {
 						onlyMe = false;
@@ -743,11 +706,10 @@ void HistoryTopBarWidget::updateOnlineDisplayTimer() {
 	if (!_historyPeer) return;
 
 	const auto now = unixtime();
-	auto minIn = TimeId(86400);
+	auto minTimeout = TimeMs(86400);
 	const auto handleUser = [&](not_null<UserData*> user) {
-		auto hisMinIn = App::onlineWillChangeIn(user, now);
-		Assert(hisMinIn >= 0 && hisMinIn <= 86400);
-		accumulate_min(minIn, hisMinIn);
+		auto hisTimeout = Data::OnlineChangeTimeout(user, now);
+		accumulate_min(minTimeout, hisTimeout);
 	};
 	if (const auto user = _historyPeer->asUser()) {
 		handleUser(user);
@@ -757,7 +719,7 @@ void HistoryTopBarWidget::updateOnlineDisplayTimer() {
 		}
 	} else if (_historyPeer->isChannel()) {
 	}
-	updateOnlineDisplayIn(minIn * 1000);
+	updateOnlineDisplayIn(minTimeout);
 }
 
 void HistoryTopBarWidget::updateOnlineDisplayIn(TimeMs timeout) {

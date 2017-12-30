@@ -148,10 +148,10 @@ GifsListWidget::GifsListWidget(
 	_inlineRequestTimer.setSingleShot(true);
 	connect(&_inlineRequestTimer, &QTimer::timeout, this, [this] { sendInlineRequest(); });
 
-	Auth().data().savedGifsUpdated()
-		| rpl::start_with_next([this] {
-			refreshSavedGifs();
-		}, lifetime());
+	Auth().data().savedGifsUpdated(
+	) | rpl::start_with_next([this] {
+		refreshSavedGifs();
+	}, lifetime());
 	subscribe(Auth().downloaderTaskFinished(), [this] {
 		update();
 	});
@@ -335,7 +335,7 @@ void GifsListWidget::mouseReleaseEvent(QMouseEvent *e) {
 		return;
 	}
 
-	if (dynamic_cast<InlineBots::Layout::SendClickHandler*>(activated.data())) {
+	if (dynamic_cast<InlineBots::Layout::SendClickHandler*>(activated.get())) {
 		int row = _selected / MatrixRowShift, column = _selected % MatrixRowShift;
 		selectInlineResult(row, column);
 	} else {
@@ -596,12 +596,13 @@ void GifsListWidget::layoutInlineRow(Row &row, int fullWidth) {
 	row.height = 0;
 	int availw = fullWidth - (st::inlineResultsLeft - st::buttonRadius);
 	for (int i = 0; i < count; ++i) {
-		int index = indices[i];
-		int w = desiredWidth
-			? (row.items[index]->maxWidth() * availw / desiredWidth)
-			: row.items[index]->maxWidth();
-		int actualw = qMax(w, int(st::inlineResultsMinWidth));
-		row.height = qMax(row.height, row.items[index]->resizeGetHeight(actualw));
+		const auto index = indices[i];
+		const auto &item = row.items[index];
+		const auto w = desiredWidth
+			? (item->maxWidth() * availw / desiredWidth)
+			: item->maxWidth();
+		auto actualw = qMax(w, st::inlineResultsMinWidth);
+		row.height = qMax(row.height, item->resizeGetHeight(actualw));
 		if (desiredWidth) {
 			availw -= actualw;
 			desiredWidth -= row.items[index]->maxWidth();

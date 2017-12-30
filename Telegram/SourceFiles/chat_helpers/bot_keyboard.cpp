@@ -20,8 +20,90 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #include "chat_helpers/bot_keyboard.h"
 
+#include "history/history_item_components.h"
 #include "styles/style_widgets.h"
 #include "styles/style_history.h"
+
+namespace {
+
+class Style : public ReplyKeyboard::Style {
+public:
+	Style(
+		not_null<BotKeyboard*> parent,
+		const style::BotKeyboardButton &st);
+
+	int buttonRadius() const override;
+
+	void startPaint(Painter &p) const override;
+	const style::TextStyle &textStyle() const override;
+	void repaint(not_null<const HistoryItem*> item) const override;
+
+protected:
+	void paintButtonBg(
+		Painter &p,
+		const QRect &rect,
+		float64 howMuchOver) const override;
+	void paintButtonIcon(
+		Painter &p,
+		const QRect &rect,
+		int outerWidth,
+		HistoryMessageMarkupButton::Type type) const override;
+	void paintButtonLoading(Painter &p, const QRect &rect) const override;
+	int minButtonWidth(HistoryMessageMarkupButton::Type type) const override;
+
+private:
+	not_null<BotKeyboard*> _parent;
+
+};
+
+Style::Style(
+	not_null<BotKeyboard*> parent,
+	const style::BotKeyboardButton &st)
+: ReplyKeyboard::Style(st), _parent(parent) {
+}
+
+void Style::startPaint(Painter &p) const {
+	p.setPen(st::botKbColor);
+	p.setFont(st::botKbStyle.font);
+}
+
+const style::TextStyle &Style::textStyle() const {
+	return st::botKbStyle;
+}
+
+void Style::repaint(not_null<const HistoryItem*> item) const {
+	_parent->update();
+}
+
+int Style::buttonRadius() const {
+	return st::buttonRadius;
+}
+
+void Style::paintButtonBg(
+		Painter &p,
+		const QRect &rect,
+		float64 howMuchOver) const {
+	App::roundRect(p, rect, st::botKbBg, BotKeyboardCorners);
+}
+
+void Style::paintButtonIcon(
+		Painter &p,
+		const QRect &rect,
+		int outerWidth,
+		HistoryMessageMarkupButton::Type type) const {
+	// Buttons with icons should not appear here.
+}
+
+void Style::paintButtonLoading(Painter &p, const QRect &rect) const {
+	// Buttons with loading progress should not appear here.
+}
+
+int Style::minButtonWidth(HistoryMessageMarkupButton::Type type) const {
+	int result = 2 * buttonPadding();
+	return result;
+}
+
+} // namespace
 
 BotKeyboard::BotKeyboard(QWidget *parent) : TWidget(parent)
 , _st(&st::botKbButton) {
@@ -41,40 +123,6 @@ void BotKeyboard::paintEvent(QPaintEvent *e) {
 		p.translate(x, st::botKbScroll.deltat);
 		_impl->paint(p, width(), clip.translated(-x, -st::botKbScroll.deltat), getms());
 	}
-}
-
-void BotKeyboard::Style::startPaint(Painter &p) const {
-	p.setPen(st::botKbColor);
-	p.setFont(st::botKbStyle.font);
-}
-
-const style::TextStyle &BotKeyboard::Style::textStyle() const {
-	return st::botKbStyle;
-}
-
-void BotKeyboard::Style::repaint(not_null<const HistoryItem*> item) const {
-	_parent->update();
-}
-
-int BotKeyboard::Style::buttonRadius() const {
-	return st::buttonRadius;
-}
-
-void BotKeyboard::Style::paintButtonBg(Painter &p, const QRect &rect, float64 howMuchOver) const {
-	App::roundRect(p, rect, st::botKbBg, BotKeyboardCorners);
-}
-
-void BotKeyboard::Style::paintButtonIcon(Painter &p, const QRect &rect, int outerWidth, HistoryMessageReplyMarkup::Button::Type type) const {
-	// Buttons with icons should not appear here.
-}
-
-void BotKeyboard::Style::paintButtonLoading(Painter &p, const QRect &rect) const {
-	// Buttons with loading progress should not appear here.
-}
-
-int BotKeyboard::Style::minButtonWidth(HistoryMessageReplyMarkup::Button::Type type) const {
-	int result = 2 * buttonPadding();
-	return result;
 }
 
 void BotKeyboard::mousePressEvent(QMouseEvent *e) {
@@ -108,16 +156,18 @@ void BotKeyboard::leaveEventHook(QEvent *e) {
 }
 
 bool BotKeyboard::moderateKeyActivate(int key) {
-	if (auto item = App::histItemById(_wasForMsgId)) {
-		if (auto markup = item->Get<HistoryMessageReplyMarkup>()) {
+	if (const auto item = App::histItemById(_wasForMsgId)) {
+		if (const auto markup = item->Get<HistoryMessageReplyMarkup>()) {
 			if (key >= Qt::Key_1 && key <= Qt::Key_9) {
-				int index = (key - Qt::Key_1);
-				if (!markup->rows.isEmpty() && index >= 0 && index < markup->rows.front().size()) {
+				const auto index = int(key - Qt::Key_1);
+				if (!markup->rows.empty()
+					&& index >= 0
+					&& index < int(markup->rows.front().size())) {
 					App::activateBotCommand(item, 0, index);
 					return true;
 				}
 			} else if (key == Qt::Key_Q) {
-				if (auto user = item->history()->peer->asUser()) {
+				if (const auto user = item->history()->peer->asUser()) {
 					if (user->botInfo && item->from() == user) {
 						App::sendBotCommand(user, user, qsl("/translate"));
 						return true;
@@ -163,8 +213,10 @@ bool BotKeyboard::updateMarkup(HistoryItem *to, bool force) {
 
 	_impl = nullptr;
 	if (auto markup = to->Get<HistoryMessageReplyMarkup>()) {
-		if (!markup->rows.isEmpty()) {
-			_impl.reset(new ReplyKeyboard(to, std::make_unique<Style>(this, *_st)));
+		if (!markup->rows.empty()) {
+			_impl = std::make_unique<ReplyKeyboard>(
+				to,
+				std::make_unique<Style>(this, *_st));
 		}
 	}
 
@@ -246,3 +298,5 @@ void BotKeyboard::updateSelected() {
 		setCursor(link ? style::cur_pointer : style::cur_default);
 	}
 }
+
+BotKeyboard::~BotKeyboard() = default;

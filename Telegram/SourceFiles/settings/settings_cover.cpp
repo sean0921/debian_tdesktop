@@ -94,6 +94,8 @@ CoverWidget::CoverWidget(QWidget *parent, UserData *self)
 }
 
 PhotoData *CoverWidget::validatePhoto() const {
+	Expects(_self != nullptr);
+
 	const auto photo = _self->userpicPhotoId()
 		? App::photo(_self->userpicPhotoId())
 		: nullptr;
@@ -106,7 +108,7 @@ PhotoData *CoverWidget::validatePhoto() const {
 }
 
 void CoverWidget::showPhoto() {
-	if (auto photo = validatePhoto()) {
+	if (const auto photo = validatePhoto()) {
 		Messenger::Instance().showPhoto(photo, _self);
 	}
 }
@@ -287,6 +289,8 @@ void CoverWidget::dropEvent(QDropEvent *e) {
 	e->acceptProposedAction();
 
 	showSetPhotoBox(img);
+
+	App::wnd()->activateWindow();
 }
 
 void CoverWidget::paintDivider(Painter &p) {
@@ -379,12 +383,12 @@ void CoverWidget::showSetPhotoBox(const QImage &img) {
 
 	auto peer = _self;
 	auto box = Ui::show(Box<PhotoCropBox>(img, peer));
-	box->ready()
-		| rpl::start_with_next([=](QImage &&image) {
-			Messenger::Instance().uploadProfilePhoto(
-				std::move(image),
-				peer->id);
-		}, box->lifetime());
+	box->ready(
+	) | rpl::start_with_next([=](QImage &&image) {
+		Messenger::Instance().uploadProfilePhoto(
+			std::move(image),
+			peer->id);
+	}, box->lifetime());
 	subscribe(box->boxClosing, [this] { onPhotoUploadStatusChanged(); });
 }
 

@@ -26,6 +26,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "base/timer.h"
 #include "chat_helpers/stickers.h"
 
+class ApiWrap;
+enum class SendFilesWay;
+
 namespace Storage {
 class Downloader;
 class Uploader;
@@ -47,7 +50,9 @@ namespace ChatHelpers {
 enum class SelectorTab;
 } // namespace ChatHelpers
 
-class ApiWrap;
+namespace Core {
+class Changelogs;
+} // namespace Core
 
 class AuthSessionData final {
 public:
@@ -107,6 +112,12 @@ public:
 	}
 	void setLastSeenWarningSeen(bool lastSeenWarningSeen) {
 		_variables.lastSeenWarningSeen = lastSeenWarningSeen;
+	}
+	void setSendFilesWay(SendFilesWay way) {
+		_variables.sendFilesWay = way;
+	}
+	SendFilesWay sendFilesWay() const {
+		return _variables.sendFilesWay;
 	}
 	ChatHelpers::SelectorTab selectorTab() const {
 		return _variables.selectorTab;
@@ -263,6 +274,7 @@ public:
 
 	HistoryItemsList idsToItems(const MessageIdsList &ids) const;
 	MessageIdsList itemsToIds(const HistoryItemsList &items) const;
+	MessageIdsList groupToIds(not_null<HistoryMessageGroup*> group) const;
 
 private:
 	struct Variables {
@@ -272,6 +284,7 @@ private:
 		static constexpr auto kDefaultThirdColumnWidth = 0;
 
 		bool lastSeenWarningSeen = false;
+		SendFilesWay sendFilesWay;
 		ChatHelpers::SelectorTab selectorTab; // per-window
 		bool tabbedSelectorSectionEnabled = false; // per-window
 		int tabbedSelectorSectionTooltipShown = 0;
@@ -405,5 +418,6 @@ private:
 	const std::unique_ptr<Storage::Uploader> _uploader;
 	const std::unique_ptr<Storage::Facade> _storage;
 	const std::unique_ptr<Window::Notifications::System> _notifications;
+	const std::unique_ptr<Core::Changelogs> _changelogs;
 
 };

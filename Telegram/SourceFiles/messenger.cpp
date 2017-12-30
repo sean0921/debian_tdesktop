@@ -47,6 +47,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/themes/window_theme.h"
 #include "history/history_location_manager.h"
 #include "ui/widgets/tooltip.h"
+#include "ui/text_options.h"
 #include "storage/serialize_common.h"
 #include "window/window_controller.h"
 #include "base/qthelp_regex.h"
@@ -115,7 +116,7 @@ Messenger::Messenger(not_null<Core::Launcher*> launcher)
 
 	style::startManager();
 	anim::startManager();
-	HistoryInit();
+	Ui::InitTextOptions();
 	Media::Player::start();
 
 	DEBUG_LOG(("Application Info: inited..."));
@@ -201,9 +202,11 @@ bool Messenger::hideMediaView() {
 	return false;
 }
 
-void Messenger::showPhoto(not_null<const PhotoOpenClickHandler*> link, HistoryItem *item) {
-	return (!item && link->peer())
-		? showPhoto(link->photo(), link->peer())
+void Messenger::showPhoto(not_null<const PhotoOpenClickHandler*> link) {
+	const auto item = App::histItemById(link->context());
+	const auto peer = link->peer();
+	return (!item && peer)
+		? showPhoto(link->photo(), peer)
 		: showPhoto(link->photo(), item);
 }
 
@@ -214,7 +217,9 @@ void Messenger::showPhoto(not_null<PhotoData*> photo, HistoryItem *item) {
 	_mediaView->setFocus();
 }
 
-void Messenger::showPhoto(not_null<PhotoData*> photo, PeerData *peer) {
+void Messenger::showPhoto(
+		not_null<PhotoData*> photo,
+		not_null<PeerData*> peer) {
 	if (_mediaView->isHidden()) Ui::hideLayer(anim::type::instant);
 	_mediaView->showPhoto(photo, peer);
 	_mediaView->activateWindow();
@@ -982,7 +987,6 @@ void Messenger::checkMediaViewActivation() {
 void Messenger::loggedOut() {
 	if (_mediaView) {
 		hideMediaView();
-		_mediaView->rpcClear();
 		_mediaView->clearData();
 	}
 }
@@ -1004,13 +1008,13 @@ void Messenger::registerLeaveSubscription(QWidget *widget) {
 	if (auto topLevel = widget->window()) {
 		if (topLevel == _window.get()) {
 			auto weak = make_weak(widget);
-			auto subscription = _window->leaveEvents()
-				| rpl::start_with_next([weak] {
-					if (const auto window = weak.data()) {
-						QEvent ev(QEvent::Leave);
-						QGuiApplication::sendEvent(window, &ev);
-					}
-				});
+			auto subscription = _window->leaveEvents(
+			) | rpl::start_with_next([weak] {
+				if (const auto window = weak.data()) {
+					QEvent ev(QEvent::Leave);
+					QGuiApplication::sendEvent(window, &ev);
+				}
+			});
 			_leaveSubscriptions.emplace_back(weak, std::move(subscription));
 		}
 	}

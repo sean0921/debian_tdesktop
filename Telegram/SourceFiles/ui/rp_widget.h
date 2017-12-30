@@ -59,6 +59,10 @@ inline Widget *CreateChild(
 	return new Widget(parent, std::forward<Args>(args)...);
 }
 
+inline void DestroyChild(QWidget *child) {
+	delete child;
+}
+
 template <typename Value>
 inline void AttachAsChild(not_null<QObject*> parent, Value &&value) {
 	using PlainValue = std::decay_t<Value>;
@@ -92,10 +96,11 @@ public:
 
 	template <typename Error, typename Generator>
 	void showOn(rpl::producer<bool, Error, Generator> &&shown) {
-		std::move(shown)
-			| rpl::start_with_next([this](bool visible) {
-				callSetVisible(visible);
-			}, lifetime());
+		std::move(
+			shown
+		) | rpl::start_with_next([this](bool visible) {
+			callSetVisible(visible);
+		}, lifetime());
 	}
 
 	rpl::lifetime &lifetime();

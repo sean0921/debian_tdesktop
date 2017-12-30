@@ -41,10 +41,11 @@ using mtpBuffer = QVector<mtpPrime>;
 using mtpTypeId = uint32;
 
 class mtpRequestData;
-class mtpRequest : public QSharedPointer<mtpRequestData> {
+class mtpRequest : public std::shared_ptr<mtpRequestData> {
 public:
 	mtpRequest() = default;
-    explicit mtpRequest(mtpRequestData *ptr) : QSharedPointer<mtpRequestData>(ptr) {
+    explicit mtpRequest(mtpRequestData *ptr)
+	: std::shared_ptr<mtpRequestData>(ptr) {
 	}
 
 	uint32 innerLength() const;
@@ -69,6 +70,14 @@ public:
 
 	static mtpRequest prepare(uint32 requestSize, uint32 maxSize = 0);
 	static void padding(mtpRequest &request);
+
+	template <typename TRequest>
+	static mtpRequest serialize(const TRequest &request) {
+		const auto requestSize = request.innerLength() >> 2;
+		auto serialized = prepare(requestSize);
+		request.write(*serialized);
+		return serialized;
+	}
 
 	static uint32 messageSize(const mtpRequest &request) {
 		if (request->size() < 9) return 0;

@@ -66,7 +66,7 @@ public:
 	HistoryTopBarWidget::SelectedState getSelectionState() const;
 	void clearSelectedItems(bool onlyTextSelection = false);
 	MessageIdsList getSelectedItems() const;
-	void selectItem(HistoryItem *item);
+	void selectItem(not_null<HistoryItem*> item);
 
 	void updateBotInfo(bool recount = true);
 
@@ -133,12 +133,20 @@ private slots:
 	void onScrollDateHideByTimer();
 
 private:
+	class BotAbout;
+	using SelectedItems = std::map<HistoryItem*, TextSelection, std::less<>>;
+
 	enum class MouseAction {
 		None,
 		PrepareDrag,
 		Dragging,
 		PrepareSelect,
 		Selecting,
+	};
+	enum class SelectAction {
+		Select,
+		Deselect,
+		Invert,
 	};
 
 	void mouseActionStart(const QPoint &screenPos, Qt::MouseButton button);
@@ -165,6 +173,13 @@ private:
 	HistoryItem *prevItem(HistoryItem *item);
 	HistoryItem *nextItem(HistoryItem *item);
 	void updateDragSelection(HistoryItem *dragSelFrom, HistoryItem *dragSelTo, bool dragSelecting);
+	TextSelection itemRenderSelection(
+		not_null<HistoryItem*> item,
+		int selfromy,
+		int seltoy) const;
+	TextSelection computeRenderSelection(
+		not_null<const SelectedItems*> selected,
+		not_null<HistoryItem*> item) const;
 
 	void setToClipboard(const TextWithEntities &forClipboard, QClipboard::Mode mode = QClipboard::Clipboard);
 
@@ -186,23 +201,6 @@ private:
 	// or at least we don't need to display first _history date (just skip it by height)
 	int _historySkipHeight = 0;
 
-	class BotAbout : public ClickHandlerHost {
-	public:
-		BotAbout(HistoryInner *parent, BotInfo *info) : info(info), _parent(parent) {
-		}
-		BotInfo *info = nullptr;
-		int width = 0;
-		int height = 0;
-		QRect rect;
-
-		// ClickHandlerHost interface
-		void clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) override;
-		void clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) override;
-
-	private:
-		HistoryInner *_parent;
-
-	};
 	std::unique_ptr<BotAbout> _botAbout;
 
 	HistoryWidget *_widget = nullptr;
@@ -214,11 +212,45 @@ private:
 	bool _firstLoading = false;
 
 	style::cursor _cursor = style::cur_default;
-	using SelectedItems = std::map<HistoryItem*, TextSelection, std::less<>>;
 	SelectedItems _selected;
+
 	void applyDragSelection();
-	void applyDragSelection(SelectedItems *toItems) const;
-	void addSelectionRange(SelectedItems *toItems, int32 fromblock, int32 fromitem, int32 toblock, int32 toitem, History *h) const;
+	void applyDragSelection(not_null<SelectedItems*> toItems) const;
+	void addSelectionRange(
+		not_null<SelectedItems*> toItems,
+		not_null<History*> history,
+		int fromblock,
+		int fromitem,
+		int toblock,
+		int toitem) const;
+	bool isSelected(
+		not_null<SelectedItems*> toItems,
+		not_null<HistoryItem*> item) const;
+	bool isSelectedAsGroup(
+		not_null<SelectedItems*> toItems,
+		not_null<HistoryItem*> item) const;
+	bool goodForSelection(
+		not_null<SelectedItems*> toItems,
+		not_null<HistoryItem*> item,
+		int &totalCount) const;
+	void addToSelection(
+		not_null<SelectedItems*> toItems,
+		not_null<HistoryItem*> item) const;
+	void removeFromSelection(
+		not_null<SelectedItems*> toItems,
+		not_null<HistoryItem*> item) const;
+	void changeSelection(
+		not_null<SelectedItems*> toItems,
+		not_null<HistoryItem*> item,
+		SelectAction action) const;
+	void changeSelectionAsGroup(
+		not_null<SelectedItems*> toItems,
+		not_null<HistoryItem*> item,
+		SelectAction action) const;
+	void forwardItem(not_null<HistoryItem*> item);
+	void forwardAsGroup(not_null<HistoryItem*> item);
+	void deleteItem(not_null<HistoryItem*> item);
+	void deleteAsGroup(not_null<HistoryItem*> item);
 
 	// Does any of the shown histories has this flag set.
 	bool hasPendingResizedItems() const {
@@ -230,6 +262,7 @@ private:
 	QPoint _dragStartPosition;
 	QPoint _mousePosition;
 	HistoryItem *_mouseActionItem = nullptr;
+	HistoryItem *_dragStateItem = nullptr;
 	HistoryCursorState _mouseCursorState = HistoryDefaultCursorState;
 	uint16 _mouseTextSymbol = 0;
 	bool _pressWasInactive = false;

@@ -20,6 +20,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
+struct HistoryMessageEdited;
+
 namespace base {
 template <typename Enum>
 class enum_mask;
@@ -61,7 +63,9 @@ public:
 	}
 
 	virtual bool isDisplayed() const {
-		return true;
+		return !_parent->isHiddenByGroup();
+	}
+	virtual void updateNeedBubbleState() {
 	}
 	virtual bool isAboveMessage() const {
 		return false;
@@ -73,7 +77,7 @@ public:
 		return false;
 	}
 	virtual void initDimensions() = 0;
-	virtual void updateMessageId() {
+	virtual void refreshParentId(not_null<HistoryItem*> realParent) {
 	}
 	virtual int resizeGetHeight(int width) {
 		_width = qMin(width, _maxw);
@@ -132,9 +136,14 @@ public:
 	virtual bool uploading() const {
 		return false;
 	}
-	virtual std::unique_ptr<HistoryMedia> clone(HistoryItem *newParent) const = 0;
+	virtual std::unique_ptr<HistoryMedia> clone(
+		not_null<HistoryItem*> newParent,
+		not_null<HistoryItem*> realParent) const = 0;
 
-	virtual DocumentData *getDocument() {
+	virtual PhotoData *getPhoto() const {
+		return nullptr;
+	}
+	virtual DocumentData *getDocument() const {
 		return nullptr;
 	}
 	virtual Media::Clip::Reader *getClipReader() {
@@ -155,8 +164,38 @@ public:
 
 	virtual void attachToParent() {
 	}
-
 	virtual void detachFromParent() {
+	}
+
+	virtual bool canBeGrouped() const {
+		return false;
+	}
+	virtual QSize sizeForGrouping() const {
+		Unexpected("Grouping method call.");
+	}
+	virtual void drawGrouped(
+			Painter &p,
+			const QRect &clip,
+			TextSelection selection,
+			TimeMs ms,
+			const QRect &geometry,
+			RectParts corners,
+			not_null<uint64*> cacheKey,
+			not_null<QPixmap*> cache) const {
+		Unexpected("Grouping method call.");
+	}
+	virtual HistoryTextState getStateGrouped(
+			const QRect &geometry,
+			QPoint point,
+			HistoryStateRequest request) const {
+		Unexpected("Grouping method call.");
+	}
+	virtual std::unique_ptr<HistoryMedia> takeLastFromGroup() {
+		return nullptr;
+	}
+	virtual bool applyGroup(
+			const std::vector<not_null<HistoryItem*>> &others) {
+		return others.empty();
 	}
 
 	virtual void updateSentMedia(const MTPMessageMedia &media) {
@@ -188,6 +227,13 @@ public:
 	}
 	virtual bool hideForwardedFrom() const {
 		return false;
+	}
+
+	virtual bool overrideEditedDate() const {
+		return false;
+	}
+	virtual HistoryMessageEdited *displayedEditBadge() const {
+		Unexpected("displayedEditBadge() on non-grouped media.");
 	}
 
 	// An attach media in a web page can provide an

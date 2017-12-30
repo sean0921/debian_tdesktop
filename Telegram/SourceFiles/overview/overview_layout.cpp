@@ -35,7 +35,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "media/player/media_player_instance.h"
 #include "storage/localstorage.h"
 #include "history/history_media_types.h"
+#include "history/history_item_components.h"
 #include "ui/effects/round_checkbox.h"
+#include "ui/text_options.h"
 
 namespace Overview {
 namespace Layout {
@@ -186,14 +188,14 @@ void RadialProgressItem::setDocumentLinks(
 		not_null<DocumentData*> document
 	) -> ClickHandlerPtr {
 		if (document->isVoiceMessage()) {
-			return MakeShared<DocumentOpenClickHandler>(document);
+			return std::make_shared<DocumentOpenClickHandler>(document);
 		}
-		return MakeShared<DocumentSaveClickHandler>(document);
+		return std::make_shared<DocumentSaveClickHandler>(document);
 	};
 	setLinks(
-		MakeShared<DocumentOpenClickHandler>(document),
+		std::make_shared<DocumentOpenClickHandler>(document),
 		createSaveHandler(document),
-		MakeShared<DocumentCancelClickHandler>(document));
+		std::make_shared<DocumentCancelClickHandler>(document));
 }
 
 void RadialProgressItem::clickHandlerActiveChanged(const ClickHandlerPtr &action, bool active) {
@@ -283,7 +285,7 @@ Photo::Photo(
 	not_null<PhotoData*> photo)
 : ItemBase(parent)
 , _data(photo)
-, _link(MakeShared<PhotoOpenClickHandler>(photo)) {
+, _link(std::make_shared<PhotoOpenClickHandler>(photo, parent->fullId())) {
 }
 
 void Photo::initDimensions() {
@@ -352,7 +354,7 @@ HistoryTextState Photo::getState(
 		QPoint point,
 		HistoryStateRequest request) const {
 	if (hasPoint(point)) {
-		return _link;
+		return { parent(), _link };
 	}
 	return {};
 }
@@ -508,7 +510,12 @@ HistoryTextState Video::getState(
 	bool loaded = _data->loaded();
 
 	if (hasPoint(point)) {
-		return loaded ? _openl : (_data->loading() ? _cancell : _savel);
+		const auto link = loaded
+			? _openl
+			: _data->loading()
+			? _cancell
+			: _savel;
+		return { parent(), link };
 	}
 	return {};
 }
@@ -518,8 +525,8 @@ void Video::updateStatusText() {
 	int statusSize = 0;
 	if (_data->status == FileDownloadFailed || _data->status == FileUploadFailed) {
 		statusSize = FileStatusSizeFailed;
-	} else if (_data->status == FileUploading) {
-		statusSize = _data->uploadOffset;
+	} else if (_data->uploading()) {
+		statusSize = _data->uploadingData->offset;
 	} else if (_data->loading()) {
 		statusSize = _data->loadOffset();
 	} else if (_data->loaded()) {
@@ -544,7 +551,7 @@ Voice::Voice(
 	const style::OverviewFileLayout &st)
 : RadialProgressItem(parent)
 , _data(voice)
-, _namel(MakeShared<DocumentOpenClickHandler>(_data))
+, _namel(std::make_shared<DocumentOpenClickHandler>(_data))
 , _st(st) {
 	AddComponents(Info::Bit());
 
@@ -687,13 +694,14 @@ HistoryTextState Voice::getState(
 		_st.songThumbSize,
 		_width);
 	if (inner.contains(point)) {
-		return loaded
+		const auto link = loaded
 			? _openl
-			: ((_data->loading() || _data->status == FileUploading)
-				? _cancell
-				: _openl);
+			: (_data->loading() || _data->uploading())
+			? _cancell
+			: _openl;
+		return { parent(), link };
 	}
-	auto result = HistoryTextState();
+	auto result = HistoryTextState(parent());
 	const auto statusmaxwidth = _width - nameleft - nameright;
 	const auto statusrect = rtlrect(
 		nameleft,
@@ -718,7 +726,7 @@ HistoryTextState Voice::getState(
 		st::normalFont->height,
 		_width);
 	if (namerect.contains(point) && !result.link && !_data->loading()) {
-		return _namel;
+		return { parent(), _namel };
 	}
 	return result;
 }
@@ -745,14 +753,14 @@ const style::RoundCheckbox &Voice::checkboxStyle() const {
 
 void Voice::updateName() {
 	auto version = 0;
-	if (auto forwarded = parent()->Get<HistoryMessageForwarded>()) {
+	if (const auto forwarded = parent()->Get<HistoryMessageForwarded>()) {
 		if (parent()->fromOriginal()->isChannel()) {
-			_name.setText(st::semiboldTextStyle, lng_forwarded_channel(lt_channel, App::peerName(parent()->fromOriginal())), _textNameOptions);
+			_name.setText(st::semiboldTextStyle, lng_forwarded_channel(lt_channel, App::peerName(parent()->fromOriginal())), Ui::NameTextOptions());
 		} else {
-			_name.setText(st::semiboldTextStyle, lng_forwarded(lt_user, App::peerName(parent()->fromOriginal())), _textNameOptions);
+			_name.setText(st::semiboldTextStyle, lng_forwarded(lt_user, App::peerName(parent()->fromOriginal())), Ui::NameTextOptions());
 		}
 	} else {
-		_name.setText(st::semiboldTextStyle, App::peerName(parent()->from()), _textNameOptions);
+		_name.setText(st::semiboldTextStyle, App::peerName(parent()->from()), Ui::NameTextOptions());
 	}
 	version = parent()->fromOriginal()->nameVersion;
 	_nameVersion = version;
@@ -788,7 +796,7 @@ Document::Document(
 : RadialProgressItem(parent)
 , _data(document)
 , _msgl(goToMessageClickHandler(parent))
-, _namel(MakeShared<DocumentOpenClickHandler>(_data))
+, _namel(std::make_shared<DocumentOpenClickHandler>(_data))
 , _st(st)
 , _date(langDateTime(date(_data->date)))
 , _datew(st::normalFont->width(_date))
@@ -1014,11 +1022,12 @@ HistoryTextState Document::getState(
 			_st.songThumbSize,
 			_width);
 		if (inner.contains(point)) {
-			return loaded
+			const auto link = loaded
 				? _openl
-				: ((_data->loading() || _data->status == FileUploading)
-					? _cancell
-					: _openl);
+				: (_data->loading() || _data->uploading())
+				? _cancell
+				: _openl;
+			return { parent(), link };
 		}
 		const auto namerect = rtlrect(
 			nameleft,
@@ -1027,7 +1036,7 @@ HistoryTextState Document::getState(
 			st::semiboldFont->height,
 			_width);
 		if (namerect.contains(point) && !_data->loading()) {
-			return _namel;
+			return { parent(), _namel };
 		}
 	} else {
 		const auto nameleft = _st.fileThumbSize + _st.filePadding.right();
@@ -1047,11 +1056,12 @@ HistoryTextState Document::getState(
 			_width);
 
 		if (rthumb.contains(point)) {
-			return loaded
+			const auto link = loaded
 				? _openl
-				: ((_data->loading() || _data->status == FileUploading)
-					? _cancell
-					: _savel);
+				: (_data->loading() || _data->uploading())
+				? _cancell
+				: _savel;
+			return { parent(), link };
 		}
 
 		if (_data->status != FileUploadFailed) {
@@ -1062,7 +1072,7 @@ HistoryTextState Document::getState(
 				st::normalFont->height,
 				_width);
 			if (daterect.contains(point)) {
-				return _msgl;
+				return { parent(), _msgl };
 			}
 		}
 		if (!_data->loading() && _data->isValid()) {
@@ -1073,7 +1083,7 @@ HistoryTextState Document::getState(
 				_height - st::linksBorder,
 				_width);
 			if (loaded && leftofnamerect.contains(point)) {
-				return _namel;
+				return { parent(), _namel };
 			}
 			const auto namerect = rtlrect(
 				nameleft,
@@ -1082,7 +1092,7 @@ HistoryTextState Document::getState(
 				st::semiboldFont->height,
 				_width);
 			if (namerect.contains(point)) {
-				return _namel;
+				return { parent(), _namel };
 			}
 		}
 	}
@@ -1124,8 +1134,8 @@ bool Document::updateStatusText() {
 	int32 statusSize = 0, realDuration = 0;
 	if (_data->status == FileDownloadFailed || _data->status == FileUploadFailed) {
 		statusSize = FileStatusSizeFailed;
-	} else if (_data->status == FileUploading) {
-		statusSize = _data->uploadOffset;
+	} else if (_data->uploading()) {
+		statusSize = _data->uploadingData->offset;
 	} else if (_data->loading()) {
 		statusSize = _data->loadOffset();
 	} else if (_data->loaded()) {
@@ -1201,24 +1211,28 @@ Link::Link(
 		}
 	}
 
-	_page = (media && media->type() == MediaTypeWebPage) ? static_cast<HistoryWebPage*>(media)->webpage().get() : nullptr;
+	_page = (media && media->type() == MediaTypeWebPage)
+		? static_cast<HistoryWebPage*>(media)->webpage().get()
+		: nullptr;
 	if (_page) {
 		mainUrl = _page->url;
 		if (_page->document) {
-			_photol = MakeShared<DocumentOpenClickHandler>(_page->document);
+			_photol = std::make_shared<DocumentOpenClickHandler>(_page->document);
 		} else if (_page->photo) {
 			if (_page->type == WebPageProfile || _page->type == WebPageVideo) {
-				_photol = MakeShared<UrlClickHandler>(_page->url);
+				_photol = std::make_shared<UrlClickHandler>(_page->url);
 			} else if (_page->type == WebPagePhoto || _page->siteName == qstr("Twitter") || _page->siteName == qstr("Facebook")) {
-				_photol = MakeShared<PhotoOpenClickHandler>(_page->photo);
+				_photol = std::make_shared<PhotoOpenClickHandler>(
+					_page->photo,
+					parent->fullId());
 			} else {
-				_photol = MakeShared<UrlClickHandler>(_page->url);
+				_photol = std::make_shared<UrlClickHandler>(_page->url);
 			}
 		} else {
-			_photol = MakeShared<UrlClickHandler>(_page->url);
+			_photol = std::make_shared<UrlClickHandler>(_page->url);
 		}
 	} else if (!mainUrl.isEmpty()) {
-		_photol = MakeShared<UrlClickHandler>(mainUrl);
+		_photol = std::make_shared<UrlClickHandler>(mainUrl);
 	}
 	if (from >= till && _page) {
 		text = _page->description.text;
@@ -1413,7 +1427,7 @@ HistoryTextState Link::getState(
 		HistoryStateRequest request) const {
 	int32 left = st::linksPhotoSize + st::linksPhotoPadding, top = st::linksMargin.top() + st::linksBorder, w = _width - left;
 	if (rtlrect(0, top, st::linksPhotoSize, st::linksPhotoSize, _width).contains(point)) {
-		return _photol;
+		return { parent(), _photol };
 	}
 
 	if (!_title.isEmpty() && _text.isEmpty() && _links.size() == 1) {
@@ -1421,7 +1435,7 @@ HistoryTextState Link::getState(
 	}
 	if (!_title.isEmpty()) {
 		if (rtlrect(left, top, qMin(w, _titlew), st::semiboldFont->height, _width).contains(point)) {
-			return _photol;
+			return { parent(), _photol };
 		}
 		top += st::webPageTitleFont->height;
 	}
@@ -1430,7 +1444,7 @@ HistoryTextState Link::getState(
 	}
 	for (int32 i = 0, l = _links.size(); i < l; ++i) {
 		if (rtlrect(left, top, qMin(w, _links.at(i).width), st::normalFont->height, _width).contains(point)) {
-			return ClickHandlerPtr(_links[i].lnk);
+			return { parent(), ClickHandlerPtr(_links[i].lnk) };
 		}
 		top += st::normalFont->height;
 	}
@@ -1444,7 +1458,7 @@ const style::RoundCheckbox &Link::checkboxStyle() const {
 Link::LinkEntry::LinkEntry(const QString &url, const QString &text)
 : text(text)
 , width(st::normalFont->width(text))
-, lnk(MakeShared<UrlClickHandler>(url)) {
+, lnk(std::make_shared<UrlClickHandler>(url)) {
 }
 
 } // namespace Layout

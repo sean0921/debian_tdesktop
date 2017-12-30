@@ -365,10 +365,12 @@ void Panel::initLayout() {
 
 	initGeometry();
 
-	Notify::PeerUpdateValue(_user, Notify::PeerUpdate::Flag::PhotoChanged)
-		| rpl::start_with_next(
-			[this] { processUserPhoto(); },
-			lifetime());
+	Notify::PeerUpdateValue(
+		_user,
+		Notify::PeerUpdate::Flag::PhotoChanged
+	) | rpl::start_with_next(
+		[this] { processUserPhoto(); },
+		lifetime());
 	subscribe(Auth().downloaderTaskFinished(), [this] {
 		refreshUserPhoto();
 	});
@@ -386,10 +388,15 @@ void Panel::toggleOpacityAnimation(bool visible) {
 	if (_useTransparency) {
 		if (_animationCache.isNull()) {
 			showControls();
-			_animationCache = myGrab(this);
+			_animationCache = Ui::GrabWidget(this);
 			hideChildren();
 		}
-		_opacityAnimation.start([this] { update(); }, _visible ? 0. : 1., _visible ? 1. : 0., st::callPanelDuration, _visible ? anim::easeOutCirc : anim::easeInCirc);
+		_opacityAnimation.start(
+			[this] { update(); },
+			_visible ? 0. : 1.,
+			_visible ? 1. : 0.,
+			st::callPanelDuration,
+			_visible ? anim::easeOutCirc : anim::easeInCirc);
 	}
 	if (isHidden() && _visible) {
 		show();
@@ -490,7 +497,7 @@ void Panel::createUserpicCache(ImagePtr image) {
 				_user->name
 			).paintSquare(p, 0, 0, st::callWidth, st::callWidth);
 		}
-		Images::prepareRound(filled, ImageRoundRadius::Large, ImageRoundCorner::TopLeft | ImageRoundCorner::TopRight);
+		Images::prepareRound(filled, ImageRoundRadius::Large, RectPart::TopLeft | RectPart::TopRight);
 		_userPhoto = App::pixmapFromImageInPlace(std::move(filled));
 	}
 	refreshCacheImageUserPhoto();

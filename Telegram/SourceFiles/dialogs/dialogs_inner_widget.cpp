@@ -28,6 +28,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_window.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/text_options.h"
 #include "data/data_drafts.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
@@ -96,16 +97,16 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 	_cancelSearchFromUser->hide();
 
 	subscribe(Auth().downloaderTaskFinished(), [this] { update(); });
-	Auth().data().itemRemoved()
-		| rpl::start_with_next(
-			[this](auto item) { itemRemoved(item); },
-			lifetime());
-	Auth().data().itemRepaintRequest()
-		| rpl::start_with_next([this](auto item) {
-			if (item->history()->lastMsg == item) {
-				item->history()->updateChatListEntry();
-			}
-		}, lifetime());
+	Auth().data().itemRemoved(
+	) | rpl::start_with_next(
+		[this](auto item) { itemRemoved(item); },
+		lifetime());
+	Auth().data().itemRepaintRequest(
+	) | rpl::start_with_next([this](auto item) {
+		if (item->history()->lastMsg == item) {
+			item->history()->updateChatListEntry();
+		}
+	}, lifetime());
 	subscribe(App::histories().sendActionAnimationUpdated(), [this](const Histories::SendActionAnimationUpdate &update) {
 		auto updateRect = Dialogs::Layout::RowPainter::sendActionAnimationRect(update.width, update.height, getFullWidth(), update.textUpdated);
 		updateDialogRow(update.history->peer, MsgId(0), updateRect, UpdateRowSection::Default | UpdateRowSection::Filtered);
@@ -1797,9 +1798,9 @@ void DialogsInner::searchInPeer(PeerData *peer, UserData *from) {
 		_cancelSearchInPeer->show();
 		if (_searchInPeer->isSelf()) {
 			_searchInSavedText.setText(
-				st::dialogsSearchFromStyle,
+				st::msgNameStyle,
 				lang(lng_saved_messages),
-				_textDlgOptions);
+				Ui::DialogTextOptions());
 		}
 	} else {
 		_cancelSearchInPeer->hide();
@@ -1811,7 +1812,7 @@ void DialogsInner::searchInPeer(PeerData *peer, UserData *from) {
 		_searchFromUserText.setText(
 			st::dialogsSearchFromStyle,
 			fromUserText,
-			_textDlgOptions);
+			Ui::DialogTextOptions());
 		_cancelSearchFromUser->show();
 	} else {
 		_cancelSearchFromUser->hide();
