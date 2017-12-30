@@ -3,13 +3,9 @@ Upstream-Name: Telegram Desktop
 Source: https://github.com/telegramdesktop/tdesktop
 
 Files: *
+       debian/missing-sources/crl/*
 Copyright: 2014-2017 John Preston <johnprestonmail@gmail.com>
 License: GPL-3.0+ with OpenSSL exception
-
-Files: Telegram/SourceFiles/boxes/mute_settings_box.h
-       Telegram/SourceFiles/boxes/mute_settings_box.cpp
-Copyright: 2017 Nicholas Guriev <guriev-ns@ya.ru>
-License: Public-domain
 
 Files: Telegram/Patches/qtbase_5_6_2.diff
 Copyright: 1985, 1987, 1990, 1998 The Open Group
@@ -55,13 +51,11 @@ License: BSD-1-Clause
 Comment: Source code on GitHub - https://github.com/nevyn/SPMediaKeyTap
 
 Files: debian/*
+       Telegram/SourceFiles/boxes/mute_settings_box.h
+       Telegram/SourceFiles/boxes/mute_settings_box.cpp
 Copyright: 2016-2017 Nicholas Guriev <guriev-ns@ya.ru>
-License: GPL-3.0+
-
-Files: debian/patches/*
-Copyright: 2017 Nicholas Guriev <guriev-ns@ya.ru>
 License: Public-domain
-Comment: Contributing policy - see .github/CONTRIBUTING.md file
+Comment: Contributing policy - https://cla-assistant.io/telegramdesktop/tdesktop
 
 Files: debian/qt_functions.cpp
 Copyright: 2015 The Qt Company Ltd.
@@ -175,22 +169,6 @@ License: GPL-2.0+
  .
  On Debian systems, the complete text of the GNU General Public License version
  2 can be found in "/usr/share/common-licenses/GPL-2".
-
-License: GPL-3.0+
- This program is free software: you can redistribute it and/or modify it under
- the terms of the GNU General Public License as published by the Free Software
- Foundation, either version 3 of the License, or (at your option) any later
- version.
- .
- This package is distributed in the hope that it will be useful, but WITHOUT ANY
- WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
- PARTICULAR PURPOSE.  See the GNU General Public License for more details.
- .
- You should have received a copy of the GNU General Public License along with
- this program. If not, see <http://www.gnu.org/licenses/>.
- .
- On Debian systems, the complete text of the GNU General Public License version
- 3 can be found in "/usr/share/common-licenses/GPL-3".
 
 License: GPL-3.0+ with OpenSSL exception
  This program is free software: you can redistribute it and/or modify it under
