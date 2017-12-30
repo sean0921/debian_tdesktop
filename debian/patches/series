@@ -1,7 +1,3 @@
-Avoid-depending-on-static-libraries.patch
-Flags-for-precompiled-header-and-MOC.patch
+Modify-build-scripts.patch
 Debian-API-ID.patch
-Remove-useless-flags.patch
-Various-build-fixes.patch
 Packed-resources.patch
-Fix-tests.patch

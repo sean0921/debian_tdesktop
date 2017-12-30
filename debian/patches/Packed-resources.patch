@@ -26,7 +26,7 @@ Last-Update: 2017-08-22
      <file alias="lang_es.strings">../langs/lang_es.strings</file>
 --- a/Telegram/SourceFiles/core/file_utilities.cpp
 +++ b/Telegram/SourceFiles/core/file_utilities.cpp
-@@ -253,3 +253,20 @@ bool GetDefault(QStringList &files, QByt
+@@ -300,3 +300,20 @@ bool GetDefault(QStringList &files, QByt
  
  } // namespace internal
  } // namespace FileDialog
@@ -49,7 +49,7 @@ Last-Update: 2017-08-22
 +}
 --- a/Telegram/SourceFiles/core/file_utilities.h
 +++ b/Telegram/SourceFiles/core/file_utilities.h
-@@ -76,3 +76,9 @@ bool GetDefault(QStringList &files, QByt
+@@ -111,3 +111,9 @@ bool GetDefault(
  
  } // namespace internal
  } // namespace FileDialog
@@ -61,15 +61,15 @@ Last-Update: 2017-08-22
 +} // namespace Resources
 --- a/Telegram/SourceFiles/core/launcher.cpp
 +++ b/Telegram/SourceFiles/core/launcher.cpp
-@@ -23,6 +23,7 @@
- #include "platform/platform_launcher.h"
+@@ -24,6 +24,7 @@
  #include "platform/platform_specific.h"
  #include "core/crash_reports.h"
+ #include "core/main_queue_processor.h"
 +#include "core/file_utilities.h"
  #include "application.h"
  
  namespace Core {
-@@ -42,6 +43,7 @@ void Launcher::init() {
+@@ -43,6 +44,7 @@ void Launcher::init() {
  	prepareSettings();
  
  	QCoreApplication::setApplicationName(qsl("TelegramDesktop"));
@@ -87,7 +87,7 @@ Last-Update: 2017-08-22
      },
      'includes': [
        'common_executable.gypi',
-@@ -99,7 +100,6 @@
+@@ -100,7 +101,6 @@
        '/usr/include/opus',
      ],
      'sources': [
@@ -95,7 +95,7 @@ Last-Update: 2017-08-22
        '<@(style_files)',
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg))',
        'telegram_sources.txt',
-@@ -108,6 +108,31 @@
+@@ -109,6 +109,31 @@
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg) --exclude_for <(build_os))',
      ],
      'conditions': [

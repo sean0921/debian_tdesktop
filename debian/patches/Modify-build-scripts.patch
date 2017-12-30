@@ -1,7 +1,6 @@
-Description: Eliminates dependencies from static Qt and other libraries
+Description: Eliminate static linking and fixes build
 Author: Nicholas Guriev <guriev-ns@ya.ru>
-Forwarded: no
-Last-Update: 2017-07-29
+Last-Update: 2017-12-30
 
 --- a/Telegram/Resources/qrc/telegram_linux.qrc
 +++ b/Telegram/Resources/qrc/telegram_linux.qrc
@@ -11,6 +10,55 @@ Last-Update: 2017-07-29
 -    <file alias="etc/qt.conf">../etc/qt_linux.conf</file>
    </qresource>
  </RCC>
+--- a/Telegram/SourceFiles/base/tests_main.cpp
++++ b/Telegram/SourceFiles/base/tests_main.cpp
+@@ -20,7 +20,6 @@
+ */
+ #define CATCH_CONFIG_RUNNER
+ #include "catch.hpp"
+-#include "reporters/catch_reporter_compact.hpp"
+ #include <QFile>
+ 
+ namespace base {
+--- a/Telegram/SourceFiles/config.h
++++ b/Telegram/SourceFiles/config.h
+@@ -237,7 +237,7 @@
+ #endif
+ 
+ #if Q_BYTE_ORDER == Q_BIG_ENDIAN
+-#error "Only little endian is supported!"
++#warning "Be aware, only little endian is supported!"
+ #endif // Q_BYTE_ORDER == Q_BIG_ENDIAN
+ 
+ #ifndef BETA_VERSION_MACRO
+--- a/Telegram/SourceFiles/core/basic_types.h
++++ b/Telegram/SourceFiles/core/basic_types.h
+@@ -25,7 +25,6 @@
+ #include <memory>
+ #include <ctime>
+ 
+-#include "base/build_config.h"
+ #include "base/ordered_set.h"
+ 
+ using gsl::not_null;
+@@ -42,3 +41,17 @@ using float64 = double;
+ 
+ #define qsl(s) QStringLiteral(s)
+ #define qstr(s) QLatin1String(s, sizeof(s) - 1)
++
++#if defined(__GNUC__) || defined(__clang__)
++#define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
++#else
++#define WARN_UNUSED_RESULT
++#endif
++
++#if defined(__GNUC__)
++#define FORCE_INLINE inline __attribute__((always_inline))
++#elif defined(_MSC_VER)
++#define FORCE_INLINE __forceinline
++#else
++#define FORCE_INLINE inline
++#endif
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
 @@ -21,6 +21,9 @@
@@ -34,25 +82,61 @@ Last-Update: 2017-07-29
  #endif // !TDESKTOP_DISABLE_UNITY_INTEGRATION
  #endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
  
---- a/Telegram/SourceFiles/ui/text/text_block.cpp
-+++ b/Telegram/SourceFiles/ui/text/text_block.cpp
-@@ -332,7 +332,7 @@ TextBlock::TextBlock(const style::font &
- 		CrashReports::SetAnnotationRef("CrashString", &part);
+--- a/Telegram/SourceFiles/rpl/details/callable.h
++++ b/Telegram/SourceFiles/rpl/details/callable.h
+@@ -20,7 +20,6 @@
+ */
+ #pragma once
  
- 		QStackTextEngine engine(part, blockFont->f);
--		QTextLayout layout(&engine);
-+		QTextLayout layout(part, blockFont->f);
- 		layout.beginLayout();
- 		layout.createLine();
+-#include "base/build_config.h"
+ #include <tuple>
  
+ namespace rpl {
+--- a/Telegram/SourceFiles/ui/animation.h
++++ b/Telegram/SourceFiles/ui/animation.h
+@@ -181,9 +181,10 @@ FORCE_INLINE int interpolate(int a, int
+ 	return qRound(a + float64(b - a) * b_ratio);
+ }
+ 
+-#ifdef ARCH_CPU_32_BITS
++#if !(defined _LP64 || defined _M_X64 || defined _M_ARM64 || defined _M_ALPHA)
++// _LP64 is defined by GCC, others by MSVC
+ #define SHIFTED_USE_32BIT
+-#endif // ARCH_CPU_32_BITS
++#endif
+ 
+ #ifdef SHIFTED_USE_32BIT
+ 
+--- a/Telegram/gyp/PrecompiledHeader.cmake
++++ b/Telegram/gyp/PrecompiledHeader.cmake
+@@ -112,7 +112,7 @@ function(add_precompiled_header _target
+       set(_compiler_FLAGS "@${_pch_c_flags_file}")
+       add_custom_command(
+         OUTPUT "${_output_c}"
+-        COMMAND "${CMAKE_C_COMPILER}" ${_compiler_FLAGS} -x c-header -o "${_output_c}" -c "${_pchfile}"
++        COMMAND "${CMAKE_C_COMPILER}" "$(C_DEFINES)" "$(C_INCLUDES)" "$(C_FLAGS)" -x c-header -o "${_output_c}" -c "${_pchfile}"
+         DEPENDS "${_pchfile}" "${_pch_c_flags_file}"
+         IMPLICIT_DEPENDS C "${_pch_header}"
+         COMMENT "Precompiling ${_name} for ${_target} (C)")
+@@ -123,7 +123,7 @@ function(add_precompiled_header _target
+       set(_compiler_FLAGS "@${_pch_cpp_flags_file}")
+       add_custom_command(
+         OUTPUT "${_output_cxx}"
+-        COMMAND "${CMAKE_CXX_COMPILER}" ${_compiler_FLAGS} -x c++-header -o "${_output_cxx}" -c "${_pchfile}"
++        COMMAND "${CMAKE_CXX_COMPILER}" "$(CXX_DEFINES)" "$(CXX_INCLUDES)" "$(CXX_FLAGS)" -x c++-header -o "${_output_cxx}" -c "${_pchfile}"
+         DEPENDS "${_pchfile}" "${_pch_cpp_flags_file}"
+         IMPLICIT_DEPENDS CXX "${_pch_header}"
+         COMMENT "Precompiling ${_name} for ${_target} (C++)")
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
-@@ -82,12 +82,9 @@
+@@ -81,14 +81,10 @@
+       'codegen.gyp:codegen_lang',
        'codegen.gyp:codegen_numbers',
        'codegen.gyp:codegen_style',
-       'tests/tests.gyp:tests',
+-      'tests/tests.gyp:tests',
 -      'utils.gyp:Updater',
 -      '../ThirdParty/libtgvoip/libtgvoip.gyp:libtgvoip',
+       'crl.gyp:crl',
      ],
  
      'defines': [
@@ -60,7 +144,7 @@ Last-Update: 2017-07-29
        'AL_ALEXT_PROTOTYPES',
        'TGVOIP_USE_CXX11_LIB',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-@@ -96,18 +93,10 @@
+@@ -97,19 +93,11 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -76,12 +160,29 @@ Last-Update: 2017-07-29
        '<(emoji_suggestions_loc)',
 -      '<(submodules_loc)/GSL/include',
 -      '<(submodules_loc)/variant/include',
+-      '<(submodules_loc)/crl/src',
++      '../../debian/missing-sources/crl/src',
 +      '/usr/include/minizip',
 +      '/usr/include/libtgvoip',
 +      '/usr/include/opus',
      ],
      'sources': [
        '<@(qrc_files)',
+@@ -130,5 +118,14 @@
+         ],
+       }],
+     ],
++  },{
++    # TODO: Make this target more respectful of the `notest` build profile.
++    # There should be no tests when the default target is executed.
++    'target_name': 'check',
++    'type': 'none',
++    'dependencies': [
++      'Telegram',
++      'tests/tests.gyp:tests',
++    ],
+   }],
+ }
 --- a/Telegram/gyp/common.gypi
 +++ b/Telegram/gyp/common.gypi
 @@ -104,6 +104,7 @@
@@ -92,17 +193,22 @@ Last-Update: 2017-07-29
    },
  
    'configurations': {
---- a/Telegram/gyp/linux_glibc_wraps.gyp
-+++ b/Telegram/gyp/linux_glibc_wraps.gyp
-@@ -27,7 +27,7 @@
-     'sources': [
-       '../SourceFiles/platform/linux/linux_glibc_wraps.c',
-     ],
--    'conditions': [[ '"<!(uname -p)" == "x86_64"', {
-+    'conditions': [[ '"<!(dpkg-architecture -q DEB_HOST_ARCH_BITS)" == "64"', {
-       'sources': [
-         '../SourceFiles/platform/linux/linux_glibc_wraps_64.c',
+--- a/Telegram/gyp/crl.gyp
++++ b/Telegram/gyp/crl.gyp
+@@ -40,11 +40,11 @@
        ],
+     }]],
+     'variables': {
+-      'crl_src_loc': '../ThirdParty/crl/src/crl',
++      'crl_src_loc': '../../debian/missing-sources/crl/src/crl',
+       'official_build_target%': '',
+     },
+     'include_dirs': [
+-      '../ThirdParty/crl/src',
++      '../../debian/missing-sources/crl/src',
+     ],
+     'sources': [
+       '<(crl_src_loc)/common/crl_common_config.h',
 --- a/Telegram/gyp/qt.gypi
 +++ b/Telegram/gyp/qt.gypi
 @@ -27,25 +27,21 @@
@@ -204,10 +310,17 @@ Last-Update: 2017-07-29
    ],
    'library_dirs': [
      '<(qt_loc)/lib',
-@@ -225,17 +197,9 @@
+@@ -218,24 +190,14 @@
+   'conditions': [
+     [ 'build_linux', {
+       'dependencies': [
+-        '<(DEPTH)/linux_glibc_wraps.gyp:linux_glibc_wraps',
+       ],
+       'library_dirs': [
+         '<(qt_loc)/plugins/platforminputcontexts',
        ],
        'libraries': [
-         '<(PRODUCT_DIR)/obj.target/liblinux_glibc_wraps.a',
+-        '<(PRODUCT_DIR)/obj.target/liblinux_glibc_wraps.a',
 -        '<(linux_path_xkbcommon)/lib/libxkbcommon.a',
          '<@(qt_libs_release)',
 -        '<(linux_lib_ssl)',
@@ -223,7 +336,7 @@ Last-Update: 2017-07-29
          '-lglib-2.0',
          '-lpthread',
        ],
-@@ -243,7 +207,6 @@
+@@ -243,7 +205,6 @@
          '<(qt_loc)/mkspecs/linux-g++',
        ],
        'ldflags': [
@@ -231,9 +344,27 @@ Last-Update: 2017-07-29
          '-pthread',
          '-rdynamic',
        ],
+--- a/Telegram/gyp/qt_moc.gypi
++++ b/Telegram/gyp/qt_moc.gypi
+@@ -30,6 +30,7 @@
+       # Silence "Note: No relevant classes found. No output generated."
+       '--no-notes',
+ 
++      '<!@(echo $CPPFLAGS | grep -Po "[-]([IDU]\s*\S*|E)")',
+       '<!@(python -c "for s in \'<@(_defines)\'.split(\' \'): print(\'-D\' + s)")',
+       # '<!@(python -c "for s in \'<@(_include_dirs)\'.split(\' \'): print(\'-I\' + s)")',
+       '<(RULE_INPUT_PATH)',
 --- a/Telegram/gyp/settings_linux.gypi
 +++ b/Telegram/gyp/settings_linux.gypi
-@@ -38,7 +38,7 @@
+@@ -24,7 +24,6 @@
+         'linux_common_flags': [
+           '-pipe',
+           '-Wall',
+-          '-Werror',
+           '-W',
+           '-fPIC',
+           '-Wno-unused-variable',
+@@ -38,7 +37,7 @@
          ],
        },
        'conditions': [
@@ -242,7 +373,7 @@ Last-Update: 2017-07-29
            'defines': [
              'Q_OS_LINUX64',
            ],
-@@ -60,7 +60,6 @@
+@@ -60,7 +59,6 @@
        ],
        'defines': [
          '_REENTRANT',
@@ -252,7 +383,7 @@ Last-Update: 2017-07-29
        'cflags_c': [
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -53,25 +53,15 @@
+@@ -53,69 +53,40 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
@@ -287,7 +418,27 @@ Last-Update: 2017-07-29
  #      '<!(pkg-config 2> /dev/null --libs <@(pkgconfig_libs))',
      ],
      'cflags_cc': [
-@@ -99,7 +89,7 @@
+       '-Wno-strict-overflow',
+     ],
+     'ldflags': [
+-      '-Wl,-wrap,aligned_alloc',
+-      '-Wl,-wrap,secure_getenv',
+-      '-Wl,-wrap,clock_gettime',
+       '-Wl,--no-as-needed,-lrt',
+     ],
+     'configurations': {
+       'Release': {
+         'cflags_c': [
+-          '-Ofast',
+           '-fno-strict-aliasing',
+         ],
+         'cflags_cc': [
+-          '-Ofast',
+           '-fno-strict-aliasing',
+         ],
+-        'ldflags': [
+-          '-Ofast',
+-        ],
        },
      },
      'conditions': [
@@ -296,9 +447,32 @@ Last-Update: 2017-07-29
          # 32 bit version can't be linked with debug info or LTO,
          # virtual memory exhausted :(
          'cflags_c': [ '-g' ],
+         'cflags_cc': [ '-g' ],
+         'ldflags': [ '-g' ],
+-        'configurations': {
+-          'Release': {
+-            'cflags_c': [ '-flto' ],
+-            'cflags_cc': [ '-flto' ],
+-            'ldflags': [ '-flto' ],
+-          },
+-        },
+-      }, {
+-        'ldflags': [
+-          '-Wl,-wrap,__divmoddi4',
+-        ],
+       }], ['not_need_gtk!="True"', {
+         'cflags_cc': [
+           '<!(pkg-config 2> /dev/null --cflags appindicator-0.1)',
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -683,7 +683,6 @@
+@@ -1,6 +1,5 @@
+ <(src_loc)/base/algorithm.h
+ <(src_loc)/base/assertion.h
+-<(src_loc)/base/build_config.h
+ <(src_loc)/base/flags.h
+ <(src_loc)/base/enum_mask.h
+ <(src_loc)/base/flat_map.h
+@@ -703,7 +702,6 @@
  <(src_loc)/observer_peer.h
  <(src_loc)/passcodewidget.cpp
  <(src_loc)/passcodewidget.h
@@ -306,7 +480,7 @@ Last-Update: 2017-07-29
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -693,14 +692,7 @@
+@@ -713,14 +711,7 @@
  <(emoji_suggestions_loc)/emoji_suggestions.cpp
  <(emoji_suggestions_loc)/emoji_suggestions.h
  
