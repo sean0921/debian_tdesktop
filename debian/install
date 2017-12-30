@@ -12,6 +12,7 @@ Telegram/Resources/art/icon128.png => /usr/share/icons/hicolor/128x128/apps/tele
 Telegram/Resources/art/icon256.png => /usr/share/icons/hicolor/256x256/apps/telegram.png
 Telegram/Resources/art/icon512.png => /usr/share/icons/hicolor/512x512/apps/telegram.png
 
-# Install menu
+# Install menu and metainfo
 lib/xdg/telegramdesktop.desktop /usr/share/applications
 lib/xdg/tg.protocol /usr/share/kde4/services
+lib/xdg/telegramdesktop.appdata.xml /usr/share/metainfo

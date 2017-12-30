@@ -67,3 +67,6 @@ override_dh_auto_configure:
 	NUM=$$((`wc -l < $(OUT)/$(BUILD_MODE)/CMakeLists.txt` - 2)); \
 	sed -i "$$NUM r debian/CMakeLists.inj" $(OUT)/$(BUILD_MODE)/CMakeLists.txt
 	dh_auto_configure
+
+override_dh_installchangelogs:
+	dh_installchangelogs changelog.txt
