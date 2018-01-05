@@ -3,7 +3,7 @@ telegram-desktop (1.2.6-1) unstable; urgency=medium
   * New upstream release
   * Fix memory exhausting during compilation
   * Add GTK 2.0 as build dependency (for fix build on Ubuntu 18.04)
-  * Import concurrency runtime library as missed source
+  * Import crl, concurrency runtime library, as missed source (commit 9e11a5c)
   * Combine multiple patches that fix build into one
     - Drop glibc wrappers, they were needed for compatibility with old glibc
   * Install AppStream meta information and upstream changelog

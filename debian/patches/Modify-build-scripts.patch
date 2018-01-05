@@ -161,7 +161,7 @@ Last-Update: 2017-12-30
 -      '<(submodules_loc)/GSL/include',
 -      '<(submodules_loc)/variant/include',
 -      '<(submodules_loc)/crl/src',
-+      '../../debian/missing-sources/crl/src',
++      '../../debian/crl/src',
 +      '/usr/include/minizip',
 +      '/usr/include/libtgvoip',
 +      '/usr/include/opus',
@@ -200,12 +200,12 @@ Last-Update: 2017-12-30
      }]],
      'variables': {
 -      'crl_src_loc': '../ThirdParty/crl/src/crl',
-+      'crl_src_loc': '../../debian/missing-sources/crl/src/crl',
++      'crl_src_loc': '../../debian/crl/src/crl',
        'official_build_target%': '',
      },
      'include_dirs': [
 -      '../ThirdParty/crl/src',
-+      '../../debian/missing-sources/crl/src',
++      '../../debian/crl/src',
      ],
      'sources': [
        '<(crl_src_loc)/common/crl_common_config.h',

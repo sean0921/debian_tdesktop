@@ -3,7 +3,6 @@ Upstream-Name: Telegram Desktop
 Source: https://github.com/telegramdesktop/tdesktop
 
 Files: *
-       debian/missing-sources/crl/*
 Copyright: 2014-2017 John Preston <johnprestonmail@gmail.com>
 License: GPL-3.0+ with OpenSSL exception
 
@@ -56,6 +55,11 @@ Files: debian/*
 Copyright: 2016-2017 Nicholas Guriev <guriev-ns@ya.ru>
 License: Public-domain
 Comment: Contributing policy - https://cla-assistant.io/telegramdesktop/tdesktop
+
+Files: debian/crl/*
+Copyright: 2014-2017 John Preston <johnprestonmail@gmail.com>
+License: GPL-3.0+ with OpenSSL exception
+Comment: Source code on GitHub - https://github.com/telegramdesktop/crl
 
 Files: debian/qt_functions.cpp
 Copyright: 2015 The Qt Company Ltd.
