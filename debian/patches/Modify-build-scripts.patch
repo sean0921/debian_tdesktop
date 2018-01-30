@@ -383,7 +383,7 @@ Last-Update: 2017-12-30
        'cflags_c': [
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -53,69 +53,40 @@
+@@ -53,75 +53,45 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
@@ -463,6 +463,12 @@ Last-Update: 2017-12-30
        }], ['not_need_gtk!="True"', {
          'cflags_cc': [
            '<!(pkg-config 2> /dev/null --cflags appindicator-0.1)',
+           '<!(pkg-config 2> /dev/null --cflags gtk+-2.0)',
+           '<!(pkg-config 2> /dev/null --cflags glib-2.0)',
+-          '<!(pkg-config 2> /dev/null --cflags dee-1.0)',
+         ],
+       }]
+     ],
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
 @@ -1,6 +1,5 @@
