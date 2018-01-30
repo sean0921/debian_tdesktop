@@ -10,8 +10,9 @@ telegram-desktop (1.2.6-1) unstable; urgency=medium
   * Grant content of the debian folder into public domain
   * Bump standards version and debhelper level
     - No significant changes for this
+  * Remove unused dependecies, libdee-dev (closes: #888679)
 
- -- Nicholas Guriev <guriev-ns@ya.ru>  Sun, 31 Dec 2017 20:47:15 +0300
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Wed, 31 Jan 2018 00:32:38 +0300
 
 telegram-desktop (1.2.1-2) unstable; urgency=medium
 
