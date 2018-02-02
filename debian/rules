@@ -12,12 +12,18 @@ OUT = obj-$(DEB_HOST_GNU_TYPE)
 
 ifeq (,$(filter noopt,$(DEB_BUILD_OPTIONS)))
  BUILD_MODE = Release
- ifneq ($(DEB_HOST_ARCH),mips64el)
+ ifeq (,$(filter $(DEB_HOST_ARCH), mips mipsel mips64el))
   DEB_CXXFLAGS_MAINT_APPEND = -flto
   DEB_LDFLAGS_MAINT_APPEND = -flto
  endif
 else
  BUILD_MODE = Debug
+endif
+
+# less debug info to avoid running
+# out of address space when linking
+ifneq (,$(filter $(DEB_HOST_ARCH), mips mipsel))
+ DEB_CXXFLAGS_MAINT_APPEND += -g1
 endif
 
 GYPFLAGS += \
