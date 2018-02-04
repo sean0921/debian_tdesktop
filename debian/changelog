@@ -1,3 +1,13 @@
+telegram-desktop (1.2.6-2) unstable; urgency=medium
+
+  [ Adrian Bunk ]
+  * Fix memory exhausted during linking on mips and mipsel (closes: #889139)
+
+  [ Nicholas Guriev ]
+  * Migrate repository to salsa.debian.org
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sun, 04 Feb 2018 14:05:19 +0300
+
 telegram-desktop (1.2.6-1) unstable; urgency=medium
 
   * New upstream release
