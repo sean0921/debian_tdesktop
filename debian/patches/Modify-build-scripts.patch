@@ -12,7 +12,7 @@ Last-Update: 2017-12-30
  </RCC>
 --- a/Telegram/SourceFiles/base/tests_main.cpp
 +++ b/Telegram/SourceFiles/base/tests_main.cpp
-@@ -20,7 +20,6 @@
+@@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesk
  */
  #define CATCH_CONFIG_RUNNER
  #include "catch.hpp"
@@ -22,7 +22,7 @@ Last-Update: 2017-12-30
  namespace base {
 --- a/Telegram/SourceFiles/config.h
 +++ b/Telegram/SourceFiles/config.h
-@@ -237,7 +237,7 @@
+@@ -222,7 +222,7 @@
  #endif
  
  #if Q_BYTE_ORDER == Q_BIG_ENDIAN
@@ -33,7 +33,7 @@ Last-Update: 2017-12-30
  #ifndef BETA_VERSION_MACRO
 --- a/Telegram/SourceFiles/core/basic_types.h
 +++ b/Telegram/SourceFiles/core/basic_types.h
-@@ -25,7 +25,6 @@
+@@ -12,7 +12,6 @@ https://github.com/telegramdesktop/tdesk
  #include <memory>
  #include <ctime>
  
@@ -41,7 +41,7 @@ Last-Update: 2017-12-30
  #include "base/ordered_set.h"
  
  using gsl::not_null;
-@@ -42,3 +41,17 @@ using float64 = double;
+@@ -29,3 +28,17 @@ using float64 = double;
  
  #define qsl(s) QStringLiteral(s)
  #define qstr(s) QLatin1String(s, sizeof(s) - 1)
@@ -61,7 +61,7 @@ Last-Update: 2017-12-30
 +#endif
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
-@@ -21,6 +21,9 @@
+@@ -8,6 +8,9 @@ https://github.com/telegramdesktop/tdesk
  #include "core/launcher.h"
  
  int main(int argc, char *argv[]) {
@@ -73,7 +73,7 @@ Last-Update: 2017-12-30
  }
 --- a/Telegram/SourceFiles/platform/linux/linux_libs.h
 +++ b/Telegram/SourceFiles/platform/linux/linux_libs.h
-@@ -30,7 +30,7 @@ extern "C" {
+@@ -17,7 +17,7 @@ extern "C" {
  } // extern "C"
  
  #ifndef TDESKTOP_DISABLE_UNITY_INTEGRATION
@@ -84,7 +84,7 @@ Last-Update: 2017-12-30
  
 --- a/Telegram/SourceFiles/rpl/details/callable.h
 +++ b/Telegram/SourceFiles/rpl/details/callable.h
-@@ -20,7 +20,6 @@
+@@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesk
  */
  #pragma once
  
@@ -94,7 +94,7 @@ Last-Update: 2017-12-30
  namespace rpl {
 --- a/Telegram/SourceFiles/ui/animation.h
 +++ b/Telegram/SourceFiles/ui/animation.h
-@@ -181,9 +181,10 @@ FORCE_INLINE int interpolate(int a, int
+@@ -168,9 +168,10 @@ FORCE_INLINE int interpolate(int a, int
  	return qRound(a + float64(b - a) * b_ratio);
  }
  
@@ -129,7 +129,7 @@ Last-Update: 2017-12-30
          COMMENT "Precompiling ${_name} for ${_target} (C++)")
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
-@@ -81,14 +81,10 @@
+@@ -68,14 +68,10 @@
        'codegen.gyp:codegen_lang',
        'codegen.gyp:codegen_numbers',
        'codegen.gyp:codegen_style',
@@ -144,7 +144,7 @@ Last-Update: 2017-12-30
        'AL_ALEXT_PROTOTYPES',
        'TGVOIP_USE_CXX11_LIB',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-@@ -97,19 +93,11 @@
+@@ -84,19 +80,11 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -168,7 +168,7 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<@(qrc_files)',
-@@ -130,5 +118,14 @@
+@@ -117,5 +105,14 @@
          ],
        }],
      ],
@@ -185,7 +185,7 @@ Last-Update: 2017-12-30
  }
 --- a/Telegram/gyp/common.gypi
 +++ b/Telegram/gyp/common.gypi
-@@ -104,6 +104,7 @@
+@@ -91,6 +91,7 @@
  
      'library%': 'static_library',
  
@@ -195,7 +195,7 @@ Last-Update: 2017-12-30
    'configurations': {
 --- a/Telegram/gyp/crl.gyp
 +++ b/Telegram/gyp/crl.gyp
-@@ -40,11 +40,11 @@
+@@ -27,11 +27,11 @@
        ],
      }]],
      'variables': {
@@ -211,7 +211,7 @@ Last-Update: 2017-12-30
        '<(crl_src_loc)/common/crl_common_config.h',
 --- a/Telegram/gyp/qt.gypi
 +++ b/Telegram/gyp/qt.gypi
-@@ -27,25 +27,21 @@
+@@ -14,25 +14,21 @@
                [ 'build_macold', {
                  'qt_version%': '5.3.2',
                }, {
@@ -239,7 +239,7 @@ Last-Update: 2017-12-30
              }]
            ]
          },
-@@ -85,32 +81,13 @@
+@@ -72,32 +68,13 @@
              ],
            }],
            [ 'build_linux', {
@@ -275,7 +275,7 @@ Last-Update: 2017-12-30
              ],
            }],
          ],
-@@ -140,11 +117,6 @@
+@@ -127,11 +104,6 @@
      # '<!@(python <(DEPTH)/list_sources.py [sources] <(qt_moc_list_sources_arg))'
      # where [sources] contains all your source files
      'qt_moc_list_sources_arg': '--moc-prefix SHARED_INTERMEDIATE_DIR/<(_target_name)/moc/moc_',
@@ -287,7 +287,7 @@ Last-Update: 2017-12-30
    },
  
    'configurations': {
-@@ -193,14 +165,14 @@
+@@ -180,14 +152,14 @@
    },
  
    'include_dirs': [
@@ -310,7 +310,7 @@ Last-Update: 2017-12-30
    ],
    'library_dirs': [
      '<(qt_loc)/lib',
-@@ -218,24 +190,14 @@
+@@ -205,24 +177,14 @@
    'conditions': [
      [ 'build_linux', {
        'dependencies': [
@@ -336,7 +336,7 @@ Last-Update: 2017-12-30
          '-lglib-2.0',
          '-lpthread',
        ],
-@@ -243,7 +205,6 @@
+@@ -230,7 +192,6 @@
          '<(qt_loc)/mkspecs/linux-g++',
        ],
        'ldflags': [
@@ -346,7 +346,7 @@ Last-Update: 2017-12-30
        ],
 --- a/Telegram/gyp/qt_moc.gypi
 +++ b/Telegram/gyp/qt_moc.gypi
-@@ -30,6 +30,7 @@
+@@ -17,6 +17,7 @@
        # Silence "Note: No relevant classes found. No output generated."
        '--no-notes',
  
@@ -356,7 +356,7 @@ Last-Update: 2017-12-30
        '<(RULE_INPUT_PATH)',
 --- a/Telegram/gyp/settings_linux.gypi
 +++ b/Telegram/gyp/settings_linux.gypi
-@@ -24,7 +24,6 @@
+@@ -11,7 +11,6 @@
          'linux_common_flags': [
            '-pipe',
            '-Wall',
@@ -364,16 +364,16 @@ Last-Update: 2017-12-30
            '-W',
            '-fPIC',
            '-Wno-unused-variable',
-@@ -38,7 +37,7 @@
+@@ -25,7 +24,7 @@
          ],
        },
        'conditions': [
--        [ '"<!(uname -p)" == "x86_64"', {
+-        [ '"<!(uname -m)" == "x86_64" or "<!(uname -m)" == "aarch64"', {
 +        [ '"<!(dpkg-architecture -q DEB_HOST_ARCH_BITS)" == "64"', {
            'defines': [
              'Q_OS_LINUX64',
            ],
-@@ -60,7 +59,6 @@
+@@ -47,7 +46,6 @@
        ],
        'defines': [
          '_REENTRANT',
@@ -383,7 +383,7 @@ Last-Update: 2017-12-30
        'cflags_c': [
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -53,75 +53,45 @@
+@@ -40,75 +40,45 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
@@ -478,7 +478,7 @@ Last-Update: 2017-12-30
  <(src_loc)/base/flags.h
  <(src_loc)/base/enum_mask.h
  <(src_loc)/base/flat_map.h
-@@ -703,7 +702,6 @@
+@@ -750,7 +749,6 @@
  <(src_loc)/observer_peer.h
  <(src_loc)/passcodewidget.cpp
  <(src_loc)/passcodewidget.h
@@ -486,7 +486,7 @@ Last-Update: 2017-12-30
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -713,14 +711,7 @@
+@@ -760,14 +758,7 @@
  <(emoji_suggestions_loc)/emoji_suggestions.cpp
  <(emoji_suggestions_loc)/emoji_suggestions.h
  
