@@ -1,27 +1,13 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/storage_media_prepare.h"
 
 #include "platform/platform_file_utilities.h"
-#include "base/task_queue.h"
 #include "storage/localimageloader.h"
 
 namespace Storage {
@@ -58,8 +44,8 @@ bool PrepareAlbumMediaIsWaiting(
 		QSemaphore &semaphore,
 		PreparedFile &file,
 		int previewWidth) {
-	// Use some special thread queue, like a separate QThreadPool.
-	base::TaskQueue::Normal().Put([&, previewWidth] {
+	// TODO: Use some special thread queue, like a separate QThreadPool.
+	crl::async([=, &semaphore, &file] {
 		const auto guard = gsl::finally([&] { semaphore.release(); });
 		if (!file.path.isEmpty()) {
 			file.mime = mimeTypeForFile(QFileInfo(file.path)).name();
@@ -82,17 +68,17 @@ bool PrepareAlbumMediaIsWaiting(
 		if (const auto image = base::get_if<Image>(
 				&file.information->media)) {
 			if (ValidPhotoForAlbum(*image)) {
-				file.preview = image->data.scaledToWidth(
+				file.preview = Images::prepareOpaque(image->data.scaledToWidth(
 					std::min(previewWidth, convertScale(image->data.width()))
 						* cIntRetinaFactor(),
-					Qt::SmoothTransformation);
+					Qt::SmoothTransformation));
 				file.preview.setDevicePixelRatio(cRetinaFactor());
 				file.type = PreparedFile::AlbumType::Photo;
 			}
 		} else if (const auto video = base::get_if<Video>(
 				&file.information->media)) {
 			if (ValidVideoForAlbum(*video)) {
-				auto blurred = Images::prepareBlur(video->thumbnail);
+				auto blurred = Images::prepareBlur(Images::prepareOpaque(video->thumbnail));
 				file.preview = std::move(blurred).scaledToWidth(
 					previewWidth * cIntRetinaFactor(),
 					Qt::SmoothTransformation);
@@ -149,10 +135,7 @@ PreparedFile &PreparedFile::operator=(PreparedFile &&other) = default;
 PreparedFile::~PreparedFile() = default;
 
 MimeDataState ComputeMimeDataState(const QMimeData *data) {
-	if (!data
-		|| data->hasFormat(qsl("application/x-td-forward-selected"))
-		|| data->hasFormat(qsl("application/x-td-forward-pressed"))
-		|| data->hasFormat(qsl("application/x-td-forward-pressed-link"))) {
+	if (!data || data->hasFormat(qsl("application/x-td-forward"))) {
 		return MimeDataState::None;
 	}
 

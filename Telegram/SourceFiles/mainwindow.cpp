@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mainwindow.h"
 
@@ -25,6 +12,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_dialogs.h"
 #include "styles/style_window.h"
 #include "styles/style_boxes.h"
+#include "history/history.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
@@ -51,7 +39,6 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/themes/window_theme.h"
 #include "window/themes/window_theme_warning.h"
 #include "window/window_main_menu.h"
-#include "base/task_queue.h"
 #include "auth_session.h"
 #include "window/window_controller.h"
 
@@ -166,14 +153,14 @@ void MainWindow::firstShow() {
 		: lng_enable_notifications_from_tray);
 
 	if (isLinux) {
-		trayIconMenu->addAction(lang(lng_open_from_tray), this, SLOT(showFromTray()))->setEnabled(true);
-		trayIconMenu->addAction(lang(lng_minimize_to_tray), this, SLOT(minimizeToTray()))->setEnabled(true);
-		trayIconMenu->addAction(notificationActionText, this, SLOT(toggleDisplayNotifyFromTray()))->setEnabled(true);
-		trayIconMenu->addAction(lang(lng_quit_from_tray), this, SLOT(quitFromTray()))->setEnabled(true);
+		trayIconMenu->addAction(lang(lng_open_from_tray), this, SLOT(showFromTray()));
+		trayIconMenu->addAction(lang(lng_minimize_to_tray), this, SLOT(minimizeToTray()));
+		trayIconMenu->addAction(notificationActionText, this, SLOT(toggleDisplayNotifyFromTray()));
+		trayIconMenu->addAction(lang(lng_quit_from_tray), this, SLOT(quitFromTray()));
 	} else {
-		trayIconMenu->addAction(lang(lng_minimize_to_tray), this, SLOT(minimizeToTray()))->setEnabled(true);
-		trayIconMenu->addAction(notificationActionText, this, SLOT(toggleDisplayNotifyFromTray()))->setEnabled(true);
-		trayIconMenu->addAction(lang(lng_quit_from_tray), this, SLOT(quitFromTray()))->setEnabled(true);
+		trayIconMenu->addAction(lang(lng_minimize_to_tray), this, SLOT(minimizeToTray()));
+		trayIconMenu->addAction(notificationActionText, this, SLOT(toggleDisplayNotifyFromTray()));
+		trayIconMenu->addAction(lang(lng_quit_from_tray), this, SLOT(quitFromTray()));
 	}
 	Global::RefWorkMode().setForced(Global::WorkMode().value(), true);
 
@@ -236,7 +223,9 @@ void MainWindow::setupPasscode() {
 }
 
 void MainWindow::setupIntro() {
-	if (_intro && !_intro->isHidden() && !_main) return;
+	if (_intro && !_intro->isHidden() && !_main) {
+		return;
+	}
 
 	Ui::hideSettingsAndLayer(anim::type::instant);
 
@@ -535,24 +524,23 @@ void MainWindow::themeUpdated(const Window::Theme::BackgroundUpdate &data) {
 			_testingThemeWarning->setGeometry(rect());
 			_testingThemeWarning->setHiddenCallback([this] { _testingThemeWarning.destroyDelayed(); });
 		}
-
-		base::TaskQueue::Main().Put(base::lambda_guarded(this, [this] {
+		crl::on_main(this, [=] {
 			if (_testingThemeWarning) {
 				_testingThemeWarning->showAnimated();
 			}
-		}));
+		});
 	} else if (data.type == Type::RevertingTheme || data.type == Type::ApplyingTheme) {
 		if (_testingThemeWarning) {
 			if (_testingThemeWarning->isHidden()) {
 				_testingThemeWarning.destroy();
 			} else {
-				base::TaskQueue::Main().Put(base::lambda_guarded(this, [this] {
+				crl::on_main(this, [=] {
 					if (_testingThemeWarning) {
 						_testingThemeWarning->hideAnimated();
 						_testingThemeWarning = nullptr;
 					}
 					setInnerFocus();
-				}));
+				});
 			}
 		}
 	}
@@ -791,13 +779,20 @@ void MainWindow::toggleTray(QSystemTrayIcon::ActivationReason reason) {
 	if (reason == QSystemTrayIcon::Context) {
 		updateTrayMenu(true);
 		QTimer::singleShot(1, this, SLOT(psShowTrayMenu()));
-	} else {
+	} else if (!skipTrayClick()) {
 		if (isActive()) {
 			minimizeToTray();
 		} else {
 			showFromTray(reason);
 		}
+		_lastTrayClickTime = getms();
 	}
+}
+
+bool MainWindow::skipTrayClick() const {
+	return (_lastTrayClickTime > 0)
+		&& (getms() - _lastTrayClickTime
+			< QApplication::doubleClickInterval());
 }
 
 void MainWindow::toggleDisplayNotifyFromTray() {
@@ -905,10 +900,6 @@ void MainWindow::onClearFailed(int task, void *manager) {
 		_clearManager = nullptr;
 	}
 	emit tempDirClearFailed(task);
-}
-
-void MainWindow::app_activateClickHandler(ClickHandlerPtr handler, Qt::MouseButton button) {
-	handler->onClick(button);
 }
 
 void MainWindow::placeSmallCounter(QImage &img, int size, int count, style::color bg, const QPoint &shift, style::color color) {

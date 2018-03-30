@@ -1,29 +1,15 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/file_utilities.h"
 
 #include "mainwindow.h"
 #include "storage/localstorage.h"
 #include "platform/platform_file_utilities.h"
-#include "base/task_queue.h"
 #include "messenger.h"
 
 bool filedialogGetSaveFile(
@@ -43,7 +29,7 @@ QString filedialogDefaultName(
 		const QString &extension,
 		const QString &path,
 		bool skipExistance,
-		int fileTime) {
+		TimeId fileTime) {
 	auto directoryPath = path;
 	if (directoryPath.isEmpty()) {
 		if (cDialogLastPath().isEmpty()) {
@@ -54,7 +40,8 @@ QString filedialogDefaultName(
 
 	QString base;
 	if (fileTime) {
-		base = prefix + ::date(fileTime).toString("_yyyy-MM-dd_HH-mm-ss");
+		const auto date = ParseDateTime(fileTime);
+		base = prefix + date.toString("_yyyy-MM-dd_HH-mm-ss");
 	} else {
 		struct tm tm;
 		time_t t = time(NULL);
@@ -99,13 +86,13 @@ QString filedialogNextFilename(
 namespace File {
 
 void OpenEmailLink(const QString &email) {
-	base::TaskQueue::Main().Put([email] {
+	crl::on_main([=] {
 		Platform::File::UnsafeOpenEmailLink(email);
 	});
 }
 
 void OpenWith(const QString &filepath, QPoint menuPosition) {
-	base::TaskQueue::Main().Put([filepath, menuPosition] {
+	InvokeQueued(QApplication::instance(), [=] {
 		if (!Platform::File::UnsafeShowOpenWithDropdown(filepath, menuPosition)) {
 			if (!Platform::File::UnsafeShowOpenWith(filepath)) {
 				Platform::File::UnsafeLaunch(filepath);
@@ -115,13 +102,13 @@ void OpenWith(const QString &filepath, QPoint menuPosition) {
 }
 
 void Launch(const QString &filepath) {
-	base::TaskQueue::Main().Put([filepath] {
+	crl::on_main([=] {
 		Platform::File::UnsafeLaunch(filepath);
 	});
 }
 
 void ShowInFolder(const QString &filepath) {
-	base::TaskQueue::Main().Put([filepath] {
+	crl::on_main([=] {
 		Platform::File::UnsafeShowInFolder(filepath);
 	});
 }
@@ -147,7 +134,7 @@ void GetOpenPath(
 		const QString &filter,
 		base::lambda<void(OpenResult &&result)> callback,
 		base::lambda<void()> failed) {
-	base::TaskQueue::Main().Put([=] {
+	InvokeQueued(QApplication::instance(), [=] {
 		auto files = QStringList();
 		auto remoteContent = QByteArray();
 		const auto success = Platform::FileDialog::Get(
@@ -178,7 +165,7 @@ void GetOpenPaths(
 		const QString &filter,
 		base::lambda<void(OpenResult &&result)> callback,
 		base::lambda<void()> failed) {
-	base::TaskQueue::Main().Put([=] {
+	InvokeQueued(QApplication::instance(), [=] {
 		auto files = QStringList();
 		auto remoteContent = QByteArray();
 		const auto success = Platform::FileDialog::Get(
@@ -206,7 +193,7 @@ void GetWritePath(
 		const QString &initialPath,
 		base::lambda<void(QString &&result)> callback,
 		base::lambda<void()> failed) {
-	base::TaskQueue::Main().Put([=] {
+	InvokeQueued(QApplication::instance(), [=] {
 		auto file = QString();
 		if (filedialogGetSaveFile(file, caption, filter, initialPath)) {
 			if (callback) {
@@ -223,7 +210,7 @@ void GetFolder(
 		const QString &initialPath,
 		base::lambda<void(QString &&result)> callback,
 		base::lambda<void()> failed) {
-	base::TaskQueue::Main().Put([=] {
+	InvokeQueued(QApplication::instance(), [=] {
 		auto files = QStringList();
 		auto remoteContent = QByteArray();
 		const auto success = Platform::FileDialog::Get(
