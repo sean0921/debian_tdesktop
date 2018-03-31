@@ -33,7 +33,7 @@ Vcs-Browser: https://salsa.debian.org/debian/telegram-desktop
 Package: telegram-desktop
 Architecture: any
 Depends: qt5-image-formats-plugins (>=5.5), ${misc:Depends}, ${shlibs:Depends}
-Recommends: libappindicator3-1
+Recommends: fonts-open-sans, libappindicator3-1
 Description: official telegram messaging app
  Telegram is a messaging app with a focus on speed and security, it is
  super-fast, simple and free. You can use Telegram on all your devices at the
