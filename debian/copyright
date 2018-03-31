@@ -3,7 +3,7 @@ Upstream-Name: Telegram Desktop
 Source: https://github.com/telegramdesktop/tdesktop
 
 Files: *
-Copyright: 2014-2017 John Preston <johnprestonmail@gmail.com>
+Copyright: 2014-2018 John Preston <johnprestonmail@gmail.com>
 License: GPL-3.0+ with OpenSSL exception
 
 Files: Telegram/Patches/qtbase_5_6_2.diff
@@ -52,12 +52,12 @@ Comment: Source code on GitHub - https://github.com/nevyn/SPMediaKeyTap
 Files: debian/*
        Telegram/SourceFiles/boxes/mute_settings_box.h
        Telegram/SourceFiles/boxes/mute_settings_box.cpp
-Copyright: 2016-2017 Nicholas Guriev <guriev-ns@ya.ru>
+Copyright: 2016-2018 Nicholas Guriev <guriev-ns@ya.ru>
 License: Public-domain
 Comment: Contributing policy - https://cla-assistant.io/telegramdesktop/tdesktop
 
 Files: debian/crl/*
-Copyright: 2014-2017 John Preston <johnprestonmail@gmail.com>
+Copyright: 2014-2018 John Preston <johnprestonmail@gmail.com>
 License: GPL-3.0+ with OpenSSL exception
 Comment: Source code on GitHub - https://github.com/telegramdesktop/crl
 
