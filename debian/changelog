@@ -1,6 +1,7 @@
 telegram-desktop (1.2.17-1) unstable; urgency=medium
 
   * New upstream release
+  * Update standards version, no related changes for this
 
  -- Nicholas Guriev <guriev-ns@ya.ru>  Sat, 21 Apr 2018 21:35:32 +0300
 
