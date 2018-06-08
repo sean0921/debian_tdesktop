@@ -224,7 +224,7 @@ History::History(const PeerId &peerId)
 : Entry(this)
 , peer(App::peer(peerId))
 , cloudDraftTextCache(st::dialogsTextWidthMin)
-, _mute(peer->isMuted())
+, _mute(Auth().data().notifyIsMuted(peer))
 , _sendActionText(st::dialogsTextWidthMin) {
 	if (const auto user = peer->asUser()) {
 		if (user->botInfo) {
@@ -2134,6 +2134,15 @@ void History::updateChatListExistence() {
 	}
 }
 
+bool History::useProxyPromotion() const {
+	if (!isProxyPromoted()) {
+		return false;
+	} else if (const auto channel = peer->asChannel()) {
+		return !isPinnedDialog() && !channel->amIn();
+	}
+	return false;
+}
+
 bool History::shouldBeInChatList() const {
 	if (peer->migrateTo()) {
 		return false;
@@ -2141,7 +2150,7 @@ bool History::shouldBeInChatList() const {
 		return true;
 	} else if (const auto channel = peer->asChannel()) {
 		if (!channel->amIn()) {
-			return false;
+			return isProxyPromoted();
 		} else if (const auto feed = channel->feed()) {
 			return !feed->needUpdateInChatList();
 		}
@@ -2185,10 +2194,9 @@ void History::applyDialog(const MTPDdialog &data) {
 			}
 		}
 	}
-	App::main()->applyNotifySetting(
+	Auth().data().applyNotifySetting(
 		MTP_notifyPeer(data.vpeer),
-		data.vnotify_settings,
-		this);
+		data.vnotify_settings);
 	if (data.has_draft() && data.vdraft.type() == mtpc_draftMessage) {
 		Data::applyPeerCloudDraft(peer->id, data.vdraft.c_draftMessage());
 	}
@@ -2275,7 +2283,8 @@ HistoryItem *History::lastSentMessage() const {
 	for (const auto &block : base::reversed(blocks)) {
 		for (const auto &message : base::reversed(block->messages)) {
 			const auto item = message->data();
-			if (IsServerMsgId(item->id) && item->out()) {
+			if (IsServerMsgId(item->id)
+				&& (item->out() || peer->isSelf())) {
 				return item;
 			}
 		}
@@ -2471,6 +2480,12 @@ void History::checkJoinedMessage(bool createUnread) {
 				setLastMessage(_joinedMessage);
 			}
 		}
+	}
+}
+
+void History::removeJoinedMessage() {
+	if (_joinedMessage) {
+		base::take(_joinedMessage)->destroy();
 	}
 }
 

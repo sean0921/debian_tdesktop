@@ -25,6 +25,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_file_parser.h"
 #include "lang/lang_translator.h"
 #include "lang/lang_cloud_manager.h"
+#include "lang/lang_hardcoded.h"
+#include "core/update_checker.h"
 #include "observer_peer.h"
 #include "storage/file_upload.h"
 #include "mainwidget.h"
@@ -44,6 +46,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qthelp_url.h"
 #include "boxes/connection_box.h"
 #include "boxes/confirm_phone_box.h"
+#include "boxes/confirm_box.h"
 #include "boxes/share_box.h"
 
 namespace {
@@ -77,12 +80,14 @@ Messenger::Messenger(not_null<Core::Launcher*> launcher)
 	Expects(!_logo.isNull());
 	Expects(!_logoNoMargin.isNull());
 	Expects(SingleInstance == nullptr);
+
 	SingleInstance = this;
 
 	Fonts::Start();
 
 	ThirdParty::start();
 	Global::start();
+	Sandbox::refreshGlobalProxy(); // Depends on Global::started().
 
 	startLocalStorage();
 
@@ -166,10 +171,6 @@ Messenger::Messenger(not_null<Core::Launcher*> launcher)
 	if (cStartToSettings()) {
 		_window->showSettings();
 	}
-
-#ifndef TDESKTOP_DISABLE_NETWORK_PROXY
-	QNetworkProxyFactory::setUseSystemConfiguration(true);
-#endif // !TDESKTOP_DISABLE_NETWORK_PROXY
 
 	_window->updateIsActive(Global::OnlineFocusTimeout());
 
@@ -280,13 +281,50 @@ bool Messenger::eventFilter(QObject *object, QEvent *e) {
 	return QObject::eventFilter(object, e);
 }
 
+void Messenger::setCurrentProxy(
+		const ProxyData &proxy,
+		bool enabled) {
+	const auto key = [&](const ProxyData &proxy) {
+		if (proxy.type == ProxyData::Type::Mtproto) {
+			return std::make_pair(proxy.host, proxy.port);
+		}
+		return std::make_pair(QString(), uint32(0));
+	};
+	const auto previousKey = key(Global::UseProxy()
+		? Global::SelectedProxy()
+		: ProxyData());
+	Global::SetSelectedProxy(proxy);
+	Global::SetUseProxy(enabled);
+	Sandbox::refreshGlobalProxy();
+	if (_mtproto) {
+		_mtproto->restart();
+		if (previousKey != key(proxy)) {
+			_mtproto->reInitConnection(_mtproto->mainDcId());
+		}
+	}
+	if (_mtprotoForKeysDestroy) {
+		_mtprotoForKeysDestroy->restart();
+	}
+	Global::RefConnectionTypeChanged().notify();
+}
+
+void Messenger::badMtprotoConfigurationError() {
+	if (Global::UseProxy() && !_badProxyDisableBox) {
+		_badProxyDisableBox = Ui::show(Box<InformBox>(
+			Lang::Hard::ProxyConfigError(),
+			[=] { setCurrentProxy(Global::SelectedProxy(), false); }));
+	}
+}
+
 void Messenger::setMtpMainDcId(MTP::DcId mainDcId) {
 	Expects(!_mtproto);
+
 	_private->mtpConfig.mainDcId = mainDcId;
 }
 
 void Messenger::setMtpKey(MTP::DcId dcId, const MTP::AuthKey::Data &keyData) {
 	Expects(!_mtproto);
+
 	_private->mtpConfig.keys.push_back(std::make_shared<MTP::AuthKey>(MTP::AuthKey::Type::ReadFromFile, dcId, keyData));
 }
 
@@ -391,12 +429,17 @@ void Messenger::setMtpAuthorization(const QByteArray &serialized) {
 
 void Messenger::startMtp() {
 	Expects(!_mtproto);
-	_mtproto = std::make_unique<MTP::Instance>(_dcOptions.get(), MTP::Instance::Mode::Normal, base::take(_private->mtpConfig));
+
+	_mtproto = std::make_unique<MTP::Instance>(
+		_dcOptions.get(),
+		MTP::Instance::Mode::Normal,
+		base::take(_private->mtpConfig));
+	_mtproto->setUserPhone(cLoggedPhoneNumber());
 	_private->mtpConfig.mainDcId = _mtproto->mainDcId();
 
-	_mtproto->setStateChangedHandler([](MTP::ShiftedDcId shiftedDcId, int32 state) {
-		if (App::wnd()) {
-			App::wnd()->mtpStateChanged(shiftedDcId, state);
+	_mtproto->setStateChangedHandler([](MTP::ShiftedDcId dc, int32 state) {
+		if (dc == MTP::maindc()) {
+			Global::RefConnectionTypeChanged().notify();
 		}
 	});
 	_mtproto->setSessionResetHandler([](MTP::ShiftedDcId shiftedDcId) {
@@ -420,7 +463,12 @@ void Messenger::startMtp() {
 		_private->storedAuthSession.reset();
 	}
 
-	_langCloudManager = std::make_unique<Lang::CloudManager>(langpack(), mtp());
+	_langCloudManager = std::make_unique<Lang::CloudManager>(
+		langpack(),
+		mtp());
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
+	Core::UpdateChecker().setMtproto(mtp());
+#endif // TDESKTOP_DISABLE_AUTOUPDATE
 }
 
 void Messenger::destroyMtpKeys(MTP::AuthKeysList &&keys) {
@@ -487,6 +535,20 @@ void Messenger::startLocalStorage() {
 		InvokeQueued(this, [this] {
 			if (_mtproto) {
 				_mtproto->requestConfig();
+			}
+		});
+	});
+	subscribe(Global::RefSelfChanged(), [=] {
+		InvokeQueued(this, [=] {
+			const auto phone = App::self()
+				? App::self()->phone()
+				: QString();
+			if (cLoggedPhoneNumber() != phone) {
+				cSetLoggedPhoneNumber(phone);
+				if (_mtproto) {
+					_mtproto->setUserPhone(phone);
+				}
+				Local::writeSettings();
 			}
 		});
 	});
@@ -839,7 +901,11 @@ bool Messenger::openLocalUrl(const QString &url) {
 		}
 	} else if (auto socksMatch = regex_match(qsl("^socks/?\\?(.+)(#|$)"), command, matchOptions)) {
 		auto params = url_parse_params(socksMatch->captured(1), UrlParamNameTransform::ToLower);
-		ConnectionBox::ShowApplyProxyConfirmation(params);
+		ProxiesBoxController::ShowApplyConfirmation(ProxyData::Type::Socks5, params);
+		return true;
+	} else if (auto proxyMatch = regex_match(qsl("^proxy/?\\?(.+)(#|$)"), command, matchOptions)) {
+		auto params = url_parse_params(proxyMatch->captured(1), UrlParamNameTransform::ToLower);
+		ProxiesBoxController::ShowApplyConfirmation(ProxyData::Type::Mtproto, params);
 		return true;
 	}
 	return false;

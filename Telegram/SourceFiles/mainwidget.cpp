@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/shadow.h"
 #include "window/section_memento.h"
 #include "window/section_widget.h"
+#include "window/window_connecting_widget.h"
 #include "ui/widgets/dropdown_menu.h"
 #include "ui/focus_persister.h"
 #include "ui/resize_area.h"
@@ -56,6 +57,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/mute_settings_box.h"
 #include "boxes/peer_list_controllers.h"
 #include "boxes/download_path_box.h"
+#include "boxes/connection_box.h"
 #include "storage/localstorage.h"
 #include "shortcuts.h"
 #include "media/media_audio.h"
@@ -74,6 +76,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/themes/window_theme.h"
 #include "mtproto/dc_options.h"
 #include "core/file_utilities.h"
+#include "core/update_checker.h"
 #include "calls/calls_instance.h"
 #include "calls/calls_top_bar.h"
 #include "auth_session.h"
@@ -213,6 +216,7 @@ MainWidget::MainWidget(
 
 	_ptsWaiter.setRequesting(true);
 	updateScrollColors();
+	setupConnectingWidget();
 
 	connect(_dialogs, SIGNAL(cancelled()), this, SLOT(dialogsCancelled()));
 	connect(this, SIGNAL(dialogsUpdated()), _dialogs, SLOT(onListScroll()));
@@ -224,7 +228,6 @@ MainWidget::MainWidget(
 	connect(&_byPtsTimer, SIGNAL(timeout()), this, SLOT(onGetDifferenceTimeByPts()));
 	connect(&_byMinChannelTimer, SIGNAL(timeout()), this, SLOT(getDifference()));
 	connect(&_failDifferenceTimer, SIGNAL(timeout()), this, SLOT(onGetDifferenceTimeAfterFail()));
-	connect(&updateNotifySettingTimer, SIGNAL(timeout()), this, SLOT(onUpdateNotifySettings()));
 	subscribe(Media::Player::Updated(), [this](const AudioMsgId &audioId) {
 		if (audioId.type() != AudioMsgId::Type::Video) {
 			handleAudioUpdate(audioId);
@@ -264,7 +267,6 @@ MainWidget::MainWidget(
 
 	QCoreApplication::instance()->installEventFilter(this);
 
-	connect(&_updateMutedTimer, SIGNAL(timeout()), this, SLOT(onUpdateMuted()));
 	connect(&_viewsIncrementTimer, SIGNAL(timeout()), this, SLOT(onViewsIncrement()));
 
 	using Update = Window::Theme::BackgroundUpdate;
@@ -323,8 +325,16 @@ MainWidget::MainWidget(
 	orderWidgets();
 
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
-	Sandbox::startUpdateCheck();
+	Core::UpdateChecker checker;
+	checker.start();
 #endif // !TDESKTOP_DISABLE_AUTOUPDATE
+}
+
+void MainWidget::setupConnectingWidget() {
+	using namespace rpl::mappers;
+	_connecting = Window::ConnectingWidget::CreateDefaultWidget(
+		this,
+		Window::AdaptiveIsOneColumn() | rpl::map(!_1));
 }
 
 void MainWidget::checkCurrentFloatPlayer() {
@@ -703,20 +713,9 @@ void MainWidget::finishForwarding(not_null<History*> history) {
 	dialogsToUp();
 }
 
-void MainWidget::updateMutedIn(TimeMs delay) {
-	accumulate_max(delay, 24 * 3600 * 1000LL);
-	if (!_updateMutedTimer.isActive()
-		|| _updateMutedTimer.remainingTime() > delay) {
-		_updateMutedTimer.start(delay);
-	}
-}
-
-void MainWidget::onUpdateMuted() {
-	App::updateMuted();
-}
-
 bool MainWidget::onSendPaths(const PeerId &peerId) {
 	Expects(peerId != 0);
+
 	auto peer = App::peer(peerId);
 	if (!peer->canWrite()) {
 		Ui::show(Box<InformBox>(lang(lng_forward_send_files_cant)));
@@ -1250,7 +1249,10 @@ void MainWidget::sendMessage(const MessageToSend &message) {
 	saveRecentHashtags(textWithTags.text);
 
 	auto sending = TextWithEntities();
-	auto left = TextWithEntities { textWithTags.text, ConvertTextTagsToEntities(textWithTags.tags) };
+	auto left = TextWithEntities {
+		textWithTags.text,
+		ConvertTextTagsToEntities(textWithTags.tags)
+	};
 	auto prepareFlags = Ui::ItemTextOptions(history, App::self()).flags;
 	TextUtilities::PrepareForSending(left, prepareFlags);
 
@@ -1284,7 +1286,8 @@ void MainWidget::sendMessage(const MessageToSend &message) {
 			flags |= MTPDmessage::Flag::f_media;
 		}
 		bool channelPost = peer->isChannel() && !peer->isMegagroup();
-		bool silentPost = channelPost && peer->notifySilentPosts();
+		bool silentPost = channelPost
+			&& Auth().data().notifySilentPosts(peer);
 		if (channelPost) {
 			flags |= MTPDmessage::Flag::f_views;
 			flags |= MTPDmessage::Flag::f_post;
@@ -1307,7 +1310,9 @@ void MainWidget::sendMessage(const MessageToSend &message) {
 			history->clearCloudDraft();
 		}
 		auto messageFromId = channelPost ? 0 : Auth().userId();
-		auto messagePostAuthor = channelPost ? (Auth().user()->firstName + ' ' + Auth().user()->lastName) : QString();
+		auto messagePostAuthor = channelPost
+			? App::peerName(Auth().user())
+			: QString();
 		lastMessage = history->addNewMessage(
 			MTP_message(
 				MTP_flags(flags),
@@ -2565,6 +2570,7 @@ void MainWidget::orderWidgets() {
 	if (_thirdColumnResizeArea) {
 		_thirdColumnResizeArea->raise();
 	}
+	_connecting->raise();
 	_playerPlaylist->raise();
 	_playerPanel->raise();
 	for (auto &instance : _playerFloats) {
@@ -3294,22 +3300,6 @@ void MainWidget::searchInChat(Dialogs::Key chat) {
 	}
 }
 
-void MainWidget::onUpdateNotifySettings() {
-	if (this != App::main()) return;
-
-	while (!updateNotifySettingPeers.empty()) {
-		auto peer = *updateNotifySettingPeers.begin();
-		updateNotifySettingPeers.erase(updateNotifySettingPeers.begin());
-		MTP::send(
-			MTPaccount_UpdateNotifySettings(
-				MTP_inputNotifyPeer(peer->input),
-				peer->notifySerialize()),
-			RPCResponseHandler(),
-			0,
-			updateNotifySettingPeers.empty() ? 0 : 10);
-	}
-}
-
 void MainWidget::feedUpdateVector(
 		const MTPVector<MTPUpdate> &updates,
 		bool skipMessageIds) {
@@ -3704,8 +3694,11 @@ void MainWidget::start(const MTPUser *self) {
 	if (!self) {
 		MTP::send(MTPusers_GetFullUser(MTP_inputUserSelf()), rpcDone(&MainWidget::startWithSelf));
 		return;
-	}
-	if (!Auth().validateSelf(*self)) {
+	} else if (!Auth().validateSelf(*self)) {
+		constexpr auto kRequestUserAgainTimeout = TimeMs(10000);
+		App::CallDelayed(kRequestUserAgainTimeout, this, [=] {
+			MTP::send(MTPusers_GetFullUser(MTP_inputUserSelf()), rpcDone(&MainWidget::startWithSelf));
+		});
 		return;
 	}
 
@@ -3977,62 +3970,6 @@ void MainWidget::startWithSelf(const MTPUserFull &result) {
 	start(&d.vuser);
 	if (auto user = App::self()) {
 		Auth().api().processFullPeer(user, result);
-	}
-}
-
-void MainWidget::applyNotifySetting(
-		const MTPNotifyPeer &notifyPeer,
-		const MTPPeerNotifySettings &settings,
-		History *history) {
-	if (notifyPeer.type() != mtpc_notifyPeer) {
-		// Ignore those for now, they were not ever used.
-		return;
-	}
-
-	const auto &data = notifyPeer.c_notifyPeer();
-	const auto peer = App::peerLoaded(peerFromMTP(data.vpeer));
-	if (!peer || !peer->notifyChange(settings)) {
-		return;
-	}
-
-	updateNotifySettingsLocal(peer, history);
-}
-
-void MainWidget::updateNotifySettings(
-		not_null<PeerData*> peer,
-		Data::NotifySettings::MuteChange mute,
-		Data::NotifySettings::SilentPostsChange silent,
-		int muteForSeconds) {
-	if (peer->notifyChange(mute, silent, muteForSeconds)) {
-		updateNotifySettingsLocal(peer);
-		updateNotifySettingPeers.insert(peer);
-		updateNotifySettingTimer.start(NotifySettingSaveTimeout);
-	}
-}
-
-void MainWidget::updateNotifySettingsLocal(
-		not_null<PeerData*> peer,
-		History *history) {
-	if (!history) {
-		history = App::historyLoaded(peer->id);
-	}
-
-	const auto muteFinishesIn = peer->notifyMuteFinishesIn();
-	const auto muted = (muteFinishesIn > 0);
-	if (history && history->changeMute(muted)) {
-		// Notification already sent.
-	} else {
-		Notify::peerUpdatedDelayed(
-			peer,
-			Notify::PeerUpdate::Flag::NotificationsEnabled);
-	}
-	if (muted) {
-		App::regMuted(peer, muteFinishesIn);
-		if (history) {
-			Auth().notifications().clearFromHistory(history);
-		}
-	} else {
-		App::unregMuted(peer);
 	}
 }
 
@@ -4924,7 +4861,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateNotifySettings: {
 		auto &d = update.c_updateNotifySettings();
-		applyNotifySetting(d.vpeer, d.vnotify_settings);
+		Auth().data().applyNotifySetting(d.vpeer, d.vnotify_settings);
 	} break;
 
 	case mtpc_updateDcOptions: {
@@ -5079,11 +5016,9 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 		auto &d = update.c_updateChannel();
 		if (const auto channel = App::channelLoaded(d.vchannel_id.v)) {
 			channel->inviter = UserId(0);
-			if (!channel->amIn()) {
-				if (const auto history = App::historyLoaded(channel->id)) {
-					history->updateChatListExistence();
-				}
-			} else if (!channel->amCreator() && App::history(channel->id)) {
+			if (channel->amIn()
+				&& !channel->amCreator()
+				&& App::history(channel->id)) {
 				_updatedChannels.insert(channel, true);
 				Auth().api().requestSelfParticipant(channel);
 			}

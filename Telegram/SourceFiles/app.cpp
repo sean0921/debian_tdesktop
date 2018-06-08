@@ -38,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "observer_peer.h"
 #include "auth_session.h"
 #include "core/crash_reports.h"
+#include "core/update_checker.h"
 #include "storage/storage_facade.h"
 #include "storage/storage_shared_media.h"
 #include "window/themes/window_theme.h"
@@ -51,9 +52,6 @@ namespace {
 
 	using PeersData = QHash<PeerId, PeerData*>;
 	PeersData peersData;
-
-	using MutedPeers = QMap<not_null<PeerData*>, bool>;
-	MutedPeers mutedPeers;
 
 	using LocationsData = QHash<LocationCoords, LocationData*>;
 	LocationsData locationsData;
@@ -167,9 +165,6 @@ namespace {
 
 		cSetOtherOnline(0);
 		clearStorageImages();
-		if (auto w = wnd()) {
-			w->updateConnectingStatus();
-		}
 		return true;
 	}
 } // namespace
@@ -1155,10 +1150,19 @@ namespace {
 		return i.value();
 	}
 
-	void enumerateUsers(base::lambda<void(UserData*)> action) {
-		for_const (auto peer, peersData) {
-			if (auto user = peer->asUser()) {
+	void enumerateUsers(base::lambda<void(not_null<UserData*>)> action) {
+		for_const (const auto peer, peersData) {
+			if (const auto user = peer->asUser()) {
 				action(user);
+			}
+		}
+	}
+
+	void enumerateChatsChannels(
+			base::lambda<void(not_null<PeerData*>)> action) {
+		for_const (const auto peer, peersData) {
+			if (!peer->isUser()) {
+				action(peer);
 			}
 		}
 	}
@@ -1311,7 +1315,6 @@ namespace {
 	void historyClearItems() {
 		randomData.clear();
 		sentData.clear();
-		mutedPeers.clear();
 		cSetSavedPeers(SavedPeers());
 		cSetSavedPeersByTime(SavedPeersByTime());
 		cSetRecentInlineBots(RecentInlineBots());
@@ -1667,7 +1670,7 @@ namespace {
 
 	void restart() {
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
-		bool updateReady = (Sandbox::updatingState() == Application::UpdatingReady);
+		bool updateReady = (Core::UpdateChecker().state() == Core::UpdateChecker::State::Ready);
 #else // !TDESKTOP_DISABLE_AUTOUPDATE
 		bool updateReady = false;
 #endif // else for !TDESKTOP_DISABLE_AUTOUPDATE
@@ -1748,70 +1751,6 @@ namespace {
 
 	QPixmap pixmapFromImageInPlace(QImage &&image) {
 		return QPixmap::fromImage(std::move(image), Qt::ColorOnly);
-	}
-
-	void regMuted(not_null<PeerData*> peer, TimeMs changeIn) {
-		::mutedPeers.insert(peer, true);
-		App::main()->updateMutedIn(changeIn);
-	}
-
-	void unregMuted(not_null<PeerData*> peer) {
-		::mutedPeers.remove(peer);
-	}
-
-	void updateMuted() {
-		auto changeInMin = TimeMs(0);
-		for (auto i = ::mutedPeers.begin(); i != ::mutedPeers.end();) {
-			const auto history = App::historyLoaded(i.key()->id);
-			const auto muteFinishesIn = i.key()->notifyMuteFinishesIn();
-			if (muteFinishesIn > 0) {
-				if (history) {
-					history->changeMute(true);
-				}
-				if (!changeInMin || muteFinishesIn < changeInMin) {
-					changeInMin = muteFinishesIn;
-				}
-				++i;
-			} else {
-				if (history) {
-					history->changeMute(false);
-				}
-				i = ::mutedPeers.erase(i);
-			}
-		}
-		if (changeInMin) App::main()->updateMutedIn(changeInMin);
-	}
-
-	void setProxySettings(QNetworkAccessManager &manager) {
-#ifndef TDESKTOP_DISABLE_NETWORK_PROXY
-		manager.setProxy(getHttpProxySettings());
-#endif // !TDESKTOP_DISABLE_NETWORK_PROXY
-	}
-
-#ifndef TDESKTOP_DISABLE_NETWORK_PROXY
-	QNetworkProxy getHttpProxySettings() {
-		const ProxyData *proxy = nullptr;
-		if (Global::started()) {
-			proxy = (Global::ConnectionType() == dbictHttpProxy) ? (&Global::ConnectionProxy()) : nullptr;
-		} else {
-			proxy = Sandbox::PreLaunchProxy().host.isEmpty() ? nullptr : (&Sandbox::PreLaunchProxy());
-		}
-		if (proxy) {
-			return QNetworkProxy(QNetworkProxy::HttpProxy, proxy->host, proxy->port, proxy->user, proxy->password);
-		}
-		return QNetworkProxy(QNetworkProxy::DefaultProxy);
-	}
-#endif // !TDESKTOP_DISABLE_NETWORK_PROXY
-
-	void setProxySettings(QTcpSocket &socket) {
-#ifndef TDESKTOP_DISABLE_NETWORK_PROXY
-		if (Global::ConnectionType() == dbictTcpProxy) {
-			auto &p = Global::ConnectionProxy();
-			socket.setProxy(QNetworkProxy(QNetworkProxy::Socks5Proxy, p.host, p.port, p.user, p.password));
-		} else {
-			socket.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
-		}
-#endif // !TDESKTOP_DISABLE_NETWORK_PROXY
 	}
 
 	void rectWithCorners(Painter &p, QRect rect, const style::color &bg, RoundCorners index, RectParts corners) {

@@ -26,8 +26,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/labels.h"
 #include "ui/wrap/fade_wrap.h"
 #include "ui/effects/slide_animation.h"
-#include "autoupdater.h"
+#include "core/update_checker.h"
 #include "window/window_slide_animation.h"
+#include "window/window_connecting_widget.h"
 #include "styles/style_boxes.h"
 #include "styles/style_intro.h"
 #include "styles/style_window.h"
@@ -40,9 +41,70 @@ namespace {
 
 constexpr str_const kDefaultCountry = "US";
 
+class TermsBox : public BoxContent {
+public:
+	TermsBox(
+		QWidget*,
+		const QString &text,
+		base::lambda<QString()> button);
+
+	rpl::producer<> agreeClicks() const;
+
+protected:
+	void prepare() override;
+
+	void keyPressEvent(QKeyEvent *e) override;
+
+private:
+	QString _text;
+	base::lambda<QString()> _button;
+	rpl::event_stream<> _agreeClicks;
+
+};
+
+TermsBox::TermsBox(
+	QWidget*,
+	const QString &text,
+	base::lambda<QString()> button)
+: _text(text)
+, _button(button) {
+}
+
+rpl::producer<> TermsBox::agreeClicks() const {
+	return _agreeClicks.events();
+}
+
+void TermsBox::prepare() {
+	setTitle(langFactory(lng_terms_header));
+	addButton(_button, [=] {})->clicks(
+	) | rpl::start_to_stream(_agreeClicks, lifetime());
+
+	const auto content = Ui::CreateChild<Ui::PaddingWrap<Ui::FlatLabel>>(
+		this,
+		object_ptr<Ui::FlatLabel>(
+			this,
+			_text,
+			Ui::FlatLabel::InitType::Rich,
+			st::introTermsContent),
+		st::introTermsPadding);
+	content->resizeToWidth(st::boxWideWidth);
+	content->heightValue(
+	) | rpl::start_with_next([=](int height) {
+		setDimensions(st::boxWideWidth, height);
+	}, content->lifetime());
+}
+
+void TermsBox::keyPressEvent(QKeyEvent *e) {
+	if (e->key() == Qt::Key_Enter || e->key() == Qt::Key_Return) {
+		_agreeClicks.fire({});
+	} else {
+		BoxContent::keyPressEvent(e);
+	}
+}
+
 } // namespace
 
-Widget::Widget(QWidget *parent) : TWidget(parent)
+Widget::Widget(QWidget *parent) : RpWidget(parent)
 , _back(this, object_ptr<Ui::IconButton>(this, st::introBackButton))
 , _settings(
 	this,
@@ -65,6 +127,7 @@ Widget::Widget(QWidget *parent) : TWidget(parent)
 	_settings->entity()->setClickedCallback([] { App::wnd()->showSettings(); });
 
 	getNearestDC();
+	setupConnectingWidget();
 
 	appendStep(new StartWidget(this, getData()));
 	fixOrder();
@@ -82,12 +145,25 @@ Widget::Widget(QWidget *parent) : TWidget(parent)
 	cSetPasswordRecovered(false);
 
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
-	Sandbox::connect(SIGNAL(updateLatest()), this, SLOT(onCheckUpdateStatus()));
-	Sandbox::connect(SIGNAL(updateFailed()), this, SLOT(onCheckUpdateStatus()));
-	Sandbox::connect(SIGNAL(updateReady()), this, SLOT(onCheckUpdateStatus()));
-	Sandbox::startUpdateCheck();
+	Core::UpdateChecker checker;
+	checker.isLatest() | rpl::start_with_next([=] {
+		onCheckUpdateStatus();
+	}, lifetime());
+	checker.failed() | rpl::start_with_next([=] {
+		onCheckUpdateStatus();
+	}, lifetime());
+	checker.ready() | rpl::start_with_next([=] {
+		onCheckUpdateStatus();
+	}, lifetime());
+	checker.start();
 	onCheckUpdateStatus();
 #endif // !TDESKTOP_DISABLE_AUTOUPDATE
+}
+
+void Widget::setupConnectingWidget() {
+	_connecting = Window::ConnectingWidget::CreateDefaultWidget(
+		this,
+		rpl::single(true));
 }
 
 void Widget::refreshLang() {
@@ -107,7 +183,9 @@ void Widget::createLanguageLink() {
 		_changeLanguage->entity()->setClickedCallback([=] {
 			Lang::CurrentCloudManager().switchToLanguage(languageId);
 		});
-		_changeLanguage->toggle(!_resetAccount, anim::type::normal);
+		_changeLanguage->toggle(
+			!_resetAccount && !_terms,
+			anim::type::normal);
 		updateControlsGeometry();
 	};
 
@@ -132,7 +210,7 @@ void Widget::createLanguageLink() {
 
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
 void Widget::onCheckUpdateStatus() {
-	if (Sandbox::updatingState() == Application::UpdatingReady) {
+	if (Core::UpdateChecker().state() == Core::UpdateChecker::State::Ready) {
 		if (_update) return;
 		_update.create(
 			this,
@@ -143,8 +221,10 @@ void Widget::onCheckUpdateStatus() {
 		if (!_a_show.animating()) {
 			_update->setVisible(true);
 		}
+		const auto stepHasCover = getStep()->hasCover();
+		_update->toggle(!stepHasCover, anim::type::instant);
 		_update->entity()->setClickedCallback([] {
-			checkReadyUpdate();
+			Core::checkReadyUpdate();
 			App::restart();
 		});
 	} else {
@@ -192,12 +272,34 @@ void Widget::historyMove(Direction direction) {
 
 	auto stepHasCover = getStep()->hasCover();
 	_settings->toggle(!stepHasCover, anim::type::normal);
-	if (_update) _update->toggle(!stepHasCover, anim::type::normal);
-	if (_changeLanguage) _changeLanguage->toggle(!_resetAccount, anim::type::normal);
+	if (_update) {
+		_update->toggle(!stepHasCover, anim::type::normal);
+	}
 	_next->setText([this] { return getStep()->nextButtonText(); });
-	if (_resetAccount) _resetAccount->hide(anim::type::normal);
+	if (_resetAccount) {
+		hideAndDestroy(std::exchange(_resetAccount, { nullptr }));
+	}
+	if (_terms) {
+		hideAndDestroy(std::exchange(_terms, { nullptr }));
+	}
+	if (_changeLanguage) {
+		_changeLanguage->toggle(
+			!_resetAccount && !_terms,
+			anim::type::normal);
+	}
 	getStep()->showAnimated(direction);
 	fixOrder();
+}
+
+void Widget::hideAndDestroy(object_ptr<Ui::FadeWrap<Ui::RpWidget>> widget) {
+	const auto weak = make_weak(widget.data());
+	widget->hide(anim::type::normal);
+	widget->shownValue(
+	) | rpl::start_with_next([=](bool shown) {
+		if (!shown && weak) {
+			weak->deleteLater();
+		}
+	}, widget->lifetime());
 }
 
 void Widget::fixOrder() {
@@ -205,6 +307,7 @@ void Widget::fixOrder() {
 	if (_update) _update->raise();
 	_settings->raise();
 	_back->raise();
+	_connecting->raise();
 }
 
 void Widget::moveToStep(Step *step, Direction direction) {
@@ -214,6 +317,7 @@ void Widget::moveToStep(Step *step, Direction direction) {
 	if (_update) {
 		_update->raise();
 	}
+	_connecting->raise();
 
 	historyMove(direction);
 }
@@ -221,30 +325,74 @@ void Widget::moveToStep(Step *step, Direction direction) {
 void Widget::appendStep(Step *step) {
 	_stepHistory.push_back(step);
 	step->setGeometry(calculateStepRect());
-	step->setGoCallback([this](Step *step, Direction direction) {
+	step->setGoCallback([=](Step *step, Direction direction) {
 		if (direction == Direction::Back) {
 			historyMove(direction);
 		} else {
 			moveToStep(step, direction);
 		}
 	});
-	step->setShowResetCallback([this] {
+	step->setShowResetCallback([=] {
 		showResetButton();
+	});
+	step->setToggleTermsCallback([=](QString countryCode) {
+		toggleTerms(countryCode);
+	});
+	step->setAcceptTermsCallback([=](
+			QString countryCode,
+			base::lambda<void()> callback) {
+		acceptTerms(countryCode, callback);
 	});
 }
 
 void Widget::showResetButton() {
 	if (!_resetAccount) {
 		auto entity = object_ptr<Ui::RoundButton>(this, langFactory(lng_signin_reset_account), st::introResetButton);
-		_resetAccount.create(
-			this,
-			std::move(entity));
+		_resetAccount.create(this, std::move(entity));
 		_resetAccount->hide(anim::type::instant);
 		_resetAccount->entity()->setClickedCallback([this] { resetAccount(); });
 		updateControlsGeometry();
 	}
 	_resetAccount->show(anim::type::normal);
-	if (_changeLanguage) _changeLanguage->hide(anim::type::normal);
+	if (_changeLanguage) {
+		_changeLanguage->hide(anim::type::normal);
+	}
+}
+
+void Widget::toggleTerms(const QString &countryCode) {
+	_termsCountryCode = countryCode;
+	if (countryCode.isEmpty()) {
+		if (_terms) hideAndDestroy(std::exchange(_terms, { nullptr }));
+	} else {
+		if (!_terms) {
+			auto entity = object_ptr<Ui::FlatLabel>(
+				this,
+				lng_terms_signup(
+					lt_link,
+					textcmdLink(1, lang(lng_terms_signup_link))),
+				Ui::FlatLabel::InitType::Rich,
+				st::introTermsLabel);
+			_terms.create(this, std::move(entity));
+			_terms->hide(anim::type::instant);
+			_terms->entity()->setLink(
+				1,
+				std::make_shared<LambdaClickHandler>([=] { showTerms(); }));
+			updateControlsGeometry();
+		}
+		_terms->toggle(!_termsCountryCode.isEmpty(), anim::type::normal);
+	}
+	if (_changeLanguage) {
+		_changeLanguage->toggle(
+			!_terms && !_resetAccount,
+			anim::type::normal);
+	}
+}
+
+void Widget::acceptTerms(
+		const QString &countryCode,
+		base::lambda<void()> callback) {
+	_termsCountryCode = countryCode;
+	showTerms(callback);
 }
 
 void Widget::resetAccount() {
@@ -289,7 +437,10 @@ void Widget::resetAccount() {
 void Widget::getNearestDC() {
 	request(MTPhelp_GetNearestDc()).done([this](const MTPNearestDc &result) {
 		auto &nearest = result.c_nearestDc();
-		DEBUG_LOG(("Got nearest dc, country: %1, nearest: %2, this: %3").arg(qs(nearest.vcountry)).arg(nearest.vnearest_dc.v).arg(nearest.vthis_dc.v));
+		DEBUG_LOG(("Got nearest dc, country: %1, nearest: %2, this: %3"
+			).arg(qs(nearest.vcountry)
+			).arg(nearest.vnearest_dc.v
+			).arg(nearest.vthis_dc.v));
 		Messenger::Instance().suggestMainDcId(nearest.vnearest_dc.v);
 		auto nearestCountry = qs(nearest.vcountry);
 		if (getData()->country != nearestCountry) {
@@ -299,20 +450,78 @@ void Widget::getNearestDC() {
 	}).send();
 }
 
+void Widget::showTerms(base::lambda<void()> callback) {
+	if (_termsCountryCode.isEmpty()) {
+		return;
+	}
+	const auto showLastTerms = [=] {
+		const auto box = Ui::show(Box<TermsBox>(
+			_termsLastText,
+			langFactory(callback ? lng_terms_agree : lng_box_ok)));
+		box->agreeClicks(
+		) | rpl::start_with_next([=] {
+			if (callback) {
+				callback();
+			}
+			if (box) {
+				box->closeBox();
+			}
+		}, box->lifetime());
+	};
+	const auto langPack = Lang::Current().id();
+	const auto code = _termsCountryCode;
+	if (_termsLastCountryCode == code && _termsLastLangPack == langPack) {
+		showLastTerms();
+		return;
+	}
+
+	request(MTPhelp_GetTermsOfService(
+		MTP_string(code)
+	)).done([=](const MTPhelp_TermsOfService &result) {
+		const auto text = qs(result.c_help_termsOfService().vtext);
+		const auto match = QRegularExpression("\\[([^\\]]+)\\]").match(text);
+		const auto linked = [&] {
+			if (!match.hasMatch()) {
+				return text;
+			}
+			const auto from = match.capturedStart(0);
+			const auto till = from + match.capturedLength(0);
+			return text.mid(0, from)
+				+ textcmdLink(
+					"http://telegram.org/privacy",
+					text.mid(from + 1, till - from - 2))
+				+ text.mid(till);
+		}();
+		_termsLastCountryCode = code;
+		_termsLastLangPack = langPack;
+		_termsLastText = linked;
+
+		showLastTerms();
+	}).send();
+}
+
 void Widget::showControls() {
 	getStep()->show();
 	_next->show();
 	_next->setText([this] { return getStep()->nextButtonText(); });
+	_connecting->setForceHidden(false);
 	auto hasCover = getStep()->hasCover();
 	_settings->toggle(!hasCover, anim::type::instant);
-	if (_update) _update->toggle(!hasCover, anim::type::instant);
-	if (_changeLanguage) _changeLanguage->toggle(!_resetAccount, anim::type::instant);
+	if (_update) {
+		_update->toggle(!hasCover, anim::type::instant);
+	}
+	if (_changeLanguage) {
+		_changeLanguage->toggle(
+			!_resetAccount && !_terms,
+			anim::type::instant);
+	}
 	_back->toggle(getStep()->hasBack(), anim::type::instant);
 }
 
 void Widget::hideControls() {
 	getStep()->hide();
 	_next->hide();
+	_connecting->setForceHidden(true);
 	_settings->hide(anim::type::instant);
 	if (_update) _update->hide(anim::type::instant);
 	if (_changeLanguage) _changeLanguage->hide(anim::type::instant);
@@ -412,6 +621,9 @@ void Widget::updateControlsGeometry() {
 	}
 	if (_resetAccount) {
 		_resetAccount->moveToLeft((width() - _resetAccount->width()) / 2, height() - st::introResetBottom - _resetAccount->height());
+	}
+	if (_terms) {
+		_terms->moveToLeft((width() - _terms->width()) / 2, height() - st::introTermsBottom - _terms->height());
 	}
 }
 
@@ -810,6 +1022,17 @@ void Widget::Step::setGoCallback(base::lambda<void(Step *step, Direction directi
 
 void Widget::Step::setShowResetCallback(base::lambda<void()> callback) {
 	_showResetCallback = std::move(callback);
+}
+
+void Widget::Step::setToggleTermsCallback(
+		base::lambda<void(QString countryCode)> callback) {
+	_toggleTermsCallback = std::move(callback);
+}
+
+void Widget::Step::setAcceptTermsCallback(base::lambda<void(
+		QString countryCode,
+		base::lambda<void()> callback)> callback) {
+	_acceptTermsCallback = std::move(callback);
 }
 
 void Widget::Step::showFast() {

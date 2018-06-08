@@ -12,13 +12,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localimageloader.h"
 #include "storage/storage_media_prepare.h"
 
+namespace Window {
+class Controller;
+} // namespace Window
+
 namespace Ui {
 template <typename Enum>
 class Radioenum;
 template <typename Enum>
 class RadioenumGroup;
 class RoundButton;
-class InputArea;
+class InputField;
 struct GroupMediaLayout;
 } // namespace Ui
 
@@ -32,14 +36,16 @@ class SendFilesBox : public BoxContent {
 public:
 	SendFilesBox(
 		QWidget*,
+		not_null<Window::Controller*> controller,
 		Storage::PreparedList &&list,
+		const TextWithTags &caption,
 		CompressConfirm compressed);
 
 	void setConfirmedCallback(
 		base::lambda<void(
 			Storage::PreparedList &&list,
 			SendFilesWay way,
-			const QString &caption,
+			TextWithTags &&caption,
 			bool ctrlShiftEnter)> callback) {
 		_confirmedCallback = std::move(callback);
 	}
@@ -87,6 +93,8 @@ private:
 	bool canAddUrls(const QList<QUrl> &urls) const;
 	bool addFiles(not_null<const QMimeData*> data);
 
+	not_null<Window::Controller*> _controller;
+
 	QString _titleText;
 	int _titleHeight = 0;
 
@@ -98,12 +106,12 @@ private:
 	base::lambda<void(
 		Storage::PreparedList &&list,
 		SendFilesWay way,
-		const QString &caption,
+		TextWithTags &&caption,
 		bool ctrlShiftEnter)> _confirmedCallback;
 	base::lambda<void()> _cancelledCallback;
 	bool _confirmed = false;
 
-	object_ptr<Ui::InputArea> _caption = { nullptr };
+	object_ptr<Ui::InputField> _caption = { nullptr };
 	object_ptr<Ui::Radioenum<SendFilesWay>> _sendAlbum = { nullptr };
 	object_ptr<Ui::Radioenum<SendFilesWay>> _sendPhotos = { nullptr };
 	object_ptr<Ui::Radioenum<SendFilesWay>> _sendFiles = { nullptr };
