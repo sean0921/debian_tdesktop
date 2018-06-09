@@ -22,7 +22,7 @@ Last-Update: 2017-12-30
  namespace base {
 --- a/Telegram/SourceFiles/config.h
 +++ b/Telegram/SourceFiles/config.h
-@@ -222,7 +222,7 @@
+@@ -209,7 +209,7 @@
  #endif
  
  #if Q_BYTE_ORDER == Q_BIG_ENDIAN
@@ -310,7 +310,7 @@ Last-Update: 2017-12-30
    ],
    'library_dirs': [
      '<(qt_loc)/lib',
-@@ -205,24 +177,14 @@
+@@ -205,24 +177,15 @@
    'conditions': [
      [ 'build_linux', {
        'dependencies': [
@@ -331,12 +331,12 @@ Last-Update: 2017-12-30
          '-lX11',
 -        '-lX11-xcb',
 -        '-ldbus-1',
--        '-ldl',
+         '-ldl',
 -        '-lgthread-2.0',
          '-lglib-2.0',
          '-lpthread',
        ],
-@@ -230,7 +192,6 @@
+@@ -230,7 +193,6 @@
          '<(qt_loc)/mkspecs/linux-g++',
        ],
        'ldflags': [
@@ -383,7 +383,7 @@ Last-Update: 2017-12-30
        'cflags_c': [
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -40,75 +40,45 @@
+@@ -40,25 +40,16 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
@@ -412,13 +412,15 @@ Last-Update: 2017-12-30
 +      'swresample',
 +      'swscale',
 +      'avutil',
++      'opus',
 +      'z',
 +      'minizip',
 +      'tgvoip',
  #      '<!(pkg-config 2> /dev/null --libs <@(pkgconfig_libs))',
      ],
      'cflags_cc': [
-       '-Wno-strict-overflow',
+@@ -66,50 +57,30 @@
+       '-Wno-maybe-uninitialized',
      ],
      'ldflags': [
 -      '-Wl,-wrap,aligned_alloc',
@@ -475,10 +477,10 @@ Last-Update: 2017-12-30
  <(src_loc)/base/algorithm.h
  <(src_loc)/base/assertion.h
 -<(src_loc)/base/build_config.h
+ <(src_loc)/base/bytes.h
  <(src_loc)/base/flags.h
  <(src_loc)/base/enum_mask.h
- <(src_loc)/base/flat_map.h
-@@ -750,7 +749,6 @@
+@@ -753,7 +752,6 @@
  <(src_loc)/observer_peer.h
  <(src_loc)/passcodewidget.cpp
  <(src_loc)/passcodewidget.h
@@ -486,7 +488,7 @@ Last-Update: 2017-12-30
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -760,14 +758,7 @@
+@@ -763,14 +761,7 @@
  <(emoji_suggestions_loc)/emoji_suggestions.cpp
  <(emoji_suggestions_loc)/emoji_suggestions.h
  

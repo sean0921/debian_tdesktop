@@ -21,7 +21,7 @@ Build-Depends:
  librange-v3-dev,
  libssl-dev (>=1.0.1),
  libswscale-dev (>=7:3.2),
- libtgvoip-dev,
+ libtgvoip-dev (>=2.1),
  qtbase5-dev (>=5.5),
  qtbase5-private-dev (>=5.5),
  zlib1g-dev (>=1:1.2.8),
