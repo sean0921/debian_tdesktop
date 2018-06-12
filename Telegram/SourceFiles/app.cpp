@@ -50,8 +50,7 @@ namespace {
 
 	UserData *self = nullptr;
 
-	using PeersData = QHash<PeerId, PeerData*>;
-	PeersData peersData;
+	std::unordered_map<PeerId, std::unique_ptr<PeerData>> peersData;
 
 	using LocationsData = QHash<LocationCoords, LocationData*>;
 	LocationsData locationsData;
@@ -138,50 +137,6 @@ namespace App {
 			return window->mainWidget();
 		}
 		return nullptr;
-	}
-
-	bool passcoded() {
-		if (auto window = wnd()) {
-			return window->passcodeWidget();
-		}
-		return false;
-	}
-
-namespace {
-	bool loggedOut() {
-		if (Global::LocalPasscode()) {
-			Global::SetLocalPasscode(false);
-			Global::RefLocalPasscodeChanged().notify();
-		}
-		Media::Player::mixer()->stopAndClear();
-		if (auto w = wnd()) {
-			w->tempDirDelete(Local::ClearManagerAll);
-			w->setupIntro();
-		}
-		histories().clear();
-		Messenger::Instance().authSessionDestroy();
-		Local::reset();
-		Window::Theme::Background()->reset();
-
-		cSetOtherOnline(0);
-		clearStorageImages();
-		return true;
-	}
-} // namespace
-
-	void logOut() {
-		if (auto mtproto = Messenger::Instance().mtp()) {
-			mtproto->logout(rpcDone([] {
-				return loggedOut();
-			}), rpcFail([] {
-				return loggedOut();
-			}));
-		} else {
-			// We log out because we've forgotten passcode.
-			// So we just start mtproto from scratch.
-			Messenger::Instance().startMtp();
-			loggedOut();
-		}
 	}
 
 	namespace {
@@ -715,7 +670,7 @@ namespace {
 					auto h = App::historyLoaded(chat->id);
 					bool found = !h || !h->lastKeyboardFrom;
 					auto botStatus = -1;
-					for (auto i = chat->participants.begin(), e = chat->participants.end(); i != e;) {
+					for (auto i = chat->participants.begin(); i != chat->participants.end();) {
 						auto [user, version] = *i;
 						if (version < pversion) {
 							i = chat->participants.erase(i);
@@ -791,7 +746,7 @@ namespace {
 		} else if (chat->version <= d.vversion.v && chat->count > 0) {
 			chat->version = d.vversion.v;
 			auto canEdit = chat->canEdit();
-			UserData *user = App::userLoaded(d.vuser_id.v);
+			const auto user = App::userLoaded(d.vuser_id.v);
 			if (user) {
 				if (chat->participants.empty()) {
 					if (chat->count > 0) {
@@ -1118,40 +1073,43 @@ namespace {
 	}
 
 	PeerData *peer(const PeerId &id, PeerData::LoadedStatus restriction) {
-		if (!id) return nullptr;
+		if (!id) {
+			return nullptr;
+		}
 
-		auto i = peersData.constFind(id);
+		auto i = peersData.find(id);
 		if (i == peersData.cend()) {
-			PeerData *newData = nullptr;
-			if (peerIsUser(id)) {
-				newData = new UserData(id);
-			} else if (peerIsChat(id)) {
-				newData = new ChatData(id);
-			} else if (peerIsChannel(id)) {
-				newData = new ChannelData(id);
-			}
-			Assert(newData != nullptr);
+			auto newData = [&]() -> std::unique_ptr<PeerData> {
+				if (peerIsUser(id)) {
+					return std::make_unique<UserData>(id);
+				} else if (peerIsChat(id)) {
+					return std::make_unique<ChatData>(id);
+				} else if (peerIsChannel(id)) {
+					return std::make_unique<ChannelData>(id);
+				}
+				Unexpected("Peer id type.");
+			}();
 
 			newData->input = MTPinputPeer(MTP_inputPeerEmpty());
-			i = peersData.insert(id, newData);
+			i = peersData.emplace(id, std::move(newData)).first;
 		}
 		switch (restriction) {
 		case PeerData::MinimalLoaded: {
-			if (i.value()->loadedStatus == PeerData::NotLoaded) {
+			if (i->second->loadedStatus == PeerData::NotLoaded) {
 				return nullptr;
 			}
 		} break;
 		case PeerData::FullLoaded: {
-			if (i.value()->loadedStatus != PeerData::FullLoaded) {
+			if (i->second->loadedStatus != PeerData::FullLoaded) {
 				return nullptr;
 			}
 		} break;
 		}
-		return i.value();
+		return i->second.get();
 	}
 
-	void enumerateUsers(base::lambda<void(not_null<UserData*>)> action) {
-		for_const (const auto peer, peersData) {
+	void enumerateUsers(Fn<void(not_null<UserData*>)> action) {
+		for (const auto &[peerId, peer] : peersData) {
 			if (const auto user = peer->asUser()) {
 				action(user);
 			}
@@ -1159,10 +1117,10 @@ namespace {
 	}
 
 	void enumerateChatsChannels(
-			base::lambda<void(not_null<PeerData*>)> action) {
-		for_const (const auto peer, peersData) {
+			Fn<void(not_null<PeerData*>)> action) {
+		for (const auto &[peerId, peer] : peersData) {
 			if (!peer->isUser()) {
-				action(peer);
+				action(peer.get());
 			}
 		}
 	}
@@ -1172,10 +1130,10 @@ namespace {
 	}
 
 	PeerData *peerByName(const QString &username) {
-		QString uname(username.trimmed());
-		for_const (PeerData *peer, peersData) {
+		const auto uname = username.trimmed();
+		for (const auto &[peerId, peer] : peersData) {
 			if (!peer->userName().compare(uname, Qt::CaseInsensitive)) {
-				return peer;
+				return peer.get();
 			}
 		}
 		return nullptr;
@@ -1290,23 +1248,15 @@ namespace {
 	void historyClearMsgs() {
 		::dependentItems.clear();
 
-		QVector<HistoryItem*> toDelete;
-		for_const (auto item, msgsData) {
-			if (!item->mainView()) {
-				toDelete.push_back(item);
-			}
-		}
-		for_const (auto &chMsgsData, channelMsgsData) {
-			for_const (auto item, chMsgsData) {
-				if (!item->mainView()) {
-					toDelete.push_back(item);
-				}
-			}
-		}
-		msgsData.clear();
-		channelMsgsData.clear();
-		for_const (auto item, toDelete) {
+		const auto oldData = base::take(msgsData);
+		const auto oldChannelData = base::take(channelMsgsData);
+		for (const auto item : oldData) {
 			delete item;
+		}
+		for (const auto &data : oldChannelData) {
+			for (const auto item : data) {
+				delete item;
+			}
 		}
 
 		clearMousedItems();
@@ -1319,10 +1269,7 @@ namespace {
 		cSetSavedPeersByTime(SavedPeersByTime());
 		cSetRecentInlineBots(RecentInlineBots());
 
-		for_const (auto peer, ::peersData) {
-			delete peer;
-		}
-		::peersData.clear();
+		peersData.clear();
 
 		if (AuthSession::Exists()) {
 			Auth().api().clearWebPageRequests();
