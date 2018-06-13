@@ -22,7 +22,7 @@ Last-Update: 2017-12-30
  namespace base {
 --- a/Telegram/SourceFiles/config.h
 +++ b/Telegram/SourceFiles/config.h
-@@ -209,7 +209,7 @@
+@@ -204,7 +204,7 @@
  #endif
  
  #if Q_BYTE_ORDER == Q_BIG_ENDIAN
@@ -33,18 +33,18 @@ Last-Update: 2017-12-30
  #ifndef BETA_VERSION_MACRO
 --- a/Telegram/SourceFiles/core/basic_types.h
 +++ b/Telegram/SourceFiles/core/basic_types.h
-@@ -12,7 +12,6 @@ https://github.com/telegramdesktop/tdesk
- #include <memory>
- #include <ctime>
+@@ -14,7 +14,6 @@ https://github.com/telegramdesktop/tdesk
+ #include <functional>
  
+ #include <crl/crl.h>
 -#include "base/build_config.h"
  #include "base/ordered_set.h"
- 
- using gsl::not_null;
-@@ -29,3 +28,17 @@ using float64 = double;
+ #include "base/unique_function.h"
+ #include "base/functors.h"
+@@ -41,3 +40,17 @@ using float64 = double;
  
  #define qsl(s) QStringLiteral(s)
- #define qstr(s) QLatin1String(s, sizeof(s) - 1)
+ #define qstr(s) QLatin1String((s), sizeof(s) - 1)
 +
 +#if defined(__GNUC__) || defined(__clang__)
 +#define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
@@ -129,7 +129,7 @@ Last-Update: 2017-12-30
          COMMENT "Precompiling ${_name} for ${_target} (C++)")
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
-@@ -68,14 +68,10 @@
+@@ -69,14 +69,10 @@
        'codegen.gyp:codegen_lang',
        'codegen.gyp:codegen_numbers',
        'codegen.gyp:codegen_style',
@@ -144,7 +144,7 @@ Last-Update: 2017-12-30
        'AL_ALEXT_PROTOTYPES',
        'TGVOIP_USE_CXX11_LIB',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-@@ -84,19 +80,11 @@
+@@ -85,19 +81,11 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -168,7 +168,7 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<@(qrc_files)',
-@@ -117,5 +105,14 @@
+@@ -118,5 +106,14 @@
          ],
        }],
      ],
@@ -480,15 +480,15 @@ Last-Update: 2017-12-30
  <(src_loc)/base/bytes.h
  <(src_loc)/base/flags.h
  <(src_loc)/base/enum_mask.h
-@@ -753,7 +752,6 @@
+@@ -775,7 +774,6 @@
+ <(src_loc)/messenger.h
+ <(src_loc)/observer_peer.cpp
  <(src_loc)/observer_peer.h
- <(src_loc)/passcodewidget.cpp
- <(src_loc)/passcodewidget.h
 -<(src_loc)/qt_static_plugins.cpp
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -763,14 +761,7 @@
+@@ -785,14 +783,7 @@
  <(emoji_suggestions_loc)/emoji_suggestions.cpp
  <(emoji_suggestions_loc)/emoji_suggestions.h
  
