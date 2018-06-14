@@ -2,10 +2,10 @@ Source: telegram-desktop
 Section: net
 Priority: optional
 Maintainer: Nicholas Guriev <guriev-ns@ya.ru>
-Build-Depends:
+Build-Depends: debhelper (>=11),
+Build-Depends-Arch:
  catch,
  cmake (>=3.0),
- debhelper (>=11),
  dh-exec,
  gyp,
  libavcodec-dev (>=7:3.2),
@@ -34,6 +34,7 @@ Package: telegram-desktop
 Architecture: any
 Depends: qt5-image-formats-plugins (>=5.5), ${misc:Depends}, ${shlibs:Depends}
 Recommends: fonts-open-sans
+Built-Using: ${cpplibs:Built-Using}
 Description: official telegram messaging app
  Telegram is a messaging app with a focus on speed and security, it is
  super-fast, simple and free. You can use Telegram on all your devices at the
