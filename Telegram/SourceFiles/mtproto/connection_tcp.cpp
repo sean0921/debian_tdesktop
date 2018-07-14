@@ -19,27 +19,224 @@ namespace MTP {
 namespace internal {
 namespace {
 
-constexpr auto kPacketSizeMax = 64 * 1024 * 1024U;
+constexpr auto kPacketSizeMax = int(0x01000000 * sizeof(mtpPrime));
 constexpr auto kFullConnectionTimeout = 8 * TimeMs(1000);
-
-uint32 CountTcpPacketSize(const char *packet) { // must have at least 4 bytes readable
-	uint32 result = (packet[0] > 0) ? packet[0] : 0;
-	if (result == 0x7f) {
-		const uchar *bytes = reinterpret_cast<const uchar*>(packet);
-		result = (((uint32(bytes[3]) << 8) | uint32(bytes[2])) << 8) | uint32(bytes[1]);
-		return (result << 2) + 4;
-	}
-	return (result << 2) + 1;
-}
+constexpr auto kSmallBufferSize = 256 * 1024;
 
 using ErrorSignal = void(QTcpSocket::*)(QAbstractSocket::SocketError);
 const auto QTcpSocket_error = ErrorSignal(&QAbstractSocket::error);
 
 } // namespace
 
+class TcpConnection::Protocol {
+public:
+	static std::unique_ptr<Protocol> Create(bytes::vector &&secret);
+
+	virtual uint32 id() const = 0;
+	virtual bool supportsArbitraryLength() const = 0;
+
+	virtual bool requiresExtendedPadding() const = 0;
+	virtual void prepareKey(bytes::span key, bytes::const_span source) = 0;
+	virtual bytes::span finalizePacket(mtpBuffer &buffer) = 0;
+
+	static constexpr auto kUnknownSize = -1;
+	static constexpr auto kInvalidSize = -2;
+	virtual int readPacketLength(bytes::const_span bytes) const = 0;
+	virtual bytes::const_span readPacket(bytes::const_span bytes) const = 0;
+
+	virtual ~Protocol() = default;
+
+private:
+	class Version0;
+	class Version1;
+	class VersionD;
+
+};
+
+class TcpConnection::Protocol::Version0 : public Protocol {
+public:
+	uint32 id() const override;
+	bool supportsArbitraryLength() const override;
+
+	bool requiresExtendedPadding() const override;
+	void prepareKey(bytes::span key, bytes::const_span source) override;
+	bytes::span finalizePacket(mtpBuffer &buffer) override;
+
+	int readPacketLength(bytes::const_span bytes) const override;
+	bytes::const_span readPacket(bytes::const_span bytes) const override;
+
+};
+
+uint32 TcpConnection::Protocol::Version0::id() const {
+	return 0xEFEFEFEFU;
+}
+
+bool TcpConnection::Protocol::Version0::supportsArbitraryLength() const {
+	return false;
+}
+
+bool TcpConnection::Protocol::Version0::requiresExtendedPadding() const {
+	return false;
+}
+
+void TcpConnection::Protocol::Version0::prepareKey(
+		bytes::span key,
+		bytes::const_span source) {
+	bytes::copy(key, source);
+}
+
+bytes::span TcpConnection::Protocol::Version0::finalizePacket(
+		mtpBuffer &buffer) {
+	Expects(buffer.size() > 2 && buffer.size() < 0x1000003U);
+
+	const auto intsSize = uint32(buffer.size() - 2);
+	const auto bytesSize = intsSize * sizeof(mtpPrime);
+	const auto data = reinterpret_cast<uchar*>(&buffer[0]);
+	const auto added = [&] {
+		if (intsSize < 0x7F) {
+			data[7] = uchar(intsSize);
+			return 1;
+		}
+		data[4] = uchar(0x7F);
+		data[5] = uchar(intsSize & 0xFF);
+		data[6] = uchar((intsSize >> 8) & 0xFF);
+		data[7] = uchar((intsSize >> 16) & 0xFF);
+		return 4;
+	}();
+	return bytes::make_span(buffer).subspan(8 - added, added + bytesSize);
+}
+
+int TcpConnection::Protocol::Version0::readPacketLength(
+		bytes::const_span bytes) const {
+	if (bytes.empty()) {
+		return kUnknownSize;
+	}
+	const auto first = static_cast<char>(bytes[0]);
+	if (first == 0x7F) {
+		if (bytes.size() < 4) {
+			return kUnknownSize;
+		}
+		const auto ints = static_cast<uint32>(bytes[1])
+			| (static_cast<uint32>(bytes[2]) << 8)
+			| (static_cast<uint32>(bytes[3]) << 16);
+		return (ints >= 0x7F) ? (int(ints << 2) + 4) : kInvalidSize;
+	} else if (first > 0 && first < 0x7F) {
+		const auto ints = uint32(first);
+		return int(ints << 2) + 1;
+	}
+	return kInvalidSize;
+}
+
+bytes::const_span TcpConnection::Protocol::Version0::readPacket(
+		bytes::const_span bytes) const {
+	const auto size = readPacketLength(bytes);
+	Assert(size != kUnknownSize
+		&& size != kInvalidSize
+		&& size <= bytes.size());
+	const auto sizeLength = (static_cast<char>(bytes[0]) == 0x7F) ? 4 : 1;
+	return bytes.subspan(sizeLength, size - sizeLength);
+}
+
+class TcpConnection::Protocol::Version1 : public Version0 {
+public:
+	explicit Version1(bytes::vector &&secret);
+
+	bool requiresExtendedPadding() const override;
+	void prepareKey(bytes::span key, bytes::const_span source) override;
+
+private:
+	bytes::vector _secret;
+
+};
+
+TcpConnection::Protocol::Version1::Version1(bytes::vector &&secret)
+: _secret(std::move(secret)) {
+}
+
+bool TcpConnection::Protocol::Version1::requiresExtendedPadding() const {
+	return true;
+}
+
+void TcpConnection::Protocol::Version1::prepareKey(
+		bytes::span key,
+		bytes::const_span source) {
+	const auto payload = bytes::concatenate(source, _secret);
+	bytes::copy(key, openssl::Sha256(payload));
+}
+
+class TcpConnection::Protocol::VersionD : public Version1 {
+public:
+	using Version1::Version1;
+
+	uint32 id() const override;
+	bool supportsArbitraryLength() const override;
+
+	bytes::span finalizePacket(mtpBuffer &buffer) override;
+
+	int readPacketLength(bytes::const_span bytes) const override;
+	bytes::const_span readPacket(bytes::const_span bytes) const override;
+
+};
+
+uint32 TcpConnection::Protocol::VersionD::id() const {
+	return 0xDDDDDDDDU;
+}
+
+bool TcpConnection::Protocol::VersionD::supportsArbitraryLength() const {
+	return true;
+}
+
+bytes::span TcpConnection::Protocol::VersionD::finalizePacket(
+		mtpBuffer &buffer) {
+	Expects(buffer.size() > 2 && buffer.size() < 0x1000003U);
+
+	const auto intsSize = uint32(buffer.size() - 2);
+	const auto padding = rand_value<uint32>() & 0x0F;
+	const auto bytesSize = intsSize * sizeof(mtpPrime) + padding;
+	buffer[1] = bytesSize;
+	for (auto added = 0; added < padding; added += 4) {
+		buffer.push_back(rand_value<mtpPrime>());
+	}
+
+	return bytes::make_span(buffer).subspan(4, 4 + bytesSize);
+}
+
+int TcpConnection::Protocol::VersionD::readPacketLength(
+		bytes::const_span bytes) const {
+	if (bytes.size() < 4) {
+		return kUnknownSize;
+	}
+	const auto value = *reinterpret_cast<const uint32*>(bytes.data()) + 4;
+	return (value >= 8 && value < kPacketSizeMax)
+		? int(value)
+		: kInvalidSize;
+}
+
+bytes::const_span TcpConnection::Protocol::VersionD::readPacket(
+		bytes::const_span bytes) const {
+	const auto size = readPacketLength(bytes);
+	Assert(size != kUnknownSize
+		&& size != kInvalidSize
+		&& size <= bytes.size());
+	const auto sizeLength = 4;
+	return bytes.subspan(sizeLength, size - sizeLength);
+}
+
+auto TcpConnection::Protocol::Create(bytes::vector &&secret)
+-> std::unique_ptr<Protocol> {
+	if (secret.size() == 17 && static_cast<uchar>(secret[0]) == 0xDD) {
+		return std::make_unique<VersionD>(
+			bytes::make_vector(bytes::make_span(secret).subspan(1)));
+	} else if (secret.size() == 16) {
+		return std::make_unique<Version1>(std::move(secret));
+	} else if (secret.empty()) {
+		return std::make_unique<Version0>();
+	}
+	Unexpected("Secret bytes in TcpConnection::Protocol::Create.");
+}
+
 TcpConnection::TcpConnection(QThread *thread, const ProxyData &proxy)
 : AbstractConnection(thread, proxy)
-, _currentPosition(reinterpret_cast<char*>(_shortBuffer))
 , _checkNonce(rand_value<MTPint128>()) {
 	_socket.moveToThread(thread);
 	_socket.setProxy(ToNetworkProxy(proxy));
@@ -70,6 +267,8 @@ ConnectionPointer TcpConnection::clone(const ProxyData &proxy) {
 }
 
 void TcpConnection::socketRead() {
+	Expects(_leftBytes > 0 || !_usingLargeBuffer);
+
 	if (_socket.state() != QAbstractSocket::ConnectedState) {
 		LOG(("MTP error: "
 			"socket not connected in socketRead(), state: %1"
@@ -78,80 +277,101 @@ void TcpConnection::socketRead() {
 		return;
 	}
 
+	if (_smallBuffer.empty()) {
+		_smallBuffer.resize(kSmallBufferSize);
+	}
 	do {
-		uint32 toRead = _packetLeft
-			? _packetLeft
-			: (_readingToShort
-				? (kShortBufferSize * sizeof(mtpPrime) - _packetRead)
-				: 4);
-		if (_readingToShort) {
-			if (_currentPosition + toRead > ((char*)_shortBuffer) + kShortBufferSize * sizeof(mtpPrime)) {
-				_longBuffer.resize(((_packetRead + toRead) >> 2) + 1);
-				memcpy(&_longBuffer[0], _shortBuffer, _packetRead);
-				_currentPosition = ((char*)&_longBuffer[0]) + _packetRead;
-				_readingToShort = false;
-			}
-		} else {
-			if (_longBuffer.size() * sizeof(mtpPrime) < _packetRead + toRead) {
-				_longBuffer.resize(((_packetRead + toRead) >> 2) + 1);
-				_currentPosition = ((char*)&_longBuffer[0]) + _packetRead;
-			}
-		}
-		int32 bytes = (int32)_socket.read(_currentPosition, toRead);
-		if (bytes > 0) {
-			aesCtrEncrypt(_currentPosition, bytes, _receiveKey, &_receiveState);
-			TCP_LOG(("TCP Info: read %1 bytes").arg(bytes));
+		const auto readLimit = (_leftBytes > 0)
+			? _leftBytes
+			: (kSmallBufferSize - _offsetBytes - _readBytes);
+		Assert(readLimit > 0);
 
-			_packetRead += bytes;
-			_currentPosition += bytes;
-			if (_packetLeft) {
-				_packetLeft -= bytes;
-				if (!_packetLeft) {
-					socketPacket(_currentPosition - _packetRead, _packetRead);
-					_currentPosition = (char*)_shortBuffer;
-					_packetRead = _packetLeft = 0;
-					_readingToShort = true;
-					_longBuffer.clear();
+		auto &buffer = _usingLargeBuffer ? _largeBuffer : _smallBuffer;
+		const auto full = bytes::make_span(buffer).subspan(_offsetBytes);
+		const auto free = full.subspan(_readBytes);
+		Assert(free.size() >= readLimit);
+
+		const auto readCount = _socket.read(
+			reinterpret_cast<char*>(free.data()),
+			readLimit);
+		if (readCount > 0) {
+			const auto read = free.subspan(0, readCount);
+			aesCtrEncrypt(read, _receiveKey, &_receiveState);
+			TCP_LOG(("TCP Info: read %1 bytes").arg(readCount));
+
+			_readBytes += readCount;
+			if (_leftBytes > 0) {
+				Assert(readCount <= _leftBytes);
+				_leftBytes -= readCount;
+				if (!_leftBytes) {
+					socketPacket(full.subspan(0, _readBytes));
+					_usingLargeBuffer = false;
+					_largeBuffer.clear();
+					_offsetBytes = _readBytes = 0;
 				} else {
-					TCP_LOG(("TCP Info: not enough %1 for packet! read %2").arg(_packetLeft).arg(_packetRead));
+					TCP_LOG(("TCP Info: not enough %1 for packet! read %2"
+						).arg(_leftBytes
+						).arg(_readBytes));
 					emit receivedSome();
 				}
 			} else {
-				bool move = false;
-				while (_packetRead >= 4) {
-					uint32 packetSize = CountTcpPacketSize(_currentPosition - _packetRead);
-					if (packetSize < 5 || packetSize > kPacketSizeMax) {
-						LOG(("TCP Error: packet size = %1").arg(packetSize));
+				auto available = full.subspan(0, _readBytes);
+				while (_readBytes > 0) {
+					const auto packetSize = _protocol->readPacketLength(
+						available);
+					if (packetSize == Protocol::kUnknownSize) {
+						// Not enough bytes yet.
+						break;
+					} else if (packetSize <= 0) {
+						LOG(("TCP Error: bad packet size in 4 bytes: %1"
+							).arg(packetSize));
 						emit error(kErrorCodeOther);
 						return;
-					}
-					if (_packetRead >= packetSize) {
-						socketPacket(_currentPosition - _packetRead, packetSize);
-						_packetRead -= packetSize;
-						_packetLeft = 0;
-						move = true;
+					} else if (available.size() >= packetSize) {
+						socketPacket(available.subspan(0, packetSize));
+						available = available.subspan(packetSize);
+						_offsetBytes += packetSize;
+						_readBytes -= packetSize;
 					} else {
-						_packetLeft = packetSize - _packetRead;
-						TCP_LOG(("TCP Info: not enough %1 for packet! size %2 read %3").arg(_packetLeft).arg(packetSize).arg(_packetRead));
+						_leftBytes = packetSize - available.size();
+
+						// If the next packet won't fit in the buffer.
+						const auto full = bytes::make_span(buffer).subspan(
+							_offsetBytes);
+						if (full.size() < packetSize) {
+							const auto read = full.subspan(0, _readBytes);
+							if (packetSize <= _smallBuffer.size()) {
+								if (_usingLargeBuffer) {
+									bytes::copy(_smallBuffer, read);
+									_usingLargeBuffer = false;
+									_largeBuffer.clear();
+								} else {
+									bytes::move(_smallBuffer, read);
+								}
+							} else if (packetSize <= _largeBuffer.size()) {
+								Assert(_usingLargeBuffer);
+								bytes::move(_largeBuffer, read);
+							} else {
+								auto enough = bytes::vector(packetSize);
+								bytes::copy(enough, read);
+								_largeBuffer = std::move(enough);
+								_usingLargeBuffer = true;
+							}
+							_offsetBytes = 0;
+						}
+
+						TCP_LOG(("TCP Info: not enough %1 for packet! "
+							"full size %2 read %3"
+							).arg(_leftBytes
+							).arg(packetSize
+							).arg(available.size()));
 						emit receivedSome();
 						break;
 					}
 				}
-				if (move) {
-					if (!_packetRead) {
-						_currentPosition = (char*)_shortBuffer;
-						_readingToShort = true;
-						_longBuffer.clear();
-					} else if (!_readingToShort && _packetRead < kShortBufferSize * sizeof(mtpPrime)) {
-						memcpy(_shortBuffer, _currentPosition - _packetRead, _packetRead);
-						_currentPosition = (char*)_shortBuffer + _packetRead;
-						_readingToShort = true;
-						_longBuffer.clear();
-					}
-				}
 			}
-		} else if (bytes < 0) {
-			LOG(("TCP Error: socket read return -1"));
+		} else if (readCount < 0) {
+			LOG(("TCP Error: socket read return %1").arg(readCount));
 			emit error(kErrorCodeOther);
 			return;
 		} else {
@@ -161,40 +381,30 @@ void TcpConnection::socketRead() {
 	} while (_socket.state() == QAbstractSocket::ConnectedState && _socket.bytesAvailable());
 }
 
-mtpBuffer TcpConnection::handleResponse(const char *packet, uint32 length) {
-	if (length < 5 || length > kPacketSizeMax) {
-		LOG(("TCP Error: bad packet size %1").arg(length));
-		return mtpBuffer(1, -500);
+mtpBuffer TcpConnection::parsePacket(bytes::const_span bytes) {
+	const auto packet = _protocol->readPacket(bytes);
+	TCP_LOG(("TCP Info: packet received, size = %1"
+		).arg(packet.size()));
+	const auto ints = gsl::make_span(
+		reinterpret_cast<const mtpPrime*>(packet.data()),
+		packet.size() / sizeof(mtpPrime));
+	Assert(!ints.empty());
+	if (ints.size() < 3) {
+		// nop or error or new quickack, latter is not yet supported.
+		if (ints[0] != 0) {
+			LOG(("TCP Error: "
+				"error packet received, endpoint: '%1:%2', "
+				"protocolDcId: %3, code = %4"
+				).arg(_address.isEmpty() ? ("prx_" + _proxy.host) : _address
+				).arg(_address.isEmpty() ? _proxy.port : _port
+				).arg(_protocolDcId
+				).arg(ints[0]));
+		}
+		return mtpBuffer(1, ints[0]);
 	}
-	int32 size = packet[0], len = length - 1;
-	if (size == 0x7f) {
-		const uchar *bytes = reinterpret_cast<const uchar*>(packet);
-		size = (((uint32(bytes[3]) << 8) | uint32(bytes[2])) << 8) | uint32(bytes[1]);
-		len -= 3;
-	}
-	if (size * int32(sizeof(mtpPrime)) != len) {
-		LOG(("TCP Error: bad packet header"));
-		TCP_LOG(("TCP Error: bad packet header, packet: %1").arg(Logs::mb(packet, length).str()));
-		return mtpBuffer(1, -500);
-	}
-	const mtpPrime *packetdata = reinterpret_cast<const mtpPrime*>(packet + (length - len));
-	TCP_LOG(("TCP Info: packet received, size = %1").arg(size * sizeof(mtpPrime)));
-	if (size == 1) {
-		LOG(("TCP Error: "
-			"error packet received, endpoint: '%1:%2', "
-			"protocolDcId: %3, secret_len: %4, code = %5"
-			).arg(_address.isEmpty() ? ("proxy_" + _proxy.host) : _address
-			).arg(_address.isEmpty() ? _proxy.port : _port
-			).arg(_protocolDcId
-			).arg(_protocolSecret.size()
-			).arg(*packetdata));
-		return mtpBuffer(1, *packetdata);
-	}
-
-	mtpBuffer data(size);
-	memcpy(data.data(), packetdata, size * sizeof(mtpPrime));
-
-	return data;
+	auto result = mtpBuffer(ints.size());
+	memcpy(result.data(), ints.data(), ints.size() * sizeof(mtpPrime));
+	return result;
 }
 
 void TcpConnection::handleError(QAbstractSocket::SocketError e, QTcpSocket &socket) {
@@ -247,7 +457,7 @@ void TcpConnection::socketConnected() {
 		).arg(_address + ':' + QString::number(_port)));
 
 	_pingTime = getms();
-	sendData(buffer);
+	sendData(std::move(buffer));
 }
 
 void TcpConnection::socketDisconnected() {
@@ -256,20 +466,23 @@ void TcpConnection::socketDisconnected() {
 	}
 }
 
-void TcpConnection::sendData(mtpBuffer &buffer) {
-	if (_status == Status::Finished) return;
+bool TcpConnection::requiresExtendedPadding() const {
+	Expects(_protocol != nullptr);
 
-	if (buffer.size() < 3) {
-		LOG(("TCP Error: writing bad packet, len = %1").arg(buffer.size() * sizeof(mtpPrime)));
-		TCP_LOG(("TCP Error: bad packet %1").arg(Logs::mb(&buffer[0], buffer.size() * sizeof(mtpPrime)).str()));
-		emit error(kErrorCodeOther);
-		return;
+	return _protocol->requiresExtendedPadding();
+}
+
+void TcpConnection::sendData(mtpBuffer &&buffer) {
+	Expects(buffer.size() > 2);
+
+	if (_status != Status::Finished) {
+		sendBuffer(std::move(buffer));
 	}
-
-	sendBuffer(buffer);
 }
 
 void TcpConnection::writeConnectionStart() {
+	Expects(_protocol != nullptr);
+
 	// prepare random part
 	auto nonceBytes = bytes::vector(64);
 	const auto nonce = bytes::make_span(nonceBytes);
@@ -282,6 +495,7 @@ void TcpConnection::writeConnectionStart() {
 	const auto reserved12 = 0x54534F50U;
 	const auto reserved13 = 0x20544547U;
 	const auto reserved14 = 0xEEEEEEEEU;
+	const auto reserved15 = 0xDDDDDDDDU;
 	const auto reserved21 = 0x00000000U;
 	do {
 		bytes::set_random(nonce);
@@ -290,21 +504,11 @@ void TcpConnection::writeConnectionStart() {
 		|| *first == reserved12
 		|| *first == reserved13
 		|| *first == reserved14
+		|| *first == reserved15
 		|| *second == reserved21);
 
-	const auto prepareKey = [&](bytes::span key, bytes::const_span from) {
-		if (_protocolSecret.size() == 16) {
-			const auto payload = bytes::concatenate(from, _protocolSecret);
-			bytes::copy(key, openssl::Sha256(payload));
-		} else if (_protocolSecret.empty()) {
-			bytes::copy(key, from);
-		} else {
-			bytes::set_with_const(key, gsl::byte{});
-		}
-	};
-
 	// prepare encryption key/iv
-	prepareKey(
+	_protocol->prepareKey(
 		bytes::make_span(_sendKey),
 		nonce.subspan(8, CTRState::KeySize));
 	bytes::copy(
@@ -316,7 +520,7 @@ void TcpConnection::writeConnectionStart() {
 	const auto reversed = bytes::make_span(reversedBytes);
 	bytes::copy(reversed, nonce.subspan(8, reversed.size()));
 	std::reverse(reversed.begin(), reversed.end());
-	prepareKey(
+	_protocol->prepareKey(
 		bytes::make_span(_receiveKey),
 		reversed.subspan(0, CTRState::KeySize));
 	bytes::copy(
@@ -325,39 +529,30 @@ void TcpConnection::writeConnectionStart() {
 
 	// write protocol and dc ids
 	const auto protocol = reinterpret_cast<uint32*>(nonce.data() + 56);
-	*protocol = 0xEFEFEFEFU;
+	*protocol = _protocol->id();
 	const auto dcId = reinterpret_cast<int16*>(nonce.data() + 60);
 	*dcId = _protocolDcId;
 
 	_socket.write(reinterpret_cast<const char*>(nonce.data()), 56);
-	aesCtrEncrypt(nonce.data(), 64, _sendKey, &_sendState);
+	aesCtrEncrypt(nonce, _sendKey, &_sendState);
 	_socket.write(reinterpret_cast<const char*>(nonce.subspan(56).data()), 8);
 }
 
-void TcpConnection::sendBuffer(mtpBuffer &buffer) {
-	if (!_packetIndex++) {
+void TcpConnection::sendBuffer(mtpBuffer &&buffer) {
+	if (!_connectionStarted) {
 		writeConnectionStart();
+		_connectionStarted = true;
 	}
 
-	uint32 size = buffer.size() - 3, len = size * 4;
-	char *data = reinterpret_cast<char*>(&buffer[0]);
-	if (size < 0x7f) {
-		data[7] = char(size);
-		TCP_LOG(("TCP Info: write %1 packet %2").arg(_packetIndex).arg(len + 1));
-
-		aesCtrEncrypt(data + 7, len + 1, _sendKey, &_sendState);
-		_socket.write(data + 7, len + 1);
-	} else {
-		data[4] = 0x7f;
-		reinterpret_cast<uchar*>(data)[5] = uchar(size & 0xFF);
-		reinterpret_cast<uchar*>(data)[6] = uchar((size >> 8) & 0xFF);
-		reinterpret_cast<uchar*>(data)[7] = uchar((size >> 16) & 0xFF);
-		TCP_LOG(("TCP Info: write %1 packet %2").arg(_packetIndex).arg(len + 4));
-
-		aesCtrEncrypt(data + 4, len + 4, _sendKey, &_sendState);
-		_socket.write(data + 4, len + 4);
-	}
+	// buffer: 2 available int-s + data + available int.
+	const auto bytes = _protocol->finalizePacket(buffer);
+	TCP_LOG(("TCP Info: write packet %1 bytes").arg(bytes.size()));
+	aesCtrEncrypt(bytes, _sendKey, &_sendState);
+	_socket.write(
+		reinterpret_cast<const char*>(bytes.data()),
+		bytes.size());
 }
+
 
 void TcpConnection::disconnectFromServer() {
 	if (_status == Status::Finished) return;
@@ -377,13 +572,13 @@ void TcpConnection::connectToServer(
 		int16 protocolDcId) {
 	Expects(_address.isEmpty());
 	Expects(_port == 0);
-	Expects(_protocolSecret.empty());
+	Expects(_protocol == nullptr);
 	Expects(_protocolDcId == 0);
 
 	if (_proxy.type == ProxyData::Type::Mtproto) {
 		_address = _proxy.host;
 		_port = _proxy.port;
-		_protocolSecret = ProtocolSecretFromPassword(_proxy.password);
+		_protocol = Protocol::Create(_proxy.secretFromMtprotoPassword());
 
 		DEBUG_LOG(("TCP Info: "
 			"dc:%1 - Connecting to proxy '%2'"
@@ -392,7 +587,7 @@ void TcpConnection::connectToServer(
 	} else {
 		_address = address;
 		_port = port;
-		_protocolSecret = protocolSecret;
+		_protocol = Protocol::Create(base::duplicate(protocolSecret));
 
 		DEBUG_LOG(("TCP Info: "
 			"dc:%1 - Connecting to '%2'"
@@ -412,12 +607,19 @@ TimeMs TcpConnection::fullConnectTimeout() const {
 	return kFullConnectionTimeout;
 }
 
-void TcpConnection::socketPacket(const char *packet, uint32 length) {
+void TcpConnection::socketPacket(bytes::const_span bytes) {
 	if (_status == Status::Finished) return;
 
-	const auto data = handleResponse(packet, length);
+	// old quickack?..
+	const auto data = parsePacket(bytes);
 	if (data.size() == 1) {
-		emit error(data[0]);
+		if (data[0] != 0) {
+			emit error(data[0]);
+		} else {
+			// nop
+		}
+	//} else if (data.size() == 2) {
+		// new quickack?..
 	} else if (_status == Status::Ready) {
 		_receivedQueue.push_back(data);
 		emit receivedData();
@@ -435,9 +637,15 @@ void TcpConnection::socketPacket(const char *packet, uint32 length) {
 					nullptr);
 				_pingTime = (getms() - _pingTime);
 				emit connected();
+			} else {
+				DEBUG_LOG(("Connection Error: "
+					"Wrong nonce received in TCP fake pq-responce"));
+				emit error(kErrorCodeOther);
 			}
 		} catch (Exception &e) {
-			DEBUG_LOG(("Connection Error: exception in parsing TCP fake pq-responce, %1").arg(e.what()));
+			DEBUG_LOG(("Connection Error: "
+				"Exception in parsing TCP fake pq-responce, %1"
+				).arg(e.what()));
 			emit error(kErrorCodeOther);
 		}
 	}
@@ -478,6 +686,8 @@ void TcpConnection::socketError(QAbstractSocket::SocketError e) {
 	handleError(e, _socket);
 	emit error(kErrorCodeOther);
 }
+
+TcpConnection::~TcpConnection() = default;
 
 } // namespace internal
 } // namespace MTP

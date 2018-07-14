@@ -17,6 +17,10 @@ struct Cached;
 } // namespace Theme
 } // namespace Window
 
+namespace Export {
+struct Settings;
+} // namespace Export
+
 namespace Local {
 
 void start();
@@ -28,9 +32,7 @@ void writeUserSettings();
 void writeMtpData();
 
 void writeAutoupdatePrefix(const QString &prefix);
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
 QString readAutoupdatePrefix();
-#endif // TDESKTOP_DISABLE_AUTOUPDATE
 
 void reset();
 
@@ -161,6 +163,11 @@ void writeLangPack();
 
 void writeRecentHashtagsAndBots();
 void readRecentHashtagsAndBots();
+void saveRecentSentHashtags(const QString &text);
+void saveRecentSearchHashtags(const QString &text);
+
+void WriteExportSettings(const Export::Settings &settings);
+Export::Settings ReadExportSettings();
 
 void addSavedPeer(PeerData *peer, const QDateTime &position);
 void removeSavedPeer(PeerData *peer);

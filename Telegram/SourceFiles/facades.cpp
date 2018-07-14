@@ -100,9 +100,9 @@ void activateBotCommand(
 			}
 		}
 		if (skipConfirmation) {
-			UrlClickHandler::doOpen(url);
+			UrlClickHandler::Open(url);
 		} else {
-			HiddenUrlClickHandler::doOpen(url);
+			HiddenUrlClickHandler::Open(url);
 		}
 	} break;
 
@@ -177,10 +177,14 @@ void showSettings() {
 	}
 }
 
-void activateClickHandler(ClickHandlerPtr handler, Qt::MouseButton button) {
-	crl::on_main(wnd(), [handler, button] {
-		handler->onClick(button);
+void activateClickHandler(ClickHandlerPtr handler, ClickContext context) {
+	crl::on_main(wnd(), [=] {
+		handler->onClick(context);
 	});
+}
+
+void activateClickHandler(ClickHandlerPtr handler, Qt::MouseButton button) {
+	activateClickHandler(handler, ClickContext{ button });
 }
 
 } // namespace App
@@ -522,6 +526,10 @@ struct Data {
 	int32 CallRingTimeoutMs = 90000;
 	int32 CallConnectTimeoutMs = 30000;
 	int32 CallPacketTimeoutMs = 10000;
+	int32 WebFileDcId = cTestMode() ? 2 : 4;
+	QString TxtDomainString = cTestMode()
+		? qsl("testapv2.stel.com")
+		: qsl("apv2.stel.com");
 	bool PhoneCallsEnabled = true;
 	bool BlockedMode = false;
 	base::Observable<void> PhoneCallsEnabledChanged;
@@ -650,6 +658,8 @@ DefineVar(Global, int32, CallReceiveTimeoutMs);
 DefineVar(Global, int32, CallRingTimeoutMs);
 DefineVar(Global, int32, CallConnectTimeoutMs);
 DefineVar(Global, int32, CallPacketTimeoutMs);
+DefineVar(Global, int32, WebFileDcId);
+DefineVar(Global, QString, TxtDomainString);
 DefineVar(Global, bool, PhoneCallsEnabled);
 DefineVar(Global, bool, BlockedMode);
 DefineRefVar(Global, base::Observable<void>, PhoneCallsEnabledChanged);

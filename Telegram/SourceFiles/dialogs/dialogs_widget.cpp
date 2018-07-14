@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_connecting_widget.h"
 #include "profile/profile_channel_controllers.h"
 #include "storage/storage_media_prepare.h"
+#include "storage/localstorage.h"
 #include "data/data_session.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_window.h"
@@ -119,17 +120,17 @@ DialogsWidget::DialogsWidget(QWidget *parent, not_null<Window::Controller*> cont
 	connect(_filter, SIGNAL(changed()), this, SLOT(onFilterUpdate()));
 	connect(_filter, SIGNAL(cursorPositionChanged(int,int)), this, SLOT(onFilterCursorMoved(int,int)));
 
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
-	Core::UpdateChecker checker;
-	rpl::merge(
-		rpl::single(rpl::empty_value()),
-		checker.isLatest(),
-		checker.failed(),
-		checker.ready()
-	) | rpl::start_with_next([=] {
-		checkUpdateStatus();
-	}, lifetime());
-#endif // !TDESKTOP_DISABLE_AUTOUPDATE
+	if (!Core::UpdaterDisabled()) {
+		Core::UpdateChecker checker;
+		rpl::merge(
+			rpl::single(rpl::empty_value()),
+			checker.isLatest(),
+			checker.failed(),
+			checker.ready()
+		) | rpl::start_with_next([=] {
+			checkUpdateStatus();
+		}, lifetime());
+	}
 
 	subscribe(Adaptive::Changed(), [this] { updateForwardBar(); });
 
@@ -180,8 +181,9 @@ void DialogsWidget::setupConnectingWidget() {
 		Window::AdaptiveIsOneColumn());
 }
 
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
 void DialogsWidget::checkUpdateStatus() {
+	Expects(!Core::UpdaterDisabled());
+
 	using Checker = Core::UpdateChecker;
 	if (Checker().state() == Checker::State::Ready) {
 		if (_updateTelegram) return;
@@ -197,7 +199,6 @@ void DialogsWidget::checkUpdateStatus() {
 	}
 	updateControlsGeometry();
 }
-#endif // TDESKTOP_DISABLE_AUTOUPDATE
 
 void DialogsWidget::activate() {
 	_filter->setFocus();
@@ -637,7 +638,7 @@ void DialogsWidget::searchMessages(
 		_searchTimer.stop();
 		onSearchMessages();
 
-		_inner->saveRecentHashtags(query);
+		Local::saveRecentSearchHashtags(query);
 	}
 }
 
@@ -738,6 +739,7 @@ void DialogsWidget::loadDialogs() {
 	const auto loadCount = firstLoad ? DialogsFirstLoad : DialogsPerPage;
 	const auto flags = MTPmessages_GetDialogs::Flag::f_exclude_pinned;
 	const auto feedId = 0;
+	const auto hash = 0;
 	_dialogsRequestId = MTP::send(
 		MTPmessages_GetDialogs(
 			MTP_flags(flags),
@@ -747,7 +749,8 @@ void DialogsWidget::loadDialogs() {
 			_dialogsOffsetPeer
 				? _dialogsOffsetPeer->input
 				: MTP_inputPeerEmpty(),
-			MTP_int(loadCount)),
+			MTP_int(loadCount),
+			MTP_int(hash)),
 		rpcDone(&DialogsWidget::dialogsReceived),
 		rpcFail(&DialogsWidget::dialogsFailed));
 	if (!_pinnedDialogsReceived) {

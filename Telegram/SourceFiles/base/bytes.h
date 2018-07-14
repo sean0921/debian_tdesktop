@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include <gsl/gsl>
 #include <gsl/gsl_byte>
 
 namespace bytes {
@@ -133,5 +134,8 @@ vector concatenate(SpanRange args) {
 	}
 	return result;
 }
+
+// Implemented in base/openssl_help.h
+void set_random(span destination);
 
 } // namespace bytes

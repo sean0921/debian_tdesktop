@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "inline_bots/inline_bot_send_data.h"
 #include "storage/file_download.h"
 #include "core/file_utilities.h"
+#include "core/mime_type.h"
 #include "mainwidget.h"
 #include "auth_session.h"
 
@@ -280,17 +281,17 @@ void Result::forget() {
 
 void Result::openFile() {
 	if (_document) {
-		DocumentOpenClickHandler(_document).onClick(Qt::LeftButton);
+		DocumentOpenClickHandler(_document).onClick({});
 	} else if (_photo) {
-		PhotoOpenClickHandler(_photo).onClick(Qt::LeftButton);
+		PhotoOpenClickHandler(_photo).onClick({});
 	}
 }
 
 void Result::cancelFile() {
 	if (_document) {
-		DocumentCancelClickHandler(_document).onClick(Qt::LeftButton);
+		DocumentCancelClickHandler(_document).onClick({});
 	} else if (_photo) {
-		PhotoCancelClickHandler(_photo).onClick(Qt::LeftButton);
+		PhotoCancelClickHandler(_photo).onClick({});
 	}
 }
 
@@ -365,8 +366,7 @@ MTPWebDocument Result::adjustAttributes(const MTPWebDocument &document) {
 			data.vaccess_hash,
 			data.vsize,
 			data.vmime_type,
-			adjustAttributes(data.vattributes, data.vmime_type),
-			data.vdc_id);
+			adjustAttributes(data.vattributes, data.vmime_type));
 	} break;
 
 	case mtpc_webDocumentNoProxy: {
@@ -427,7 +427,7 @@ MTPVector<MTPDocumentAttribute> Result::adjustAttributes(
 			const auto &fields = audio->c_documentAttributeAudio();
 			if (!exists(mtpc_documentAttributeFilename)
 				&& !(fields.vflags.v & Flag::f_voice)) {
-				const auto p = mimeTypeForName(mime).globPatterns();
+				const auto p = Core::MimeTypeForName(mime).globPatterns();
 				auto pattern = p.isEmpty() ? QString() : p.front();
 				const auto extension = pattern.isEmpty()
 					? qsl(".unknown")

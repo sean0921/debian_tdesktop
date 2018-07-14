@@ -7,8 +7,6 @@
 {
   'conditions': [[ 'build_mac', {
     'xcode_settings': {
-      'GCC_PREFIX_HEADER': '<(src_loc)/stdafx.h',
-      'GCC_PRECOMPILE_PREFIX_HEADER': 'YES',
       'INFOPLIST_FILE': '../Telegram.plist',
       'CURRENT_PROJECT_VERSION': '<!(./print_version.sh)',
       'ASSETCATALOG_COMPILER_APPICON_NAME': 'AppIcon',
@@ -38,11 +36,6 @@
         },
       },
     },
-    'mac_bundle': '1',
-    'mac_bundle_resources': [
-      '<!@(python -c "for s in \'<@(langpacks)\'.split(\' \'): print(\'<(res_loc)/langs/\' + s + \'.lproj/Localizable.strings\')")',
-      '../Telegram/Images.xcassets',
-    ],
   }], [ 'build_macold', {
     'xcode_settings': {
       'OTHER_CPLUSPLUSFLAGS': [ '-nostdinc++' ],

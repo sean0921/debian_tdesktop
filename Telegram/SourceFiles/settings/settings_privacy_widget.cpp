@@ -12,6 +12,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_settings.h"
 #include "lang/lang_keys.h"
 #include "application.h"
+#include "auth_session.h"
+#include "data/data_session.h"
 #include "platform/platform_specific.h"
 #include "base/openssl_help.h"
 #include "boxes/sessions_box.h"
@@ -81,7 +83,12 @@ void CloudPasswordState::onEdit() {
 		_notEmptyPassport,
 		_curPasswordHint,
 		_newSecureSecretSalt));
-	connect(box, SIGNAL(reloadPassword()), this, SLOT(onReloadPassword()));
+	rpl::merge(
+		box->newPasswordSet() | rpl::map([] { return rpl::empty_value(); }),
+		box->passwordReloadNeeded()
+	) | rpl::start_with_next([=] {
+		onReloadPassword();
+	}, box->lifetime());
 }
 
 void CloudPasswordState::onTurnOff() {
@@ -111,7 +118,13 @@ void CloudPasswordState::onTurnOff() {
 			_curPasswordHint,
 			_newSecureSecretSalt,
 			true));
-		connect(box, SIGNAL(reloadPassword()), this, SLOT(onReloadPassword()));
+		rpl::merge(
+			box->newPasswordSet(
+			) | rpl::map([] { return rpl::empty_value(); }),
+			box->passwordReloadNeeded()
+		) | rpl::start_with_next([=] {
+			onReloadPassword();
+		}, box->lifetime());
 	}
 }
 
@@ -234,8 +247,9 @@ void PrivacyWidget::createControls() {
 		_autoLock->hide(anim::type::instant);
 	}
 	createChildRow(_cloudPasswordState, marginSmall);
-	createChildRow(_showAllSessions, marginSmall, lang(lng_settings_show_sessions), SLOT(onShowSessions()));
 	createChildRow(_selfDestruction, marginSmall, lang(lng_settings_self_destruct), SLOT(onSelfDestruction()));
+	createChildRow(_showAllSessions, marginSmall, lang(lng_settings_show_sessions), SLOT(onShowSessions()));
+	createChildRow(_exportData, marginSmall, lang(lng_settings_export_data), SLOT(onExportData()));
 }
 
 void PrivacyWidget::autoLockUpdated() {
@@ -278,6 +292,14 @@ void PrivacyWidget::onShowSessions() {
 
 void PrivacyWidget::onSelfDestruction() {
 	Ui::show(Box<SelfDestructionBox>());
+}
+
+void PrivacyWidget::onExportData() {
+	Ui::hideSettingsAndLayer();
+	App::CallDelayed(
+		st::boxDuration,
+		&Auth(),
+		[] { Auth().data().startExport(); });
 }
 
 } // namespace Settings

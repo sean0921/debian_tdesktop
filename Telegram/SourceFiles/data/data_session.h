@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 
 class HistoryItem;
+class BoxContent;
 
 namespace HistoryView {
 struct Group;
@@ -26,6 +27,17 @@ namespace Clip {
 class Reader;
 } // namespace Clip
 } // namespace Media
+
+namespace Export {
+class ControllerWrap;
+namespace View {
+class PanelController;
+} // namespace View
+} // namespace Export
+
+namespace Passport {
+struct SavedCredentials;
+} // namespace Passport
 
 namespace Data {
 
@@ -43,6 +55,20 @@ public:
 	AuthSession &session() const {
 		return *_session;
 	}
+
+	void startExport();
+	void suggestStartExport(TimeId availableAt);
+	void clearExportSuggestion();
+	rpl::producer<Export::View::PanelController*> currentExportView() const;
+	bool exportInProgress() const;
+	void stopExportWithConfirmation(FnMut<void()> callback);
+	void stopExport();
+
+	const Passport::SavedCredentials *passportCredentials() const;
+	void rememberPassportCredentials(
+		Passport::SavedCredentials data,
+		TimeMs rememberFor);
+	void forgetPassportCredentials();
 
 	[[nodiscard]] base::Variable<bool> &contactsLoaded() {
 		return _contactsLoaded;
@@ -395,6 +421,8 @@ public:
 	}
 
 private:
+	void suggestStartExport();
+
 	void setupContactViewsViewer();
 	void setupChannelLeavingViewer();
 	void photoApplyFields(
@@ -488,6 +516,12 @@ private:
 		Method method);
 
 	not_null<AuthSession*> _session;
+
+	std::unique_ptr<Export::ControllerWrap> _export;
+	std::unique_ptr<Export::View::PanelController> _exportPanel;
+	rpl::event_stream<Export::View::PanelController*> _exportViewChanges;
+	TimeId _exportAvailableAt = 0;
+	QPointer<BoxContent> _exportSuggestion;
 
 	base::Variable<bool> _contactsLoaded = { false };
 	base::Variable<bool> _allChatsLoaded = { false };
@@ -585,6 +619,11 @@ private:
 	base::Timer _unmuteByFinishedTimer;
 
 	MessageIdsList _mimeForwardIds;
+
+	using CredentialsWithGeneration = std::pair<
+		const Passport::SavedCredentials,
+		int>;
+	std::unique_ptr<CredentialsWithGeneration> _passportCredentials;
 
 	rpl::lifetime _lifetime;
 

@@ -74,6 +74,7 @@ void openPeerByName(
 void joinGroupByHash(const QString &hash);
 void showSettings();
 
+void activateClickHandler(ClickHandlerPtr handler, ClickContext context);
 void activateClickHandler(ClickHandlerPtr handler, Qt::MouseButton button);
 
 } // namespace App
@@ -277,6 +278,8 @@ DeclareVar(int32, CallReceiveTimeoutMs);
 DeclareVar(int32, CallRingTimeoutMs);
 DeclareVar(int32, CallConnectTimeoutMs);
 DeclareVar(int32, CallPacketTimeoutMs);
+DeclareVar(int32, WebFileDcId);
+DeclareVar(QString, TxtDomainString);
 DeclareVar(bool, PhoneCallsEnabled);
 DeclareVar(bool, BlockedMode);
 DeclareRefVar(base::Observable<void>, PhoneCallsEnabledChanged);

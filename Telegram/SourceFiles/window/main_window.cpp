@@ -60,9 +60,6 @@ MainWindow::MainWindow()
 , _titleText(qsl("Telegram")) {
 	subscribe(Theme::Background(), [this](const Theme::BackgroundUpdate &data) {
 		if (data.paletteChanged()) {
-			if (_title) {
-				_title->update();
-			}
 			updatePalette();
 		}
 	});
@@ -104,7 +101,7 @@ void MainWindow::checkLockByTerms() {
 		if (AuthSession::Exists()) {
 			Auth().api().acceptTerms(id);
 			if (!mention.isEmpty()) {
-				MentionClickHandler(mention).onClick(Qt::LeftButton);
+				MentionClickHandler(mention).onClick({});
 			}
 		}
 		Messenger::Instance().unlockTerms();
@@ -242,6 +239,8 @@ void MainWindow::handleActiveChanged() {
 }
 
 void MainWindow::updatePalette() {
+	Ui::ForceFullRepaint(this);
+
 	auto p = palette();
 	p.setColor(QPalette::Window, st::windowBg->c);
 	setPalette(p);
