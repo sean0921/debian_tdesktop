@@ -22,7 +22,7 @@ Last-Update: 2017-12-30
  namespace base {
 --- a/Telegram/SourceFiles/config.h
 +++ b/Telegram/SourceFiles/config.h
-@@ -204,7 +204,7 @@
+@@ -202,7 +202,7 @@
  #endif
  
  #if Q_BYTE_ORDER == Q_BIG_ENDIAN
@@ -35,13 +35,13 @@ Last-Update: 2017-12-30
 +++ b/Telegram/SourceFiles/core/basic_types.h
 @@ -14,7 +14,6 @@ https://github.com/telegramdesktop/tdesk
  #include <functional>
+ #include <gsl/gsl>
  
- #include <crl/crl.h>
 -#include "base/build_config.h"
  #include "base/ordered_set.h"
  #include "base/unique_function.h"
  #include "base/functors.h"
-@@ -41,3 +40,17 @@ using float64 = double;
+@@ -44,3 +43,17 @@ using TimeId = int32;
  
  #define qsl(s) QStringLiteral(s)
  #define qstr(s) QLatin1String((s), sizeof(s) - 1)
@@ -109,7 +109,7 @@ Last-Update: 2017-12-30
  
 --- a/Telegram/gyp/PrecompiledHeader.cmake
 +++ b/Telegram/gyp/PrecompiledHeader.cmake
-@@ -112,7 +112,7 @@ function(add_precompiled_header _target
+@@ -114,7 +114,7 @@ function(add_precompiled_header _target
        set(_compiler_FLAGS "@${_pch_c_flags_file}")
        add_custom_command(
          OUTPUT "${_output_c}"
@@ -118,7 +118,7 @@ Last-Update: 2017-12-30
          DEPENDS "${_pchfile}" "${_pch_c_flags_file}"
          IMPLICIT_DEPENDS C "${_pch_header}"
          COMMENT "Precompiling ${_name} for ${_target} (C)")
-@@ -123,7 +123,7 @@ function(add_precompiled_header _target
+@@ -125,7 +125,7 @@ function(add_precompiled_header _target
        set(_compiler_FLAGS "@${_pch_cpp_flags_file}")
        add_custom_command(
          OUTPUT "${_output_cxx}"
@@ -126,10 +126,10 @@ Last-Update: 2017-12-30
 +        COMMAND "${CMAKE_CXX_COMPILER}" "$(CXX_DEFINES)" "$(CXX_INCLUDES)" "$(CXX_FLAGS)" -x c++-header -o "${_output_cxx}" -c "${_pchfile}"
          DEPENDS "${_pchfile}" "${_pch_cpp_flags_file}"
          IMPLICIT_DEPENDS CXX "${_pch_header}"
-         COMMENT "Precompiling ${_name} for ${_target} (C++)")
+         COMMENT "Precompiling header ${_name} for ${_target} (C++)")
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
-@@ -69,14 +69,10 @@
+@@ -73,15 +73,11 @@
        'codegen.gyp:codegen_lang',
        'codegen.gyp:codegen_numbers',
        'codegen.gyp:codegen_style',
@@ -137,6 +137,7 @@ Last-Update: 2017-12-30
 -      'utils.gyp:Updater',
 -      '../ThirdParty/libtgvoip/libtgvoip.gyp:libtgvoip',
        'crl.gyp:crl',
+       'lib_export.gyp:lib_export',
      ],
  
      'defines': [
@@ -144,7 +145,7 @@ Last-Update: 2017-12-30
        'AL_ALEXT_PROTOTYPES',
        'TGVOIP_USE_CXX11_LIB',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-@@ -85,19 +81,11 @@
+@@ -90,19 +86,11 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -168,7 +169,7 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<@(qrc_files)',
-@@ -118,5 +106,14 @@
+@@ -132,5 +120,14 @@
          ],
        }],
      ],
@@ -195,7 +196,7 @@ Last-Update: 2017-12-30
    'configurations': {
 --- a/Telegram/gyp/crl.gyp
 +++ b/Telegram/gyp/crl.gyp
-@@ -27,11 +27,11 @@
+@@ -28,11 +28,11 @@
        ],
      }]],
      'variables': {
@@ -206,9 +207,23 @@ Last-Update: 2017-12-30
      'include_dirs': [
 -      '../ThirdParty/crl/src',
 +      '../../debian/crl/src',
+       '../SourceFiles',
      ],
      'sources': [
-       '<(crl_src_loc)/common/crl_common_config.h',
+--- a/Telegram/gyp/lib_export.gyp
++++ b/Telegram/gyp/lib_export.gyp
+@@ -48,10 +48,7 @@
+     'include_dirs': [
+       '<(src_loc)',
+       '<(SHARED_INTERMEDIATE_DIR)',
+-      '<(libs_loc)/range-v3/include',
+-      '<(submodules_loc)/GSL/include',
+-      '<(submodules_loc)/variant/include',
+-      '<(submodules_loc)/crl/src',
++      '../../debian/crl/src',
+     ],
+     'sources': [
+       '<(src_loc)/export/export_api_wrap.cpp',
 --- a/Telegram/gyp/qt.gypi
 +++ b/Telegram/gyp/qt.gypi
 @@ -14,25 +14,21 @@
@@ -373,7 +388,7 @@ Last-Update: 2017-12-30
            'defines': [
              'Q_OS_LINUX64',
            ],
-@@ -47,7 +46,6 @@
+@@ -60,7 +59,6 @@
        ],
        'defines': [
          '_REENTRANT',
@@ -383,7 +398,7 @@ Last-Update: 2017-12-30
        'cflags_c': [
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -40,25 +40,16 @@
+@@ -43,25 +43,17 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
@@ -406,6 +421,7 @@ Last-Update: 2017-12-30
 -      'libvdpau.a',
 -      'libdrm.a',
 -      'libz.a',
++      'lzma',
 +      'openal',
 +      'avformat',
 +      'avcodec',
@@ -419,7 +435,7 @@ Last-Update: 2017-12-30
  #      '<!(pkg-config 2> /dev/null --libs <@(pkgconfig_libs))',
      ],
      'cflags_cc': [
-@@ -66,50 +57,30 @@
+@@ -69,37 +61,24 @@
        '-Wno-maybe-uninitialized',
      ],
      'ldflags': [
@@ -444,25 +460,12 @@ Last-Update: 2017-12-30
        },
      },
      'conditions': [
--      [ '"<!(uname -p)" == "x86_64"', {
-+      [ '"<!(dpkg-architecture -q DEB_HOST_ARCH_BITS)" == "64"', {
-         # 32 bit version can't be linked with debug info or LTO,
-         # virtual memory exhausted :(
-         'cflags_c': [ '-g' ],
-         'cflags_cc': [ '-g' ],
-         'ldflags': [ '-g' ],
--        'configurations': {
--          'Release': {
--            'cflags_c': [ '-flto' ],
--            'cflags_cc': [ '-flto' ],
--            'ldflags': [ '-flto' ],
--          },
--        },
--      }, {
+-      [ '"<!(uname -p)" != "x86_64"', {
 -        'ldflags': [
 -          '-Wl,-wrap,__divmoddi4',
 -        ],
-       }], ['not_need_gtk!="True"', {
+-      }], ['not_need_gtk!="True"', {
++      ['not_need_gtk != "True"', {
          'cflags_cc': [
            '<!(pkg-config 2> /dev/null --cflags appindicator-0.1)',
            '<!(pkg-config 2> /dev/null --cflags gtk+-2.0)',
@@ -480,7 +483,7 @@ Last-Update: 2017-12-30
  <(src_loc)/base/bytes.h
  <(src_loc)/base/flags.h
  <(src_loc)/base/enum_mask.h
-@@ -775,7 +774,6 @@
+@@ -789,7 +788,6 @@
  <(src_loc)/messenger.h
  <(src_loc)/observer_peer.cpp
  <(src_loc)/observer_peer.h
@@ -488,7 +491,7 @@ Last-Update: 2017-12-30
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -785,14 +783,7 @@
+@@ -797,14 +795,7 @@
  <(emoji_suggestions_loc)/emoji_suggestions.cpp
  <(emoji_suggestions_loc)/emoji_suggestions.h
  

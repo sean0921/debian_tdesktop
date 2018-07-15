@@ -6,7 +6,7 @@ Last-Update: 2017-08-22
 
 --- a/Telegram/Resources/qrc/telegram.qrc
 +++ b/Telegram/Resources/qrc/telegram.qrc
-@@ -10,17 +10,6 @@
+@@ -51,17 +51,6 @@
      <file alias="art/sunrise.jpg">../art/sunrise.jpg</file>
      <file alias="night.tdesktop-theme">../night.tdesktop-theme</file>
    </qresource>
@@ -26,7 +26,7 @@ Last-Update: 2017-08-22
      <file alias="lang_es.strings">../langs/lang_es.strings</file>
 --- a/Telegram/SourceFiles/core/file_utilities.cpp
 +++ b/Telegram/SourceFiles/core/file_utilities.cpp
-@@ -300,3 +300,20 @@ bool GetDefault(QStringList &files, QByt
+@@ -326,3 +326,20 @@ bool GetDefault(
  
  } // namespace internal
  } // namespace FileDialog
@@ -49,7 +49,7 @@ Last-Update: 2017-08-22
 +}
 --- a/Telegram/SourceFiles/core/file_utilities.h
 +++ b/Telegram/SourceFiles/core/file_utilities.h
-@@ -111,3 +111,9 @@ bool GetDefault(
+@@ -103,3 +103,9 @@ bool GetDefault(
  
  } // namespace internal
  } // namespace FileDialog
@@ -61,15 +61,15 @@ Last-Update: 2017-08-22
 +} // namespace Resources
 --- a/Telegram/SourceFiles/core/launcher.cpp
 +++ b/Telegram/SourceFiles/core/launcher.cpp
-@@ -24,6 +24,7 @@
+@@ -10,6 +10,7 @@
+ #include "platform/platform_launcher.h"
  #include "platform/platform_specific.h"
  #include "core/crash_reports.h"
- #include "core/main_queue_processor.h"
 +#include "core/file_utilities.h"
+ #include "core/main_queue_processor.h"
+ #include "core/update_checker.h"
  #include "application.h"
- 
- namespace Core {
-@@ -43,6 +44,7 @@ void Launcher::init() {
+@@ -37,6 +38,7 @@ void Launcher::init() {
  	prepareSettings();
  
  	QCoreApplication::setApplicationName(qsl("TelegramDesktop"));
@@ -79,15 +79,15 @@ Last-Update: 2017-08-22
  	QCoreApplication::setAttribute(Qt::AA_DisableHighDpiScaling, true);
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
-@@ -63,6 +63,7 @@
+@@ -52,6 +52,7 @@
        ],
        'build_defines%': '',
        'list_sources_command': 'python <(DEPTH)/list_sources.py --input <(DEPTH)/telegram_sources.txt --replace src_loc=<(src_loc)',
 +      'use_packed_resources%': 0,
+       'pch_source': '<(src_loc)/stdafx.cpp',
+       'pch_header': '<(src_loc)/stdafx.h',
      },
-     'includes': [
-       'common_executable.gypi',
-@@ -100,7 +101,6 @@
+@@ -93,7 +94,6 @@
        '/usr/include/opus',
      ],
      'sources': [
@@ -95,7 +95,7 @@ Last-Update: 2017-08-22
        '<@(style_files)',
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg))',
        'telegram_sources.txt',
-@@ -109,6 +109,31 @@
+@@ -105,6 +105,31 @@
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg) --exclude_for <(build_os))',
      ],
      'conditions': [

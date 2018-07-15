@@ -38,9 +38,9 @@ Last-Update: Mon, 11 Jun 2018 11:51:39 +0300
  #define signals public
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -78,10 +78,19 @@
-         'ldflags': [ '-g' ],
-       }], ['not_need_gtk!="True"', {
+@@ -75,10 +75,19 @@
+     'conditions': [
+       ['not_need_gtk != "True"', {
          'cflags_cc': [
 -          '<!(pkg-config 2> /dev/null --cflags appindicator-0.1)',
            '<!(pkg-config 2> /dev/null --cflags gtk+-2.0)',
@@ -58,4 +58,4 @@ Last-Update: Mon, 11 Jun 2018 11:51:39 +0300
 +        'cflags_cc': [ '<!(pkg-config --cflags appindicator-0.1)' ],
        }]
      ],
-     'cmake_precompiled_header': '<(src_loc)/stdafx.h',
+   }]],

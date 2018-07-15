@@ -68,14 +68,11 @@ override_dh_auto_clean:
 	dh_auto_clean || dh_auto_clean --sourcedirectory=$(CURDIR)
 	rm -f Telegram/gyp/tests/*.test
 
-# We paste the content of CMakeLists.inj into the generated CMakeLists.txt file
-# instead of patching gyp utility. $NUM is the number of the line before
-# penultimate one in CMakeLists.txt, it's the finish of the Telegram target in
-# this file. The next sed script inserts all lines from debian/CMakeLists.inj file.
+# We append content of the d/CMakeLists.inj file into the generated
+# CMakeLists.txt instead of patching gyp utility.
 override_dh_auto_configure:
 	gyp $(GYPFLAGS) Telegram/gyp/Telegram.gyp
-	NUM=$$((`wc -l < $(OUT)/$(BUILD_MODE)/CMakeLists.txt` - 2)); \
-	sed -i "$$NUM r debian/CMakeLists.inj" $(OUT)/$(BUILD_MODE)/CMakeLists.txt
+	sed -i '$$r debian/CMakeLists.inj' $(OUT)/$(BUILD_MODE)/CMakeLists.txt
 	dh_auto_configure
 
 override_dh_installchangelogs:

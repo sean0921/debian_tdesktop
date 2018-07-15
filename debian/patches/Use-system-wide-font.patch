@@ -7,8 +7,9 @@ Last-Update: Sat, 31 Mar 2018 14:36:39 +0300
 
 --- a/Telegram/Resources/qrc/telegram.qrc
 +++ b/Telegram/Resources/qrc/telegram.qrc
-@@ -1,8 +1,5 @@
- <RCC>
+@@ -41,9 +41,6 @@
+     <file alias="images/section_web@2x.png">../export_html/images/section_web@2x.png</file>
+   </qresource>
    <qresource prefix="/gui">
 -    <file alias="fonts/OpenSans-Regular.ttf">../fonts/OpenSans-Regular.ttf</file>
 -    <file alias="fonts/OpenSans-Bold.ttf">../fonts/OpenSans-Bold.ttf</file>
