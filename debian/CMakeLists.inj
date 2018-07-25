@@ -11,5 +11,16 @@ include(../../Telegram/gyp/PrecompiledHeader.cmake)
 add_precompiled_header(Telegram ../../Telegram/SourceFiles/stdafx.h)
 add_precompiled_header(lib_export ../../Telegram/SourceFiles/export/export_pch.h)
 
+# Telegram uses long atomic types, so on some architectures libatomic is needed.
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("
+#include <atomic>
+std::atomic_int64_t foo;
+int main() {return foo;}
+" HAVE_LONG_ATOMIC_WITHOUT_LIB)
+if (NOT HAVE_LONG_ATOMIC_WITHOUT_LIB)
+  target_link_libraries(Telegram atomic)
+endif()
+
 # vim: ft=cmake
 # -------------- debian/CMakeLists.inj end --------------
