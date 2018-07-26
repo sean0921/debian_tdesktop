@@ -12,18 +12,13 @@ OUT = obj-$(DEB_HOST_GNU_TYPE)
 
 ifeq (,$(filter noopt,$(DEB_BUILD_OPTIONS)))
  BUILD_MODE = Release
- ifeq (,$(filter $(DEB_HOST_ARCH), mips mipsel mips64el))
-  DEB_CXXFLAGS_MAINT_APPEND = -flto
-  DEB_LDFLAGS_MAINT_APPEND = -flto
+ ifeq ($(DEB_HOST_ARCH_BITS), 32)
+  # Less debugging information to avoid running out of address space when
+  # linking on architectures with reduced amount of memory.
+  DEB_CXXFLAGS_MAINT_APPEND += -g1
  endif
 else
  BUILD_MODE = Debug
-endif
-
-# less debug info to avoid running
-# out of address space when linking
-ifneq (,$(filter $(DEB_HOST_ARCH), mips mipsel))
- DEB_CXXFLAGS_MAINT_APPEND += -g1
 endif
 
 GYPFLAGS += \
