@@ -1,3 +1,11 @@
+telegram-desktop (1.3.10-2) unstable; urgency=medium
+
+  * Fix FTBFS on mips, mipsel, armel with libatomic.
+  * Disable LTO at all (closes: #904133).
+  * Bump standards version, no needed changes.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Fri, 03 Aug 2018 22:10:59 +0300
+
 telegram-desktop (1.3.10-1) unstable; urgency=medium
 
   * New upstream release.
