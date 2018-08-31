@@ -1,7 +1,9 @@
 Description: Switch to Ayatana Indicators
 Author: Nicholas Guriev <guriev-ns@ya.ru>
+Date: Mon, 11 Jun 2018 11:51:39 +0300
+Bug: https://github.com/telegramdesktop/tdesktop/pull/5129
 Bug-Debian: https://bugs.debian.org/898414
-Last-Update: Mon, 11 Jun 2018 11:51:39 +0300
+Last-Update: Sat, 01 Sep 2018 19:36:57 +0300
 
 --- a/Telegram/SourceFiles/platform/linux/linux_libs.cpp
 +++ b/Telegram/SourceFiles/platform/linux/linux_libs.cpp

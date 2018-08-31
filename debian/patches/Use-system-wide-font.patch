@@ -7,8 +7,8 @@ Last-Update: Sat, 31 Mar 2018 14:36:39 +0300
 
 --- a/Telegram/Resources/qrc/telegram.qrc
 +++ b/Telegram/Resources/qrc/telegram.qrc
-@@ -41,9 +41,6 @@
-     <file alias="images/section_web@2x.png">../export_html/images/section_web@2x.png</file>
+@@ -42,9 +42,6 @@
+     <file alias="js/script.js">../export_html/js/script.js</file>
    </qresource>
    <qresource prefix="/gui">
 -    <file alias="fonts/OpenSans-Regular.ttf">../fonts/OpenSans-Regular.ttf</file>

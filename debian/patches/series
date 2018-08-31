@@ -3,3 +3,4 @@ Debian-API-ID.patch
 Packed-resources.patch
 Use-system-wide-font.patch
 Ayatana-Indicators.patch
+GCC-binding-workaround.patch
