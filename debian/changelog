@@ -1,8 +1,18 @@
+telegram-desktop (1.3.14-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Update patches.
+    - Add GCC-binding-workaround.patch
+  * Bump standards version to 4.2.1, no related changes because Telegram is
+    not a Perl program.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Fri, 31 Aug 2018 18:59:26 +0300
+
 telegram-desktop (1.3.10-2) unstable; urgency=medium
 
   * Fix FTBFS on mips, mipsel, armel with libatomic.
   * Disable LTO at all (closes: #904133).
-  * Bump standards version, no needed changes.
+  * Bump standards version to 4.2.0, no needed changes.
 
  -- Nicholas Guriev <guriev-ns@ya.ru>  Fri, 03 Aug 2018 22:10:59 +0300
 
@@ -13,7 +23,7 @@ telegram-desktop (1.3.10-1) unstable; urgency=medium
   * Update patches.
     - Add a link to precompiled C++ header for lib_export.
   * Update crl subproject (commit 9bc641f).
-  * Bump standards version to 4.5.1.
+  * Bump standards version to 4.1.5.
     - Add the Rules-Requires-Root field to the debian/control file.
 
  -- Nicholas Guriev <guriev-ns@ya.ru>  Tue, 17 Jul 2018 23:03:53 +0300
