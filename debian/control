@@ -25,7 +25,7 @@ Build-Depends-Arch:
  qtbase5-dev (>=5.5),
  qtbase5-private-dev (>=5.5),
  zlib1g-dev (>=1:1.2.8),
-Standards-Version: 4.2.0
+Standards-Version: 4.2.1
 Rules-Requires-Root: no
 Homepage: https://desktop.telegram.org
 Vcs-Git: https://salsa.debian.org/debian/telegram-desktop.git
