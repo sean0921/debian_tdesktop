@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "observer_peer.h"
 #include "auth_session.h"
 #include "apiwrap.h"
+#include "messenger.h"
 #include "export/export_controller.h"
 #include "export/view/export_view_panel_controller.h"
 #include "window/notifications_manager.h"
@@ -19,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "inline_bots/inline_bot_layout_item.h"
 #include "storage/localstorage.h"
+#include "storage/storage_encrypted_file.h"
 #include "boxes/abstract_box.h"
 #include "passport/passport_form_controller.h"
 #include "data/data_media_types.h"
@@ -66,10 +68,19 @@ void UpdateImage(ImagePtr &old, ImagePtr now) {
 
 Session::Session(not_null<AuthSession*> session)
 : _session(session)
+, _cache(Messenger::Instance().databases().get(
+	Local::cachePath(),
+	Local::cacheSettings()))
 , _groups(this)
 , _unmuteByFinishedTimer([=] { unmuteByFinished(); }) {
+	_cache->open(Local::cacheKey());
+
 	setupContactViewsViewer();
 	setupChannelLeavingViewer();
+}
+
+Storage::Cache::Database &Session::cache() {
+	return *_cache;
 }
 
 void Session::startExport(PeerData *peer) {
@@ -318,7 +329,7 @@ void Session::notifyItemIdChange(IdChange event) {
 		view->refreshDataId();
 	};
 	enumerateItemViews(event.item, refreshViewDataId);
-	if (const auto group = Auth().data().groups().find(event.item)) {
+	if (const auto group = groups().find(event.item)) {
 		const auto leader = group->items.back();
 		if (leader != event.item) {
 			enumerateItemViews(leader, refreshViewDataId);
@@ -1061,6 +1072,7 @@ void Session::documentConvert(
 		Unexpected("Type in Session::documentConvert().");
 	}();
 	const auto oldKey = original->mediaKey();
+	const auto oldCacheKey = original->cacheKey();
 	const auto idChanged = (original->id != id);
 	const auto sentSticker = idChanged && (original->sticker() != nullptr);
 	if (idChanged) {
@@ -1083,14 +1095,7 @@ void Session::documentConvert(
 	}
 	documentApplyFields(original, data);
 	if (idChanged) {
-		const auto newKey = original->mediaKey();
-		if (oldKey != newKey) {
-			if (original->isVoiceMessage()) {
-				Local::copyAudio(oldKey, newKey);
-			} else if (original->sticker() || original->isAnimation()) {
-				Local::copyStickerImage(oldKey, newKey);
-			}
-		}
+		cache().moveIfEmpty(oldCacheKey, original->cacheKey());
 		if (savedGifs().indexOf(original) >= 0) {
 			Local::writeSavedGifs();
 		}
@@ -1837,8 +1842,8 @@ void Session::applyNotifySetting(
 
 void Session::updateNotifySettings(
 		not_null<PeerData*> peer,
-		base::optional<int> muteForSeconds,
-		base::optional<bool> silentPosts) {
+		std::optional<int> muteForSeconds,
+		std::optional<bool> silentPosts) {
 	if (peer->notifyChange(muteForSeconds, silentPosts)) {
 		updateNotifySettingsLocal(peer);
 		_session->api().updateNotifySettingsDelayed(peer);
@@ -1915,6 +1920,77 @@ rpl::producer<> Session::defaultNotifyUpdates(
 	return peer->isUser()
 		? defaultUserNotifyUpdates()
 		: defaultChatNotifyUpdates();
+}
+
+void Session::serviceNotification(
+		const TextWithEntities &message,
+		const MTPMessageMedia &media) {
+	const auto date = unixtime();
+	if (!App::userLoaded(ServiceUserId)) {
+		App::feedUsers(MTP_vector<MTPUser>(1, MTP_user(
+			MTP_flags(
+				MTPDuser::Flag::f_first_name
+				| MTPDuser::Flag::f_phone
+				| MTPDuser::Flag::f_status
+				| MTPDuser::Flag::f_verified),
+			MTP_int(ServiceUserId),
+			MTPlong(),
+			MTP_string("Telegram"),
+			MTPstring(),
+			MTPstring(),
+			MTP_string("42777"),
+			MTP_userProfilePhotoEmpty(),
+			MTP_userStatusRecently(),
+			MTPint(),
+			MTPstring(),
+			MTPstring(),
+			MTPstring())));
+	}
+	const auto history = App::history(peerFromUser(ServiceUserId));
+	if (!history->lastMessageKnown()) {
+		_session->api().requestDialogEntry(history, [=] {
+			insertCheckedServiceNotification(message, media, date);
+		});
+	} else {
+		insertCheckedServiceNotification(message, media, date);
+	}
+}
+
+void Session::insertCheckedServiceNotification(
+		const TextWithEntities &message,
+		const MTPMessageMedia &media,
+		TimeId date) {
+	const auto history = App::history(peerFromUser(ServiceUserId));
+	if (!history->isReadyFor(ShowAtUnreadMsgId)) {
+		history->setUnreadCount(0);
+		history->getReadyFor(ShowAtTheEndMsgId);
+	}
+	const auto flags = MTPDmessage::Flag::f_entities
+		| MTPDmessage::Flag::f_from_id
+		| MTPDmessage_ClientFlag::f_clientside_unread;
+	auto sending = TextWithEntities(), left = message;
+	while (TextUtilities::CutPart(sending, left, MaxMessageSize)) {
+		App::histories().addNewMessage(
+			MTP_message(
+				MTP_flags(flags),
+				MTP_int(clientMsgId()),
+				MTP_int(ServiceUserId),
+				MTP_peerUser(MTP_int(_session->userId())),
+				MTPnullFwdHeader,
+				MTPint(),
+				MTPint(),
+				MTP_int(date),
+				MTP_string(sending.text),
+				media,
+				MTPnullMarkup,
+				TextUtilities::EntitiesToMTP(sending.entities),
+				MTPint(),
+				MTPint(),
+				MTPstring(),
+				MTPlong()),
+			NewMessageUnread);
+	}
+	sendHistoryChangeNotifications();
 }
 
 void Session::forgetMedia() {

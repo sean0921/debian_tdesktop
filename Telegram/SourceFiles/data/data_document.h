@@ -9,6 +9,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_types.h"
 
+namespace Storage {
+namespace Cache {
+struct Key;
+} // namespace Cache
+} // namespace Storage
+
 class AuthSession;
 class mtpFileLoader;
 
@@ -160,6 +166,7 @@ public:
 	MTPInputDocument mtpInput() const;
 	QByteArray fileReference() const;
 	void refreshFileReference(const QByteArray &value);
+	void refreshStickerThumbFileReference();
 
 	// When we have some client-side generated document
 	// (for example for displaying an external inline bot result)
@@ -173,6 +180,8 @@ public:
 	void setMimeString(const QString &mime);
 
 	MediaKey mediaKey() const;
+	Storage::Cache::Key cacheKey() const;
+	uint8 cacheTag() const;
 
 	static QString ComposeNameString(
 		const QString &filename,

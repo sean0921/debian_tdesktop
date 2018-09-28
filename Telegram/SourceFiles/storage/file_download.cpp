@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/file_download.h"
 
 #include "data/data_document.h"
+#include "data/data_session.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "messenger.h"
@@ -36,6 +37,7 @@ void Downloader::clearPriorities() {
 
 void Downloader::requestedAmountIncrement(MTP::DcId dcId, int index, int amount) {
 	Expects(index >= 0 && index < MTP::kDownloadSessionsCount);
+
 	auto it = _requestedBytesAmount.find(dcId);
 	if (it == _requestedBytesAmount.cend()) {
 		it = _requestedBytesAmount.emplace(dcId, RequestedInDc { { 0 } }).first;
@@ -105,9 +107,17 @@ WebLoadMainManager *_webLoadMainManager = nullptr;
 
 } // namespace
 
-FileLoader::FileLoader(const QString &toFile, int32 size, LocationType locationType, LoadToCacheSetting toCache, LoadFromCloudSetting fromCloud, bool autoLoading)
+FileLoader::FileLoader(
+	const QString &toFile,
+	int32 size,
+	LocationType locationType,
+	LoadToCacheSetting toCache,
+	LoadFromCloudSetting fromCloud,
+	bool autoLoading,
+	uint8 cacheTag)
 : _downloader(&Auth().downloader())
 , _autoLoading(autoLoading)
+, _cacheTag(cacheTag)
 , _filename(toFile)
 , _file(_filename)
 , _toCache(toCache)
@@ -206,16 +216,16 @@ void FileLoader::pause() {
 }
 
 FileLoader::~FileLoader() {
-	if (_localTaskId) {
-		Local::cancelTask(_localTaskId);
-	}
 	removeFromQueue();
 }
 
-void FileLoader::localLoaded(const StorageImageSaved &result, const QByteArray &imageFormat, const QPixmap &imagePixmap) {
-	_localTaskId = 0;
+void FileLoader::localLoaded(
+		const StorageImageSaved &result,
+		const QByteArray &imageFormat,
+		const QPixmap &imagePixmap) {
+	_localLoading.kill();
 	if (result.data.isEmpty()) {
-		_localStatus = LocalFailed;
+		_localStatus = LocalStatus::NotFound;
 		start(true);
 		return;
 	}
@@ -224,7 +234,7 @@ void FileLoader::localLoaded(const StorageImageSaved &result, const QByteArray &
 		_imageFormat = imageFormat;
 		_imagePixmap = imagePixmap;
 	}
-	_localStatus = LocalLoaded;
+	_localStatus = LocalStatus::Loaded;
 	if (!_filename.isEmpty() && _toCache == LoadToCacheAsWell) {
 		if (!_fileIsOpen) _fileIsOpen = _file.open(QIODevice::WriteOnly);
 		if (!_fileIsOpen) {
@@ -241,7 +251,8 @@ void FileLoader::localLoaded(const StorageImageSaved &result, const QByteArray &
 	if (_fileIsOpen) {
 		_file.close();
 		_fileIsOpen = false;
-		Platform::File::PostprocessDownloaded(QFileInfo(_file).absoluteFilePath());
+		Platform::File::PostprocessDownloaded(
+			QFileInfo(_file).absoluteFilePath());
 	}
 	_downloader->taskFinished().notify();
 
@@ -254,9 +265,9 @@ void FileLoader::start(bool loadFirst, bool prior) {
 	if (_paused) {
 		_paused = false;
 	}
-	if (_finished || tryLoadLocal()) return;
-
-	if (_fromCloud == LoadFromLocalOnly) {
+	if (_finished || tryLoadLocal()) {
+		return;
+	} else if (_fromCloud == LoadFromLocalOnly) {
 		cancel();
 		return;
 	}
@@ -357,6 +368,77 @@ void FileLoader::start(bool loadFirst, bool prior) {
 	return startLoading(loadFirst, prior);
 }
 
+void FileLoader::loadLocal(const Storage::Cache::Key &key) {
+	const auto readImage = (_locationType != AudioFileLocation);
+	auto [first, second] = base::make_binary_guard();
+	_localLoading = std::move(first);
+	auto done = [=, guard = std::move(second)](
+			QByteArray &&value,
+			QImage &&image,
+			QByteArray &&format) mutable {
+		crl::on_main([
+			=,
+			value = std::move(value),
+			image = std::move(image),
+			format = std::move(format),
+			guard = std::move(guard)
+		]() mutable {
+			if (!guard.alive()) {
+				return;
+			}
+			localLoaded(
+				StorageImageSaved(std::move(value)),
+				format,
+				App::pixmapFromImageInPlace(std::move(image)));
+		});
+	};
+	Auth().data().cache().get(key, [=, callback = std::move(done)](
+			QByteArray &&value) mutable {
+		if (readImage) {
+			crl::async([
+				value = std::move(value),
+				done = std::move(callback)
+			]() mutable {
+				auto format = QByteArray();
+				auto image = App::readImage(value, &format, false);
+				if (!image.isNull()) {
+					done(
+						std::move(value),
+						std::move(image),
+						std::move(format));
+				} else {
+					done(std::move(value), {}, {});
+				}
+			});
+		} else {
+			callback(std::move(value), {}, {});
+		}
+	});
+}
+
+bool FileLoader::tryLoadLocal() {
+	if (_localStatus == LocalStatus::NotFound
+		|| _localStatus == LocalStatus::Loaded) {
+		return false;
+	} else if (_localStatus == LocalStatus::Loading) {
+		return true;
+	}
+
+	if (const auto key = cacheKey()) {
+		loadLocal(*key);
+		emit progress(this);
+	}
+
+	if (_localStatus != LocalStatus::NotTried) {
+		return _finished;
+	} else if (_localLoading.alive()) {
+		_localStatus = LocalStatus::Loading;
+		return true;
+	}
+	_localStatus = LocalStatus::NotFound;
+	return false;
+}
+
 void FileLoader::cancel() {
 	cancel(false);
 }
@@ -397,15 +479,17 @@ mtpFileLoader::mtpFileLoader(
 	not_null<StorageImageLocation*> location,
 	Data::FileOrigin origin,
 	int32 size,
-	LoadFromCloudSetting fromCloud
-	, bool autoLoading)
+	LoadFromCloudSetting fromCloud,
+	bool autoLoading,
+	uint8 cacheTag)
 : FileLoader(
 	QString(),
 	size,
 	UnknownFileLocation,
 	LoadToCacheAsWell,
 	fromCloud,
-	autoLoading)
+	autoLoading,
+	cacheTag)
 , _dcId(location->dc())
 , _location(location)
 , _origin(origin) {
@@ -428,14 +512,16 @@ mtpFileLoader::mtpFileLoader(
 	int32 size,
 	LoadToCacheSetting toCache,
 	LoadFromCloudSetting fromCloud,
-	bool autoLoading)
+	bool autoLoading,
+	uint8 cacheTag)
 : FileLoader(
 	to,
 	size,
 	type,
 	toCache,
 	fromCloud,
-	autoLoading)
+	autoLoading,
+	cacheTag)
 , _dcId(dc)
 , _id(id)
 , _accessHash(accessHash)
@@ -453,14 +539,16 @@ mtpFileLoader::mtpFileLoader(
 	const WebFileLocation *location,
 	int32 size,
 	LoadFromCloudSetting fromCloud,
-	bool autoLoading)
+	bool autoLoading,
+	uint8 cacheTag)
 : FileLoader(
 	QString(),
 	size,
 	UnknownFileLocation,
 	LoadToCacheAsWell,
 	fromCloud,
-	autoLoading)
+	autoLoading,
+	cacheTag)
 , _dcId(location->dc())
 , _urlLocation(location) {
 	auto shiftedDcId = MTP::downloadDcId(_dcId, 0);
@@ -695,7 +783,7 @@ void mtpFileLoader::cdnPartLoaded(const MTPupload_CdnFile &result, mtpRequestId 
 	state.ivec[12] = static_cast<uchar>((counterOffset >> 24) & 0xFF);
 
 	auto decryptInPlace = result.c_upload_cdnFile().vbytes.v;
-	auto buffer = bytes::make_span(decryptInPlace);
+	auto buffer = bytes::make_detached_span(decryptInPlace);
 	MTP::aesCtrEncrypt(buffer, key.data(), &state);
 
 	switch (checkCdnFileHash(offset, buffer)) {
@@ -822,17 +910,7 @@ bool mtpFileLoader::feedPart(int offset, bytes::const_span buffer) {
 				return false;
 			}
 		} else {
-			if (offset > 100 * 1024 * 1024) {
-				// Debugging weird out of memory crashes.
-				auto info = QString("offset: %1, size: %2, cancelled: %3, finished: %4, filename: '%5', tocache: %6, fromcloud: %7, data: %8, fullsize: %9").arg(offset).arg(buffer.size()).arg(Logs::b(_cancelled)).arg(Logs::b(_finished)).arg(_filename).arg(int(_toCache)).arg(int(_fromCloud)).arg(_data.size()).arg(_size);
-				info += QString(", locationtype: %1, inqueue: %2, localstatus: %3").arg(int(_locationType)).arg(Logs::b(_inQueue)).arg(int(_localStatus));
-				CrashReports::SetAnnotation("DebugInfo", info);
-			}
 			_data.reserve(offset + buffer.size());
-			if (offset > 100 * 1024 * 1024) {
-				CrashReports::ClearAnnotation("DebugInfo");
-			}
-
 			if (offset > _data.size()) {
 				_skippedBytes += offset - _data.size();
 				_data.resize(offset);
@@ -844,7 +922,9 @@ bool mtpFileLoader::feedPart(int offset, bytes::const_span buffer) {
 				if (int64(offset + buffer.size()) > _data.size()) {
 					_data.resize(offset + buffer.size());
 				}
-				auto dst = bytes::make_span(_data).subspan(offset, buffer.size());
+				const auto dst = bytes::make_detached_span(_data).subspan(
+					offset,
+					buffer.size());
 				bytes::copy(dst, buffer);
 			}
 		}
@@ -872,29 +952,25 @@ bool mtpFileLoader::feedPart(int offset, bytes::const_span buffer) {
 		}
 		removeFromQueue();
 
-		if (_localStatus == LocalNotFound || _localStatus == LocalFailed) {
-			if (_urlLocation) {
-				Local::writeImage(storageKey(*_urlLocation), StorageImageSaved(_data));
-			} else if (_locationType != UnknownFileLocation) { // audio, video, document
-				auto mkey = mediaKey(_locationType, _dcId, _id);
-				if (!_filename.isEmpty()) {
-					Local::writeFileLocation(mkey, FileLocation(_filename));
-				}
-				if (_toCache == LoadToCacheAsWell) {
-					if (_locationType == DocumentFileLocation) {
-						Local::writeStickerImage(mkey, _data);
-					} else if (_locationType == AudioFileLocation) {
-						Local::writeAudio(mkey, _data);
-					} else if (_locationType == SecureFileLocation) {
-						Local::writeImage(
-							StorageKey(
-								storageMix32To64(_locationType, _dcId),
-								_id),
-							StorageImageSaved(_data));
+		if (_localStatus == LocalStatus::NotFound) {
+			if (_locationType != UnknownFileLocation
+				&& !_filename.isEmpty()) {
+				Local::writeFileLocation(
+					mediaKey(_locationType, _dcId, _id),
+					FileLocation(_filename));
+			}
+			if (_urlLocation
+				|| _locationType == UnknownFileLocation
+				|| _toCache == LoadToCacheAsWell) {
+				if (const auto key = cacheKey()) {
+					if (_data.size() <= Storage::kMaxFileInMemory) {
+						Auth().data().cache().put(
+							*key,
+							Storage::Cache::Database::TaggedValue(
+								base::duplicate(_data),
+								_cacheTag));
 					}
 				}
-			} else {
-				Local::writeImage(storageKey(*_location), StorageImageSaved(_data));
 			}
 		}
 	}
@@ -1026,51 +1102,35 @@ void mtpFileLoader::changeCDNParams(
 	makeRequest(offset);
 }
 
-bool mtpFileLoader::tryLoadLocal() {
-	if (_localStatus == LocalNotFound || _localStatus == LocalLoaded || _localStatus == LocalFailed) {
-		return false;
-	}
-	if (_localStatus == LocalLoading) {
-		return true;
-	}
-
+std::optional<Storage::Cache::Key> mtpFileLoader::cacheKey() const {
 	if (_urlLocation) {
-		_localTaskId = Local::startImageLoad(storageKey(*_urlLocation), this);
+		return Data::WebDocumentCacheKey(*_urlLocation);
 	} else if (_location) {
-		_localTaskId = Local::startImageLoad(storageKey(*_location), this);
-	} else {
-		if (_toCache == LoadToCacheAsWell) {
-			MediaKey mkey = mediaKey(_locationType, _dcId, _id);
-			if (_locationType == DocumentFileLocation) {
-				_localTaskId = Local::startStickerImageLoad(mkey, this);
-			} else if (_locationType == AudioFileLocation) {
-				_localTaskId = Local::startAudioLoad(mkey, this);
-			} else if (_locationType == SecureFileLocation) {
-				_localTaskId = Local::startImageLoad(StorageKey(
-					storageMix32To64(_locationType, _dcId),
-					_id), this);
-			}
-		}
+		return Data::StorageCacheKey(*_location);
+	} else if (_toCache == LoadToCacheAsWell) {
+		return Data::DocumentCacheKey(_dcId, _id);
 	}
-
-	emit progress(this);
-
-	if (_localStatus != LocalNotTried) {
-		return _finished;
-	} else if (_localTaskId) {
-		_localStatus = LocalLoading;
-		return true;
-	}
-	_localStatus = LocalNotFound;
-	return false;
+	return std::nullopt;
 }
 
 mtpFileLoader::~mtpFileLoader() {
 	cancelRequests();
 }
 
-webFileLoader::webFileLoader(const QString &url, const QString &to, LoadFromCloudSetting fromCloud, bool autoLoading)
-: FileLoader(QString(), 0, UnknownFileLocation, LoadToCacheAsWell, fromCloud, autoLoading)
+webFileLoader::webFileLoader(
+	const QString &url,
+	const QString &to,
+	LoadFromCloudSetting fromCloud,
+	bool autoLoading,
+	uint8 cacheTag)
+: FileLoader(
+	QString(),
+	0,
+	UnknownFileLocation,
+	LoadToCacheAsWell,
+	fromCloud,
+	autoLoading,
+	cacheTag)
 , _url(url)
 , _requestSent(false)
 , _already(0) {
@@ -1129,8 +1189,16 @@ void webFileLoader::onFinished(const QByteArray &data) {
 	}
 	removeFromQueue();
 
-	if (_localStatus == LocalNotFound || _localStatus == LocalFailed) {
-		Local::writeWebFile(_url, _data);
+	if (_localStatus == LocalStatus::NotFound) {
+		if (const auto key = cacheKey()) {
+			if (_data.size() <= Storage::kMaxFileInMemory) {
+				Auth().data().cache().put(
+					*key,
+					Storage::Cache::Database::TaggedValue(
+						base::duplicate(_data),
+						_cacheTag));
+			}
+		}
 	}
 	_downloader->taskFinished().notify();
 
@@ -1143,23 +1211,8 @@ void webFileLoader::onError() {
 	cancel(true);
 }
 
-bool webFileLoader::tryLoadLocal() {
-	if (_localStatus == LocalNotFound || _localStatus == LocalLoaded || _localStatus == LocalFailed) {
-		return false;
-	}
-	if (_localStatus == LocalLoading) {
-		return true;
-	}
-
-	_localTaskId = Local::startWebFileLoad(_url, this);
-	if (_localStatus != LocalNotTried) {
-		return _finished;
-	} else if (_localTaskId) {
-		_localStatus = LocalLoading;
-		return true;
-	}
-	_localStatus = LocalNotFound;
-	return false;
+std::optional<Storage::Cache::Key> webFileLoader::cacheKey() const {
+	return Data::UrlCacheKey(_url);
 }
 
 void webFileLoader::cancelRequests() {
