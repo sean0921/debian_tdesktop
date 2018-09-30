@@ -6,9 +6,9 @@ Last-Update: 2017-08-22
 
 --- a/Telegram/Resources/qrc/telegram.qrc
 +++ b/Telegram/Resources/qrc/telegram.qrc
-@@ -51,17 +51,6 @@
-     <file alias="art/sunrise.jpg">../art/sunrise.jpg</file>
+@@ -54,17 +54,6 @@
      <file alias="night.tdesktop-theme">../night.tdesktop-theme</file>
+     <file alias="night-green.tdesktop-theme">../night-green.tdesktop-theme</file>
    </qresource>
 -  <qresource prefix="/sounds">
 -    <file alias="msg_incoming.mp3">../sounds/msg_incoming.mp3</file>
@@ -61,15 +61,15 @@ Last-Update: 2017-08-22
 +} // namespace Resources
 --- a/Telegram/SourceFiles/core/launcher.cpp
 +++ b/Telegram/SourceFiles/core/launcher.cpp
-@@ -10,6 +10,7 @@
+@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesk
  #include "platform/platform_launcher.h"
  #include "platform/platform_specific.h"
  #include "core/crash_reports.h"
 +#include "core/file_utilities.h"
  #include "core/main_queue_processor.h"
  #include "core/update_checker.h"
- #include "application.h"
-@@ -37,6 +38,7 @@ void Launcher::init() {
+ #include "base/concurrent_timer.h"
+@@ -38,6 +39,7 @@ void Launcher::init() {
  	prepareSettings();
  
  	QCoreApplication::setApplicationName(qsl("TelegramDesktop"));
@@ -87,7 +87,7 @@ Last-Update: 2017-08-22
        'pch_source': '<(src_loc)/stdafx.cpp',
        'pch_header': '<(src_loc)/stdafx.h',
      },
-@@ -93,7 +94,6 @@
+@@ -97,7 +98,6 @@
        '/usr/include/opus',
      ],
      'sources': [
@@ -95,7 +95,7 @@ Last-Update: 2017-08-22
        '<@(style_files)',
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg))',
        'telegram_sources.txt',
-@@ -105,6 +105,31 @@
+@@ -111,6 +111,31 @@
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg) --exclude_for <(build_os))',
      ],
      'conditions': [

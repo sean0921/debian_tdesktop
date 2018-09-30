@@ -10,6 +10,31 @@ Last-Update: 2017-12-30
 -    <file alias="etc/qt.conf">../etc/qt_linux.conf</file>
    </qresource>
  </RCC>
+--- a/Telegram/SourceFiles/base/basic_types.h
++++ b/Telegram/SourceFiles/base/basic_types.h
+@@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesk
+ */
+ #pragma once
+ 
+-#include "base/build_config.h"
+ #include "base/ordered_set.h"
+ #include "base/unique_function.h"
+ #include "base/functors.h"
+@@ -48,6 +47,14 @@ using float64 = double;
+ using TimeMs = int64;
+ using TimeId = int32;
+ 
++#if defined(__GNUC__)
++# define TG_FORCE_INLINE inline __attribute__((always_inline))
++#elif defined(_MSC_VER)
++# define TG_FORCE_INLINE __forceinline
++#else
++# define TG_FORCE_INLINE inline
++#endif
++
+ // Define specializations for QByteArray for Qt 5.3.2, because
+ // QByteArray in Qt 5.3.2 doesn't declare "pointer" subtype.
+ #ifdef OS_MAC_OLD
 --- a/Telegram/SourceFiles/base/tests_main.cpp
 +++ b/Telegram/SourceFiles/base/tests_main.cpp
 @@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesk
@@ -19,10 +44,10 @@ Last-Update: 2017-12-30
 -#include "reporters/catch_reporter_compact.hpp"
  #include <QFile>
  
- namespace base {
+ int (*TestForkedMethod)()/* = nullptr*/;
 --- a/Telegram/SourceFiles/config.h
 +++ b/Telegram/SourceFiles/config.h
-@@ -202,7 +202,7 @@
+@@ -202,7 +202,7 @@ static const char *ApiHash = "344583e457
  #endif
  
  #if Q_BYTE_ORDER == Q_BIG_ENDIAN
@@ -30,35 +55,7 @@ Last-Update: 2017-12-30
 +#warning "Be aware, only little endian is supported!"
  #endif // Q_BYTE_ORDER == Q_BIG_ENDIAN
  
- #ifndef BETA_VERSION_MACRO
---- a/Telegram/SourceFiles/core/basic_types.h
-+++ b/Telegram/SourceFiles/core/basic_types.h
-@@ -14,7 +14,6 @@ https://github.com/telegramdesktop/tdesk
- #include <functional>
- #include <gsl/gsl>
- 
--#include "base/build_config.h"
- #include "base/ordered_set.h"
- #include "base/unique_function.h"
- #include "base/functors.h"
-@@ -44,3 +43,17 @@ using TimeId = int32;
- 
- #define qsl(s) QStringLiteral(s)
- #define qstr(s) QLatin1String((s), sizeof(s) - 1)
-+
-+#if defined(__GNUC__) || defined(__clang__)
-+#define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
-+#else
-+#define WARN_UNUSED_RESULT
-+#endif
-+
-+#if defined(__GNUC__)
-+#define FORCE_INLINE inline __attribute__((always_inline))
-+#elif defined(_MSC_VER)
-+#define FORCE_INLINE __forceinline
-+#else
-+#define FORCE_INLINE inline
-+#endif
+ #ifndef ALPHA_VERSION_MACRO
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
 @@ -8,6 +8,9 @@ https://github.com/telegramdesktop/tdesk
@@ -94,7 +91,7 @@ Last-Update: 2017-12-30
  namespace rpl {
 --- a/Telegram/SourceFiles/ui/animation.h
 +++ b/Telegram/SourceFiles/ui/animation.h
-@@ -168,9 +168,10 @@ FORCE_INLINE int interpolate(int a, int
+@@ -169,9 +169,10 @@ TG_FORCE_INLINE int interpolate(int a, i
  	return qRound(a + float64(b - a) * b_ratio);
  }
  
@@ -129,7 +126,7 @@ Last-Update: 2017-12-30
          COMMENT "Precompiling header ${_name} for ${_target} (C++)")
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
-@@ -73,15 +73,11 @@
+@@ -74,9 +74,6 @@
        'codegen.gyp:codegen_lang',
        'codegen.gyp:codegen_numbers',
        'codegen.gyp:codegen_style',
@@ -137,15 +134,19 @@ Last-Update: 2017-12-30
 -      'utils.gyp:Updater',
 -      '../ThirdParty/libtgvoip/libtgvoip.gyp:libtgvoip',
        'crl.gyp:crl',
+       'lib_base.gyp:lib_base',
        'lib_export.gyp:lib_export',
+@@ -84,30 +81,19 @@
      ],
  
      'defines': [
 -      'AL_LIBTYPE_STATIC',
        'AL_ALEXT_PROTOTYPES',
        'TGVOIP_USE_CXX11_LIB',
+-      'XXH_INLINE_ALL',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-@@ -90,19 +86,11 @@
+     ],
+ 
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -162,6 +163,7 @@ Last-Update: 2017-12-30
 -      '<(submodules_loc)/GSL/include',
 -      '<(submodules_loc)/variant/include',
 -      '<(submodules_loc)/crl/src',
+-      '<(submodules_loc)/xxHash',
 +      '../../debian/crl/src',
 +      '/usr/include/minizip',
 +      '/usr/include/libtgvoip',
@@ -169,7 +171,7 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<@(qrc_files)',
-@@ -132,5 +120,14 @@
+@@ -139,5 +125,14 @@
          ],
        }],
      ],
@@ -193,7 +195,7 @@ Last-Update: 2017-12-30
 +    'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
    },
  
-   'configurations': {
+   'defines': [
 --- a/Telegram/gyp/crl.gyp
 +++ b/Telegram/gyp/crl.gyp
 @@ -28,11 +28,11 @@
@@ -210,6 +212,37 @@ Last-Update: 2017-12-30
        '../SourceFiles',
      ],
      'sources': [
+--- a/Telegram/gyp/lib_base.gyp
++++ b/Telegram/gyp/lib_base.gyp
+@@ -29,27 +29,19 @@
+       'pch_source': '<(src_loc)/base/base_pch.cpp',
+       'pch_header': '<(src_loc)/base/base_pch.h',
+     },
+-    'defines': [
+-      'XXH_INLINE_ALL',
+-    ],
+     'dependencies': [
+       'crl.gyp:crl',
+     ],
+     'include_dirs': [
+       '<(src_loc)',
+       '<(SHARED_INTERMEDIATE_DIR)',
+-      '<(libs_loc)/range-v3/include',
+-      '<(submodules_loc)/GSL/include',
+-      '<(submodules_loc)/variant/include',
+-      '<(submodules_loc)/crl/src',
+-      '<(submodules_loc)/xxHash',
++      '../../debian/crl/src',
+     ],
+     'sources': [
+       '<(src_loc)/base/algorithm.h',
+       '<(src_loc)/base/assertion.h',
+       '<(src_loc)/base/basic_types.h',
+       '<(src_loc)/base/binary_guard.h',
+-      '<(src_loc)/base/build_config.h',
+       '<(src_loc)/base/bytes.h',
+       '<(src_loc)/base/concurrent_timer.cpp',
+       '<(src_loc)/base/concurrent_timer.h',
 --- a/Telegram/gyp/lib_export.gyp
 +++ b/Telegram/gyp/lib_export.gyp
 @@ -48,10 +48,7 @@
@@ -224,6 +257,31 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<(src_loc)/export/export_api_wrap.cpp',
+--- a/Telegram/gyp/lib_storage.gyp
++++ b/Telegram/gyp/lib_storage.gyp
+@@ -29,9 +29,6 @@
+       'pch_source': '<(src_loc)/storage/storage_pch.cpp',
+       'pch_header': '<(src_loc)/storage/storage_pch.h',
+     },
+-    'defines': [
+-      'XXH_INLINE_ALL',
+-    ],
+     'dependencies': [
+       'crl.gyp:crl',
+       'lib_base.gyp:lib_base',
+@@ -43,11 +40,7 @@
+     'include_dirs': [
+       '<(src_loc)',
+       '<(SHARED_INTERMEDIATE_DIR)',
+-      '<(libs_loc)/range-v3/include',
+-      '<(submodules_loc)/GSL/include',
+-      '<(submodules_loc)/variant/include',
+-      '<(submodules_loc)/crl/src',
+-      '<(submodules_loc)/xxHash',
++      '../../debian/crl/src',
+     ],
+     'sources': [
+       '<(src_loc)/storage/storage_clear_legacy.cpp',
 --- a/Telegram/gyp/qt.gypi
 +++ b/Telegram/gyp/qt.gypi
 @@ -14,25 +14,21 @@
@@ -398,7 +456,7 @@ Last-Update: 2017-12-30
        'cflags_c': [
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -43,25 +43,17 @@
+@@ -43,25 +43,18 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
@@ -432,10 +490,11 @@ Last-Update: 2017-12-30
 +      'z',
 +      'minizip',
 +      'tgvoip',
++      'xxhash',
  #      '<!(pkg-config 2> /dev/null --libs <@(pkgconfig_libs))',
      ],
      'cflags_cc': [
-@@ -69,37 +61,24 @@
+@@ -69,37 +62,24 @@
        '-Wno-maybe-uninitialized',
      ],
      'ldflags': [
@@ -476,14 +535,7 @@ Last-Update: 2017-12-30
      ],
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -1,6 +1,5 @@
- <(src_loc)/base/algorithm.h
- <(src_loc)/base/assertion.h
--<(src_loc)/base/build_config.h
- <(src_loc)/base/bytes.h
- <(src_loc)/base/flags.h
- <(src_loc)/base/enum_mask.h
-@@ -789,7 +788,6 @@
+@@ -747,7 +747,6 @@
  <(src_loc)/messenger.h
  <(src_loc)/observer_peer.cpp
  <(src_loc)/observer_peer.h
@@ -491,7 +543,7 @@ Last-Update: 2017-12-30
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
  <(src_loc)/shortcuts.cpp
-@@ -797,14 +795,7 @@
+@@ -755,14 +754,7 @@
  <(emoji_suggestions_loc)/emoji_suggestions.cpp
  <(emoji_suggestions_loc)/emoji_suggestions.h
  
@@ -505,5 +557,32 @@ Last-Update: 2017-12-30
 -<(minizip_loc)/unzip.h
 +../../debian/qt_functions.cpp
  
- platforms: mac
- <(sp_media_key_tap_loc)/SPMediaKeyTap.m
+ platforms: win
+ <(res_loc)/winrc/Telegram.rc
+--- a/Telegram/gyp/tests/common_test.gypi
++++ b/Telegram/gyp/tests/common_test.gypi
+@@ -11,11 +11,7 @@
+   ],
+   'include_dirs': [
+     '<(src_loc)',
+-    '<(submodules_loc)/GSL/include',
+-    '<(submodules_loc)/variant/include',
+-    '<(submodules_loc)/Catch/include',
+-    '<(submodules_loc)/crl/src',
+-    '<(libs_loc)/range-v3/include',
++    '../../../debian/crl/src',
+   ],
+   'sources': [
+     '<(src_loc)/base/tests_main.cpp',
+--- a/Telegram/gyp/tests/tests.gyp
++++ b/Telegram/gyp/tests/tests.gyp
+@@ -132,6 +132,9 @@
+       '<(src_loc)/platform/win/windows_dlls.cpp',
+       '<(src_loc)/platform/win/windows_dlls.h',
+     ],
++    'libraries': [
++      'xxhash',
++    ],
+     'conditions': [[ 'not build_win', {
+       'sources!': [
+         '<(src_loc)/platform/win/windows_dlls.cpp',
