@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <crl/common/crl_common_config.h>
 #include <crl/crl_queue.h>
+#include <crl/crl_on_main.h>
 #include <memory>
 
 #ifdef CRL_ENABLE_RPL_INTEGRATION
@@ -76,7 +77,15 @@ public:
 
 	// Returns a lambda that runs arbitrary callable on the objects queue.
 	// const auto r = runner(); r([] { make_some_work_on_queue(); });
-	auto runner() const;
+	auto runner() const {
+		return [weak = *this](auto &&method) {
+			weak.with([
+				method = std::forward<decltype(method)>(method)
+			](Type&) mutable {
+				std::move(method)();
+			});
+		};
+	}
 
 #ifdef CRL_ENABLE_RPL_INTEGRATION
 	template <
@@ -223,17 +232,6 @@ void weak_on_queue<Type>::with(Method &&method) const {
 }
 
 template <typename Type>
-auto weak_on_queue<Type>::runner() const {
-	return [weak = *this](auto &&method) {
-		weak.with([
-			method = std::forward<decltype(method)>(method)
-		](Type&) mutable {
-			std::move(method)();
-		});
-	};
-}
-
-template <typename Type>
 template <typename Value>
 void weak_on_queue<Type>::destroy(Value &value) const {
 	if (auto strong = _weak.lock()) {
@@ -311,6 +309,8 @@ object_on_queue<Type>::object_on_queue(Args &&...args)
 		_data->construct(std::forward<Args>(args)...);
 	} else if constexpr (with_weak_construct) {
 		_data->construct(weak(), std::forward<Args>(args)...);
+	} else {
+		static_assert(false_t(args...), "Could not find a constructor.");
 	}
 }
 
