@@ -2,7 +2,7 @@ Source: telegram-desktop
 Section: net
 Priority: optional
 Maintainer: Nicholas Guriev <guriev-ns@ya.ru>
-Build-Depends: debhelper (>=11),
+Build-Depends: debhelper (>=11)
 Build-Depends-Arch:
  catch,
  cmake (>=3.0),
@@ -15,13 +15,14 @@ Build-Depends-Arch:
  liblzma-dev,
  libmapbox-variant-dev,
  libminizip-dev (>=1.1),
- libmsgsl-dev,
+ libmsgsl-dev (>=1.0.0), libmsgsl-dev (<<2.0.0),
  libopenal-dev,
  libopus-dev (>=1.1),
  librange-v3-dev,
  libssl-dev (>=1.0.1),
  libswscale-dev (>=7:3.2),
  libtgvoip-dev (>=2.1),
+ libxxhash-dev,
  qtbase5-dev (>=5.5),
  qtbase5-private-dev (>=5.5),
  zlib1g-dev (>=1:1.2.8),
