@@ -4,12 +4,13 @@ Last-Update: 2017-12-30
 
 --- a/Telegram/Resources/qrc/telegram_linux.qrc
 +++ b/Telegram/Resources/qrc/telegram_linux.qrc
-@@ -1,5 +1,4 @@
+@@ -1,6 +1,5 @@
  <RCC>
    <qresource prefix="/qt">
 -    <file alias="etc/qt.conf">../etc/qt_linux.conf</file>
    </qresource>
- </RCC>
+   <qresource prefix="/fc">
+     <file alias="fc-custom.conf">../fc-custom.conf</file>
 --- a/Telegram/SourceFiles/base/basic_types.h
 +++ b/Telegram/SourceFiles/base/basic_types.h
 @@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesk
@@ -20,7 +21,7 @@ Last-Update: 2017-12-30
  #include "base/ordered_set.h"
  #include "base/unique_function.h"
  #include "base/functors.h"
-@@ -48,6 +47,14 @@ using float64 = double;
+@@ -49,6 +48,14 @@ using float64 = double;
  using TimeMs = int64;
  using TimeId = int32;
  
@@ -34,7 +35,7 @@ Last-Update: 2017-12-30
 +
  // Define specializations for QByteArray for Qt 5.3.2, because
  // QByteArray in Qt 5.3.2 doesn't declare "pointer" subtype.
- #ifdef OS_MAC_OLD
+ #if QT_VERSION < QT_VERSION_CHECK(5, 5, 0)
 --- a/Telegram/SourceFiles/base/tests_main.cpp
 +++ b/Telegram/SourceFiles/base/tests_main.cpp
 @@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesk
@@ -47,15 +48,15 @@ Last-Update: 2017-12-30
  int (*TestForkedMethod)()/* = nullptr*/;
 --- a/Telegram/SourceFiles/config.h
 +++ b/Telegram/SourceFiles/config.h
-@@ -202,7 +202,7 @@ static const char *ApiHash = "344583e457
- #endif
+@@ -225,7 +225,7 @@ constexpr auto ApiHash = "344583e45741c4
+ #endif // TDESKTOP_API_ID && TDESKTOP_API_HASH
  
  #if Q_BYTE_ORDER == Q_BIG_ENDIAN
 -#error "Only little endian is supported!"
 +#warning "Be aware, only little endian is supported!"
  #endif // Q_BYTE_ORDER == Q_BIG_ENDIAN
  
- #ifndef ALPHA_VERSION_MACRO
+ #if (TDESKTOP_ALPHA_VERSION != 0)
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
 @@ -8,6 +8,9 @@ https://github.com/telegramdesktop/tdesk
@@ -70,7 +71,7 @@ Last-Update: 2017-12-30
  }
 --- a/Telegram/SourceFiles/platform/linux/linux_libs.h
 +++ b/Telegram/SourceFiles/platform/linux/linux_libs.h
-@@ -17,7 +17,7 @@ extern "C" {
+@@ -21,7 +21,7 @@ extern "C" {
  } // extern "C"
  
  #ifndef TDESKTOP_DISABLE_UNITY_INTEGRATION
@@ -136,7 +137,7 @@ Last-Update: 2017-12-30
        'crl.gyp:crl',
        'lib_base.gyp:lib_base',
        'lib_export.gyp:lib_export',
-@@ -84,30 +81,19 @@
+@@ -84,10 +81,8 @@
      ],
  
      'defines': [
@@ -144,9 +145,10 @@ Last-Update: 2017-12-30
        'AL_ALEXT_PROTOTYPES',
        'TGVOIP_USE_CXX11_LIB',
 -      'XXH_INLINE_ALL',
+       'TDESKTOP_API_ID=<(api_id)',
+       'TDESKTOP_API_HASH=<(api_hash)',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-     ],
- 
+@@ -96,20 +91,11 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -171,7 +173,7 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<@(qrc_files)',
-@@ -139,5 +125,14 @@
+@@ -148,5 +134,14 @@
          ],
        }],
      ],
@@ -456,7 +458,7 @@ Last-Update: 2017-12-30
        'cflags_c': [
 --- a/Telegram/gyp/telegram_linux.gypi
 +++ b/Telegram/gyp/telegram_linux.gypi
-@@ -43,25 +43,18 @@
+@@ -43,26 +43,18 @@
        '<(linux_path_breakpad)/lib',
      ],
      'libraries': [
@@ -465,6 +467,7 @@ Last-Update: 2017-12-30
 -      'ibusplatforminputcontextplugin',
 -      'fcitxplatforminputcontextplugin',
 -      'himeplatforminputcontextplugin',
+-      'nimfplatforminputcontextplugin',
 -      'liblzma.a',
 -      'libopenal.a',
 -      'libavformat.a',
@@ -494,7 +497,7 @@ Last-Update: 2017-12-30
  #      '<!(pkg-config 2> /dev/null --libs <@(pkgconfig_libs))',
      ],
      'cflags_cc': [
-@@ -69,37 +62,24 @@
+@@ -70,36 +62,23 @@
        '-Wno-maybe-uninitialized',
      ],
      'ldflags': [
@@ -526,24 +529,21 @@ Last-Update: 2017-12-30
 -      }], ['not_need_gtk!="True"', {
 +      ['not_need_gtk != "True"', {
          'cflags_cc': [
-           '<!(pkg-config 2> /dev/null --cflags appindicator-0.1)',
            '<!(pkg-config 2> /dev/null --cflags gtk+-2.0)',
            '<!(pkg-config 2> /dev/null --cflags glib-2.0)',
 -          '<!(pkg-config 2> /dev/null --cflags dee-1.0)',
          ],
-       }]
-     ],
+       }], ['<!(pkg-config ayatana-appindicator3-0.1; echo $?) == 0', {
+         'cflags_cc': [ '<!(pkg-config --cflags ayatana-appindicator3-0.1)' ],
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -747,7 +747,6 @@
+@@ -769,20 +769,12 @@
  <(src_loc)/messenger.h
  <(src_loc)/observer_peer.cpp
  <(src_loc)/observer_peer.h
 -<(src_loc)/qt_static_plugins.cpp
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
- <(src_loc)/shortcuts.cpp
-@@ -755,14 +754,7 @@
  <(emoji_suggestions_loc)/emoji_suggestions.cpp
  <(emoji_suggestions_loc)/emoji_suggestions.h
  

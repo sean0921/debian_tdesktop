@@ -21,12 +21,12 @@ Last-Update: 2017-08-22
 -  <qresource prefix="/qt-project.org">
 -    <file>qmime/freedesktop.org.xml</file>
 -  </qresource>
-   <qresource prefix="/langs">
-     <file alias="lang_it.strings">../langs/lang_it.strings</file>
-     <file alias="lang_es.strings">../langs/lang_es.strings</file>
+   <qresource prefix="/misc">
+     <file alias="default_shortcuts-custom.json">../default_shortcuts-custom.json</file>
+   </qresource>
 --- a/Telegram/SourceFiles/core/file_utilities.cpp
 +++ b/Telegram/SourceFiles/core/file_utilities.cpp
-@@ -326,3 +326,20 @@ bool GetDefault(
+@@ -336,3 +336,20 @@ bool GetDefault(
  
  } // namespace internal
  } // namespace FileDialog
@@ -49,7 +49,7 @@ Last-Update: 2017-08-22
 +}
 --- a/Telegram/SourceFiles/core/file_utilities.h
 +++ b/Telegram/SourceFiles/core/file_utilities.h
-@@ -103,3 +103,9 @@ bool GetDefault(
+@@ -105,3 +105,9 @@ bool GetDefault(
  
  } // namespace internal
  } // namespace FileDialog
@@ -87,7 +87,7 @@ Last-Update: 2017-08-22
        'pch_source': '<(src_loc)/stdafx.cpp',
        'pch_header': '<(src_loc)/stdafx.h',
      },
-@@ -97,7 +98,6 @@
+@@ -98,7 +99,6 @@
        '/usr/include/opus',
      ],
      'sources': [
@@ -95,7 +95,7 @@ Last-Update: 2017-08-22
        '<@(style_files)',
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg))',
        'telegram_sources.txt',
-@@ -111,6 +111,31 @@
+@@ -112,6 +112,31 @@
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg) --exclude_for <(build_os))',
      ],
      'conditions': [
@@ -126,4 +126,4 @@ Last-Update: 2017-08-22
 +      }],
        [ '"<(official_build_target)" != ""', {
          'defines': [
-           'CUSTOM_API_ID',
+           'TDESKTOP_OFFICIAL_TARGET=<(official_build_target)',
