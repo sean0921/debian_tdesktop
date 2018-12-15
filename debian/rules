@@ -21,16 +21,21 @@ else
  BUILD_MODE = Debug
 endif
 
+# Use custom id and hash for Telegram API.
+TELEGRAM_API_ID = 50322
+TELEGRAM_API_HASH = 9ff1a639196c0779c86dd661af8522ba
+
 GYPFLAGS += \
 	--format=cmake \
 	--depth=Telegram/gyp \
 	--generator-output=../.. \
+	-Dapi_id=$(TELEGRAM_API_ID) \
+	-Dapi_hash=$(TELEGRAM_API_HASH) \
 	-Duse_packed_resources \
 	-Goutput_dir=$(OUT) \
 	-Gconfig=$(BUILD_MODE)
 
 EXTRA_MACROS += \
-	DEBIAN_API_ID \
 	RPL_CONSUMER_TYPE_ERASED_ALWAYS \
 	TDESKTOP_DISABLE_AUTOUPDATE \
 	TDESKTOP_DISABLE_CRASH_REPORTS \
