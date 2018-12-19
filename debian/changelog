@@ -1,3 +1,13 @@
+telegram-desktop (1.5.2-1) unstable; urgency=medium
+
+  * New upstream release (closes: #915975).
+  * Patches:
+    - Drop Debian-API-ID.patch. Use gyp variables api_id and api_hash instead.
+    - Drop Ayatana-Indicators.patch as applied by upstream.
+    - Refresh Modify-build-scripts.patch.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Wed, 19 Dec 2018 09:04:21 +0300
+
 telegram-desktop (1.4.0-1) unstable; urgency=medium
 
   * New upstream release.
