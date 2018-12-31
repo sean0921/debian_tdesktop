@@ -1,3 +1,10 @@
+telegram-desktop (1.5.4-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Bump standards version to 4.3.0, no related changes.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Mon, 31 Dec 2018 10:03:07 +0300
+
 telegram-desktop (1.5.2-1) unstable; urgency=medium
 
   * New upstream release (closes: #915975).
