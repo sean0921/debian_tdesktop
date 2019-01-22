@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "settings/settings_common.h"
 #include "boxes/connection_box.h"
+#include "boxes/auto_download_box.h"
 #include "boxes/stickers_box.h"
 #include "boxes/background_box.h"
 #include "boxes/download_path_box.h"
@@ -28,6 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "core/file_utilities.h"
 #include "data/data_session.h"
+#include "chat_helpers/emoji_sets_manager.h"
 #include "support/support_common.h"
 #include "support/support_templates.h"
 #include "auth_session.h"
@@ -263,26 +265,35 @@ void BackgroundRow::updateImage() {
 		Painter p(&back);
 		PainterHighQualityEnabler hq(p);
 
-		const auto &pix = Window::Theme::Background()->pixmap();
-		const auto sx = (pix.width() > pix.height())
-			? ((pix.width() - pix.height()) / 2)
-			: 0;
-		const auto sy = (pix.height() > pix.width())
-			? ((pix.height() - pix.width()) / 2)
-			: 0;
-		const auto s = (pix.width() > pix.height())
-			? pix.height()
-			: pix.width();
-		p.drawPixmap(
-			0,
-			0,
-			st::settingsBackgroundThumb,
-			st::settingsBackgroundThumb,
-			pix,
-			sx,
-			sy,
-			s,
-			s);
+		if (const auto color = Window::Theme::Background()->color()) {
+			p.fillRect(
+				0,
+				0,
+				st::settingsBackgroundThumb,
+				st::settingsBackgroundThumb,
+				*color);
+		} else {
+			const auto &pix = Window::Theme::Background()->pixmap();
+			const auto sx = (pix.width() > pix.height())
+				? ((pix.width() - pix.height()) / 2)
+				: 0;
+			const auto sy = (pix.height() > pix.width())
+				? ((pix.height() - pix.width()) / 2)
+				: 0;
+			const auto s = (pix.width() > pix.height())
+				? pix.height()
+				: pix.width();
+			p.drawPixmap(
+				0,
+				0,
+				st::settingsBackgroundThumb,
+				st::settingsBackgroundThumb,
+				pix,
+				sx,
+				sy,
+				s,
+				s);
+		}
 	}
 	Images::prepareRound(back, ImageRoundRadius::Small);
 	_background = App::pixmapFromImageInPlace(std::move(back));
@@ -356,7 +367,7 @@ void DefaultTheme::checkedChangedHook(anim::type animated) {
 }
 
 void ChooseFromFile(not_null<QWidget*> parent) {
-	const auto imgExtensions = cImgExtensions();
+	const auto &imgExtensions = cImgExtensions();
 	auto filters = QStringList(
 		qsl("Theme files (*.tdesktop-theme *.tdesktop-palette *")
 		+ imgExtensions.join(qsl(" *"))
@@ -399,7 +410,7 @@ void ChooseFromFile(not_null<QWidget*> parent) {
 		}
 
 		Window::Theme::Background()->setImage(
-			Window::Theme::kCustomBackground,
+			{ Window::Theme::kCustomBackground },
 			std::move(image));
 		Window::Theme::Background()->setTile(false);
 	};
@@ -482,6 +493,16 @@ void SetupStickersEmoji(not_null<Ui::VerticalLayout*> container) {
 		st::settingsChatIconLeft
 	)->addClickHandler([] {
 		Ui::show(Box<StickersBox>(StickersBox::Section::Installed));
+	});
+
+	AddButton(
+		container,
+		lng_emoji_manage_sets,
+		st::settingsChatButton,
+		&st::settingsIconEmoji,
+		st::settingsChatIconLeft
+	)->addClickHandler([] {
+		Ui::show(Box<Ui::Emoji::ManageSetsBox>());
 	});
 
 	AddSkip(container, st::settingsCheckboxesSkip);
@@ -616,16 +637,31 @@ void SetupDataStorage(not_null<Ui::VerticalLayout*> container) {
 
 	}, ask->lifetime());
 
-	AddButton(
-		container,
-		lng_media_auto_settings,
-		st::settingsButton
-	)->addClickHandler([] {
-		Ui::show(Box<AutoDownloadBox>());
-	});
-
 	SetupLocalStorage(container);
 	SetupExport(container);
+
+	AddSkip(container, st::settingsCheckboxesSkip);
+}
+
+void SetupAutoDownload(not_null<Ui::VerticalLayout*> container) {
+	AddDivider(container);
+	AddSkip(container);
+
+	AddSubsectionTitle(container, lng_media_auto_settings);
+
+	using Source = Data::AutoDownload::Source;
+	const auto add = [&](LangKey label, Source source) {
+		AddButton(
+			container,
+			label,
+			st::settingsButton
+		)->addClickHandler([=] {
+			Ui::show(Box<AutoDownloadBox>(source));
+		});
+	};
+	add(lng_media_auto_in_private, Source::User);
+	add(lng_media_auto_in_groups, Source::Group);
+	add(lng_media_auto_in_channels, Source::Channel);
 
 	AddSkip(container, st::settingsCheckboxesSkip);
 }

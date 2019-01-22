@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/emoji_suggestions_helper.h"
 #include "window/themes/window_theme.h"
 #include "lang/lang_keys.h"
+#include "data/data_user.h"
 #include "mainwindow.h"
 #include "numbers.h"
 #include "auth_session.h"
@@ -44,6 +45,49 @@ const auto kNewlineChars = QString("\r\n")
 const auto kClearFormatSequence = QKeySequence("ctrl+shift+n");
 const auto kMonospaceSequence = QKeySequence("ctrl+shift+m");
 const auto kEditLinkSequence = QKeySequence("ctrl+k");
+
+class InputDocument : public QTextDocument {
+public:
+	InputDocument(QObject *parent, const style::InputField &st);
+
+protected:
+	QVariant loadResource(int type, const QUrl &name) override;
+
+private:
+	const style::InputField &_st;
+	std::map<QUrl, QVariant> _emojiCache;
+	rpl::lifetime _lifetime;
+
+};
+
+InputDocument::InputDocument(QObject *parent, const style::InputField &st)
+: QTextDocument(parent)
+, _st(st) {
+	Ui::Emoji::Updated(
+	) | rpl::start_with_next([=] {
+		_emojiCache.clear();
+	}, _lifetime);
+}
+
+QVariant InputDocument::loadResource(int type, const QUrl &name) {
+	if (type != QTextDocument::ImageResource
+		|| name.scheme() != qstr("emoji")) {
+		return QTextDocument::loadResource(type, name);
+	}
+	const auto i = _emojiCache.find(name);
+	if (i != _emojiCache.end()) {
+		return i->second;
+	}
+	auto result = [&] {
+		if (const auto emoji = Ui::Emoji::FromUrl(name.toDisplayString())) {
+			const auto height = _st.font->height;
+			return QVariant(Ui::Emoji::SinglePixmap(emoji, height));
+		}
+		return QVariant();
+	}();
+	_emojiCache.emplace(name, result);
+	return result;
+}
 
 bool IsNewline(QChar ch) {
 	return (kNewlineChars.indexOf(ch) >= 0);
@@ -484,12 +528,12 @@ public:
 		setParent(QCoreApplication::instance());
 	}
 
-	void drawPrimitive(PrimitiveElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = 0) const {
+	void drawPrimitive(PrimitiveElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = nullptr) const override {
 	}
-	QRect subElementRect(SubElement r, const QStyleOption *opt, const QWidget *widget = 0) const {
+	QRect subElementRect(SubElement r, const QStyleOption *opt, const QWidget *widget = nullptr) const override {
 		switch (r) {
 			case SE_LineEditContents:
-				const InputClass *w = widget ? qobject_cast<const InputClass*>(widget) : 0;
+				const auto w = widget ? qobject_cast<const InputClass*>(widget) : nullptr;
 				return w ? w->getTextRect() : QCommonStyle::subElementRect(r, opt, widget);
 			break;
 		}
@@ -725,10 +769,6 @@ const QString InputField::kTagPre = qsl("```");
 class InputField::Inner final : public QTextEdit {
 public:
 	Inner(not_null<InputField*> parent) : QTextEdit(parent) {
-	}
-
-	QVariant loadResource(int type, const QUrl &name) override {
-		return outer()->loadResource(type, name);
 	}
 
 protected:
@@ -1141,6 +1181,8 @@ InputField::InputField(
 , _inner(std::make_unique<Inner>(this))
 , _lastTextWithTags(value)
 , _placeholderFactory(std::move(placeholderFactory)) {
+	_inner->setDocument(Ui::CreateChild<InputDocument>(_inner.get(), _st));
+
 	_inner->setAcceptRichText(false);
 	resize(_st.width, _minHeight);
 
@@ -1231,14 +1273,6 @@ bool InputField::viewportEventInner(QEvent *e) {
 		}
 	}
 	return _inner->QTextEdit::viewportEvent(e);
-}
-
-QVariant InputField::loadResource(int type, const QUrl &name) {
-	const auto imageName = name.toDisplayString();
-	if (const auto emoji = Ui::Emoji::FromUrl(imageName)) {
-		return QVariant(Ui::Emoji::SinglePixmap(emoji, _st.font->height));
-	}
-	return _inner->QTextEdit::loadResource(type, name);
 }
 
 void InputField::updatePalette() {
@@ -2861,14 +2895,22 @@ void InputField::applyInstantReplace(
 	} else if (position < length) {
 		return;
 	}
-	commitInstantReplacement(position - length, position, with, what);
+	commitInstantReplacement(position - length, position, with, what, true);
+}
+
+void InputField::commitInstantReplacement(
+		int from,
+		int till,
+		const QString &with) {
+	commitInstantReplacement(from, till, with, std::nullopt, false);
 }
 
 void InputField::commitInstantReplacement(
 		int from,
 		int till,
 		const QString &with,
-		std::optional<QString> checkOriginal) {
+		std::optional<QString> checkOriginal,
+		bool checkIfInMonospace) {
 	const auto original = getTextWithTagsPart(from, till).text;
 	if (checkOriginal
 		&& checkOriginal->compare(original, Qt::CaseInsensitive) != 0) {
@@ -2876,9 +2918,11 @@ void InputField::commitInstantReplacement(
 	}
 
 	auto cursor = textCursor();
-	const auto currentTag = cursor.charFormat().property(kTagProperty);
-	if (currentTag == kTagPre || currentTag == kTagCode) {
-		return;
+	if (checkIfInMonospace) {
+		const auto currentTag = cursor.charFormat().property(kTagProperty);
+		if (currentTag == kTagPre || currentTag == kTagCode) {
+			return;
+		}
 	}
 	cursor.setPosition(from);
 	cursor.setPosition(till, QTextCursor::KeepAnchor);

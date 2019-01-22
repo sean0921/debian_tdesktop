@@ -13,10 +13,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/view/history_view_element.h"
+#include "history/feed/history_feed_section.h"
 #include "media/player/media_player_round_controller.h"
 #include "data/data_session.h"
 #include "data/data_feed.h"
+#include "data/data_channel.h"
+#include "data/data_chat.h"
 #include "passport/passport_form_controller.h"
+#include "core/shortcuts.h"
 #include "boxes/calendar_box.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
@@ -27,6 +31,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_dialogs.h"
 
 namespace Window {
+namespace {
+
+constexpr auto kMaxChatEntryHistorySize = 50;
+
+} // namespace
 
 DateClickHandler::DateClickHandler(Dialogs::Key chat, QDate date)
 : _chat(chat)
@@ -53,12 +62,70 @@ Controller::Controller(not_null<MainWindow*> window)
 	}, lifetime());
 
 	if (Auth().supportMode()) {
-		Auth().supportHelper().registerWindow(this);
+		initSupportMode();
 	}
+}
+
+void Controller::initSupportMode() {
+	Auth().supportHelper().registerWindow(this);
+
+	Shortcuts::Requests(
+	) | rpl::start_with_next([=](not_null<Shortcuts::Request*> request) {
+		using C = Shortcuts::Command;
+
+		request->check(C::SupportHistoryBack) && request->handle([=] {
+			return chatEntryHistoryMove(-1);
+		});
+		request->check(C::SupportHistoryForward) && request->handle([=] {
+			return chatEntryHistoryMove(1);
+		});
+	}, lifetime());
 }
 
 void Controller::setActiveChatEntry(Dialogs::RowDescriptor row) {
 	_activeChatEntry = row;
+	if (Auth().supportMode()) {
+		pushToChatEntryHistory(row);
+	}
+}
+
+bool Controller::chatEntryHistoryMove(int steps) {
+	if (_chatEntryHistory.empty()) {
+		return false;
+	}
+	const auto position = _chatEntryHistoryPosition + steps;
+	if (!base::in_range(position, 0, int(_chatEntryHistory.size()))) {
+		return false;
+	}
+	_chatEntryHistoryPosition = position;
+	return jumpToChatListEntry(_chatEntryHistory[position]);
+}
+
+bool Controller::jumpToChatListEntry(Dialogs::RowDescriptor row) {
+	if (const auto history = row.key.history()) {
+		Ui::showPeerHistory(history, row.fullId.msg);
+		return true;
+	} else if (const auto feed = row.key.feed()) {
+		if (const auto item = App::histItemById(row.fullId)) {
+			showSection(HistoryFeed::Memento(feed, item->position()));
+		} else {
+			showSection(HistoryFeed::Memento(feed));
+		}
+	}
+	return false;
+}
+
+void Controller::pushToChatEntryHistory(Dialogs::RowDescriptor row) {
+	if (!_chatEntryHistory.empty()
+		&& _chatEntryHistory[_chatEntryHistoryPosition] == row) {
+		return;
+	}
+	_chatEntryHistory.resize(++_chatEntryHistoryPosition);
+	_chatEntryHistory.push_back(row);
+	if (_chatEntryHistory.size() > kMaxChatEntryHistorySize) {
+		_chatEntryHistory.pop_front();
+		--_chatEntryHistoryPosition;
+	}
 }
 
 void Controller::setActiveChatEntry(Dialogs::Key key) {
@@ -340,14 +407,14 @@ void Controller::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 						return history->blocks.front()->messages.front()->dateTime().date();
 					}
 				}
-			} else if (history->chatsListTimeId() != 0) {
-				return ParseDateTime(history->chatsListTimeId()).date();
+			} else if (history->chatListTimeId() != 0) {
+				return ParseDateTime(history->chatListTimeId()).date();
 			}
 		} else if (const auto feed = chat.feed()) {
 			/*if (chatScrollPosition(feed)) { // #TODO feeds save position
 
-			} else */if (feed->chatsListTimeId() != 0) {
-				return ParseDateTime(feed->chatsListTimeId()).date();
+			} else */if (feed->chatListTimeId() != 0) {
+				return ParseDateTime(feed->chatListTimeId()).date();
 			}
 		}
 		return QDate::currentDate();
@@ -357,12 +424,12 @@ void Controller::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 			if (const auto channel = history->peer->migrateTo()) {
 				history = App::historyLoaded(channel);
 			}
-			if (history && history->chatsListTimeId() != 0) {
-				return ParseDateTime(history->chatsListTimeId()).date();
+			if (history && history->chatListTimeId() != 0) {
+				return ParseDateTime(history->chatListTimeId()).date();
 			}
 		} else if (const auto feed = chat.feed()) {
-			if (feed->chatsListTimeId() != 0) {
-				return ParseDateTime(feed->chatsListTimeId()).date();
+			if (feed->chatListTimeId() != 0) {
+				return ParseDateTime(feed->chatListTimeId()).date();
 			}
 		}
 		return QDate::currentDate();

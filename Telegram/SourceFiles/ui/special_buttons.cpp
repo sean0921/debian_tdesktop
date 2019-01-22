@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 #include "data/data_session.h"
 #include "data/data_feed.h"
+#include "data/data_channel.h"
 #include "history/history.h"
 #include "core/file_utilities.h"
 #include "boxes/photo_crop_box.h"
@@ -196,7 +197,7 @@ void EmojiButton::paintEvent(QPaintEvent *e) {
 	const auto over = isOver();
 	const auto loadingState = _loading
 		? _loading->computeState()
-		: Ui::InfiniteRadialAnimation::State{ 0., 0, FullArcLength };
+		: Ui::RadialState{ 0., 0, FullArcLength };
 	if (loadingState.shown < 1.) {
 		p.setOpacity(1. - loadingState.shown);
 

@@ -379,10 +379,12 @@ void DocumentOpenClickHandler::Open(
 		return;
 	}
 
-	if (data->status != FileReady) return;
+	if (data->status != FileReady
+		&& data->status != FileDownloadFailed) return;
 
 	QString filename;
-	if (!data->saveToCache()) {
+	if (!data->saveToCache()
+		|| (location.isEmpty() || (!data->data().isEmpty()))) {
 		filename = documentSaveFilename(data);
 		if (filename.isEmpty()) return;
 	}
@@ -478,10 +480,13 @@ void DocumentData::setattributes(const QVector<MTPDocumentAttribute> &attributes
 			auto &d = attributes[i].c_documentAttributeImageSize();
 			dimensions = QSize(d.vw.v, d.vh.v);
 		} break;
-		case mtpc_documentAttributeAnimated: if (type == FileDocument || type == StickerDocument || type == VideoDocument) {
-			type = AnimatedDocument;
-			_additional = nullptr;
-		} break;
+		case mtpc_documentAttributeAnimated:
+			if (type == FileDocument
+				|| type == StickerDocument
+				|| type == VideoDocument) {
+				type = AnimatedDocument;
+				_additional = nullptr;
+			} break;
 		case mtpc_documentAttributeSticker: {
 			auto &d = attributes[i].c_documentAttributeSticker();
 			if (type == FileDocument) {
@@ -490,7 +495,8 @@ void DocumentData::setattributes(const QVector<MTPDocumentAttribute> &attributes
 			}
 			if (sticker()) {
 				sticker()->alt = qs(d.valt);
-				if (sticker()->set.type() != mtpc_inputStickerSetID || d.vstickerset.type() == mtpc_inputStickerSetID) {
+				if (sticker()->set.type() != mtpc_inputStickerSetID
+					|| d.vstickerset.type() == mtpc_inputStickerSetID) {
 					sticker()->set = d.vstickerset;
 				}
 			}
@@ -498,7 +504,9 @@ void DocumentData::setattributes(const QVector<MTPDocumentAttribute> &attributes
 		case mtpc_documentAttributeVideo: {
 			auto &d = attributes[i].c_documentAttributeVideo();
 			if (type == FileDocument) {
-				type = d.is_round_message() ? RoundVideoDocument : VideoDocument;
+				type = d.is_round_message()
+					? RoundVideoDocument
+					: VideoDocument;
 			}
 			_duration = d.vduration.v;
 			_supportsStreaming = d.is_supports_streaming();
@@ -568,6 +576,27 @@ void DocumentData::setattributes(const QVector<MTPDocumentAttribute> &attributes
 	validateGoodThumbnail();
 }
 
+bool DocumentData::checkWallPaperProperties() {
+	if (type == WallPaperDocument) {
+		return true;
+	}
+	if (type != FileDocument
+		|| !thumb
+		|| !dimensions.width()
+		|| !dimensions.height()
+		|| dimensions.width() > Storage::kMaxWallPaperDimension
+		|| dimensions.height() > Storage::kMaxWallPaperDimension
+		|| size > Storage::kMaxWallPaperInMemory) {
+		return false;
+	}
+	type = WallPaperDocument;
+	return true;
+}
+
+bool DocumentData::isWallPaper() const {
+	return (type == WallPaperDocument);
+}
+
 Storage::Cache::Key DocumentData::goodThumbnailCacheKey() const {
 	return Data::DocumentThumbCacheKey(_dc, id);
 }
@@ -610,7 +639,8 @@ void DocumentData::setGoodThumbnail(QImage &&image, QByteArray &&bytes) {
 bool DocumentData::saveToCache() const {
 	return (type == StickerDocument && size < Storage::kMaxStickerInMemory)
 		|| (isAnimation() && size < Storage::kMaxAnimationInMemory)
-		|| (isVoiceMessage() && size < Storage::kMaxVoiceInMemory);
+		|| (isVoiceMessage() && size < Storage::kMaxVoiceInMemory)
+		|| (type == WallPaperDocument);
 }
 
 void DocumentData::unload() {
@@ -632,46 +662,51 @@ void DocumentData::unload() {
 void DocumentData::automaticLoad(
 		Data::FileOrigin origin,
 		const HistoryItem *item) {
-	if (loaded() || status != FileReady) return;
-
-	if (saveToCache() && _loader != CancelledMtpFileLoader) {
-		if (type == StickerDocument) {
-			save(origin, QString(), _actionOnLoad, _actionOnLoadMsgId);
-		} else if (isAnimation()) {
-			bool loadFromCloud = false;
-			if (item) {
-				if (item->history()->peer->isUser()) {
-					loadFromCloud = !(cAutoDownloadGif() & dbiadNoPrivate);
-				} else {
-					loadFromCloud = !(cAutoDownloadGif() & dbiadNoGroups);
-				}
-			} else { // if load at least anywhere
-				loadFromCloud = !(cAutoDownloadGif() & dbiadNoPrivate) || !(cAutoDownloadGif() & dbiadNoGroups);
-			}
-			save(origin, QString(), _actionOnLoad, _actionOnLoadMsgId, loadFromCloud ? LoadFromCloudOrLocal : LoadFromLocalOnly, true);
-		} else if (isVoiceMessage()) {
-			if (item) {
-				bool loadFromCloud = false;
-				if (item->history()->peer->isUser()) {
-					loadFromCloud = !(cAutoDownloadAudio() & dbiadNoPrivate);
-				} else {
-					loadFromCloud = !(cAutoDownloadAudio() & dbiadNoGroups);
-				}
-				save(origin, QString(), _actionOnLoad, _actionOnLoadMsgId, loadFromCloud ? LoadFromCloudOrLocal : LoadFromLocalOnly, true);
-			}
-		}
+	if (status != FileReady || loaded() || cancelled()) {
+		return;
+	} else if (!item && type != StickerDocument && !isAnimation()) {
+		return;
 	}
+	const auto toCache = saveToCache();
+	if (!toCache && Global::AskDownloadPath()) {
+		// We need a filename, but we're supposed to ask user for it.
+		// No automatic download in this case.
+		return;
+	}
+	const auto filename = toCache
+		? QString()
+		: documentSaveFilename(this);
+	const auto shouldLoadFromCloud = item
+		? Data::AutoDownload::Should(
+			Auth().settings().autoDownload(),
+			item->history()->peer,
+			this)
+		: Data::AutoDownload::Should(
+			Auth().settings().autoDownload(),
+			this);
+	const auto loadFromCloud = shouldLoadFromCloud
+		? LoadFromCloudOrLocal
+		: LoadFromLocalOnly;
+	save(
+		origin,
+		filename,
+		_actionOnLoad,
+		_actionOnLoadMsgId,
+		loadFromCloud,
+		true);
 }
 
 void DocumentData::automaticLoadSettingsChanged() {
-	if (loaded() || status != FileReady || (!isAnimation() && !isVoiceMessage()) || !saveToCache() || _loader != CancelledMtpFileLoader) {
+	if (!cancelled() || status != FileReady || loaded()) {
 		return;
 	}
 	_loader = nullptr;
 }
 
 void DocumentData::performActionOnLoad() {
-	if (_actionOnLoad == ActionOnLoadNone) return;
+	if (_actionOnLoad == ActionOnLoadNone) {
+		return;
+	}
 
 	auto loc = location(true);
 	auto already = loc.name();
@@ -789,7 +824,7 @@ bool DocumentData::loaded(FilePathResolveType type) const {
 
 void DocumentData::destroyLoader(mtpFileLoader *newValue) const {
 	const auto loader = std::exchange(_loader, newValue);
-	if (_loader == CancelledMtpFileLoader) {
+	if (cancelled()) {
 		loader->cancel();
 	}
 	loader->stop();
@@ -797,7 +832,7 @@ void DocumentData::destroyLoader(mtpFileLoader *newValue) const {
 }
 
 bool DocumentData::loading() const {
-	return _loader && _loader != CancelledMtpFileLoader;
+	return _loader && !cancelled();
 }
 
 QString DocumentData::loadingFilePath() const {
@@ -873,7 +908,7 @@ void DocumentData::save(
 		return;
 	}
 
-	if (_loader == CancelledMtpFileLoader) {
+	if (cancelled()) {
 		_loader = nullptr;
 	}
 	if (_loader) {
@@ -886,7 +921,9 @@ void DocumentData::save(
 	_actionOnLoad = action;
 	_actionOnLoadMsgId = actionMsgId;
 	if (_loader) {
-		if (fromCloud == LoadFromCloudOrLocal) _loader->permitLoadFromCloud();
+		if (fromCloud == LoadFromCloudOrLocal) {
+			_loader->permitLoadFromCloud();
+		}
 	} else {
 		status = FileReady;
 		if (hasWebLocation()) {
@@ -921,6 +958,8 @@ void DocumentData::save(
 
 		_loader->connect(_loader, SIGNAL(progress(FileLoader*)), App::main(), SLOT(documentLoadProgress(FileLoader*)));
 		_loader->connect(_loader, SIGNAL(failed(FileLoader*,bool)), App::main(), SLOT(documentLoadFailed(FileLoader*,bool)));
+	}
+	if (loading()) {
 		_loader->start();
 	}
 	_session->data().notifyDocumentLayoutChanged(this);
@@ -933,11 +972,13 @@ void DocumentData::cancel() {
 
 	destroyLoader(CancelledMtpFileLoader);
 	_session->data().notifyDocumentLayoutChanged(this);
-	if (auto main = App::main()) {
-		main->documentLoadProgress(this);
-	}
+	App::main()->documentLoadProgress(this);
 
 	_actionOnLoad = ActionOnLoadNone;
+}
+
+bool DocumentData::cancelled() const {
+	return (_loader == CancelledMtpFileLoader);
 }
 
 VoiceWaveform documentWaveformDecode(const QByteArray &encoded5bit) {
@@ -1265,6 +1306,8 @@ uint8 DocumentData::cacheTag() const {
 		return Data::kVideoMessageCacheTag;
 	} else if (isAnimation()) {
 		return Data::kAnimationCacheTag;
+	} else if (type == WallPaperDocument) {
+		return Data::kImageCacheTag;
 	}
 	return 0;
 }
@@ -1488,6 +1531,41 @@ paf pif ps1 reg rgs scr sct shb shs u3p vb vbe vbs vbscript ws wsf");
 	return ranges::binary_search(
 		kExtensions,
 		FileExtension(filepath).toLower());
+}
+
+base::binary_guard ReadImageAsync(
+		not_null<DocumentData*> document,
+		FnMut<void(QImage&&)> done) {
+	auto [left, right] = base::make_binary_guard();
+	crl::async([
+		bytes = document->data(),
+		path = document->filepath(),
+		guard = std::move(left),
+		callback = std::move(done)
+	]() mutable {
+		auto format = QByteArray();
+		if (bytes.isEmpty()) {
+			QFile f(path);
+			if (f.size() <= App::kImageSizeLimit
+				&& f.open(QIODevice::ReadOnly)) {
+				bytes = f.readAll();
+			}
+		}
+		auto image = bytes.isEmpty()
+			? QImage()
+			: App::readImage(bytes, &format, false, nullptr);
+		crl::on_main([
+			guard = std::move(guard),
+			image = std::move(image),
+			callback = std::move(callback)
+		]() mutable {
+			if (!guard) {
+				return;
+			}
+			callback(std::move(image));
+		});
+	});
+	return std::move(right);
 }
 
 } // namespace Data

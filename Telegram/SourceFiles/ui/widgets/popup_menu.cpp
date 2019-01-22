@@ -447,7 +447,7 @@ void PopupMenu::showMenu(const QPoint &p, PopupMenu *parent, TriggeredSource sou
 
 	auto origin = PanelAnimation::Origin::TopLeft;
 	auto w = p - QPoint(0, _padding.top());
-	auto r = Sandbox::screenGeometry(p);
+	auto r = QApplication::desktop()->screenGeometry(p);
 	_useTransparency = Platform::TranslucentWindowsSupported(p);
 	setAttribute(Qt::WA_OpaquePaintEvent, !_useTransparency);
 	handleCompositingUpdate();
@@ -503,12 +503,8 @@ PopupMenu::~PopupMenu() {
 		delete submenu;
 	}
 	if (const auto parent = parentWidget()) {
-		if (qApp->focusWidget() != nullptr) {
-			crl::on_main(parent, [=] {
-				if (!parent->isHidden()) {
-					parent->activateWindow();
-				}
-			});
+		if (Core::App().focusWidget() != nullptr) {
+			Core::App().activateWindowDelayed(parent);
 		}
 	}
 	if (_destroyedCallback) {

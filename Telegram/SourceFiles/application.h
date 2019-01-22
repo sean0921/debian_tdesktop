@@ -21,18 +21,24 @@ class Application : public QApplication, private QAbstractNativeEventFilter {
 public:
 	Application(not_null<Core::Launcher*> launcher, int &argc, char **argv);
 
-	bool event(QEvent *e) override;
+	int execute();
 
 	void createMessenger();
 	void refreshGlobalProxy();
 
 	void postponeCall(FnMut<void()> &&callable);
 	bool notify(QObject *receiver, QEvent *e) override;
+	void registerEnterFromEventLoop();
+	auto createEventNestingLevel() {
+		incrementEventNestingLevel();
+		return gsl::finally([=] { decrementEventNestingLevel(); });
+	}
+
+	void activateWindowDelayed(not_null<QWidget*> widget);
+	void pauseDelayedWindowActivations();
+	void resumeDelayedWindowActivations();
 
 	~Application();
-
-signals:
-	void adjustSingleTimers();
 
 // Single instance application
 public slots:
@@ -49,6 +55,9 @@ public slots:
 	void startApplication(); // will be done in exec()
 	void closeApplication(); // will be done in aboutToQuit()
 
+protected:
+	bool event(QEvent *e) override;
+
 private:
 	typedef QPair<QLocalSocket*, QByteArray> LocalClient;
 	typedef QList<LocalClient> LocalClients;
@@ -58,6 +67,8 @@ private:
 		FnMut<void()> callable;
 	};
 
+	void incrementEventNestingLevel();
+	void decrementEventNestingLevel();
 	bool nativeEventFilter(
 		const QByteArray &eventType,
 		void *message,
@@ -69,6 +80,9 @@ private:
 	int _loopNestingLevel = 0;
 	std::vector<int> _previousLoopNestingLevels;
 	std::vector<PostponedCall> _postponedCalls;
+
+	QPointer<QWidget> _windowForDelayedActivation;
+	bool _delayedActivationsPaused = false;
 
 	not_null<Core::Launcher*> _launcher;
 	std::unique_ptr<Messenger> _messengerInstance;
@@ -86,21 +100,19 @@ private:
 
 };
 
+namespace Core {
+
+inline Application &App() {
+	Expects(QCoreApplication::instance() != nullptr);
+
+	return *static_cast<Application*>(QCoreApplication::instance());
+}
+
+} // namespace Core
+
 namespace Sandbox {
 
-QRect availableGeometry();
-QRect screenGeometry(const QPoint &p);
-void setActiveWindow(QWidget *window);
-bool isSavingSession();
-
 void execExternal(const QString &cmd);
-
-void adjustSingleTimers();
-
-void refreshGlobalProxy();
-
-void connect(const char *signal, QObject *object, const char *method);
-
 void launch();
 
 } // namespace Sandbox

@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_slide_animation.h"
 #include "window/window_connecting_widget.h"
 #include "window/window_lock_widgets.h"
+#include "data/data_user.h"
 #include "styles/style_boxes.h"
 #include "styles/style_intro.h"
 #include "styles/style_window.h"
@@ -43,14 +44,14 @@ namespace {
 constexpr str_const kDefaultCountry = "US";
 
 void PrepareSupportMode() {
+	using Data::AutoDownload::Full;
+
 	anim::SetDisabled(true);
 	Local::writeSettings();
 
 	Global::SetDesktopNotify(false);
 	Global::SetSoundNotify(false);
-	cSetAutoDownloadAudio(dbiadNoPrivate | dbiadNoGroups);
-	cSetAutoDownloadGif(dbiadNoPrivate | dbiadNoGroups);
-	cSetAutoDownloadPhoto(dbiadNoPrivate | dbiadNoGroups);
+	Auth().settings().autoDownload() = Full::FullDisabled();
 	cSetAutoPlayGif(false);
 	Local::writeUserSettings();
 }

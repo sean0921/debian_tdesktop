@@ -20,6 +20,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_drafts.h"
 #include "data/data_feed.h"
 #include "data/data_session.h"
+#include "data/data_channel.h"
+#include "data/data_chat.h"
+#include "data/data_user.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -91,10 +94,12 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 
 	subscribe(Auth().downloaderTaskFinished(), [this] { update(); });
 	subscribe(Auth().data().contactsLoaded(), [this](bool) { refresh(); });
+
 	Auth().data().itemRemoved(
 	) | rpl::start_with_next(
 		[this](auto item) { itemRemoved(item); },
 		lifetime());
+
 	Auth().data().itemRepaintRequest(
 	) | rpl::start_with_next([=](auto item) {
 		const auto history = item->history();
@@ -107,13 +112,21 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 			}
 		}
 	}, lifetime());
-	subscribe(App::histories().sendActionAnimationUpdated(), [this](const Histories::SendActionAnimationUpdate &update) {
-		auto updateRect = Dialogs::Layout::RowPainter::sendActionAnimationRect(update.width, update.height, getFullWidth(), update.textUpdated);
+
+	Auth().data().sendActionAnimationUpdated(
+	) | rpl::start_with_next([=](
+			const Data::Session::SendActionAnimationUpdate &update) {
+		using RowPainter = Dialogs::Layout::RowPainter;
+		const auto updateRect = RowPainter::sendActionAnimationRect(
+			update.width,
+			update.height,
+			getFullWidth(),
+			update.textUpdated);
 		updateDialogRow(
 			Dialogs::RowDescriptor(update.history, FullMsgId()),
 			updateRect,
 			UpdateRowSection::Default | UpdateRowSection::Filtered);
-	});
+	}, lifetime());
 
 	subscribe(Window::Theme::Background(), [=](const Window::Theme::BackgroundUpdate &data) {
 		if (data.paletteChanged()) {
@@ -126,8 +139,9 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 		| UpdateFlag::NameChanged
 		| UpdateFlag::PhotoChanged
 		| UpdateFlag::UserIsContact
-		| UpdateFlag::UserOccupiedChanged;
-	subscribe(Notify::PeerUpdated(), Notify::PeerUpdatedHandler(changes, [this](const Notify::PeerUpdate &update) {
+		| UpdateFlag::UserOccupiedChanged
+		| UpdateFlag::MigrationChanged;
+	subscribe(Notify::PeerUpdated(), Notify::PeerUpdatedHandler(changes, [=](const Notify::PeerUpdate &update) {
 		if (update.flags & UpdateFlag::ChatPinnedChanged) {
 			stopReorderPinned();
 		}
@@ -143,12 +157,15 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 				userIsContactUpdated(user);
 			}
 		}
+		if (update.flags & UpdateFlag::MigrationChanged) {
+			if (const auto chat = update.peer->asChat()) {
+				handleChatMigration(chat);
+			}
+		}
 	}));
 	Auth().data().feedUpdated(
 	) | rpl::start_with_next([=](const Data::FeedUpdate &update) {
-		updateDialogRow(
-			Dialogs::RowDescriptor(update.feed, FullMsgId()),
-			QRect(0, 0, getFullWidth(), st::dialogsRowHeight));
+		updateDialogRow({ update.feed, FullMsgId() });
 	}, lifetime());
 
 	_controller->activeChatEntryValue(
@@ -156,13 +173,28 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 	) | rpl::start_with_next([=](
 			Dialogs::RowDescriptor previous,
 			Dialogs::RowDescriptor next) {
-		const auto rect = QRect(0, 0, getFullWidth(), st::dialogsRowHeight);
-		updateDialogRow(previous, rect);
-		updateDialogRow(next, rect);
+		updateDialogRow(previous);
+		updateDialogRow(next);
 	}, lifetime());
 	refresh();
 
 	setupShortcuts();
+}
+
+void DialogsInner::handleChatMigration(not_null<ChatData*> chat) {
+	const auto channel = chat->migrateTo();
+	if (!channel) {
+		return;
+	}
+
+	if (const auto from = chat->owner().historyLoaded(chat)) {
+		if (const auto to = chat->owner().historyLoaded(channel)) {
+			if (to->inChatList(Dialogs::Mode::All)
+				&& from->inChatList(Dialogs::Mode::All)) {
+				removeDialog(from);
+			}
+		}
+	}
 }
 
 int DialogsInner::dialogsOffset() const {
@@ -237,8 +269,8 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 		}
 		auto otherStart = rows->size() * st::dialogsRowHeight;
 		const auto active = activeEntry.key;
-		const auto selected = _menuKey
-			? _menuKey
+		const auto selected = _menuRow.key
+			? _menuRow.key
 			: (isPressed()
 				? (_pressed
 					? _pressed->key()
@@ -383,8 +415,8 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 					const auto key = row->key();
 					const auto active = (activeEntry.key == key)
 						&& !activeEntry.fullId;
-					const auto selected = _menuKey
-						? (key == _menuKey)
+					const auto selected = _menuRow.key
+						? (key == _menuRow.key)
 						: (from == (isPressed()
 							? _filteredPressed
 							: _filteredSelected));
@@ -480,9 +512,11 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 				for (; from < to; ++from) {
 					const auto &result = _searchResults[from];
 					const auto active = isSearchResultActive(result.get(), activeEntry);
-					const auto selected = (from == (isPressed()
-						? _searchedPressed
-						: _searchedSelected));
+					const auto selected = _menuRow.key
+						? isSearchResultActive(result.get(), _menuRow)
+						: (from == (isPressed()
+							? _searchedPressed
+							: _searchedSelected));
 					Dialogs::Layout::RowPainter::paint(
 						p,
 						result.get(),
@@ -692,11 +726,15 @@ void DialogsInner::activate() {
 }
 
 void DialogsInner::mouseMoveEvent(QMouseEvent *e) {
-	if (_mouseLastGlobalPosition != e->globalPos()) {
-		_mouseLastGlobalPosition = e->globalPos();
-		_mouseSelection = true;
+	const auto globalPosition = e->globalPos();
+	if (!_lastMousePosition) {
+		_lastMousePosition = globalPosition;
+		return;
+	} else if (!_mouseSelection
+		&& *_lastMousePosition == globalPosition) {
+		return;
 	}
-	updateSelected(e->pos());
+	selectByMouse(globalPosition);
 }
 
 void DialogsInner::clearIrrelevantState() {
@@ -718,16 +756,15 @@ void DialogsInner::clearIrrelevantState() {
 	}
 }
 
-void DialogsInner::updateSelected(QPoint localPos) {
-	if (updateReorderPinned(localPos)) {
+void DialogsInner::selectByMouse(QPoint globalPosition) {
+	const auto local = mapFromGlobal(globalPosition);
+	if (updateReorderPinned(local)) {
 		return;
 	}
+	_mouseSelection = true;
+	_lastMousePosition = globalPosition;
 
-	if (!_mouseSelection) {
-		return;
-	}
-
-	int w = width(), mouseY = localPos.y();
+	int w = width(), mouseY = local.y();
 	clearIrrelevantState();
 	if (_state == State::Default) {
 		auto importantSwitchSelected = (_dialogsImportant && mouseY >= 0 && mouseY < dialogsOffset());
@@ -756,7 +793,7 @@ void DialogsInner::updateSelected(QPoint localPos) {
 				_hashtagSelected = hashtagSelected;
 				updateSelectedRow();
 			}
-			_hashtagDeleteSelected = (_hashtagSelected >= 0) && (localPos.x() >= w - st::mentionHeight);
+			_hashtagDeleteSelected = (_hashtagSelected >= 0) && (local.x() >= w - st::mentionHeight);
 		}
 		if (!_filterResults.isEmpty()) {
 			auto skip = filteredOffset();
@@ -801,8 +838,7 @@ void DialogsInner::updateSelected(QPoint localPos) {
 }
 
 void DialogsInner::mousePressEvent(QMouseEvent *e) {
-	_mouseSelection = true;
-	updateSelected(e->pos());
+	selectByMouse(e->globalPos());
 
 	_pressButton = e->button();
 	setPressed(_selected);
@@ -851,7 +887,7 @@ void DialogsInner::mousePressEvent(QMouseEvent *e) {
 	}
 	if (anim::Disabled()
 		&& (!_pressed || !_pressed->entry()->isPinnedDialog())) {
-		mousePressReleased(e->button());
+		mousePressReleased(e->globalPos(), e->button());
 	}
 }
 
@@ -1072,15 +1108,16 @@ void DialogsInner::step_pinnedShifting(TimeMs ms, bool timer) {
 }
 
 void DialogsInner::mouseReleaseEvent(QMouseEvent *e) {
-	mousePressReleased(e->button());
+	mousePressReleased(e->globalPos(), e->button());
 }
 
-void DialogsInner::mousePressReleased(Qt::MouseButton button) {
+void DialogsInner::mousePressReleased(
+		QPoint globalPosition,
+		Qt::MouseButton button) {
 	auto wasDragging = (_dragging != nullptr);
 	if (wasDragging) {
 		updateReorderIndexGetCount();
 		if (_draggingIndex >= 0) {
-			auto localPosition = mapFromGlobal(QCursor::pos());
 			_pinnedRows[_draggingIndex].yadd.start(0.);
 			_pinnedRows[_draggingIndex].animStartTime = getms();
 			if (!_a_pinnedShifting.animating()) {
@@ -1105,7 +1142,7 @@ void DialogsInner::mousePressReleased(Qt::MouseButton button) {
 	auto searchedPressed = _searchedPressed;
 	setSearchedPressed(-1);
 	if (wasDragging) {
-		updateSelected();
+		selectByMouse(globalPosition);
 	}
 	updateSelectedRow();
 	if (!wasDragging && button == Qt::LeftButton) {
@@ -1261,21 +1298,21 @@ void DialogsInner::createDialog(Dialogs::Key key) {
 
 	const auto from = dialogsOffset() + changed.movedFrom * st::dialogsRowHeight;
 	const auto to = dialogsOffset() + changed.movedTo * st::dialogsRowHeight;
-	if (!_dragging) {
+	if (!_dragging && from != to) {
 		// Don't jump in chats list scroll position while dragging.
 		emit dialogMoved(from, to);
 	}
 
 	if (creating) {
 		refresh();
-	} else if (_state == State::Default && changed.movedFrom != changed.movedTo) {
+	} else if (_state == State::Default && from != to) {
 		update(0, qMin(from, to), getFullWidth(), qAbs(from - to) + st::dialogsRowHeight);
 	}
 }
 
 void DialogsInner::removeDialog(Dialogs::Key key) {
-	if (key == _menuKey && _menu) {
-		InvokeQueued(this, [this] { _menu = nullptr; });
+	if (key == _menuRow.key && _menu) {
+		InvokeQueued(this, [=] { _menu = nullptr; });
 	}
 	if (_selected && _selected->key() == key) {
 		_selected = nullptr;
@@ -1300,6 +1337,15 @@ void DialogsInner::removeDialog(Dialogs::Key key) {
 		if (!_contactsNoDialogs->contains(key)) {
 			_contactsNoDialogs->addByName(key);
 		}
+	}
+	const auto i = ranges::find(_filterResults, key, &Dialogs::Row::key);
+	if (i != _filterResults.end()) {
+		if (_filteredSelected == (i - _filterResults.begin())
+			&& (i + 1) == _filterResults.end()) {
+			_filteredSelected = -1;
+		}
+		_filterResults.erase(i);
+		refresh();
 	}
 
 	emit App::main()->dialogsUpdated();
@@ -1335,14 +1381,8 @@ void DialogsInner::repaintDialogRow(
 	}
 }
 
-void DialogsInner::repaintDialogRow(
-		not_null<History*> history,
-		MsgId messageId) {
-	updateDialogRow(
-		Dialogs::RowDescriptor(
-			history,
-			FullMsgId(history->channelId(), messageId)),
-		QRect(0, 0, getFullWidth(), st::dialogsRowHeight));
+void DialogsInner::repaintDialogRow(Dialogs::RowDescriptor row) {
+	updateDialogRow(row);
 }
 
 void DialogsInner::updateSearchResult(not_null<PeerData*> peer) {
@@ -1364,6 +1404,9 @@ void DialogsInner::updateDialogRow(
 		Dialogs::RowDescriptor row,
 		QRect updateRect,
 		UpdateRowSections sections) {
+	if (updateRect.isEmpty()) {
+		updateRect = QRect(0, 0, getFullWidth(), st::dialogsRowHeight);
+	}
 	if (IsServerMsgId(-row.fullId.msg)) {
 		if (const auto peer = row.key.peer()) {
 			if (const auto from = peer->migrateFrom()) {
@@ -1426,8 +1469,7 @@ void DialogsInner::updateDialogRow(
 			const auto add = searchedOffset();
 			auto index = 0;
 			for (const auto &result : _searchResults) {
-				auto item = result->item();
-				if (item->fullId() == row.fullId) {
+				if (isSearchResultActive(result.get(), row)) {
 					updateRow(add + index * st::dialogsRowHeight);
 					break;
 				}
@@ -1439,7 +1481,6 @@ void DialogsInner::updateDialogRow(
 
 void DialogsInner::enterEventHook(QEvent *e) {
 	setMouseTracking(true);
-	updateSelected();
 }
 
 void DialogsInner::updateSelectedRow(Dialogs::Key key) {
@@ -1498,6 +1539,7 @@ void DialogsInner::dragLeft() {
 
 void DialogsInner::clearSelection() {
 	_mouseSelection = false;
+	_lastMousePosition = std::nullopt;
 	if (_importantSwitchSelected
 		|| _selected
 		|| _filteredSelected >= 0
@@ -1512,35 +1554,51 @@ void DialogsInner::clearSelection() {
 	}
 }
 
+void DialogsInner::fillSupportSearchMenu(not_null<Ui::PopupMenu*> menu) {
+	const auto all = Auth().settings().supportAllSearchResults();
+	const auto text = all ? "Only one from chat" : "Show all messages";
+	menu->addAction(text, [=] {
+		Auth().settings().setSupportAllSearchResults(!all);
+		Auth().saveSettingsDelayed();
+	});
+}
+
 void DialogsInner::contextMenuEvent(QContextMenuEvent *e) {
 	_menu = nullptr;
 
 	if (e->reason() == QContextMenuEvent::Mouse) {
-		_mouseSelection = true;
-		updateSelected();
+		selectByMouse(e->globalPos());
 	}
 
-	const auto key = [&]() -> Dialogs::Key {
+	const auto row = [&]() -> Dialogs::RowDescriptor {
 		if (_state == State::Default) {
 			if (_selected) {
-				return _selected->key();
+				return { _selected->key(), FullMsgId() };
 			}
 		} else if (_state == State::Filtered) {
 			if (base::in_range(_filteredSelected, 0, _filterResults.size())) {
-				return _filterResults[_filteredSelected]->key();
+				return { _filterResults[_filteredSelected]->key(), FullMsgId() };
+			} else if (Auth().supportMode()
+				&& base::in_range(_searchedSelected, 0, _searchResults.size())) {
+				return {
+					_searchResults[_searchedSelected]->item()->history(),
+					_searchResults[_searchedSelected]->item()->fullId()
+				};
 			}
 		}
-		return Dialogs::Key();
+		return Dialogs::RowDescriptor();
 	}();
-	if (!key) return;
+	if (!row.key) return;
 
-	_menuKey = key;
+	_menuRow = row;
 	if (_pressButton != Qt::LeftButton) {
-		mousePressReleased(_pressButton);
+		mousePressReleased(e->globalPos(), _pressButton);
 	}
 
 	_menu = base::make_unique_q<Ui::PopupMenu>(this);
-	if (const auto history = key.history()) {
+	if (Auth().supportMode() && row.fullId) {
+		fillSupportSearchMenu(_menu.get());
+	} else if (const auto history = row.key.history()) {
 		Window::FillPeerMenu(
 			_controller,
 			history->peer,
@@ -1548,7 +1606,7 @@ void DialogsInner::contextMenuEvent(QContextMenuEvent *e) {
 				return _menu->addAction(text, std::move(callback));
 			},
 			Window::PeerMenuSource::ChatsList);
-	} else if (const auto feed = key.feed()) {
+	} else if (const auto feed = row.key.feed()) {
 		Window::FillFeedMenu(
 			_controller,
 			feed,
@@ -1557,15 +1615,14 @@ void DialogsInner::contextMenuEvent(QContextMenuEvent *e) {
 			},
 			Window::PeerMenuSource::ChatsList);
 	}
-	connect(_menu.get(), &QObject::destroyed, [this] {
-		if (_menuKey) {
-			updateSelectedRow(base::take(_menuKey));
+	connect(_menu.get(), &QObject::destroyed, [=] {
+		if (_menuRow.key) {
+			updateDialogRow(base::take(_menuRow));
 		}
-		auto localPos = mapFromGlobal(QCursor::pos());
-		if (rect().contains(localPos)) {
-			_mouseSelection = true;
+		const auto globalPosition = QCursor::pos();
+		if (rect().contains(mapFromGlobal(globalPosition))) {
 			setMouseTracking(true);
-			updateSelected(localPos);
+			selectByMouse(globalPosition);
 		}
 	});
 	_menu->popup(e->globalPos());
@@ -1573,10 +1630,12 @@ void DialogsInner::contextMenuEvent(QContextMenuEvent *e) {
 }
 
 void DialogsInner::onParentGeometryChanged() {
-	auto localPos = mapFromGlobal(QCursor::pos());
-	if (rect().contains(localPos)) {
+	const auto globalPosition = QCursor::pos();
+	if (rect().contains(mapFromGlobal(globalPosition))) {
 		setMouseTracking(true);
-		updateSelected(localPos);
+		if (_mouseSelection) {
+			selectByMouse(globalPosition);
+		}
 	}
 }
 
@@ -1595,7 +1654,7 @@ void DialogsInner::handlePeerNameChange(
 	update();
 }
 
-void DialogsInner::onFilterUpdate(QString newFilter, bool force) {
+void DialogsInner::applyFilterUpdate(QString newFilter, bool force) {
 	const auto mentionsSearch = (newFilter == qstr("@"));
 	const auto words = mentionsSearch
 		? QStringList(newFilter)
@@ -1643,7 +1702,7 @@ void DialogsInner::onFilterUpdate(QString newFilter, bool force) {
 					+ (toFilterContacts ? toFilterContacts->size() : 0));
 				if (toFilter) {
 					for (const auto row : *toFilter) {
-						const auto &nameWords = row->entry()->chatsListNameWords();
+						const auto &nameWords = row->entry()->chatListNameWords();
 						auto nb = nameWords.cbegin(), ne = nameWords.cend(), ni = nb;
 						for (fi = fb; fi != fe; ++fi) {
 							auto filterWord = *fi;
@@ -1663,7 +1722,7 @@ void DialogsInner::onFilterUpdate(QString newFilter, bool force) {
 				}
 				if (toFilterContacts) {
 					for (const auto row : *toFilterContacts) {
-						const auto &nameWords = row->entry()->chatsListNameWords();
+						const auto &nameWords = row->entry()->chatListNameWords();
 						auto nb = nameWords.cbegin(), ne = nameWords.cend(), ni = nb;
 						for (fi = fb; fi != fe; ++fi) {
 							auto filterWord = *fi;
@@ -1684,7 +1743,7 @@ void DialogsInner::onFilterUpdate(QString newFilter, bool force) {
 			}
 			refresh(true);
 		}
-		setMouseSelection(false, true);
+		clearMouseSelection(true);
 	}
 	if (_state != State::Default) {
 		emit searchMessages();
@@ -1697,7 +1756,7 @@ void DialogsInner::onHashtagFilterUpdate(QStringRef newFilter) {
 		if (!_hashtagResults.empty()) {
 			_hashtagResults.clear();
 			refresh(true);
-			setMouseSelection(false, true);
+			clearMouseSelection(true);
 		}
 		return;
 	}
@@ -1717,7 +1776,7 @@ void DialogsInner::onHashtagFilterUpdate(QStringRef newFilter) {
 		}
 	}
 	refresh(true);
-	setMouseSelection(false, true);
+	clearMouseSelection(true);
 }
 
 DialogsInner::~DialogsInner() {
@@ -1733,9 +1792,8 @@ void DialogsInner::clearSearchResults(bool clearPeerSearchResults) {
 	_lastSearchId = _lastSearchMigratedId = 0;
 }
 
-PeerData *DialogsInner::updateFromParentDrag(QPoint globalPos) {
-	_mouseSelection = true;
-	updateSelected(mapFromGlobal(globalPos));
+PeerData *DialogsInner::updateFromParentDrag(QPoint globalPosition) {
+	selectByMouse(globalPosition);
 	const auto getPeerFromRow = [](Dialogs::Row *row) -> PeerData* {
 		if (const auto history = row ? row->history() : nullptr) {
 			return history->peer;
@@ -1754,6 +1812,14 @@ PeerData *DialogsInner::updateFromParentDrag(QPoint globalPos) {
 		}
 	}
 	return nullptr;
+}
+
+void DialogsInner::setLoadMoreCallback(Fn<void()> callback) {
+	_loadMoreCallback = std::move(callback);
+}
+
+rpl::producer<> DialogsInner::listBottomReached() const {
+	return _listBottomReached.events();
 }
 
 void DialogsInner::visibleTopBottomUpdated(
@@ -1809,7 +1875,7 @@ void DialogsInner::applyDialog(const MTPDdialog &dialog) {
 	history->applyDialog(dialog);
 
 	if (!history->useProxyPromotion() && !history->isPinnedDialog()) {
-		const auto date = history->chatsListTimeId();
+		const auto date = history->chatListTimeId();
 		if (date != 0) {
 			addSavedPeersAfter(ParseDateTime(date));
 		}
@@ -1832,7 +1898,7 @@ void DialogsInner::applyDialog(const MTPDdialog &dialog) {
 //	feed->applyDialog(dialog);
 //
 //	if (!feed->useProxyPromotion() && !feed->isPinnedDialog()) {
-//		const auto date = feed->chatsListDate();
+//		const auto date = feed->chatListDate();
 //		if (!date.isNull()) {
 //			addSavedPeersAfter(date);
 //		}
@@ -1847,7 +1913,7 @@ void DialogsInner::addSavedPeersAfter(const QDateTime &date) {
 		saved.remove(lastDate, lastPeer);
 
 		const auto history = App::history(lastPeer);
-		history->setChatsListTimeId(ServerTimeFromParsed(lastDate));
+		history->setChatListTimeId(ServerTimeFromParsed(lastDate));
 		_contactsNoDialogs->del(history);
 	}
 }
@@ -1858,7 +1924,7 @@ void DialogsInner::addAllSavedPeers() {
 
 bool DialogsInner::uniqueSearchResults() const {
 	return Auth().supportMode()
-		&& _filter.startsWith('#')
+		&& !Auth().settings().supportAllSearchResults()
 		&& !_searchInChat;
 }
 
@@ -1882,15 +1948,14 @@ bool DialogsInner::searchReceived(
 	auto isGlobalSearch = (type == DialogsSearchFromStart || type == DialogsSearchFromOffset);
 	auto isMigratedSearch = (type == DialogsSearchMigratedFromStart || type == DialogsSearchMigratedFromOffset);
 
-	auto unknownUnreadCounts = std::vector<not_null<History*>>();
 	TimeId lastDateFound = 0;
-	for_const (auto message, messages) {
+	for (const auto &message : messages) {
 		auto msgId = IdFromMessage(message);
 		auto peerId = PeerFromMessage(message);
 		auto lastDate = DateFromMessage(message);
 		if (const auto peer = App::peerLoaded(peerId)) {
 			if (lastDate) {
-				const auto item = App::histories().addNewMessage(
+				const auto item = Auth().data().addNewMessage(
 					message,
 					NewMessageExisting);
 				const auto history = item->history();
@@ -1900,7 +1965,7 @@ bool DialogsInner::searchReceived(
 							_searchInChat,
 							item));
 					if (uniquePeers && !history->unreadCountKnown()) {
-						unknownUnreadCounts.push_back(history);
+						history->session().api().requestDialogEntry(history);
 					}
 				}
 				lastDateFound = lastDate;
@@ -1935,9 +2000,6 @@ bool DialogsInner::searchReceived(
 
 	refresh();
 
-	if (!unknownUnreadCounts.empty()) {
-		Auth().api().requestDialogEntries(std::move(unknownUnreadCounts));
-	}
 	return lastDateFound != 0;
 }
 
@@ -2057,16 +2119,15 @@ void DialogsInner::notify_historyMuteUpdated(History *history) {
 			return;
 		}
 
-		int from = dialogsOffset() + changed.movedFrom * st::dialogsRowHeight;
-		int to = dialogsOffset() + changed.movedTo * st::dialogsRowHeight;
-		if (!_dragging) {
+		const auto from = dialogsOffset() + changed.movedFrom * st::dialogsRowHeight;
+		const auto to = dialogsOffset() + changed.movedTo * st::dialogsRowHeight;
+		if (!_dragging && from != to) {
 			// Don't jump in chats list scroll position while dragging.
 			emit dialogMoved(from, to);
 		}
-
 		if (creating) {
 			refresh();
-		} else if (_state == State::Default && changed.movedFrom != changed.movedTo) {
+		} else if (_state == State::Default && from != to) {
 			update(0, qMin(from, to), getFullWidth(), qAbs(from - to) + st::dialogsRowHeight);
 		}
 	}
@@ -2106,9 +2167,10 @@ void DialogsInner::refresh(bool toTop) {
 	update();
 }
 
-void DialogsInner::setMouseSelection(bool mouseSelection, bool toTop) {
-	_mouseSelection = mouseSelection;
-	if (!_mouseSelection && toTop) {
+void DialogsInner::clearMouseSelection(bool clearSelection) {
+	_mouseSelection = false;
+	_lastMousePosition = std::nullopt;
+	if (clearSelection) {
 		if (_state == State::Default) {
 			_selected = nullptr;
 			_importantSwitchSelected = false;
@@ -2166,7 +2228,7 @@ void DialogsInner::refreshSearchInChatLabel() {
 			}
 			return peer->name;
 		} else if (const auto feed = _searchInChat.feed()) {
-			return feed->chatsListName();
+			return feed->chatListName();
 		}
 		return QString();
 	}();
@@ -2215,6 +2277,7 @@ void DialogsInner::clearFilter() {
 }
 
 void DialogsInner::selectSkip(int32 direction) {
+	clearMouseSelection();
 	if (_state == State::Default) {
 		if (_importantSwitchSelected) {
 			if (!shownDialogs()->isEmpty() && direction > 0) {
@@ -2307,12 +2370,10 @@ void DialogsInner::scrollToEntry(const Dialogs::RowDescriptor &entry) {
 			fromY = dialogsOffset() + row->pos() * st::dialogsRowHeight;
 		}
 	} else if (_state == State::Filtered) {
-		if (entry.fullId.msg) {
-			for (int32 i = 0, c = _searchResults.size(); i < c; ++i) {
-				if (_searchResults[i]->item()->fullId() == entry.fullId) {
-					fromY = searchedOffset() + i * st::dialogsRowHeight;
-					break;
-				}
+		for (int32 i = 0, c = _searchResults.size(); i < c; ++i) {
+			if (isSearchResultActive(_searchResults[i].get(), entry)) {
+				fromY = searchedOffset() + i * st::dialogsRowHeight;
+				break;
 			}
 		}
 		if (fromY < 0) {
@@ -2330,6 +2391,7 @@ void DialogsInner::scrollToEntry(const Dialogs::RowDescriptor &entry) {
 }
 
 void DialogsInner::selectSkipPage(int32 pixels, int32 direction) {
+	clearMouseSelection();
 	int toSkip = pixels / int(st::dialogsRowHeight);
 	if (_state == State::Default) {
 		if (!_selected) {
@@ -2457,9 +2519,7 @@ bool DialogsInner::chooseHashtag() {
 		cSetRecentSearchHashtags(recent);
 		Local::writeRecentHashtagsAndBots();
 		emit refreshHashtags();
-
-		_mouseSelection = true;
-		updateSelected();
+		selectByMouse(QCursor::pos());
 	} else {
 		Local::saveRecentSearchHashtags('#' + hashtag->tag);
 		emit completeHashtag(hashtag->tag);
@@ -2534,6 +2594,8 @@ bool DialogsInner::chooseRow() {
 			emit clearSearchQuery();
 		}
 		updateSelectedRow();
+		_mouseSelection = false;
+		_lastMousePosition = std::nullopt;
 		_selected = nullptr;
 		_hashtagSelected
 			= _filteredSelected
@@ -2798,22 +2860,60 @@ void DialogsInner::setupShortcuts() {
 			return;
 		}
 		const auto row = _controller->activeChatEntryCurrent();
+		// Those should be computed before the call to request->handle.
+		const auto previous = row.key
+			? computeJump(
+				chatListEntryBefore(row),
+				JumpSkip::PreviousOrBegin)
+			: row;
+		const auto next = row.key
+			? computeJump(
+				chatListEntryAfter(row),
+				JumpSkip::NextOrEnd)
+			: row;
+		const auto first = [&] {
+			const auto to = chatListEntryFirst();
+			const auto jump = computeJump(to, JumpSkip::NextOrOriginal);
+			return (to == row || jump == row || to == previous) ? to : jump;
+		}();
+		const auto last = [&] {
+			const auto to = chatListEntryLast();
+			const auto jump = computeJump(to, JumpSkip::PreviousOrOriginal);
+			return (to == row || jump == row || to == next) ? to : jump;
+		}();
 		if (row.key) {
-			const auto prev = computeJump(chatListEntryBefore(row), -1);
-			const auto next = computeJump(chatListEntryAfter(row), 1);
 			request->check(Command::ChatPrevious) && request->handle([=] {
-				return jumpToDialogRow(prev);
+				return jumpToDialogRow(previous);
 			});
 			request->check(Command::ChatNext) && request->handle([=] {
 				return jumpToDialogRow(next);
 			});
 		}
 		request->check(Command::ChatFirst) && request->handle([=] {
-			return jumpToDialogRow(computeJump(chatListEntryFirst(), 1));
+			return jumpToDialogRow(first);
 		});
 		request->check(Command::ChatLast) && request->handle([=] {
-			return jumpToDialogRow(computeJump(chatListEntryLast(), -1));
+			return jumpToDialogRow(last);
 		});
+
+		static const auto kPinned = {
+			Command::ChatPinned1,
+			Command::ChatPinned2,
+			Command::ChatPinned3,
+			Command::ChatPinned4,
+			Command::ChatPinned5,
+		};
+		auto &&pinned = ranges::view::zip(kPinned, ranges::view::ints(0));
+		for (const auto [command, index] : pinned) {
+			request->check(command) && request->handle([=, index = index] {
+				const auto count = shownPinnedCount();
+				if (index >= count) {
+					return false;
+				}
+				const auto row = *(shownDialogs()->cbegin() + index);
+				return jumpToDialogRow({ row->key(), FullMsgId() });
+			});
+		}
 		if (Auth().supportMode() && row.key.history()) {
 			request->check(
 				Command::SupportScrollToCurrent
@@ -2827,35 +2927,36 @@ void DialogsInner::setupShortcuts() {
 
 Dialogs::RowDescriptor DialogsInner::computeJump(
 		const Dialogs::RowDescriptor &to,
-		int skipDirection) {
+		JumpSkip skip) {
 	auto result = to;
-	if (Auth().supportMode()) {
-		while (result.key
-			&& !result.key.entry()->chatListUnreadCount()
+	if (Auth().supportMode() && result.key) {
+		const auto down = (skip == JumpSkip::NextOrEnd)
+			|| (skip == JumpSkip::NextOrOriginal);
+		while (!result.key.entry()->chatListUnreadCount()
 			&& !result.key.entry()->chatListUnreadMark()) {
-			result = (skipDirection > 0)
+			const auto next = down
 				? chatListEntryAfter(result)
 				: chatListEntryBefore(result);
+			if (next.key) {
+				result = next;
+			} else {
+				if (skip == JumpSkip::PreviousOrOriginal
+					|| skip == JumpSkip::NextOrOriginal) {
+					result = to;
+				}
+				break;
+			}
 		}
 	}
 	return result;
 }
 
-bool DialogsInner::jumpToDialogRow(const Dialogs::RowDescriptor &to) {
-	if (const auto history = to.key.history()) {
-		Ui::showPeerHistory(
-			history,
-			(uniqueSearchResults()
-				? ShowAtUnreadMsgId
-				: to.fullId.msg));
-		return true;
-	} else if (const auto feed = to.key.feed()) {
-		if (const auto item = App::histItemById(to.fullId)) {
-			_controller->showSection(
-				HistoryFeed::Memento(feed, item->position()));
-		} else {
-			_controller->showSection(HistoryFeed::Memento(feed));
-		}
+bool DialogsInner::jumpToDialogRow(Dialogs::RowDescriptor to) {
+	if (to == chatListEntryLast()) {
+		_listBottomReached.fire({});
 	}
-	return false;
+	if (uniqueSearchResults()) {
+		to.fullId = FullMsgId();
+	}
+	return _controller->jumpToChatListEntry(to);
 }

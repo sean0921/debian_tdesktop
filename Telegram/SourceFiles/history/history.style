@@ -529,6 +529,13 @@ historyPollRadialAnimation: InfiniteRadialAnimation(defaultInfiniteRadialAnimati
 	thickness: 2px;
 	size: size(18px, 18px);
 }
+historyPollRippleIn: RippleAnimation(defaultRippleAnimation) {
+	color: msgWaveformInInactive;
+}
+historyPollRippleOut: RippleAnimation(defaultRippleAnimation) {
+	color: msgWaveformOutInactive;
+}
+historyPollRippleOpacity: 0.3;
 
 boxAttachEmoji: IconButton(historyAttachEmoji) {
 	width: 30px;
@@ -536,3 +543,10 @@ boxAttachEmoji: IconButton(historyAttachEmoji) {
 	rippleAreaSize: 0px;
 }
 boxAttachEmojiTop: 20px;
+
+historyGroupAboutMargin: 16px;
+historyGroupAboutPadding: margins(24px, 16px, 24px, 16px);
+historyGroupAboutBulletSkip: 16px;
+historyGroupAboutHeaderSkip: 10px;
+historyGroupAboutTextSkip: 10px;
+historyGroupAboutSkip: 8px;

@@ -533,6 +533,10 @@ aboutLabel: FlatLabel(defaultFlatLabel) {
 autoDownloadTopDelta: 10px;
 autoDownloadTitlePosition: point(23px, 18px);
 autoDownloadTitleFont: font(15px semibold);
+autoDownloadLimitSlider: MediaSlider(defaultContinuousSlider) {
+	seekSize: size(15px, 15px);
+}
+autoDownloadLimitPadding: margins(22px, 8px, 22px, 8px);
 
 confirmCaptionArea: InputField(defaultInputField) {
 	textMargins: margins(1px, 26px, 31px, 4px);
@@ -688,6 +692,7 @@ rightsCheckbox: Checkbox(defaultBoxCheckbox) {
 rightsToggle: Toggle(defaultToggle) {
 	toggledFg: windowBgActive;
 	untoggledFg: attentionButtonFg;
+	lockIcon: icon {{ "info_rights_lock", windowBgActive }};
 	xsize: 8px;
 	vsize: 5px;
 	vshift: 1px;
@@ -695,7 +700,8 @@ rightsToggle: Toggle(defaultToggle) {
 	duration: 120;
 }
 rightsDividerHeight: 10px;
-rightsHeaderMargin: margins(23px, 20px, 23px, 8px);
+rightsDividerMargin: margins(0px, 0px, 0px, 20px);
+rightsHeaderMargin: margins(23px, 0px, 23px, 8px);
 rightsToggleMargin: margins(23px, 8px, 23px, 8px);
 rightsAboutMargin: margins(23px, 8px, 23px, 8px);
 rightsPhotoButton: UserpicButton(defaultUserpicButton) {
@@ -718,7 +724,7 @@ rightsHeaderLabel: FlatLabel(boxLabel) {
 	}
 	textFg: windowActiveTextFg;
 }
-rightsUntilMargin: margins(0px, 8px, 0px, 0px);
+rightsUntilMargin: margins(0px, 8px, 0px, 20px);
 
 mutePhotoButton: UserpicButton(defaultUserpicButton) {
 	size: size(40px, 40px);
@@ -892,3 +898,16 @@ createPollWarning: FlatLabel(defaultFlatLabel) {
 	}
 }
 createPollWarningPosition: point(16px, 6px);
+
+callSettingsButton: IconButton {
+	width: 50px;
+	height: boxLayerTitleHeight;
+	icon: icon {{ "menu_settings", boxTitleCloseFg }};
+	iconOver: icon {{ "menu_settings", boxTitleCloseFgOver }};
+	iconPosition: point(8px, -1px);
+	rippleAreaSize: 44px;
+	rippleAreaPosition: point(0px, 6px);
+	ripple: RippleAnimation(defaultRippleAnimation) {
+		color: windowBgOver;
+	}
+}

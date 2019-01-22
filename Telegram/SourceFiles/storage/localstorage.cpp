@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_clear_legacy.h"
 #include "chat_helpers/stickers.h"
 #include "data/data_drafts.h"
+#include "data/data_user.h"
 #include "boxes/send_files_box.h"
 #include "window/themes/window_theme.h"
 #include "ui/widgets/input_fields.h"
@@ -566,7 +567,7 @@ enum {
 	dbiIncludeMutedOld = 0x31,
 	dbiMegagroupSizeMax = 0x32,
 	dbiDownloadPath = 0x33,
-	dbiAutoDownload = 0x34,
+	dbiAutoDownloadOld = 0x34,
 	dbiSavedGifsLimit = 0x35,
 	dbiShowingSavedGifsOld = 0x36,
 	dbiAutoPlay = 0x37,
@@ -601,6 +602,7 @@ enum {
 	dbiScalePercent = 0x58,
 	dbiPlaybackSpeed = 0x59,
 	dbiLanguagesKey = 0x5a,
+	dbiCallSettings = 0x5b,
 
 	dbiEncryptedWithSalt = 333,
 	dbiEncrypted = 444,
@@ -886,6 +888,43 @@ void applyReadContext(ReadSettingsContext &&context) {
 	}
 }
 
+QByteArray serializeCallSettings(){
+	QByteArray result=QByteArray();
+	uint32 size = 3*sizeof(qint32) + Serialize::stringSize(Global::CallOutputDeviceID()) + Serialize::stringSize(Global::CallInputDeviceID());
+	result.reserve(size);
+	QDataStream stream(&result, QIODevice::WriteOnly);
+	stream.setVersion(QDataStream::Qt_5_1);
+	stream << Global::CallOutputDeviceID();
+	stream << qint32(Global::CallOutputVolume());
+	stream << Global::CallInputDeviceID();
+	stream << qint32(Global::CallInputVolume());
+	stream << qint32(Global::CallAudioDuckingEnabled() ? 1 : 0);
+	return result;
+}
+
+void deserializeCallSettings(QByteArray& settings){
+	QDataStream stream(&settings, QIODevice::ReadOnly);
+	stream.setVersion(QDataStream::Qt_5_1);
+	QString outputDeviceID;
+	QString inputDeviceID;
+	qint32 outputVolume;
+	qint32 inputVolume;
+	qint32 duckingEnabled;
+
+	stream >> outputDeviceID;
+	stream >> outputVolume;
+	stream >> inputDeviceID;
+	stream >> inputVolume;
+	stream >> duckingEnabled;
+	if(_checkStreamStatus(stream)){
+		Global::SetCallOutputDeviceID(outputDeviceID);
+		Global::SetCallOutputVolume(outputVolume);
+		Global::SetCallInputDeviceID(inputDeviceID);
+		Global::SetCallInputVolume(inputVolume);
+		Global::SetCallAudioDuckingEnabled(duckingEnabled);
+	}
+}
+
 bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSettingsContext &context) {
 	switch (blockId) {
 	case dbiDcOptionOldOld: {
@@ -1057,14 +1096,31 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 		Global::SetSoundNotify(v == 1);
 	} break;
 
-	case dbiAutoDownload: {
+	case dbiAutoDownloadOld: {
 		qint32 photo, audio, gif;
 		stream >> photo >> audio >> gif;
 		if (!_checkStreamStatus(stream)) return false;
 
-		cSetAutoDownloadPhoto(photo);
-		cSetAutoDownloadAudio(audio);
-		cSetAutoDownloadGif(gif);
+		using namespace Data::AutoDownload;
+		auto &settings = GetStoredAuthSessionCache().autoDownload();
+		const auto disabled = [](qint32 value, qint32 mask) {
+			return (value & mask) != 0;
+		};
+		const auto set = [&](Type type, qint32 value) {
+			constexpr auto kNoPrivate = qint32(0x01);
+			constexpr auto kNoGroups = qint32(0x02);
+			if (disabled(value, kNoPrivate)) {
+				settings.setBytesLimit(Source::User, type, 0);
+			}
+			if (disabled(value, kNoGroups)) {
+				settings.setBytesLimit(Source::Group, type, 0);
+				settings.setBytesLimit(Source::Channel, type, 0);
+			}
+		};
+		set(Type::Photo, photo);
+		set(Type::VoiceMessage, audio);
+		set(Type::GIF, gif);
+		set(Type::VideoMessage, gif);
 	} break;
 
 	case dbiAutoPlay: {
@@ -1227,7 +1283,7 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 		} else {
 			Global::SetProxiesList({});
 		}
-		Sandbox::refreshGlobalProxy();
+		Core::App().refreshGlobalProxy();
 	} break;
 
 	case dbiConnectionType: {
@@ -1327,7 +1383,7 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 				Global::SetProxySettings(ProxyData::Settings::System);
 			}
 		}
-		Sandbox::refreshGlobalProxy();
+		Core::App().refreshGlobalProxy();
 	} break;
 
 	case dbiThemeKeyOld: {
@@ -1769,6 +1825,14 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 		Global::SetVoiceMsgPlaybackDoubled(v == 2);
 	} break;
 
+	case dbiCallSettings: {
+		QByteArray callSettings;
+		stream >> callSettings;
+		if(!_checkStreamStatus(stream)) return false;
+
+		deserializeCallSettings(callSettings);
+	} break;
+
 	default:
 	LOG(("App Error: unknown blockId in _readSetting: %1").arg(blockId));
 	return false;
@@ -1985,6 +2049,7 @@ void _writeUserSettings() {
 	auto userData = userDataInstance
 		? userDataInstance->serialize()
 		: QByteArray();
+	auto callSettings = serializeCallSettings();
 
 	uint32 size = 23 * (sizeof(quint32) + sizeof(qint32));
 	size += sizeof(quint32) + Serialize::stringSize(Global::AskDownloadPath() ? QString() : Global::DownloadPath()) + Serialize::bytearraySize(Global::AskDownloadPath() ? QByteArray() : Global::DownloadPathBookmark());
@@ -2007,6 +2072,7 @@ void _writeUserSettings() {
 	if (!userData.isEmpty()) {
 		size += sizeof(quint32) + Serialize::bytearraySize(userData);
 	}
+	size += sizeof(quint32) + Serialize::bytearraySize(callSettings);
 
 	EncryptedDescriptor data(size);
 	data.stream
@@ -2029,7 +2095,6 @@ void _writeUserSettings() {
 	data.stream << quint32(dbiDialogLastPath) << cDialogLastPath();
 	data.stream << quint32(dbiSongVolume) << qint32(qRound(Global::SongVolume() * 1e6));
 	data.stream << quint32(dbiVideoVolume) << qint32(qRound(Global::VideoVolume() * 1e6));
-	data.stream << quint32(dbiAutoDownload) << qint32(cAutoDownloadPhoto()) << qint32(cAutoDownloadAudio()) << qint32(cAutoDownloadGif());
 	data.stream << quint32(dbiDialogsMode) << qint32(Global::DialogsModeEnabled() ? 1 : 0) << static_cast<qint32>(Global::DialogsMode());
 	data.stream << quint32(dbiModerateMode) << qint32(Global::ModerateModeEnabled() ? 1 : 0);
 	data.stream << quint32(dbiAutoPlay) << qint32(cAutoPlayGif() ? 1 : 0);
@@ -2057,6 +2122,7 @@ void _writeUserSettings() {
 	if (!Global::HiddenPinnedMessages().isEmpty()) {
 		data.stream << quint32(dbiHiddenPinnedMessages) << Global::HiddenPinnedMessages();
 	}
+	data.stream << qint32(dbiCallSettings) << callSettings;
 
 	FileWriteDescriptor file(_userSettingsKey);
 	file.writeEncrypted(data);
@@ -3890,7 +3956,7 @@ void readSavedGifs() {
 	}
 }
 
-void writeBackground(int32 id, const QImage &img) {
+void writeBackground(const Data::WallPaper &paper, const QImage &img) {
 	if (!_working() || !_backgroundCanWrite) {
 		return;
 	}
@@ -3916,10 +3982,18 @@ void writeBackground(int32 id, const QImage &img) {
 		_writeMap(WriteMapWhen::Fast);
 	}
 	quint32 size = sizeof(qint32)
+		+ 2 * sizeof(quint64)
 		+ sizeof(quint32)
-		+ (bmp.isEmpty() ? 0 : (sizeof(quint32) + bmp.size()));
+		+ Serialize::stringSize(paper.slug)
+		+ Serialize::bytearraySize(bmp);
 	EncryptedDescriptor data(size);
-	data.stream << qint32(id) << bmp;
+	data.stream
+		<< qint32(Window::Theme::details::kLegacyBackgroundId)
+		<< quint64(paper.id)
+		<< quint64(paper.accessHash)
+		<< quint32(paper.flags.value())
+		<< paper.slug
+		<< bmp;
 
 	FileWriteDescriptor file(backgroundKey);
 	file.writeEncrypted(data);
@@ -3941,24 +4015,42 @@ bool readBackground() {
 	}
 
 	QByteArray bmpData;
-	qint32 id;
-	bg.stream >> id >> bmpData;
+	qint32 legacyId = 0;
+	quint64 id = 0;
+	quint64 accessHash = 0;
+	quint32 flags = 0;
+	QString slug;
+	bg.stream >> legacyId;
+	if (legacyId == Window::Theme::details::kLegacyBackgroundId) {
+		bg.stream
+			>> id
+			>> accessHash
+			>> flags
+			>> slug;
+	} else {
+		id = Window::Theme::details::FromLegacyBackgroundId(legacyId);
+		accessHash = 0;
+		if (id != Window::Theme::kCustomBackground) {
+			flags = static_cast<quint32>(MTPDwallPaper::Flag::f_default);
+		}
+	}
+	bg.stream >> bmpData;
 	auto oldEmptyImage = (bg.stream.status() != QDataStream::Ok);
 	if (oldEmptyImage
 		|| id == Window::Theme::kInitialBackground
 		|| id == Window::Theme::kDefaultBackground) {
 		_backgroundCanWrite = false;
 		if (oldEmptyImage || bg.version < 8005) {
-			Window::Theme::Background()->setImage(Window::Theme::kDefaultBackground);
+			Window::Theme::Background()->setImage({ Window::Theme::kDefaultBackground });
 			Window::Theme::Background()->setTile(false);
 		} else {
-			Window::Theme::Background()->setImage(id);
+			Window::Theme::Background()->setImage({ id });
 		}
 		_backgroundCanWrite = true;
 		return true;
 	} else if (id == Window::Theme::kThemeBackground && bmpData.isEmpty()) {
 		_backgroundCanWrite = false;
-		Window::Theme::Background()->setImage(id);
+		Window::Theme::Background()->setImage({ id });
 		_backgroundCanWrite = true;
 		return true;
 	}
@@ -3969,9 +4061,14 @@ bool readBackground() {
 #ifndef OS_MAC_OLD
 	reader.setAutoTransform(true);
 #endif // OS_MAC_OLD
-	if (reader.read(&image)) {
+	if (reader.read(&image) || Window::Theme::GetWallPaperColor(slug)) {
 		_backgroundCanWrite = false;
-		Window::Theme::Background()->setImage(id, std::move(image));
+		Window::Theme::Background()->setImage({
+			id,
+			accessHash,
+			MTPDwallPaper::Flags::from_raw(flags),
+			slug
+		}, std::move(image));
 		_backgroundCanWrite = true;
 		return true;
 	}

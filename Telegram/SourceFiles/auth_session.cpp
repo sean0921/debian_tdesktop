@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_facade.h"
 #include "storage/serialize_common.h"
 #include "data/data_session.h"
+#include "data/data_user.h"
 #include "window/notifications_manager.h"
 #include "window/themes/window_theme.h"
 #include "platform/platform_specific.h"
@@ -45,11 +46,13 @@ AuthSessionSettings::Variables::Variables()
 }
 
 QByteArray AuthSessionSettings::serialize() const {
+	const auto autoDownload = _variables.autoDownload.serialize();
 	auto size = sizeof(qint32) * 23;
 	for (auto i = _variables.soundOverrides.cbegin(), e = _variables.soundOverrides.cend(); i != e; ++i) {
 		size += Serialize::stringSize(i.key()) + Serialize::stringSize(i.value());
 	}
 	size += _variables.groupStickersSectionHidden.size() * sizeof(quint64);
+	size += Serialize::bytearraySize(autoDownload);
 
 	auto result = QByteArray();
 	result.reserve(size);
@@ -88,6 +91,8 @@ QByteArray AuthSessionSettings::serialize() const {
 		stream << qint32(_variables.includeMutedCounter ? 1 : 0);
 		stream << qint32(_variables.countUnreadMessages ? 1 : 0);
 		stream << qint32(_variables.exeLaunchWarning ? 1 : 0);
+		stream << autoDownload;
+		stream << qint32(_variables.supportAllSearchResults.current() ? 1 : 0);
 	}
 	return result;
 }
@@ -122,6 +127,8 @@ void AuthSessionSettings::constructFromSerialized(const QByteArray &serialized) 
 	qint32 includeMutedCounter = _variables.includeMutedCounter ? 1 : 0;
 	qint32 countUnreadMessages = _variables.countUnreadMessages ? 1 : 0;
 	qint32 exeLaunchWarning = _variables.exeLaunchWarning ? 1 : 0;
+	QByteArray autoDownload;
+	qint32 supportAllSearchResults = _variables.supportAllSearchResults.current() ? 1 : 0;
 
 	stream >> selectorTab;
 	stream >> lastSeenWarningSeen;
@@ -195,9 +202,19 @@ void AuthSessionSettings::constructFromSerialized(const QByteArray &serialized) 
 	if (!stream.atEnd()) {
 		stream >> exeLaunchWarning;
 	}
+	if (!stream.atEnd()) {
+		stream >> autoDownload;
+	}
+	if (!stream.atEnd()) {
+		stream >> supportAllSearchResults;
+	}
 	if (stream.status() != QDataStream::Ok) {
 		LOG(("App Error: "
 			"Bad data for AuthSessionSettings::constructFromSerialized()"));
+		return;
+	}
+	if (!autoDownload.isEmpty()
+		&& !_variables.autoDownload.setFromSerialized(autoDownload)) {
 		return;
 	}
 
@@ -259,6 +276,7 @@ void AuthSessionSettings::constructFromSerialized(const QByteArray &serialized) 
 	_variables.includeMutedCounter = (includeMutedCounter == 1);
 	_variables.countUnreadMessages = (countUnreadMessages == 1);
 	_variables.exeLaunchWarning = (exeLaunchWarning == 1);
+	_variables.supportAllSearchResults = (supportAllSearchResults == 1);
 }
 
 void AuthSessionSettings::setSupportChatsTimeSlice(int slice) {
@@ -271,6 +289,18 @@ int AuthSessionSettings::supportChatsTimeSlice() const {
 
 rpl::producer<int> AuthSessionSettings::supportChatsTimeSliceValue() const {
 	return _variables.supportChatsTimeSlice.value();
+}
+
+void AuthSessionSettings::setSupportAllSearchResults(bool all) {
+	_variables.supportAllSearchResults = all;
+}
+
+bool AuthSessionSettings::supportAllSearchResults() const {
+	return _variables.supportAllSearchResults.current();
+}
+
+rpl::producer<bool> AuthSessionSettings::supportAllSearchResultsValue() const {
+	return _variables.supportAllSearchResults.value();
 }
 
 void AuthSessionSettings::setTabbedSelectorSectionEnabled(bool enabled) {
@@ -348,8 +378,7 @@ AuthSession &Auth() {
 }
 
 AuthSession::AuthSession(const MTPUser &user)
-: _user(App::user(user.match([](const auto &data) { return data.vid.v; })))
-, _autoLockTimer([this] { checkAutoLock(); })
+: _autoLockTimer([this] { checkAutoLock(); })
 , _api(std::make_unique<ApiWrap>(this))
 , _calls(std::make_unique<Calls::Instance>())
 , _downloader(std::make_unique<Storage::Downloader>())
@@ -357,13 +386,9 @@ AuthSession::AuthSession(const MTPUser &user)
 , _storage(std::make_unique<Storage::Facade>())
 , _notifications(std::make_unique<Window::Notifications::System>(this))
 , _data(std::make_unique<Data::Session>(this))
+, _user(_data->user(user))
 , _changelogs(Core::Changelogs::Create(this))
-, _supportHelper(
-	(Support::ValidateAccount(user)
-		? std::make_unique<Support::Helper>(this)
-		: nullptr)) {
-	App::feedUser(user);
-
+, _supportHelper(Support::Helper::Create(this)) {
 	_saveDataTimer.setCallback([=] {
 		Local::writeUserSettings();
 	});
@@ -412,6 +437,14 @@ bool AuthSession::Exists() {
 
 base::Observable<void> &AuthSession::downloaderTaskFinished() {
 	return downloader().taskFinished();
+}
+
+UserId AuthSession::userId() const {
+	return _user->bareId();
+}
+
+PeerId AuthSession::userPeerId() const {
+	return _user->id;
 }
 
 bool AuthSession::validateSelf(const MTPUser &user) {
@@ -486,4 +519,7 @@ Support::Templates& AuthSession::supportTemplates() const {
 	return supportHelper().templates();
 }
 
-AuthSession::~AuthSession() = default;
+AuthSession::~AuthSession() {
+	ClickHandler::clearActive();
+	ClickHandler::unpressed();
+}

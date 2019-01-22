@@ -84,7 +84,7 @@ public:
 
 	void automaticLoad(
 		Data::FileOrigin origin,
-		const HistoryItem *item); // auto load sticker or video
+		const HistoryItem *item);
 	void automaticLoadSettingsChanged();
 
 	enum FilePathResolveType {
@@ -106,6 +106,7 @@ public:
 		LoadFromCloudSetting fromCloud = LoadFromCloudOrLocal,
 		bool autoLoading = false);
 	void cancel();
+	bool cancelled() const;
 	float64 progress() const;
 	int32 loadOffset() const;
 	bool uploading() const;
@@ -121,7 +122,7 @@ public:
 		FilePathResolveType type = FilePathResolveCached,
 		bool forceSavingAs = false) const;
 
-	bool saveToCache() const;
+	[[nodiscard]] bool saveToCache() const;
 
 	void performActionOnLoad();
 
@@ -157,6 +158,8 @@ public:
 	void setData(const QByteArray &data) {
 		_data = data;
 	}
+	bool checkWallPaperProperties();
+	bool isWallPaper() const;
 
 	bool hasGoodStickerThumb() const;
 
@@ -337,5 +340,8 @@ namespace Data {
 QString FileExtension(const QString &filepath);
 bool IsValidMediaFile(const QString &filepath);
 bool IsExecutableName(const QString &filepath);
+base::binary_guard ReadImageAsync(
+	not_null<DocumentData*> document,
+	FnMut<void(QImage&&)> done);
 
 } // namespace Data

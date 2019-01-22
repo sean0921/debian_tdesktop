@@ -8,7 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/utils.h"
 
 #include "base/qthelp_url.h"
-#include "application.h"
+#include "base/timer.h"
+#include "base/concurrent_timer.h"
 #include "platform/platform_specific.h"
 
 extern "C" {
@@ -51,6 +52,8 @@ static_assert(sizeof(MTPint128) == 16, "Basic types size check failed");
 static_assert(sizeof(MTPint256) == 32, "Basic types size check failed");
 static_assert(sizeof(MTPdouble) == 8, "Basic types size check failed");
 
+static_assert(sizeof(int) >= 4, "Basic types size check failed");
+
 // Unixtime functions
 
 namespace {
@@ -82,7 +85,7 @@ std::atomic<int> GlobalAtomicRequestId = 0;
 }
 
 TimeId LocalUnixtime() {
-	return (TimeId)time(NULL);
+	return (TimeId)time(nullptr);
 }
 
 void unixtimeInit() {
@@ -171,24 +174,24 @@ namespace {
 	int _ffmpegLockManager(void **mutex, AVLockOp op) {
 		switch (op) {
 		case AV_LOCK_CREATE: {
-			Assert(*mutex == 0);
+			Assert(*mutex == nullptr);
 			*mutex = reinterpret_cast<void*>(new QMutex());
 		} break;
 
 		case AV_LOCK_OBTAIN: {
-			Assert(*mutex != 0);
+			Assert(*mutex != nullptr);
 			reinterpret_cast<QMutex*>(*mutex)->lock();
 		} break;
 
 		case AV_LOCK_RELEASE: {
-			Assert(*mutex != 0);
+			Assert(*mutex != nullptr);
 			reinterpret_cast<QMutex*>(*mutex)->unlock();
 		}; break;
 
 		case AV_LOCK_DESTROY: {
-			Assert(*mutex != 0);
+			Assert(*mutex != nullptr);
 			delete reinterpret_cast<QMutex*>(*mutex);
-			*mutex = 0;
+			*mutex = nullptr;
 		} break;
 		}
 		return 0;
@@ -426,7 +429,8 @@ namespace ThirdParty {
 
 bool checkms() {
 	if (crl::adjust_time()) {
-		Sandbox::adjustSingleTimers();
+		base::Timer::Adjust();
+		base::ConcurrentTimerEnvironment::Adjust();
 		return true;
 	}
 	return false;

@@ -34,19 +34,10 @@ namespace Notify {
 struct PeerUpdate;
 } // namespace Notify
 
-inline auto PaintUserpicCallback(
+auto PaintUserpicCallback(
 	not_null<PeerData*> peer,
 	bool respectSavedMessagesChat)
-->Fn<void(Painter &p, int x, int y, int outerWidth, int size)> {
-	if (respectSavedMessagesChat && peer->isSelf()) {
-		return [](Painter &p, int x, int y, int outerWidth, int size) {
-			Ui::EmptyUserpic::PaintSavedMessages(p, x, y, outerWidth, size);
-		};
-	}
-	return [peer](Painter &p, int x, int y, int outerWidth, int size) {
-		peer->paintUserpicLeft(p, x, y, outerWidth, size);
-	};
-}
+-> Fn<void(Painter &p, int x, int y, int outerWidth, int size)>;
 
 using PeerListRowId = uint64;
 class PeerListRow {
@@ -312,6 +303,10 @@ public:
 		std::unique_ptr<SavedStateBase> state) {
 	}
 
+	rpl::lifetime &lifetime() {
+		return _lifetime;
+	}
+
 protected:
 	not_null<PeerListSearchDelegate*> delegate() const {
 		return _delegate;
@@ -319,6 +314,7 @@ protected:
 
 private:
 	PeerListSearchDelegate *_delegate = nullptr;
+	rpl::lifetime _lifetime;
 
 };
 
@@ -329,7 +325,8 @@ public:
 	};
 
 	// Search works only with RowId == peer->id.
-	PeerListController(std::unique_ptr<PeerListSearchController> searchController = nullptr);
+	PeerListController(
+		std::unique_ptr<PeerListSearchController> searchController = {});
 
 	void setDelegate(not_null<PeerListDelegate*> delegate) {
 		_delegate = delegate;
@@ -553,7 +550,7 @@ private:
 	SelectedSaved saveSelectedData(Selected from);
 	Selected restoreSelectedData(SelectedSaved from);
 
-	void updateSelection();
+	void selectByMouse(QPoint globalPosition);
 	void loadProfilePhotos();
 	void checkScrollForPreload();
 
@@ -587,7 +584,7 @@ private:
 
 	void clearSearchRows();
 	void clearAllContent();
-	void handleMouseMove(QPoint position);
+	void handleMouseMove(QPoint globalPosition);
 	void mousePressReleased(Qt::MouseButton button);
 
 	const style::PeerList &_st;
@@ -602,6 +599,7 @@ private:
 	Selected _pressed;
 	Selected _contexted;
 	bool _mouseSelection = false;
+	std::optional<QPoint> _lastMousePosition;
 	Qt::MouseButton _pressButton = Qt::LeftButton;
 
 	rpl::event_stream<Ui::ScrollToRequest> _scrollToRequests;
@@ -621,8 +619,6 @@ private:
 	object_ptr<Ui::FlatLabel> _description = { nullptr };
 	object_ptr<Ui::FlatLabel> _searchNoResults = { nullptr };
 	object_ptr<Ui::FlatLabel> _searchLoading = { nullptr };
-
-	QPoint _lastMousePosition;
 
 	std::vector<std::unique_ptr<PeerListRow>> _searchRows;
 	base::Timer _repaintByStatus;

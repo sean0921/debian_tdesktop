@@ -7,10 +7,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "core/single_timer.h"
+#include "base/timer.h"
 #include "base/weak_ptr.h"
 #include "ui/rp_widget.h"
 #include "media/player/media_player_float.h"
+#include "data/data_pts_waiter.h"
 
 struct HistoryMessageMarkupButton;
 class MainWindow;
@@ -23,6 +24,10 @@ struct FileLoadResult;
 namespace Notify {
 struct PeerUpdate;
 } // namespace Notify
+
+namespace Data {
+struct WallPaper;
+} // namespace Data
 
 namespace Dialogs {
 struct RowDescriptor;
@@ -116,7 +121,7 @@ public:
 	void createDialog(Dialogs::Key key);
 	void removeDialog(Dialogs::Key key);
 	void repaintDialogRow(Dialogs::Mode list, not_null<Dialogs::Row*> row);
-	void repaintDialogRow(not_null<History*> history, MsgId messageId);
+	void repaintDialogRow(Dialogs::RowDescriptor row);
 
 	void windowShown();
 
@@ -125,9 +130,6 @@ public:
 		return sentUpdatesReceived(0, updates);
 	}
 	bool deleteChannelFailed(const RPCError &error);
-	void inviteToChannelDone(
-		not_null<ChannelData*> channel,
-		const MTPUpdates &updates);
 	void historyToDown(History *hist);
 	void dialogsToUp();
 	void newUnreadMsg(
@@ -194,24 +196,12 @@ public:
 	void deleteMessages(
 		not_null<PeerData*> peer,
 		const QVector<MTPint> &ids,
-		bool forEveryone);
+		bool revoke);
 	void deletedContact(UserData *user, const MTPcontacts_Link &result);
 	void deleteConversation(
 		not_null<PeerData*> peer,
 		bool deleteHistory = true);
 	void deleteAndExit(ChatData *chat);
-
-	void addParticipants(
-		not_null<PeerData*> chatOrChannel,
-		const std::vector<not_null<UserData*>> &users);
-	struct UserAndPeer {
-		UserData *user;
-		PeerData *peer;
-	};
-	bool addParticipantFail(UserAndPeer data, const RPCError &e);
-	bool addParticipantsFail(
-		not_null<ChannelData*> channel,
-		const RPCError &e); // for multi invite in channels
 
 	bool sendMessageFail(const RPCError &error);
 
@@ -237,7 +227,9 @@ public:
 	QPixmap cachedBackground(const QRect &forRect, int &x, int &y);
 	void updateScrollColors();
 
-	void setChatBackground(const App::WallPaper &wp);
+	void setChatBackground(
+		const Data::WallPaper &background,
+		QImage &&image = QImage());
 	bool chatBackgroundLoading();
 	float64 chatBackgroundProgress() const;
 	void checkChatBackground();
@@ -263,14 +255,16 @@ public:
 
 	void scheduleViewIncrement(HistoryItem *item);
 
-	void onSelfParticipantUpdated(ChannelData *channel);
 	void feedChannelDifference(const MTPDupdates_channelDifference &data);
 
-	// Mayde public for ApiWrap, while it is still here.
+	// Made public for ApiWrap, while it is still here.
 	// Better would be for this to be moved to ApiWrap.
 	bool requestingDifference() const {
 		return _ptsWaiter.requesting();
 	}
+	void getDifference();
+	void updateOnline(bool gotOtherOffline = false);
+	void checkIdleFinish();
 
 	bool contentOverlapped(const QRect &globalRect);
 
@@ -300,7 +294,6 @@ public:
 	void notify_inlineKeyboardMoved(const HistoryItem *item, int oldKeyboardTop, int newKeyboardTop);
 	bool notify_switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot, MsgId samePeerReplyTo);
 	void notify_userIsBotChanged(UserData *bot);
-	void notify_migrateUpdated(PeerData *peer);
 	void notify_historyMuteUpdated(History *history);
 
 	~MainWidget();
@@ -316,18 +309,6 @@ public slots:
 	void inlineResultLoadFailed(FileLoader *loader, bool started);
 
 	void dialogsCancelled();
-
-	void getDifference();
-	void onGetDifferenceTimeByPts();
-	void onGetDifferenceTimeAfterFail();
-	void mtpPing();
-
-	void updateOnline(bool gotOtherOffline = false);
-	void checkIdleFinish();
-
-	void onCacheBackground();
-
-	void onViewsIncrement();
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -352,6 +333,11 @@ private:
 		ChannelData *channel;
 		UserData *from;
 	};
+
+	void viewsIncrement();
+	void sendPing();
+	void getDifferenceByPts();
+	void getDifferenceAfterFail();
 
 	void animationCallback();
 	void handleAdaptiveLayoutUpdate();
@@ -439,6 +425,7 @@ private:
 	void showAll();
 	void clearHider(not_null<Window::HistoryHider*> instance);
 
+	void cacheBackground();
 	void clearCachedBackground();
 
 	not_null<Media::Player::FloatDelegate*> floatPlayerDelegate();
@@ -465,6 +452,13 @@ private:
 		FinishCallback &&finishCallback);
 	void ensureFirstColumnResizeAreaCreated();
 	void ensureThirdColumnResizeAreaCreated();
+
+	bool isReadyChatBackground(
+		const Data::WallPaper &background,
+		const QImage &image) const;
+	void setReadyChatBackground(
+		const Data::WallPaper &background,
+		QImage &&image);
 
 	not_null<Window::Controller*> _controller;
 	bool _started = false;
@@ -513,7 +507,7 @@ private:
 	int32 updDate = 0;
 	int32 updQts = -1;
 	int32 updSeq = 0;
-	SingleTimer noUpdatesTimer;
+	base::Timer _noUpdatesTimer;
 
 	PtsWaiter _ptsWaiter;
 
@@ -521,23 +515,23 @@ private:
 	TimeMs _getDifferenceTimeByPts = 0;
 	TimeMs _getDifferenceTimeAfterFail = 0;
 
-	SingleTimer _byPtsTimer;
+	base::Timer _byPtsTimer;
 
 	QMap<int32, MTPUpdates> _bySeqUpdates;
-	SingleTimer _bySeqTimer;
+	base::Timer _bySeqTimer;
 
-	SingleTimer _byMinChannelTimer;
+	base::Timer _byMinChannelTimer;
 
 	mtpRequestId _onlineRequest = 0;
-	SingleTimer _onlineTimer, _idleFinishTimer;
+	base::Timer _onlineTimer;
+	base::Timer _idleFinishTimer;
 	bool _lastWasOnline = false;
 	TimeMs _lastSetOnline = 0;
 	bool _isIdle = false;
 
 	int32 _failDifferenceTimeout = 1; // growing timeout for getDifference calls, if it fails
-	typedef QMap<ChannelData*, int32> ChannelFailDifferenceTimeout;
-	ChannelFailDifferenceTimeout _channelFailDifferenceTimeout; // growing timeout for getChannelDifference calls, if it fails
-	SingleTimer _failDifferenceTimer;
+	QMap<ChannelData*, int32> _channelFailDifferenceTimeout; // growing timeout for getChannelDifference calls, if it fails
+	base::Timer _failDifferenceTimer;
 
 	TimeMs _lastUpdateTime = 0;
 	bool _handlingChannelDifference = false;
@@ -546,23 +540,18 @@ private:
 	QRect _cachedFor, _willCacheFor;
 	int _cachedX = 0;
 	int _cachedY = 0;
-	SingleTimer _cacheBackgroundTimer;
-
-	typedef QMap<ChannelData*, bool> UpdatedChannels;
-	UpdatedChannels _updatedChannels;
+	base::Timer _cacheBackgroundTimer;
 
 	PhotoData *_deletingPhoto = nullptr;
 
-	typedef QMap<MsgId, bool> ViewsIncrementMap;
-	typedef QMap<PeerData*, ViewsIncrementMap> ViewsIncrement;
-	ViewsIncrement _viewsIncremented, _viewsToIncrement;
-	typedef QMap<PeerData*, mtpRequestId> ViewsIncrementRequests;
-	ViewsIncrementRequests _viewsIncrementRequests;
-	typedef QMap<mtpRequestId, PeerData*> ViewsIncrementByRequest;
-	ViewsIncrementByRequest _viewsIncrementByRequest;
-	SingleTimer _viewsIncrementTimer;
+	using ViewsIncrementMap = QMap<MsgId, bool>;
+	QMap<PeerData*, ViewsIncrementMap> _viewsIncremented, _viewsToIncrement;
+	QMap<PeerData*, mtpRequestId> _viewsIncrementRequests;
+	QMap<mtpRequestId, PeerData*> _viewsIncrementByRequest;
+	base::Timer _viewsIncrementTimer;
 
-	std::unique_ptr<App::WallPaper> _background;
+	struct SettingBackground;
+	std::unique_ptr<SettingBackground> _background;
 
 	bool _firstColumnResizing = false;
 	int _firstColumnResizingShift = 0;

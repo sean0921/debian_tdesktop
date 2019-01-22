@@ -12,6 +12,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/media_clip_reader.h"
 #include "window/window_controller.h"
 #include "history/history_item_components.h"
+#include "data/data_peer.h"
+#include "data/data_user.h"
 #include "observer_peer.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -38,19 +40,19 @@ void CallDelayed(int duration, FnMut<void()> &&lambda) {
 } // namespace internal
 
 void sendBotCommand(PeerData *peer, UserData *bot, const QString &cmd, MsgId replyTo) {
-	if (auto m = main()) {
+	if (auto m = App::main()) {
 		m->sendBotCommand(peer, bot, cmd, replyTo);
 	}
 }
 
 void hideSingleUseKeyboard(const HistoryItem *msg) {
-	if (auto m = main()) {
+	if (auto m = App::main()) {
 		m->hideSingleUseKeyboard(msg->history()->peer, msg->id);
 	}
 }
 
 bool insertBotCommand(const QString &cmd) {
-	if (auto m = main()) {
+	if (auto m = App::main()) {
 		return m->insertBotCommand(cmd);
 	}
 	return false;
@@ -82,7 +84,7 @@ void activateBotCommand(
 
 	case ButtonType::Callback:
 	case ButtonType::Game: {
-		if (auto m = main()) {
+		if (auto m = App::main()) {
 			m->app_sendBotCallback(button, msg, row, column);
 		}
 	} break;
@@ -149,7 +151,7 @@ void activateBotCommand(
 }
 
 void searchByHashtag(const QString &tag, PeerData *inPeer) {
-	if (const auto m = main()) {
+	if (const auto m = App::main()) {
 		Ui::hideSettingsAndLayer();
 		Messenger::Instance().hideMediaView();
 		if (inPeer && (!inPeer->isChannel() || inPeer->isMegagroup())) {
@@ -164,13 +166,13 @@ void searchByHashtag(const QString &tag, PeerData *inPeer) {
 }
 
 void showSettings() {
-	if (auto w = wnd()) {
+	if (auto w = App::wnd()) {
 		w->showSettings();
 	}
 }
 
 void activateClickHandler(ClickHandlerPtr handler, ClickContext context) {
-	crl::on_main(wnd(), [=] {
+	crl::on_main(App::wnd(), [=] {
 		handler->onClick(context);
 	});
 }
@@ -236,6 +238,9 @@ void showPeerProfile(const PeerId &peer) {
 		}
 	}
 }
+void showPeerProfile(const PeerData *peer) {
+	showPeerProfile(peer->id);
+}
 
 void showPeerProfile(not_null<const History*> history) {
 	showPeerProfile(history->peer->id);
@@ -259,6 +264,10 @@ void showPeerHistoryAtItem(not_null<const HistoryItem*> item) {
 
 void showPeerHistory(not_null<const History*> history, MsgId msgId) {
 	showPeerHistory(history->peer->id, msgId);
+}
+
+void showPeerHistory(const PeerData *peer, MsgId msgId) {
+	showPeerHistory(peer->id, msgId);
 }
 
 PeerData *getPeerForMouseAction() {
@@ -310,10 +319,6 @@ bool switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot, 
 		return main->notify_switchInlineBotButtonReceived(query, samePeerBot, samePeerReplyTo);
 	}
 	return false;
-}
-
-void migrateUpdated(PeerData *peer) {
-	if (MainWidget *m = App::main()) m->notify_migrateUpdated(peer);
 }
 
 void historyMuteUpdated(History *history) {
@@ -661,6 +666,11 @@ struct Data {
 	base::Observable<void> UnreadCounterUpdate;
 	base::Observable<void> PeerChooseCancel;
 
+	QString CallOutputDeviceID = qsl("default");
+	QString CallInputDeviceID = qsl("default");
+	int CallOutputVolume = 100;
+	int CallInputVolume = 100;
+	bool CallAudioDuckingEnabled = true;
 };
 
 } // namespace internal
@@ -789,6 +799,12 @@ DefineRefVar(Global, base::Variable<DBIWorkMode>, WorkMode);
 
 DefineRefVar(Global, base::Observable<void>, UnreadCounterUpdate);
 DefineRefVar(Global, base::Observable<void>, PeerChooseCancel);
+	
+DefineVar(Global, QString, CallOutputDeviceID);
+DefineVar(Global, QString, CallInputDeviceID);
+DefineVar(Global, int, CallOutputVolume);
+DefineVar(Global, int, CallInputVolume);
+DefineVar(Global, bool, CallAudioDuckingEnabled);
 
 rpl::producer<bool> ReplaceEmojiValue() {
 	return rpl::single(
