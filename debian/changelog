@@ -1,3 +1,10 @@
+telegram-desktop (1.5.8-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Update crl subproject to commit 9b7c6b5.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Thu, 24 Jan 2019 21:25:39 +0300
+
 telegram-desktop (1.5.4-1) unstable; urgency=medium
 
   * New upstream release.
