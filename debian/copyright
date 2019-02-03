@@ -24,13 +24,19 @@ License: GPL-2.0+ and Expat and MIT1 and MIT2 and MIT3
 Files: Telegram/Resources/fonts/OpenSans-Regular.ttf
        Telegram/Resources/fonts/OpenSans-Bold.ttf
        Telegram/Resources/fonts/OpenSans-Semibold.ttf
-Copyright: Steve Matteson
+Author: Steve Matteson
+Copyright: 2010-2011 Google Corporation
 License: Apache-2.0
 
 Files: Telegram/Resources/emoji_autocomplete.json
 Copyright: 2017 EmojiOne Inc.
 License: Expat
 Comment: See https://github.com/emojione/emojione/tree/master/extras/alpha-codes
+
+Files: Telegram/SourceFiles/boxes/mute_settings_box.h
+       Telegram/SourceFiles/boxes/mute_settings_box.cpp
+Copyright: 2017 Nicholas Guriev <guriev-ns@ya.ru>
+License: Public-domain
 
 Files: Telegram/gyp/PrecompiledHeader.cmake
 Copyright: 2009-2013 Lars Christensen <larsch@belunktum.dk>
@@ -57,9 +63,7 @@ Comment: Contribution License Agreement is signed.
          https://github.com/telegramdesktop/tdesktop/pull/4505#event-1746102406
 
 Files: debian/*
-       Telegram/SourceFiles/boxes/mute_settings_box.h
-       Telegram/SourceFiles/boxes/mute_settings_box.cpp
-Copyright: 2016-2018 Nicholas Guriev <guriev-ns@ya.ru>
+Copyright: 2016-2019 Nicholas Guriev <guriev-ns@ya.ru>
 License: Public-domain
 Comment: Contributing policy - https://cla-assistant.io/telegramdesktop/tdesktop
 
