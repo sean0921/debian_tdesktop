@@ -48,7 +48,7 @@ Last-Update: 2017-12-30
  int (*TestForkedMethod)()/* = nullptr*/;
 --- a/Telegram/SourceFiles/config.h
 +++ b/Telegram/SourceFiles/config.h
-@@ -225,7 +225,7 @@ constexpr auto ApiHash = "344583e45741c4
+@@ -207,7 +207,7 @@ constexpr auto ApiHash = "344583e45741c4
  #endif // TDESKTOP_API_ID && TDESKTOP_API_HASH
  
  #if Q_BYTE_ORDER == Q_BIG_ENDIAN
@@ -69,17 +69,6 @@ Last-Update: 2017-12-30
  	const auto launcher = Core::Launcher::Create(argc, argv);
  	return launcher ? launcher->exec() : 1;
  }
---- a/Telegram/SourceFiles/platform/linux/linux_libs.h
-+++ b/Telegram/SourceFiles/platform/linux/linux_libs.h
-@@ -21,7 +21,7 @@ extern "C" {
- } // extern "C"
- 
- #ifndef TDESKTOP_DISABLE_UNITY_INTEGRATION
--#include <unity/unity/unity.h>
-+typedef void UnityLauncherEntry;
- #endif // !TDESKTOP_DISABLE_UNITY_INTEGRATION
- #endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
- 
 --- a/Telegram/SourceFiles/rpl/details/callable.h
 +++ b/Telegram/SourceFiles/rpl/details/callable.h
 @@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesk
@@ -216,7 +205,7 @@ Last-Update: 2017-12-30
      'sources': [
 --- a/Telegram/gyp/lib_base.gyp
 +++ b/Telegram/gyp/lib_base.gyp
-@@ -29,27 +29,19 @@
+@@ -27,27 +27,19 @@
        'pch_source': '<(src_loc)/base/base_pch.cpp',
        'pch_header': '<(src_loc)/base/base_pch.h',
      },
@@ -247,7 +236,7 @@ Last-Update: 2017-12-30
        '<(src_loc)/base/concurrent_timer.h',
 --- a/Telegram/gyp/lib_export.gyp
 +++ b/Telegram/gyp/lib_export.gyp
-@@ -48,10 +48,7 @@
+@@ -46,10 +46,7 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -261,7 +250,7 @@ Last-Update: 2017-12-30
        '<(src_loc)/export/export_api_wrap.cpp',
 --- a/Telegram/gyp/lib_storage.gyp
 +++ b/Telegram/gyp/lib_storage.gyp
-@@ -29,9 +29,6 @@
+@@ -27,9 +27,6 @@
        'pch_source': '<(src_loc)/storage/storage_pch.cpp',
        'pch_header': '<(src_loc)/storage/storage_pch.h',
      },
@@ -271,7 +260,7 @@ Last-Update: 2017-12-30
      'dependencies': [
        'crl.gyp:crl',
        'lib_base.gyp:lib_base',
-@@ -43,11 +40,7 @@
+@@ -41,11 +38,7 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -537,8 +526,8 @@ Last-Update: 2017-12-30
          'cflags_cc': [ '<!(pkg-config --cflags ayatana-appindicator3-0.1)' ],
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -769,20 +769,12 @@
- <(src_loc)/messenger.h
+@@ -824,20 +824,12 @@
+ <(src_loc)/mediaview.h
  <(src_loc)/observer_peer.cpp
  <(src_loc)/observer_peer.h
 -<(src_loc)/qt_static_plugins.cpp
