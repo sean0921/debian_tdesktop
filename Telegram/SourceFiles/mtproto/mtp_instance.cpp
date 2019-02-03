@@ -18,9 +18,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "calls/calls_instance.h"
 #include "auth_session.h"
-#include "application.h"
 #include "apiwrap.h"
-#include "messenger.h"
+#include "core/application.h"
 #include "lang/lang_instance.h"
 #include "lang/lang_cloud_manager.h"
 #include "base/timer.h"
@@ -50,6 +49,10 @@ public:
 	void addKeysForDestroy(AuthKeysList &&keys);
 
 	not_null<DcOptions*> dcOptions();
+
+	// Thread safe.
+	QString deviceModel() const;
+	QString systemVersion() const;
 
 	void requestConfig();
 	void requestConfigIfOld();
@@ -172,6 +175,9 @@ private:
 	bool _mainDcIdForced = false;
 	std::map<DcId, std::shared_ptr<internal::Dcenter>> _dcenters;
 
+	QString _deviceModel;
+	QString _systemVersion;
+
 	internal::Session *_mainSession = nullptr;
 	std::map<ShiftedDcId, std::unique_ptr<internal::Session>> _sessions;
 	std::vector<std::unique_ptr<internal::Session>> _killedSessions; // delayed delete
@@ -233,6 +239,9 @@ Instance::Private::Private(
 }
 
 void Instance::Private::start(Config &&config) {
+	_deviceModel = std::move(config.deviceModel);
+	_systemVersion = std::move(config.systemVersion);
+
 	if (isKeysDestroyer()) {
 		_instance->connect(_instance, SIGNAL(keyDestroyed(qint32)), _instance, SLOT(onKeyDestroyed(qint32)), Qt::QueuedConnection);
 	} else if (isNormal()) {
@@ -413,7 +422,7 @@ void Instance::Private::setUserPhone(const QString &phone) {
 
 void Instance::Private::badConfigurationError() {
 	if (_mode == Mode::Normal) {
-		Messenger::Instance().badMtprotoConfigurationError();
+		Core::App().badMtprotoConfigurationError();
 	}
 }
 
@@ -706,6 +715,14 @@ not_null<DcOptions*> Instance::Private::dcOptions() {
 	return _dcOptions;
 }
 
+QString Instance::Private::deviceModel() const {
+	return _deviceModel;
+}
+
+QString Instance::Private::systemVersion() const {
+	return _systemVersion;
+}
+
 void Instance::Private::unpaused() {
 	for (auto &session : _sessions) {
 		session.second->unpaused();
@@ -757,7 +774,7 @@ void Instance::Private::configLoadDone(const MTPConfig &result) {
 	Global::SetStickersRecentLimit(data.vstickers_recent_limit.v);
 	Global::SetStickersFavedLimit(data.vstickers_faved_limit.v);
 	Global::SetPinnedDialogsCountMax(data.vpinned_dialogs_count_max.v);
-	Messenger::Instance().setInternalLinkDomain(qs(data.vme_url_prefix));
+	Core::App().setInternalLinkDomain(qs(data.vme_url_prefix));
 	Global::SetChannelsReadMediaPeriod(data.vchannels_read_media_period.v);
 	Global::SetWebFileDcId(data.vwebfile_dc_id.v);
 	Global::SetTxtDomainString(qs(data.vdc_txt_domain_name));
@@ -1637,6 +1654,14 @@ void Instance::addKeysForDestroy(AuthKeysList &&keys) {
 
 not_null<DcOptions*> Instance::dcOptions() {
 	return _private->dcOptions();
+}
+
+QString Instance::deviceModel() const {
+	return _private->deviceModel();
+}
+
+QString Instance::systemVersion() const {
+	return _private->systemVersion();
 }
 
 void Instance::unpaused() {

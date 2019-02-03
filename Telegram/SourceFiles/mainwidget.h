@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/player/media_player_float.h"
 #include "data/data_pts_waiter.h"
 
+class AuthSession;
 struct HistoryMessageMarkupButton;
 class MainWindow;
 class ConfirmBox;
@@ -26,7 +27,7 @@ struct PeerUpdate;
 } // namespace Notify
 
 namespace Data {
-struct WallPaper;
+class WallPaper;
 } // namespace Data
 
 namespace Dialogs {
@@ -97,6 +98,8 @@ public:
 
 	MainWidget(QWidget *parent, not_null<Window::Controller*> controller);
 
+	AuthSession &session() const;
+
 	bool isMainSectionShown() const;
 	bool isThirdSectionShown() const;
 
@@ -117,6 +120,7 @@ public:
 	void incrementSticker(DocumentData *sticker);
 
 	void activate();
+	void updateReceived(const mtpPrime *from, const mtpPrime *end);
 
 	void createDialog(Dialogs::Key key);
 	void removeDialog(Dialogs::Key key);
@@ -233,7 +237,7 @@ public:
 	bool chatBackgroundLoading();
 	float64 chatBackgroundProgress() const;
 	void checkChatBackground();
-	ImagePtr newBackgroundThumb();
+	Image *newBackgroundThumb();
 
 	void messageDataReceived(ChannelData *channel, MsgId msgId);
 	void updateBotKeyboard(History *h);
@@ -295,6 +299,8 @@ public:
 	bool notify_switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot, MsgId samePeerReplyTo);
 	void notify_userIsBotChanged(UserData *bot);
 	void notify_historyMuteUpdated(History *history);
+
+	bool isQuitPrevent();
 
 	~MainWidget();
 
@@ -412,9 +418,6 @@ private:
 
 	void deleteHistoryPart(DeleteHistoryRequest request, const MTPmessages_AffectedHistory &result);
 
-	void updateReceived(const mtpPrime *from, const mtpPrime *end);
-	bool updateFail(const RPCError &e);
-
 	void usernameResolveDone(QPair<MsgId, QString> msgIdAndStartToken, const MTPcontacts_ResolvedPeer &result);
 	bool usernameResolveFail(QString name, const RPCError &error);
 
@@ -443,6 +446,9 @@ private:
 
 	void viewsIncrementDone(QVector<MTPint> ids, const MTPVector<MTPint> &result, mtpRequestId req);
 	bool viewsIncrementFail(const RPCError &error, mtpRequestId req);
+
+	void updateStatusDone(const MTPBool &result);
+	bool updateStatusFail(const RPCError &error);
 
 	void refreshResizeAreas();
 	template <typename MoveCallback, typename FinishCallback>

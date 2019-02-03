@@ -18,7 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "window/window_controller.h"
 #include "core/shortcuts.h"
-#include "messenger.h"
+#include "core/application.h"
 #include "mainwindow.h"
 #include "auth_session.h"
 
@@ -36,18 +36,18 @@ constexpr auto kIdsPreloadAfter = 28;
 
 } // namespace
 
-void start() {
-	Audio::Start();
+void start(not_null<Audio::Instance*> instance) {
+	Audio::Start(instance);
 	Capture::Start();
 
 	SingleInstance = new Instance();
 }
 
-void finish() {
+void finish(not_null<Audio::Instance*> instance) {
 	delete base::take(SingleInstance);
 
 	Capture::Finish();
-	Audio::Finish();
+	Audio::Finish(instance);
 }
 
 Instance::Instance()
@@ -74,7 +74,7 @@ Instance::Instance()
 		}
 	};
 	subscribe(
-		Messenger::Instance().authSessionChanged(),
+		Core::App().authSessionChanged(),
 		handleAuthSessionChange);
 	handleAuthSessionChange();
 
@@ -318,7 +318,7 @@ void Instance::play(const AudioMsgId &audioId) {
 		}
 	}
 	if (document->isVoiceMessage() || document->isVideoMessage()) {
-		document->session()->data().markMediaRead(document);
+		document->owner().markMediaRead(document);
 	}
 }
 
