@@ -1,3 +1,4 @@
 Modify-build-scripts.patch
 Packed-resources.patch
 Use-system-wide-font.patch
+Do-not-sync-wallpaper.patch
