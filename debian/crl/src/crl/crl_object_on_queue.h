@@ -34,8 +34,10 @@ public:
 	template <typename Method>
 	void with(Method &&method) const;
 
-	template <typename Value>
-	void destroy(Value &value) const;
+	template <
+		typename Value,
+		typename = std::enable_if_t<!std::is_reference_v<Value>>>
+	void destroy(Value &&value) const;
 
 	~object_on_queue_data();
 
@@ -72,8 +74,10 @@ public:
 	template <typename Method>
 	void with(Method &&method) const;
 
-	template <typename Value>
-	void destroy(Value &value) const;
+	template <
+		typename Value,
+		typename = std::enable_if_t<!std::is_reference_v<Value>>>
+	void destroy(Value &&value) const;
 
 	// Returns a lambda that runs arbitrary callable on the objects queue.
 	// const auto r = runner(); r([] { make_some_work_on_queue(); });
@@ -90,10 +94,10 @@ public:
 #ifdef CRL_ENABLE_RPL_INTEGRATION
 	template <
 		typename Method,
-		typename Callback,
+		typename Invoke,
 		typename Result = decltype(
 			std::declval<Method>()(std::declval<Type&>()))>
-	Result producer(Method &&method, Callback &&callback) const;
+	Result producer(Method &&method, Invoke &&invoke) const;
 
 	template <
 		typename Method,
@@ -122,16 +126,18 @@ public:
 	template <typename Method>
 	void with(Method &&method) const;
 
-	template <typename Value>
-	void destroy(Value &value) const;
+	template <
+		typename Value,
+		typename = std::enable_if_t<!std::is_reference_v<Value>>>
+	void destroy(Value &&value) const;
 
 #ifdef CRL_ENABLE_RPL_INTEGRATION
 	template <
 		typename Method,
-		typename Callback,
+		typename Invoke,
 		typename Result = decltype(
 			std::declval<Method>()(std::declval<Type&>()))>
-	Result producer(Method &&method, Callback &&callback) const;
+	Result producer(Method &&method, Invoke &&invoke) const;
 
 	template <
 		typename Method,
@@ -205,8 +211,8 @@ void object_on_queue_data<Type>::with(Method &&method) const {
 }
 
 template <typename Type>
-template <typename Value>
-void object_on_queue_data<Type>::destroy(Value &value) const {
+template <typename Value, typename>
+void object_on_queue_data<Type>::destroy(Value &&value) const {
 	_queue.async([moved = std::move(value)]{});
 }
 
@@ -227,53 +233,66 @@ template <typename Method>
 void weak_on_queue<Type>::with(Method &&method) const {
 	if (auto strong = _weak.lock()) {
 		strong->with(std::move(method));
-		strong->destroy(strong);
+		strong->destroy(std::move(strong));
 	}
 }
 
 template <typename Type>
-template <typename Value>
-void weak_on_queue<Type>::destroy(Value &value) const {
+template <typename Value, typename>
+void weak_on_queue<Type>::destroy(Value &&value) const {
 	if (auto strong = _weak.lock()) {
-		strong->destroy(value);
-		strong->destroy(strong);
+		strong->destroy(std::move(value));
+		strong->destroy(std::move(strong));
+	} else {
+		[[maybe_unused]] const auto moved = std::move(value);
 	}
 }
 
 #ifdef CRL_ENABLE_RPL_INTEGRATION
 template <typename Type>
-template <typename Method, typename Callback, typename Result>
+template <typename Method, typename Invoke, typename Result>
 Result weak_on_queue<Type>::producer(
 		Method &&method,
-		Callback &&callback) const {
+		Invoke &&invoke) const {
 	return [
 		weak = *this,
 		method = std::forward<Method>(method),
-		callback = std::forward<Callback>(callback)
+		invoke = std::forward<Invoke>(invoke)
 	](auto consumer) mutable {
 		auto lifetime_on_queue = std::make_shared<rpl::lifetime>();
 		weak.with([
 			method = std::move(method),
-			callback = std::move(callback),
+			invoke = std::move(invoke),
 			consumer = std::move(consumer),
 			lifetime_on_queue
 		](const Type &that) mutable {
 			method(
 				that
-			) | rpl::start_with_next([
-				callback = std::move(callback),
-				consumer = std::move(consumer)
-			](auto &&value) {
-				callback(
+			) | rpl::start_with_next_error_done([=](auto &&value) {
+				invoke([
 					consumer,
-					std::forward<decltype(value)>(value));
+					value = std::forward<decltype(value)>(value)
+				]() mutable {
+					consumer.put_next(std::move(value));
+				});
+			}, [=](auto &&error) {
+				invoke([
+					consumer,
+					error = std::forward<decltype(error)>(error)
+				]() mutable {
+					consumer.put_error(std::move(error));
+				});
+			}, [=] {
+				invoke([=] {
+					consumer.put_done();
+				});
 			}, *lifetime_on_queue);
 		});
 		return rpl::lifetime([
 			lifetime_on_queue = std::move(lifetime_on_queue),
 			weak = std::move(weak)
 		]() mutable {
-			weak.destroy(lifetime_on_queue);
+			weak.destroy(std::move(lifetime_on_queue));
 		});
 	};
 }
@@ -281,15 +300,8 @@ Result weak_on_queue<Type>::producer(
 template <typename Type>
 template <typename Method, typename Result>
 Result weak_on_queue<Type>::producer_on_main(Method &&method) const {
-	return producer(std::forward<Method>(method), [](
-			const auto &consumer,
-			auto &&value) {
-		crl::on_main([
-			consumer,
-			event = std::forward<decltype(value)>(value)
-		]() mutable {
-			consumer.put_next(std::move(event));
-		});
+	return producer(std::forward<Method>(method), [](auto &&callback) {
+		crl::on_main(std::forward<decltype(callback)>(callback));
 	});
 }
 #endif // CRL_ENABLE_RPL_INTEGRATION
@@ -328,9 +340,9 @@ void object_on_queue<Type>::with(Method &&method) const {
 }
 
 template <typename Type>
-template <typename Value>
-void object_on_queue<Type>::destroy(Value &value) const {
-	_data->destroy(value);
+template <typename Value, typename>
+void object_on_queue<Type>::destroy(Value &&value) const {
+	_data->destroy(std::move(value));
 }
 
 #ifdef CRL_ENABLE_RPL_INTEGRATION
@@ -363,7 +375,7 @@ auto object_on_queue<Type>::weak() const -> weak_on_queue<const Type> {
 
 template <typename Type>
 object_on_queue<Type>::~object_on_queue() {
-	_data->destroy(_data);
+	_data->destroy(std::move(_data));
 }
 
 } // namespace

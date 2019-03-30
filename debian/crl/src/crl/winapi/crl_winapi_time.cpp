@@ -9,7 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #ifdef CRL_USE_WINAPI_TIME
 
-#include <windows.h>
+#include <crl/winapi/crl_winapi_windows_h.h>
 
 namespace crl::details {
 namespace {
@@ -30,8 +30,8 @@ inner_time_type current_value() {
 	return value.QuadPart;
 }
 
-time_type convert(inner_time_type value) {
-	return time_type(value * Frequency);
+time convert(inner_time_type value) {
+	return time(value * Frequency);
 }
 
 } // namespace crl::details
