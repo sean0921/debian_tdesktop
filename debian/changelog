@@ -1,3 +1,13 @@
+telegram-desktop (1.7.0-1) experimental; urgency=medium
+
+  * New upstream version.
+  * Update crl subproject to commit 84072fb.
+  * Update patches:
+     - Remove the -flto compiler flag.
+     - Add Do-not-sync-wallpaper.patch.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Mon, 27 May 2019 23:16:58 +0300
+
 telegram-desktop (1.5.11-1) unstable; urgency=medium
 
   * New upstream release.
