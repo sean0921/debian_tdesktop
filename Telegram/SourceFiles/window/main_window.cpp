@@ -19,21 +19,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/sandbox.h"
 #include "lang/lang_keys.h"
 #include "data/data_session.h"
-#include "mediaview.h"
 #include "auth_session.h"
 #include "apiwrap.h"
 #include "mainwindow.h"
 #include "styles/style_window.h"
 #include "styles/style_boxes.h"
 
-#ifdef small
-#undef small
-#endif // small
-
 namespace Window {
 
-constexpr auto kInactivePressTimeout = TimeMs(200);
-constexpr auto kSaveWindowPositionTimeout = TimeMs(1000);
+constexpr auto kInactivePressTimeout = crl::time(200);
+constexpr auto kSaveWindowPositionTimeout = crl::time(1000);
 
 QImage LoadLogo() {
 	return QImage(qsl(":/gui/art/logo_256.png"));
@@ -92,12 +87,7 @@ void ConvertIconToBlack(QImage &image) {
 }
 
 QIcon CreateOfficialIcon() {
-	auto image = [&] {
-		if (Core::Sandbox::Instance().applicationLaunched()) {
-			return Core::App().logo();
-		}
-		return LoadLogo();
-	}();
+	auto image = Core::IsAppLaunched() ? Core::App().logo() : LoadLogo();
 	if (AuthSession::Exists() && Auth().supportMode()) {
 		ConvertIconToBlack(image);
 	}
@@ -213,12 +203,19 @@ void MainWindow::showTermsDecline() {
 
 void MainWindow::showTermsDelete() {
 	const auto box = std::make_shared<QPointer<BoxContent>>();
+	const auto deleteByTerms = [=] {
+		if (AuthSession::Exists()) {
+			Auth().termsDeleteNow();
+		} else {
+			Ui::hideLayer();
+		}
+	};
 	*box = Ui::show(
 		Box<ConfirmBox>(
 			lang(lng_terms_delete_warning),
 			lang(lng_terms_delete_now),
 			st::attentionBoxButton,
-			[=] { Core::App().termsDeleteNow(); },
+			deleteByTerms,
 			[=] { if (*box) (*box)->closeBox(); }),
 		LayerOption::KeepOther);
 }
@@ -277,8 +274,18 @@ void MainWindow::init() {
 	initHook();
 	updateWindowIcon();
 
-	connect(windowHandle(), &QWindow::activeChanged, this, [this] { handleActiveChanged(); }, Qt::QueuedConnection);
-	connect(windowHandle(), &QWindow::windowStateChanged, this, [this](Qt::WindowState state) { handleStateChanged(state); });
+	// Non-queued activeChanged handlers must use QtSignalProducer.
+	connect(
+		windowHandle(),
+		&QWindow::activeChanged,
+		this,
+		[=] { handleActiveChanged(); },
+		Qt::QueuedConnection);
+	connect(
+		windowHandle(),
+		&QWindow::windowStateChanged,
+		this,
+		[=](Qt::WindowState state) { handleStateChanged(state); });
 
 	updatePalette();
 
@@ -293,7 +300,7 @@ void MainWindow::init() {
 void MainWindow::handleStateChanged(Qt::WindowState state) {
 	stateChangedHook(state);
 	updateIsActive((state == Qt::WindowMinimized) ? Global::OfflineBlurTimeout() : Global::OnlineFocusTimeout());
-	psUserActionDone();
+	Core::App().updateNonIdle();
 	if (state == Qt::WindowMinimized && Global::WorkMode().value() == dbiwmTrayOnly) {
 		minimizeToTray();
 	}
@@ -398,6 +405,17 @@ int32 MainWindow::screenNameChecksum(const QString &name) const {
 
 void MainWindow::setPositionInited() {
 	_positionInited = true;
+}
+
+void MainWindow::attachToTrayIcon(not_null<QSystemTrayIcon*> icon) {
+	icon->setToolTip(str_const_toString(AppName));
+	connect(icon, &QSystemTrayIcon::activated, this, [=](
+			QSystemTrayIcon::ActivationReason reason) {
+		Core::Sandbox::Instance().customEnterFromEventLoop([&] {
+			handleTrayIconActication(reason);
+		});
+	});
+	App::wnd()->updateTrayMenu();
 }
 
 void MainWindow::resizeEvent(QResizeEvent *e) {
@@ -602,6 +620,9 @@ void MainWindow::setInactivePress(bool inactive) {
 	}
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow() {
+	// We want to delete all widgets before the _controller.
+	_body.destroy();
+}
 
 } // namespace Window

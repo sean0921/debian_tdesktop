@@ -130,13 +130,19 @@ WebPageCollage ExtractCollage(const MTPDwebPage &data) {
 
 WebPageType ParseWebPageType(const MTPDwebPage &page) {
 	const auto type = page.has_type() ? qs(page.vtype) : QString();
-	if (type == qstr("photo")) return WebPageType::Photo;
-	if (type == qstr("video")) return WebPageType::Video;
-	if (type == qstr("profile")) return WebPageType::Profile;
-	if (type == qstr("telegram_background")) return WebPageType::WallPaper;
-	return page.has_cached_page()
-		? WebPageType::ArticleWithIV
-		: WebPageType::Article;
+	if (type == qstr("video") || page.has_embed_url()) {
+		return WebPageType::Video;
+	} else if (type == qstr("photo")) {
+		return WebPageType::Photo;
+	} else if (type == qstr("profile")) {
+		return WebPageType::Profile;
+	} else if (type == qstr("telegram_background")) {
+		return WebPageType::WallPaper;
+	} else if (page.has_cached_page()) {
+		return WebPageType::ArticleWithIV;
+	} else {
+		return WebPageType::Article;
+	}
 }
 
 WebPageCollage::WebPageCollage(const MTPDwebPage &data)
@@ -232,7 +238,7 @@ void WebPageData::replaceDocumentGoodThumbnail() {
 		return;
 	}
 	const auto &location = photo->large()->location();
-	if (!location.isNull()) {
+	if (location.valid()) {
 		document->replaceGoodThumbnail(
 			std::make_unique<Images::StorageSource>(
 				location,

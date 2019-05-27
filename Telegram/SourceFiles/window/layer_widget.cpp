@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "data/data_photo.h"
 #include "data/data_document.h"
-#include "media/media_clip_reader.h"
+#include "media/clip/media_clip_reader.h"
 #include "boxes/abstract_box.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -83,10 +83,10 @@ private:
 
 	bool _wasAnimating = false;
 	bool _inPaintEvent = false;
-	Animation _a_shown;
-	Animation _a_mainMenuShown;
-	Animation _a_specialLayerShown;
-	Animation _a_layerShown;
+	Ui::Animations::Simple _a_shown;
+	Ui::Animations::Simple _a_mainMenuShown;
+	Ui::Animations::Simple _a_specialLayerShown;
+	Ui::Animations::Simple _a_layerShown;
 
 	QRect _specialLayerBox, _specialLayerCacheBox;
 	QRect _layerBox, _layerCacheBox;
@@ -217,8 +217,7 @@ void LayerStackWidget::BackgroundWidget::paintEvent(QPaintEvent *e) {
 	auto specialLayerBox = _specialLayerCache.isNull() ? _specialLayerBox : _specialLayerCacheBox;
 	auto layerBox = _layerCache.isNull() ? _layerBox : _layerCacheBox;
 
-	auto ms = getms();
-	auto mainMenuProgress = _a_mainMenuShown.current(ms, -1);
+	auto mainMenuProgress = _a_mainMenuShown.value(-1);
 	auto mainMenuRight = (_mainMenuCache.isNull() || mainMenuProgress < 0) ? _mainMenuRight : (mainMenuProgress < 0) ? _mainMenuRight : anim::interpolate(0, _mainMenuCacheWidth, mainMenuProgress);
 	if (mainMenuRight) {
 		// Move showing boxes to the right while main menu is hiding.
@@ -229,9 +228,9 @@ void LayerStackWidget::BackgroundWidget::paintEvent(QPaintEvent *e) {
 			layerBox.moveLeft(layerBox.left() + mainMenuRight / 2);
 		}
 	}
-	auto bgOpacity = _a_shown.current(ms, isShown() ? 1. : 0.);
-	auto specialLayerOpacity = _a_specialLayerShown.current(ms, _specialLayerShown ? 1. : 0.);
-	auto layerOpacity = _a_layerShown.current(ms, _layerShown ? 1. : 0.);
+	auto bgOpacity = _a_shown.value(isShown() ? 1. : 0.);
+	auto specialLayerOpacity = _a_specialLayerShown.value(_specialLayerShown ? 1. : 0.);
+	auto layerOpacity = _a_layerShown.value(_layerShown ? 1. : 0.);
 	if (bgOpacity == 0.) {
 		return;
 	}
@@ -320,10 +319,10 @@ void LayerStackWidget::BackgroundWidget::paintEvent(QPaintEvent *e) {
 }
 
 void LayerStackWidget::BackgroundWidget::finishAnimating() {
-	_a_shown.finish();
-	_a_mainMenuShown.finish();
-	_a_specialLayerShown.finish();
-	_a_layerShown.finish();
+	_a_shown.stop();
+	_a_mainMenuShown.stop();
+	_a_specialLayerShown.stop();
+	_a_layerShown.stop();
 	checkIfDone();
 }
 
@@ -618,15 +617,16 @@ void LayerStackWidget::replaceBox(
 		object_ptr<BoxContent> box,
 		anim::type animated) {
 	const auto pointer = pushBox(std::move(box), animated);
-	while (!_layers.empty() && _layers.front().get() != pointer) {
-		auto removingLayer = std::move(_layers.front());
-		_layers.erase(begin(_layers));
-
-		if (removingLayer->inFocusChain()) {
-			setFocus();
-		}
-		removingLayer->setClosing();
-	}
+	const auto removeTill = ranges::find(
+		_layers,
+		pointer,
+		&std::unique_ptr<LayerWidget>::get);
+	_closingLayers.insert(
+		end(_closingLayers),
+		std::make_move_iterator(begin(_layers)),
+		std::make_move_iterator(removeTill));
+	_layers.erase(begin(_layers), removeTill);
+	clearClosingLayers();
 }
 
 void LayerStackWidget::prepareForAnimation() {
@@ -780,12 +780,37 @@ bool LayerStackWidget::takeToThirdSection() {
 }
 
 void LayerStackWidget::clearLayers() {
-	for (auto list = base::take(_layers); !list.empty(); list.pop_back()) {
-		const auto layer = std::move(list.back());
+	_closingLayers.insert(
+		end(_closingLayers),
+		std::make_move_iterator(begin(_layers)),
+		std::make_move_iterator(end(_layers)));
+	_layers.clear();
+	clearClosingLayers();
+}
+
+void LayerStackWidget::clearClosingLayers() {
+	const auto weak = make_weak(this);
+	while (!_closingLayers.empty()) {
+		const auto index = _closingLayers.size() - 1;
+		const auto layer = _closingLayers.back().get();
 		if (layer->inFocusChain()) {
 			setFocus();
 		}
+
+		// This may destroy LayerStackWidget (by calling Ui::hideLayer).
+		// So each time we check a weak pointer (if we are still alive).
 		layer->setClosing();
+
+		// setClosing() could destroy 'this' or could call clearLayers().
+		if (weak && !_closingLayers.empty()) {
+			// We could enqueue more closing layers, so we remove by index.
+			Assert(index < _closingLayers.size());
+			Assert(_closingLayers[index].get() == layer);
+			_closingLayers.erase(begin(_closingLayers) + index);
+		} else {
+			// Everything was destroyed in clearLayers or ~LayerStackWidget.
+			break;
+		}
 	}
 }
 
@@ -837,7 +862,7 @@ void MediaPreviewWidget::paintEvent(QPaintEvent *e) {
 
 	auto image = currentImage();
 	int w = image.width() / cIntRetinaFactor(), h = image.height() / cIntRetinaFactor();
-	auto shown = _a_shown.current(getms(), _hiding ? 0. : 1.);
+	auto shown = _a_shown.value(_hiding ? 0. : 1.);
 	if (!_a_shown.animating()) {
 		if (_hiding) {
 			hide();
@@ -938,8 +963,8 @@ void MediaPreviewWidget::fillEmojiString() {
 			while (_emojiList.size() > kStickerPreviewEmojiLimit) {
 				_emojiList.pop_back();
 			}
-		} else if (auto emoji = Ui::Emoji::Find(sticker->alt)) {
-			_emojiList.push_back(emoji);
+		} else if (const auto emoji = Ui::Emoji::Find(sticker->alt)) {
+			_emojiList.emplace_back(emoji);
 		}
 	}
 }
@@ -1019,7 +1044,7 @@ QPixmap MediaPreviewWidget::currentImage() const {
 			if (_gif && _gif->started()) {
 				auto s = currentDimensions();
 				auto paused = _controller->isGifPausedAtLeastFor(Window::GifPauseReason::MediaPreview);
-				return _gif->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, RectPart::None, paused ? 0 : getms());
+				return _gif->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, RectPart::None, paused ? 0 : crl::now());
 			}
 			if (_cacheStatus != CacheThumbLoaded
 				&& _document->hasThumbnail()) {

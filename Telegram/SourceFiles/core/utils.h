@@ -94,7 +94,7 @@ inline bool in_range(Value &&value, From &&from, Till &&till) {
 #define for_const(range_declaration, range_expression) for (range_declaration : std::as_const(range_expression))
 
 template <typename Lambda>
-inline void InvokeQueued(QObject *context, Lambda &&lambda) {
+inline void InvokeQueued(const QObject *context, Lambda &&lambda) {
 	QObject proxy;
 	QObject::connect(&proxy, &QObject::destroyed, context, std::forward<Lambda>(lambda), Qt::QueuedConnection);
 }
@@ -161,10 +161,7 @@ namespace ThirdParty {
 void start();
 void finish();
 
-}
-
-bool checkms(); // returns true if time has changed
-TimeMs getms(bool checked = false);
+} // namespace ThirdParty
 
 const static uint32 _md5_block_size = 64;
 class HashMd5 {
@@ -324,7 +321,7 @@ struct ProxyData {
 	QString user, password;
 
 	std::vector<QString> resolvedIPs;
-	TimeMs resolvedExpireAt = 0;
+	crl::time resolvedExpireAt = 0;
 
 	bool valid() const;
 	bool supportsCalls() const;

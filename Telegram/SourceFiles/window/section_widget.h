@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/rp_widget.h"
 #include "dialogs/dialogs_key.h"
 
+class AuthSession;
+
 namespace Window {
 
 class Controller;
@@ -31,9 +33,11 @@ public:
 	AbstractSectionWidget(
 		QWidget *parent,
 		not_null<Window::Controller*> controller)
-		: RpWidget(parent)
-		, _controller(controller) {
+	: RpWidget(parent)
+	, _controller(controller) {
 	}
+
+	AuthSession &session() const;
 
 	// Float player interface.
 	virtual bool wheelEventFromFloatPlayer(QEvent *e) {
@@ -122,7 +126,7 @@ public:
 		return nullptr;
 	}
 
-	static void PaintBackground(QWidget *widget, QPaintEvent *event);
+	static void PaintBackground(not_null<QWidget*> widget, QRect clip);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;

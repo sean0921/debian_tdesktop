@@ -9,7 +9,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "apiwrap.h"
 #include "core/application.h"
-#include "core/sandbox.h"
 #include "core/changelogs.h"
 #include "storage/file_download.h"
 #include "storage/file_upload.h"
@@ -32,7 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace {
 
-constexpr auto kAutoLockTimeoutLateMs = TimeMs(3000);
+constexpr auto kAutoLockTimeoutLateMs = crl::time(3000);
 constexpr auto kLegacyCallsPeerToPeerNobody = 4;
 
 } // namespace
@@ -94,6 +93,7 @@ QByteArray AuthSessionSettings::serialize() const {
 		stream << qint32(_variables.exeLaunchWarning ? 1 : 0);
 		stream << autoDownload;
 		stream << qint32(_variables.supportAllSearchResults.current() ? 1 : 0);
+		stream << qint32(_variables.archiveCollapsed.current() ? 1 : 0);
 	}
 	return result;
 }
@@ -130,6 +130,7 @@ void AuthSessionSettings::constructFromSerialized(const QByteArray &serialized) 
 	qint32 exeLaunchWarning = _variables.exeLaunchWarning ? 1 : 0;
 	QByteArray autoDownload;
 	qint32 supportAllSearchResults = _variables.supportAllSearchResults.current() ? 1 : 0;
+	qint32 archiveCollapsed = _variables.archiveCollapsed.current() ? 1 : 0;
 
 	stream >> selectorTab;
 	stream >> lastSeenWarningSeen;
@@ -209,6 +210,9 @@ void AuthSessionSettings::constructFromSerialized(const QByteArray &serialized) 
 	if (!stream.atEnd()) {
 		stream >> supportAllSearchResults;
 	}
+	if (!stream.atEnd()) {
+		stream >> archiveCollapsed;
+	}
 	if (stream.status() != QDataStream::Ok) {
 		LOG(("App Error: "
 			"Bad data for AuthSessionSettings::constructFromSerialized()"));
@@ -278,6 +282,7 @@ void AuthSessionSettings::constructFromSerialized(const QByteArray &serialized) 
 	_variables.countUnreadMessages = (countUnreadMessages == 1);
 	_variables.exeLaunchWarning = (exeLaunchWarning == 1);
 	_variables.supportAllSearchResults = (supportAllSearchResults == 1);
+	_variables.archiveCollapsed = (archiveCollapsed == 1);
 }
 
 void AuthSessionSettings::setSupportChatsTimeSlice(int slice) {
@@ -372,8 +377,20 @@ rpl::producer<int> AuthSessionSettings::thirdColumnWidthChanges() const {
 	return _variables.thirdColumnWidth.changes();
 }
 
+void AuthSessionSettings::setArchiveCollapsed(bool collapsed) {
+	_variables.archiveCollapsed = collapsed;
+}
+
+bool AuthSessionSettings::archiveCollapsed() const {
+	return _variables.archiveCollapsed.current();
+}
+
+rpl::producer<bool> AuthSessionSettings::archiveCollapsedChanges() const {
+	return _variables.archiveCollapsed.changes();
+}
+
 AuthSession &Auth() {
-	auto result = Core::App().authSession();
+	const auto result = Core::App().authSession();
 	Assert(result != nullptr);
 	return *result;
 }
@@ -390,6 +407,7 @@ AuthSession::AuthSession(const MTPUser &user)
 , _user(_data->processUser(user))
 , _changelogs(Core::Changelogs::Create(this))
 , _supportHelper(Support::Helper::Create(this)) {
+
 	_saveDataTimer.setCallback([=] {
 		Local::writeUserSettings();
 	});
@@ -430,8 +448,7 @@ AuthSession::AuthSession(const MTPUser &user)
 }
 
 bool AuthSession::Exists() {
-	return Core::Sandbox::Instance().applicationLaunched()
-		&& (Core::App().authSession() != nullptr);
+	return Core::IsAppLaunched() && (Core::App().authSession() != nullptr);
 }
 
 base::Observable<void> &AuthSession::downloaderTaskFinished() {
@@ -470,25 +487,39 @@ void AuthSession::moveSettingsFrom(AuthSessionSettings &&other) {
 	}
 }
 
-void AuthSession::saveSettingsDelayed(TimeMs delay) {
+void AuthSession::saveSettingsDelayed(crl::time delay) {
 	Expects(this == &Auth());
 
 	_saveDataTimer.callOnce(delay);
 }
 
+void AuthSession::localPasscodeChanged() {
+	_shouldLockAt = 0;
+	_autoLockTimer.cancel();
+	checkAutoLock();
+}
+
+void AuthSession::termsDeleteNow() {
+	api().request(MTPaccount_DeleteAccount(
+		MTP_string("Decline ToS update")
+	)).send();
+}
+
 void AuthSession::checkAutoLock() {
 	if (!Global::LocalPasscode()
 		|| Core::App().passcodeLocked()) {
+		_shouldLockAt = 0;
+		_autoLockTimer.cancel();
 		return;
 	}
 
 	Core::App().checkLocalTime();
-	auto now = getms(true);
-	auto shouldLockInMs = Global::AutoLock() * 1000LL;
-	auto idleForMs = psIdleTime();
-	auto notPlayingVideoForMs = now - settings().lastTimeVideoPlayedAt();
-	auto checkTimeMs = qMin(idleForMs, notPlayingVideoForMs);
+	const auto now = crl::now();
+	const auto shouldLockInMs = Global::AutoLock() * 1000LL;
+	const auto checkTimeMs = now - Core::App().lastNonIdleTime();
 	if (checkTimeMs >= shouldLockInMs || (_shouldLockAt > 0 && now > _shouldLockAt + kAutoLockTimeoutLateMs)) {
+		_shouldLockAt = 0;
+		_autoLockTimer.cancel();
 		Core::App().lockByPasscode();
 	} else {
 		_shouldLockAt = now + (shouldLockInMs - checkTimeMs);
@@ -496,7 +527,7 @@ void AuthSession::checkAutoLock() {
 	}
 }
 
-void AuthSession::checkAutoLockIn(TimeMs time) {
+void AuthSession::checkAutoLockIn(crl::time time) {
 	if (_autoLockTimer.isActive()) {
 		auto remain = _autoLockTimer.remainingTime();
 		if (remain > 0 && remain <= time) return;

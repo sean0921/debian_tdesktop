@@ -57,6 +57,15 @@ QImage GrabWidgetToImage(
 	QRect rect = QRect(),
 	QColor bg = QColor(255, 255, 255, 0));
 
+void RenderWidget(
+	QPainter &painter,
+	not_null<QWidget*> source,
+	const QPoint &targetOffset = QPoint(),
+	const QRegion &sourceRegion = QRegion(),
+	QWidget::RenderFlags renderFlags
+		= QWidget::DrawChildren | QWidget::IgnoreMask);
+
+
 void ForceFullRepaint(not_null<QWidget*> widget);
 
 void PostponeCall(FnMut<void()> &&callable);
@@ -238,6 +247,25 @@ public:
 		return QMargins();
 	}
 
+	bool inFocusChain() const {
+		return Ui::InFocusChain(this);
+	}
+
+	void hideChildren() {
+		for (auto child : Base::children()) {
+			if (child->isWidgetType()) {
+				static_cast<QWidget*>(child)->hide();
+			}
+		}
+	}
+	void showChildren() {
+		for (auto child : Base::children()) {
+			if (child->isWidgetType()) {
+				static_cast<QWidget*>(child)->show();
+			}
+		}
+	}
+
 	void moveToLeft(int x, int y, int outerw = 0) {
 		auto margins = getMargins();
 		x -= margins.left();
@@ -346,25 +374,6 @@ class TWidget : public TWidgetHelper<QWidget> {
 
 public:
 	TWidget(QWidget *parent = nullptr) : TWidgetHelper<QWidget>(parent) {
-	}
-
-	bool inFocusChain() const {
-		return Ui::InFocusChain(this);
-	}
-
-	void hideChildren() {
-		for (auto child : children()) {
-			if (child->isWidgetType()) {
-				static_cast<QWidget*>(child)->hide();
-			}
-		}
-	}
-	void showChildren() {
-		for (auto child : children()) {
-			if (child->isWidgetType()) {
-				static_cast<QWidget*>(child)->show();
-			}
-		}
 	}
 
 	// Get the size of the widget as it should be.

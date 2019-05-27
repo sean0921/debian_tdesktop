@@ -31,7 +31,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/add_contact_box.h"
 #include "boxes/connection_box.h"
 #include "observer_peer.h"
-#include "mediaview.h"
 #include "storage/localstorage.h"
 #include "apiwrap.h"
 #include "settings/settings_intro.h"
@@ -107,7 +106,14 @@ void MainWindow::initHook() {
 	Platform::MainWindow::initHook();
 
 	QCoreApplication::instance()->installEventFilter(this);
-	connect(windowHandle(), &QWindow::activeChanged, this, [this] { checkHistoryActivation(); }, Qt::QueuedConnection);
+
+	// Non-queued activeChanged handlers must use QtSignalProducer.
+	connect(
+		windowHandle(),
+		&QWindow::activeChanged,
+		this,
+		[=] { checkHistoryActivation(); },
+		Qt::QueuedConnection);
 }
 
 void MainWindow::firstShow() {
@@ -242,7 +248,12 @@ void MainWindow::setupMain() {
 }
 
 void MainWindow::showSettings() {
-	if (isHidden()) showFromTray();
+	if (isHidden()) {
+		showFromTray();
+	}
+	if (_passcodeLock) {
+		return;
+	}
 
 	if (const auto controller = this->controller()) {
 		controller->showSettings();
@@ -254,7 +265,9 @@ void MainWindow::showSettings() {
 void MainWindow::showSpecialLayer(
 		object_ptr<Window::LayerWidget> layer,
 		anim::type animated) {
-	if (_passcodeLock) return;
+	if (_passcodeLock) {
+		return;
+	}
 
 	if (layer) {
 		ensureLayerCreated();
@@ -303,13 +316,18 @@ void MainWindow::destroyLayer() {
 	if (!_layer) {
 		return;
 	}
-	const auto resetFocus = Ui::InFocusChain(_layer);
-	if (resetFocus) setFocus();
-	_layer = nullptr;
+	auto layer = base::take(_layer);
+	const auto resetFocus = Ui::InFocusChain(layer);
+	if (resetFocus) {
+		setFocus();
+	}
+	layer = nullptr;
 	if (controller()) {
 		controller()->disableGifPauseReason(Window::GifPauseReason::Layer);
 	}
-	if (resetFocus) setInnerFocus();
+	if (resetFocus) {
+		setInnerFocus();
+	}
 	InvokeQueued(this, [=] {
 		checkHistoryActivation();
 	});
@@ -485,7 +503,7 @@ bool MainWindow::eventFilter(QObject *object, QEvent *e) {
 
 	case QEvent::MouseMove: {
 		if (_main && _main->isIdle()) {
-			psUserActionDone();
+			Core::App().updateNonIdle();
 			_main->checkIdleFinish();
 		}
 	} break;
@@ -657,9 +675,13 @@ void MainWindow::showFromTray(QSystemTrayIcon::ActivationReason reason) {
 	}
 }
 
-void MainWindow::toggleTray(QSystemTrayIcon::ActivationReason reason) {
+void MainWindow::handleTrayIconActication(
+		QSystemTrayIcon::ActivationReason reason) {
 	updateIsActive(0);
-	if ((cPlatform() == dbipMac || cPlatform() == dbipMacOld) && isActive()) return;
+	if ((cPlatform() == dbipMac || cPlatform() == dbipMacOld)
+		&& isActive()) {
+		return;
+	}
 	if (reason == QSystemTrayIcon::Context) {
 		updateTrayMenu(true);
 		QTimer::singleShot(1, this, SLOT(psShowTrayMenu()));
@@ -669,13 +691,13 @@ void MainWindow::toggleTray(QSystemTrayIcon::ActivationReason reason) {
 		} else {
 			showFromTray(reason);
 		}
-		_lastTrayClickTime = getms();
+		_lastTrayClickTime = crl::now();
 	}
 }
 
 bool MainWindow::skipTrayClick() const {
 	return (_lastTrayClickTime > 0)
-		&& (getms() - _lastTrayClickTime
+		&& (crl::now() - _lastTrayClickTime
 			< QApplication::doubleClickInterval());
 }
 

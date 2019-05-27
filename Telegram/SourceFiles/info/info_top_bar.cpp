@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/confirm_box.h"
 #include "boxes/peer_list_controllers.h"
 #include "mainwidget.h"
+#include "auth_session.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/input_fields.h"
@@ -25,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/padding_wrap.h"
 #include "ui/search_field_controller.h"
 #include "window/window_peer_menu.h"
+#include "data/data_session.h"
 #include "data/data_channel.h"
 #include "data/data_user.h"
 #include "styles/style_info.h"
@@ -213,10 +215,7 @@ void TopBar::createSearchView(
 
 	auto button = base::make_unique_q<Ui::IconButton>(this, _st.search);
 	auto search = button.get();
-	search->addClickHandler([=] {
-		_searchModeEnabled = true;
-		updateControlsVisibility(anim::type::normal);
-	});
+	search->addClickHandler([=] { showSearch(); });
 	auto searchWrap = pushButton(std::move(button));
 	registerToggleControlCallback(searchWrap, [=] {
 		return !selectionMode()
@@ -284,6 +283,11 @@ void TopBar::createSearchView(
 		_searchModeAvailable = visible || alreadyInSearch;
 		updateControlsVisibility(anim::type::instant);
 	}, wrap->lifetime());
+}
+
+void TopBar::showSearch() {
+	_searchModeEnabled = true;
+	updateControlsVisibility(anim::type::normal);
 }
 
 void TopBar::removeButton(not_null<Ui::RpWidget*> button) {
@@ -354,8 +358,7 @@ void TopBar::updateSelectionControlsGeometry(int newWidth) {
 void TopBar::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto ms = getms();
-	auto highlight = _a_highlight.current(ms, _highlight ? 1. : 0.);
+	auto highlight = _a_highlight.value(_highlight ? 1. : 0.);
 	if (_highlight && !_a_highlight.animating()) {
 		_highlight = false;
 		startHighlightAnimation();
@@ -510,8 +513,8 @@ MessageIdsList TopBar::collectItems() const {
 		_selectedItems.list
 	) | ranges::view::transform([](auto &&item) {
 		return item.msgId;
-	}) | ranges::view::filter([](const FullMsgId &msgId) {
-		return App::histItemById(msgId) != nullptr;
+	}) | ranges::view::filter([](FullMsgId msgId) {
+		return Auth().data().message(msgId) != nullptr;
 	}) | ranges::to_vector;
 }
 
@@ -553,13 +556,13 @@ rpl::producer<QString> TitleValue(
 
 		switch (section.type()) {
 		case Section::Type::Profile:
-			if (const auto feed = key.feed()) {
+			/*if (const auto feed = key.feed()) {
 				return lng_info_feed_title;
-			} else if (auto user = peer->asUser()) {
-				return user->botInfo
+			} else */if (const auto user = peer->asUser()) {
+				return (user->isBot() && !user->isSupport())
 					? lng_info_bot_title
 					: lng_info_user_title;
-			} else if (auto channel = peer->asChannel()) {
+			} else if (const auto channel = peer->asChannel()) {
 				return channel->isMegagroup()
 					? lng_info_group_title
 					: lng_info_channel_title;
@@ -596,8 +599,8 @@ rpl::producer<QString> TitleValue(
 		case Section::Type::Members:
 			return lng_profile_participants_section;
 
-		case Section::Type::Channels:
-			return lng_info_feed_channels;
+		//case Section::Type::Channels: // #feed
+		//	return lng_info_feed_channels;
 
 		case Section::Type::Settings:
 			switch (section.settingsType()) {

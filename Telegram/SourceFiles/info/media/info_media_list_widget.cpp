@@ -79,10 +79,12 @@ public:
 
 	UniversalMsgId minId() const {
 		Expects(!empty());
+
 		return _items.back().first;
 	}
 	UniversalMsgId maxId() const {
 		Expects(!empty());
+
 		return _items.front().first;
 	}
 
@@ -836,7 +838,7 @@ BaseLayout *ListWidget::getExistingLayout(
 std::unique_ptr<BaseLayout> ListWidget::createLayout(
 		UniversalMsgId universalId,
 		Type type) {
-	auto item = App::histItemById(computeFullId(universalId));
+	auto item = Auth().data().message(computeFullId(universalId));
 	if (!item) {
 		return nullptr;
 	}
@@ -1119,7 +1121,7 @@ void ListWidget::paintEvent(QPaintEvent *e) {
 
 	auto outerWidth = width();
 	auto clip = e->rect();
-	auto ms = getms();
+	auto ms = crl::now();
 	auto fromSectionIt = findSectionAfterTop(clip.y());
 	auto tillSectionIt = findSectionAfterBottom(
 		fromSectionIt,
@@ -1177,7 +1179,7 @@ void ListWidget::showContextMenu(
 		mouseActionUpdate(e->globalPos());
 	}
 
-	auto item = App::histItemById(computeFullId(_overState.itemId));
+	auto item = Auth().data().message(computeFullId(_overState.itemId));
 	if (!item || !_overState.inside) {
 		return;
 	}
@@ -1226,7 +1228,7 @@ void ListWidget::showContextMenu(
 	_contextMenu->addAction(
 		lang(lng_context_to_msg),
 		[itemFullId] {
-			if (auto item = App::histItemById(itemFullId)) {
+			if (auto item = Auth().data().message(itemFullId)) {
 				Ui::showPeerHistoryAtItem(item);
 			}
 		});
@@ -1256,7 +1258,7 @@ void ListWidget::showContextMenu(
 							document->cancel();
 						});
 				} else {
-					auto filepath = document->filepath(DocumentData::FilePathResolveChecked);
+					auto filepath = document->filepath(DocumentData::FilePathResolve::Checked);
 					if (!filepath.isEmpty()) {
 						auto handler = App::LambdaDelayed(
 							st::defaultDropdownMenu.menu.ripple.hideDuration,
@@ -1277,7 +1279,7 @@ void ListWidget::showContextMenu(
 							DocumentSaveClickHandler::Save(
 								itemFullId,
 								document,
-								true);
+								DocumentSaveClickHandler::Mode::ToNewFile);
 						});
 					_contextMenu->addAction(
 						lang(isVideo
@@ -1378,7 +1380,7 @@ void ListWidget::forwardSelected() {
 }
 
 void ListWidget::forwardItem(UniversalMsgId universalId) {
-	if (const auto item = App::histItemById(computeFullId(universalId))) {
+	if (const auto item = Auth().data().message(computeFullId(universalId))) {
 		forwardItems({ 1, item->fullId() });
 	}
 }
@@ -1406,7 +1408,7 @@ void ListWidget::deleteSelected() {
 }
 
 void ListWidget::deleteItem(UniversalMsgId universalId) {
-	if (const auto item = App::histItemById(computeFullId(universalId))) {
+	if (const auto item = Auth().data().message(computeFullId(universalId))) {
 		deleteItems({ 1, item->fullId() });
 	}
 }
@@ -1468,7 +1470,7 @@ void ListWidget::switchToWordSelection() {
 	mouseActionUpdate();
 
 	_trippleClickPoint = _mousePosition;
-	_trippleClickStartTime = getms();
+	_trippleClickStartTime = crl::now();
 }
 
 void ListWidget::applyItemSelection(
@@ -1510,7 +1512,7 @@ bool ListWidget::changeItemSelection(
 			universalId,
 			selection);
 		if (ok) {
-			auto item = App::histItemById(computeFullId(universalId));
+			auto item = Auth().data().message(computeFullId(universalId));
 			if (!item) {
 				selected.erase(iterator);
 				return false;
@@ -1580,7 +1582,7 @@ void ListWidget::clearSelected() {
 
 void ListWidget::validateTrippleClickStartTime() {
 	if (_trippleClickStartTime) {
-		auto elapsed = (getms() - _trippleClickStartTime);
+		auto elapsed = (crl::now() - _trippleClickStartTime);
 		if (elapsed >= QApplication::doubleClickInterval()) {
 			_trippleClickStartTime = 0;
 		}
@@ -1838,7 +1840,7 @@ void ListWidget::mouseActionStart(
 					_mouseAction = MouseAction::Selecting;
 					_mouseSelectType = TextSelectType::Paragraphs;
 					mouseActionUpdate(_mousePosition);
-					_trippleClickStartTime = getms();
+					_trippleClickStartTime = crl::now();
 				}
 			}
 		} else {
@@ -1921,7 +1923,7 @@ void ListWidget::performDrag() {
 		//	urls.push_back(QUrl::fromEncoded(sel.toUtf8())); // Google Chrome crashes in Mac OS X O_o
 		//}
 	}
-	//if (auto mimeData = MimeDataFromTextWithEntities(sel)) {
+	//if (auto mimeData = MimeDataFromText(sel)) {
 	//	clearDragSelection();
 	//	_widget->noSelectingScroll();
 
@@ -1957,7 +1959,7 @@ void ListWidget::performDrag() {
 	//		auto mimeData = std::make_unique<QMimeData>();
 	//		mimeData->setData(forwardMimeType, "1");
 	//		if (auto document = (pressedMedia ? pressedMedia->getDocument() : nullptr)) {
-	//			auto filepath = document->filepath(DocumentData::FilePathResolveChecked);
+	//			auto filepath = document->filepath(DocumentData::FilePathResolve::Checked);
 	//			if (!filepath.isEmpty()) {
 	//				QList<QUrl> urls;
 	//				urls.push_back(QUrl::fromLocalFile(filepath));
@@ -2029,7 +2031,7 @@ void ListWidget::mouseActionFinish(
 
 #if defined Q_OS_LINUX32 || defined Q_OS_LINUX64
 	//if (hasSelectedText()) { // #TODO linux clipboard
-	//	SetClipboardWithEntities(_selected.cbegin()->first->selectedText(_selected.cbegin()->second), QClipboard::Selection);
+	//	SetClipboardText(_selected.cbegin()->first->selectedText(_selected.cbegin()->second), QClipboard::Selection);
 	//}
 #endif // Q_OS_LINUX32 || Q_OS_LINUX64
 }

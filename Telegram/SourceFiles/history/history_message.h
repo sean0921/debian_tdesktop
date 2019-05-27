@@ -89,6 +89,7 @@ public:
 
 	void refreshMedia(const MTPMessageMedia *media);
 	void refreshSentMedia(const MTPMessageMedia *media);
+	void returnSavedMedia() override;
 	void setMedia(const MTPMessageMedia &media);
 	static std::unique_ptr<Data::Media> CreateMedia(
 		not_null<HistoryMessage*> item,
@@ -114,6 +115,7 @@ public:
 	void updateReplyMarkup(const MTPReplyMarkup *markup) override {
 		setReplyMarkup(markup);
 	}
+	void updateForwardedInfo(const MTPMessageFwdHeader *fwd) override;
 
 	void addToUnreadMentions(UnreadMentionType type) override;
 	void eraseFromUnreadMentions() override;
@@ -121,11 +123,11 @@ public:
 
 	void setText(const TextWithEntities &textWithEntities) override;
 	TextWithEntities originalText() const override;
-	TextWithEntities clipboardText() const override;
+	TextForMimeData clipboardText() const override;
 	bool textHasLinks() const override;
 
 	int viewsCount() const override;
-	not_null<PeerData*> displayFrom() const;
+	PeerData *displayFrom() const;
 	bool updateDependencyItem() override;
 	MsgId dependencyMsgId() const override {
 		return replyToId();
@@ -157,13 +159,16 @@ private:
 	// It should show the receipt for the payed invoice. Still let mobile apps do that.
 	void replaceBuyWithReceiptInMarkup();
 
-	void applyEditionToEmpty();
-
 	void setReplyMarkup(const MTPReplyMarkup *markup);
 
 	struct CreateConfig;
 	void createComponentsHelper(MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, const QString &postAuthor, const MTPReplyMarkup &markup);
 	void createComponents(const CreateConfig &config);
+	void setupForwardedComponent(const CreateConfig &config);
+
+	static void FillForwardedInfo(
+		CreateConfig &config,
+		const MTPDmessageFwdHeader &data);
 
 	void updateAdminBadgeState();
 	ClickHandlerPtr fastReplyLink() const;

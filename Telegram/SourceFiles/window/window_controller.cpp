@@ -7,16 +7,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_controller.h"
 
+#include "boxes/peers/edit_peer_info_box.h"
 #include "window/main_window.h"
 #include "info/info_memento.h"
 #include "info/info_controller.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/view/history_view_element.h"
-#include "history/feed/history_feed_section.h"
-#include "media/player/media_player_round_controller.h"
+//#include "history/feed/history_feed_section.h" // #feed
+#include "data/data_media_types.h"
 #include "data/data_session.h"
-#include "data/data_feed.h"
+#include "data/data_folder.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "passport/passport_form_controller.h"
@@ -100,18 +101,31 @@ Controller::Controller(
 : Navigation(session)
 , _window(window) {
 	init();
+
+	subscribe(Auth().api().fullPeerUpdated(), [=](PeerData *peer) {
+		if (peer == _showEditPeer) {
+			_showEditPeer = nullptr;
+			Ui::show(Box<EditPeerInfoBox>(peer));
+		}
+	});
+
+	session->data().chatsListChanges(
+	) | rpl::filter([=](Data::Folder *folder) {
+		return (folder != nullptr)
+			&& (folder == _openedFolder.current())
+			&& folder->chatsList()->indexed(Global::DialogsMode())->empty();
+	}) | rpl::start_with_next([=](Data::Folder *folder) {
+		folder->updateChatListSortPosition();
+		closeFolder();
+	}, lifetime());
+}
+
+void Controller::showEditPeerBox(PeerData *peer) {
+	_showEditPeer = peer;
+	Auth().api().requestFullPeer(peer);
 }
 
 void Controller::init() {
-	session().data().animationPlayInlineRequest(
-	) | rpl::start_with_next([=](auto item) {
-		if (const auto video = roundVideo(item)) {
-			video->pauseResume();
-		} else {
-			startRoundVideo(item);
-		}
-	}, lifetime());
-
 	if (session().supportMode()) {
 		initSupportMode();
 	}
@@ -131,6 +145,24 @@ void Controller::initSupportMode() {
 			return chatEntryHistoryMove(1);
 		});
 	}, lifetime());
+}
+
+bool Controller::uniqueChatsInSearchResults() const {
+	return session().supportMode()
+		&& !session().settings().supportAllSearchResults()
+		&& !searchInChat.current();
+}
+
+void Controller::openFolder(not_null<Data::Folder*> folder) {
+	_openedFolder = folder.get();
+}
+
+void Controller::closeFolder() {
+	_openedFolder = nullptr;
+}
+
+const rpl::variable<Data::Folder*> &Controller::openedFolder() const {
+	return _openedFolder;
 }
 
 void Controller::setActiveChatEntry(Dialogs::RowDescriptor row) {
@@ -156,12 +188,12 @@ bool Controller::jumpToChatListEntry(Dialogs::RowDescriptor row) {
 	if (const auto history = row.key.history()) {
 		Ui::showPeerHistory(history, row.fullId.msg);
 		return true;
-	} else if (const auto feed = row.key.feed()) {
-		if (const auto item = App::histItemById(row.fullId)) {
-			showSection(HistoryFeed::Memento(feed, item->position()));
-		} else {
-			showSection(HistoryFeed::Memento(feed));
-		}
+	//} else if (const auto feed = row.key.feed()) { // #feed
+	//	if (const auto item = Auth().data().message(row.fullId)) {
+	//		showSection(HistoryFeed::Memento(feed, item->position()));
+	//	} else {
+	//		showSection(HistoryFeed::Memento(feed));
+	//	}
 	}
 	return false;
 }
@@ -461,12 +493,12 @@ void Controller::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 			} else if (history->chatListTimeId() != 0) {
 				return ParseDateTime(history->chatListTimeId()).date();
 			}
-		} else if (const auto feed = chat.feed()) {
-			/*if (chatScrollPosition(feed)) { // #TODO feeds save position
+		//} else if (const auto feed = chat.feed()) { // #feed
+		//	if (chatScrollPosition(feed)) { // #TODO feeds save position
 
-			} else */if (feed->chatListTimeId() != 0) {
-				return ParseDateTime(feed->chatListTimeId()).date();
-			}
+		//	} else if (feed->chatListTimeId() != 0) {
+		//		return ParseDateTime(feed->chatListTimeId()).date();
+		//	}
 		}
 		return QDate::currentDate();
 	};
@@ -478,10 +510,10 @@ void Controller::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 			if (history && history->chatListTimeId() != 0) {
 				return ParseDateTime(history->chatListTimeId()).date();
 			}
-		} else if (const auto feed = chat.feed()) {
-			if (feed->chatListTimeId() != 0) {
-				return ParseDateTime(feed->chatListTimeId()).date();
-			}
+		//} else if (const auto feed = chat.feed()) { // #feed
+		//	if (feed->chatListTimeId() != 0) {
+		//		return ParseDateTime(feed->chatListTimeId()).date();
+		//	}
 		}
 		return QDate::currentDate();
 	};
@@ -508,8 +540,8 @@ void Controller::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 				}
 				return QDate::currentDate();
 			}
-		} else if (const auto feed = chat.feed()) {
-			return startDate();
+		//} else if (const auto feed = chat.feed()) { // #feed
+		//	return startDate();
 		}
 		return startDate();
 	};
@@ -603,40 +635,6 @@ not_null<MainWidget*> Controller::chats() const {
 	return App::wnd()->chatsWidget();
 }
 
-bool Controller::startRoundVideo(not_null<HistoryItem*> context) {
-	if (auto video = RoundController::TryStart(this, context)) {
-		enableGifPauseReason(Window::GifPauseReason::RoundPlaying);
-		_roundVideo = std::move(video);
-		return true;
-	}
-	return false;
-}
-
-auto Controller::currentRoundVideo() const -> RoundController* {
-	return _roundVideo.get();
-}
-
-auto Controller::roundVideo(not_null<const HistoryItem*> context) const
--> RoundController* {
-	return roundVideo(context->fullId());
-}
-
-auto Controller::roundVideo(FullMsgId contextId) const -> RoundController* {
-	if (const auto result = currentRoundVideo()) {
-		if (result->contextId() == contextId) {
-			return result;
-		}
-	}
-	return nullptr;
-}
-
-void Controller::roundVideoFinished(not_null<RoundController*> video) {
-	if (video == _roundVideo.get()) {
-		_roundVideo = nullptr;
-		disableGifPauseReason(Window::GifPauseReason::RoundPlaying);
-	}
-}
-
 void Controller::setDefaultFloatPlayerDelegate(
 		not_null<Media::Player::FloatDelegate*> delegate) {
 	Expects(_defaultFloatPlayerDelegate == nullptr);
@@ -644,7 +642,6 @@ void Controller::setDefaultFloatPlayerDelegate(
 	_defaultFloatPlayerDelegate = delegate;
 	_floatPlayers = std::make_unique<Media::Player::FloatController>(
 		delegate);
-	_floatPlayers->closeEvents();
 }
 
 void Controller::replaceFloatPlayerDelegate(

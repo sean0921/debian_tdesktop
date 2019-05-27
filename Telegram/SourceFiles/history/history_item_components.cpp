@@ -10,12 +10,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/image/image.h"
+#include "ui/toast/toast.h"
 #include "ui/text_options.h"
 #include "history/history.h"
 #include "history/history_message.h"
 #include "history/view/history_view_service_message.h"
 #include "history/media/history_media_document.h"
-#include "media/media_audio.h"
+#include "media/audio/media_audio.h"
 #include "media/player/media_player_instance.h"
 #include "data/data_media_types.h"
 #include "data/data_session.h"
@@ -50,11 +51,12 @@ void HistoryMessageVia::resize(int32 availw) const {
 }
 
 void HistoryMessageSigned::refresh(const QString &date) {
-	auto time = qsl(", ") + date;
 	auto name = author;
-	auto timew = st::msgDateFont->width(time);
-	auto namew = st::msgDateFont->width(name);
-	if (timew + namew > st::maxSignatureSize) {
+	const auto time = qsl(", ") + date;
+	const auto timew = st::msgDateFont->width(time);
+	const auto namew = st::msgDateFont->width(name);
+	isElided = (timew + namew > st::maxSignatureSize);
+	if (isElided) {
 		name = st::msgDateFont->elided(author, st::maxSignatureSize - timew);
 	}
 	signature.setText(
@@ -76,17 +78,37 @@ int HistoryMessageEdited::maxWidth() const {
 	return text.maxWidth();
 }
 
+HiddenSenderInfo::HiddenSenderInfo(const QString &name)
+: name(name)
+, colorPeerId(Data::FakePeerIdForJustName(name))
+, userpic(Data::PeerUserpicColor(colorPeerId), name) {
+	nameText.setText(st::msgNameStyle, name, Ui::NameTextOptions());
+	const auto parts = name.trimmed().split(' ', QString::SkipEmptyParts);
+	firstName = parts[0];
+	for (const auto &part : parts.mid(1)) {
+		if (!lastName.isEmpty()) {
+			lastName.append(' ');
+		}
+		lastName.append(part);
+	}
+}
+
 void HistoryMessageForwarded::create(const HistoryMessageVia *via) const {
 	auto phrase = QString();
-	auto fromChannel = (originalSender->isChannel() && !originalSender->isMegagroup());
+	const auto fromChannel = originalSender
+		&& originalSender->isChannel()
+		&& !originalSender->isMegagroup();
+	const auto name = originalSender
+		? App::peerName(originalSender)
+		: hiddenSenderInfo->name;
 	if (!originalAuthor.isEmpty()) {
 		phrase = lng_forwarded_signed(
 			lt_channel,
-			App::peerName(originalSender),
+			name,
 			lt_user,
 			originalAuthor);
 	} else {
-		phrase = App::peerName(originalSender);
+		phrase = name;
 	}
 	if (via) {
 		if (fromChannel) {
@@ -120,9 +142,15 @@ void HistoryMessageForwarded::create(const HistoryMessageVia *via) const {
 		Qt::LayoutDirectionAuto
 	};
 	text.setText(st::fwdTextStyle, phrase, opts);
+	static const auto hidden = std::make_shared<LambdaClickHandler>([] {
+		Ui::Toast::Show(lang(lng_forwarded_hidden));
+	});
+
 	text.setLink(1, fromChannel
 		? goToMessageClickHandler(originalSender, originalId)
-		: originalSender->openLink());
+		: originalSender
+		? originalSender->openLink()
+		: hidden);
 	if (via) {
 		text.setLink(2, via->link);
 	}
@@ -137,14 +165,18 @@ bool HistoryMessageReply::updateData(
 		}
 	}
 	if (!replyToMsg) {
-		replyToMsg = App::histItemById(holder->channelId(), replyToMsgId);
+		replyToMsg = holder->history()->owner().message(
+			holder->channelId(),
+			replyToMsgId);
 		if (replyToMsg) {
 			if (replyToMsg->isEmpty()) {
 				// Really it is deleted.
 				replyToMsg = nullptr;
 				force = true;
 			} else {
-				App::historyRegDependency(holder, replyToMsg);
+				holder->history()->owner().registerDependentMessage(
+					holder,
+					replyToMsg);
 			}
 		}
 	}
@@ -183,7 +215,9 @@ void HistoryMessageReply::setReplyToLinkFrom(
 void HistoryMessageReply::clearData(not_null<HistoryMessage*> holder) {
 	replyToVia = nullptr;
 	if (replyToMsg) {
-		App::historyUnregDependency(holder, replyToMsg);
+		holder->history()->owner().unregisterDependentMessage(
+			holder,
+			replyToMsg);
 		replyToMsg = nullptr;
 	}
 	replyToMsgId = 0;
@@ -331,10 +365,10 @@ QString ReplyMarkupClickHandler::copyToClipboardContextItemText() const {
 // Note: it is possible that we will point to the different button
 // than the one was used when constructing the handler, but not a big deal.
 const HistoryMessageMarkupButton *ReplyMarkupClickHandler::getButton() const {
-	if (auto item = App::histItemById(_itemId)) {
-		if (auto markup = item->Get<HistoryMessageReplyMarkup>()) {
+	if (const auto item = Auth().data().message(_itemId)) {
+		if (const auto markup = item->Get<HistoryMessageReplyMarkup>()) {
 			if (_row < markup->rows.size()) {
-				auto &row = markup->rows[_row];
+				const auto &row = markup->rows[_row];
 				if (_column < row.size()) {
 					return &row[_column];
 				}
@@ -345,7 +379,7 @@ const HistoryMessageMarkupButton *ReplyMarkupClickHandler::getButton() const {
 }
 
 void ReplyMarkupClickHandler::onClickImpl() const {
-	if (const auto item = App::histItemById(_itemId)) {
+	if (const auto item = Auth().data().message(_itemId)) {
 		App::activateBotCommand(item, _row, _column);
 	}
 }
@@ -368,7 +402,9 @@ ReplyKeyboard::ReplyKeyboard(
 	not_null<const HistoryItem*> item,
 	std::unique_ptr<Style> &&s)
 : _item(item)
-, _a_selected(animation(this, &ReplyKeyboard::step_selected))
+, _selectedAnimation([=](crl::time now) {
+	return selectedAnimationCallback(now);
+})
 , _st(std::move(s)) {
 	if (const auto markup = _item->Get<HistoryMessageReplyMarkup>()) {
 		const auto context = _item->fullId();
@@ -511,21 +547,21 @@ int ReplyKeyboard::naturalHeight() const {
 	return (_rows.size() - 1) * _st->buttonSkip() + _rows.size() * _st->buttonHeight();
 }
 
-void ReplyKeyboard::paint(Painter &p, int outerWidth, const QRect &clip, TimeMs ms) const {
+void ReplyKeyboard::paint(Painter &p, int outerWidth, const QRect &clip) const {
 	Assert(_st != nullptr);
 	Assert(_width > 0);
 
 	_st->startPaint(p);
-	for_const (auto &row, _rows) {
-		for_const (auto &button, row) {
-			QRect rect(button.rect);
+	for (const auto &row : _rows) {
+		for (const auto &button : row) {
+			const auto rect = button.rect;
 			if (rect.y() >= clip.y() + clip.height()) return;
 			if (rect.y() + rect.height() < clip.y()) continue;
 
 			// just ignore the buttons that didn't layout well
 			if (rect.x() + rect.width() > _width) break;
 
-			_st->paintButton(p, outerWidth, button, ms);
+			_st->paintButton(p, outerWidth, button);
 		}
 	}
 }
@@ -609,23 +645,23 @@ void ReplyKeyboard::startAnimation(int i, int j, int direction) {
 
 	_animations.remove(-indexForAnimation);
 	if (!_animations.contains(indexForAnimation)) {
-		_animations.emplace(indexForAnimation, getms());
+		_animations.emplace(indexForAnimation, crl::now());
 	}
 
-	if (notStarted && !_a_selected.animating()) {
-		_a_selected.start();
+	if (notStarted && !_selectedAnimation.animating()) {
+		_selectedAnimation.start();
 	}
 }
 
-void ReplyKeyboard::step_selected(TimeMs ms, bool timer) {
+bool ReplyKeyboard::selectedAnimationCallback(crl::time now) {
 	if (anim::Disabled()) {
-		ms += st::botKbDuration;
+		now += st::botKbDuration;
 	}
 	for (auto i = _animations.begin(); i != _animations.end();) {
 		const auto index = std::abs(i->first) - 1;
 		const auto row = (index / MatrixRowShift);
 		const auto col = index % MatrixRowShift;
-		const auto dt = float64(ms - i->second) / st::botKbDuration;
+		const auto dt = float64(now - i->second) / st::botKbDuration;
 		if (dt >= 1) {
 			_rows[row][col].howMuchOver = (i->first > 0) ? 1 : 0;
 			i = _animations.erase(i);
@@ -634,10 +670,8 @@ void ReplyKeyboard::step_selected(TimeMs ms, bool timer) {
 			++i;
 		}
 	}
-	if (timer) _st->repaint(_item);
-	if (_animations.empty()) {
-		_a_selected.stop();
-	}
+	_st->repaint(_item);
+	return !_animations.empty();
 }
 
 void ReplyKeyboard::clearSelection() {
@@ -648,7 +682,7 @@ void ReplyKeyboard::clearSelection() {
 		_rows[row][col].howMuchOver = 0;
 	}
 	_animations.clear();
-	_a_selected.stop();
+	_selectedAnimation.stop();
 }
 
 int ReplyKeyboard::Style::buttonSkip() const {
@@ -666,12 +700,11 @@ int ReplyKeyboard::Style::buttonHeight() const {
 void ReplyKeyboard::Style::paintButton(
 		Painter &p,
 		int outerWidth,
-		const ReplyKeyboard::Button &button,
-		TimeMs ms) const {
+		const ReplyKeyboard::Button &button) const {
 	const QRect &rect = button.rect;
 	paintButtonBg(p, rect, button.howMuchOver);
 	if (button.ripple) {
-		button.ripple->paint(p, rect.x(), rect.y(), outerWidth, ms);
+		button.ripple->paint(p, rect.x(), rect.y(), outerWidth);
 		if (button.ripple->empty()) {
 			button.ripple.reset();
 		}
@@ -829,19 +862,24 @@ HistoryDocumentCaptioned::HistoryDocumentCaptioned()
 : _caption(st::msgFileMinWidth - st::msgPadding.left() - st::msgPadding.right()) {
 }
 
-HistoryDocumentVoicePlayback::HistoryDocumentVoicePlayback(const HistoryDocument *that)
-: a_progress(0., 0.)
-, _a_progress(animation(const_cast<HistoryDocument*>(that), &HistoryDocument::step_voiceProgress)) {
+HistoryDocumentVoicePlayback::HistoryDocumentVoicePlayback(
+	const HistoryDocument *that)
+: progress(0., 0.)
+, progressAnimation([=](crl::time now) {
+	const auto nonconst = const_cast<HistoryDocument*>(that);
+	return nonconst->voiceProgressAnimationCallback(now);
+}) {
 }
 
-void HistoryDocumentVoice::ensurePlayback(const HistoryDocument *that) const {
+void HistoryDocumentVoice::ensurePlayback(
+		const HistoryDocument *that) const {
 	if (!_playback) {
 		_playback = std::make_unique<HistoryDocumentVoicePlayback>(that);
 	}
 }
 
 void HistoryDocumentVoice::checkPlaybackFinished() const {
-	if (_playback && !_playback->_a_progress.animating()) {
+	if (_playback && !_playback->progressAnimation.animating()) {
 		_playback.reset();
 	}
 }
@@ -854,5 +892,5 @@ void HistoryDocumentVoice::startSeeking() {
 
 void HistoryDocumentVoice::stopSeeking() {
 	_seeking = false;
-	Media::Player::instance()->stopSeeking(AudioMsgId::Type::Voice);
+	Media::Player::instance()->cancelSeeking(AudioMsgId::Type::Voice);
 }

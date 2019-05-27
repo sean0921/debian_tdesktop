@@ -44,7 +44,6 @@ struct UploadState {
 
 Storage::Cache::Key DocumentCacheKey(int32 dcId, uint64 id);
 Storage::Cache::Key DocumentThumbCacheKey(int32 dcId, uint64 id);
-Storage::Cache::Key StorageCacheKey(const StorageImageLocation &location);
 Storage::Cache::Key WebDocumentCacheKey(const WebFileLocation &location);
 Storage::Cache::Key UrlCacheKey(const QString &location);
 Storage::Cache::Key GeoPointCacheKey(const GeoPointLocation &location);
@@ -99,8 +98,11 @@ struct MessageGroupId {
 		return static_cast<Type>(value);
 	}
 
+	bool empty() const {
+		return value == None;
+	}
 	explicit operator bool() const {
-		return value != None;
+		return !empty();
 	}
 	Underlying raw() const {
 		return static_cast<Underlying>(value);
@@ -120,13 +122,13 @@ class BotCommand;
 struct BotInfo;
 
 namespace Data {
-class Feed;
+class Folder;
 } // namespace Data
 
 using UserId = int32;
 using ChatId = int32;
 using ChannelId = int32;
-using FeedId = int32;
+using FolderId = int32;
 
 constexpr auto NoChannel = ChannelId(0);
 
@@ -138,43 +140,43 @@ constexpr auto PeerIdUserShift    = PeerId(0x000000000ULL);
 constexpr auto PeerIdChatShift    = PeerId(0x100000000ULL);
 constexpr auto PeerIdChannelShift = PeerId(0x200000000ULL);
 
-inline bool peerIsUser(const PeerId &id) {
+inline constexpr bool peerIsUser(const PeerId &id) {
 	return (id & PeerIdTypeMask) == PeerIdUserShift;
 }
-inline bool peerIsChat(const PeerId &id) {
+inline constexpr bool peerIsChat(const PeerId &id) {
 	return (id & PeerIdTypeMask) == PeerIdChatShift;
 }
-inline bool peerIsChannel(const PeerId &id) {
+inline constexpr bool peerIsChannel(const PeerId &id) {
 	return (id & PeerIdTypeMask) == PeerIdChannelShift;
 }
-inline PeerId peerFromUser(UserId user_id) {
+inline constexpr PeerId peerFromUser(UserId user_id) {
 	return PeerIdUserShift | uint64(uint32(user_id));
 }
-inline PeerId peerFromChat(ChatId chat_id) {
+inline constexpr PeerId peerFromChat(ChatId chat_id) {
 	return PeerIdChatShift | uint64(uint32(chat_id));
 }
-inline PeerId peerFromChannel(ChannelId channel_id) {
+inline constexpr PeerId peerFromChannel(ChannelId channel_id) {
 	return PeerIdChannelShift | uint64(uint32(channel_id));
 }
-inline PeerId peerFromUser(const MTPint &user_id) {
+inline constexpr PeerId peerFromUser(const MTPint &user_id) {
 	return peerFromUser(user_id.v);
 }
-inline PeerId peerFromChat(const MTPint &chat_id) {
+inline constexpr PeerId peerFromChat(const MTPint &chat_id) {
 	return peerFromChat(chat_id.v);
 }
-inline PeerId peerFromChannel(const MTPint &channel_id) {
+inline constexpr PeerId peerFromChannel(const MTPint &channel_id) {
 	return peerFromChannel(channel_id.v);
 }
-inline int32 peerToBareInt(const PeerId &id) {
+inline constexpr int32 peerToBareInt(const PeerId &id) {
 	return int32(uint32(id & PeerIdMask));
 }
-inline UserId peerToUser(const PeerId &id) {
+inline constexpr UserId peerToUser(const PeerId &id) {
 	return peerIsUser(id) ? peerToBareInt(id) : 0;
 }
-inline ChatId peerToChat(const PeerId &id) {
+inline constexpr ChatId peerToChat(const PeerId &id) {
 	return peerIsChat(id) ? peerToBareInt(id) : 0;
 }
-inline ChannelId peerToChannel(const PeerId &id) {
+inline constexpr ChannelId peerToChannel(const PeerId &id) {
 	return peerIsChannel(id) ? peerToBareInt(id) : NoChannel;
 }
 inline MTPint peerToBareMTPInt(const PeerId &id) {
@@ -295,7 +297,6 @@ class DocumentSaveClickHandler;
 class DocumentOpenClickHandler;
 class DocumentCancelClickHandler;
 class DocumentWrappedClickHandler;
-class GifOpenClickHandler;
 class VoiceSeekClickHandler;
 
 using PhotoId = uint64;
@@ -312,13 +313,6 @@ using PreparedPhotoThumbs = base::flat_map<char, QImage>;
 
 // [0] == -1 -- counting, [0] == -2 -- could not count
 using VoiceWaveform = QVector<signed char>;
-
-enum ActionOnLoad {
-	ActionOnLoadNone,
-	ActionOnLoadOpen,
-	ActionOnLoadOpenWith,
-	ActionOnLoadPlayInline
-};
 
 enum LocationType {
 	UnknownFileLocation = 0,
@@ -361,30 +355,32 @@ public:
 
 	AudioMsgId() = default;
 	AudioMsgId(
-		DocumentData *audio,
-		const FullMsgId &msgId,
-		uint32 playId = 0)
+		not_null<DocumentData*> audio,
+		FullMsgId msgId,
+		uint32 externalPlayId = 0)
 	: _audio(audio)
 	, _contextId(msgId)
-	, _playId(playId) {
+	, _externalPlayId(externalPlayId) {
 		setTypeFromAudio();
 	}
 
-	Type type() const {
+	[[nodiscard]] static uint32 CreateExternalPlayId();
+	[[nodiscard]] static AudioMsgId ForVideo();
+
+	[[nodiscard]] Type type() const {
 		return _type;
 	}
-	DocumentData *audio() const {
+	[[nodiscard]] DocumentData *audio() const {
 		return _audio;
 	}
-	FullMsgId contextId() const {
+	[[nodiscard]] FullMsgId contextId() const {
 		return _contextId;
 	}
-	uint32 playId() const {
-		return _playId;
+	[[nodiscard]] uint32 externalPlayId() const {
+		return _externalPlayId;
 	}
-
-	explicit operator bool() const {
-		return _audio != nullptr;
+	[[nodiscard]] explicit operator bool() const {
+		return (_audio != nullptr) || (_externalPlayId != 0);
 	}
 
 private:
@@ -393,7 +389,7 @@ private:
 	DocumentData *_audio = nullptr;
 	Type _type = Type::Unknown;
 	FullMsgId _contextId;
-	uint32 _playId = 0;
+	uint32 _externalPlayId = 0;
 
 };
 
@@ -407,13 +403,13 @@ inline bool operator<(const AudioMsgId &a, const AudioMsgId &b) {
 	} else if (b.contextId() < a.contextId()) {
 		return false;
 	}
-	return (a.playId() < b.playId());
+	return (a.externalPlayId() < b.externalPlayId());
 }
 
 inline bool operator==(const AudioMsgId &a, const AudioMsgId &b) {
 	return (a.audio() == b.audio())
 		&& (a.contextId() == b.contextId())
-		&& (a.playId() == b.playId());
+		&& (a.externalPlayId() == b.externalPlayId());
 }
 
 inline bool operator!=(const AudioMsgId &a, const AudioMsgId &b) {
@@ -471,14 +467,14 @@ struct SendAction {
 	};
 	SendAction(
 		Type type,
-		TimeMs until,
+		crl::time until,
 		int progress = 0)
 	: type(type)
 	, until(until)
 	, progress(progress) {
 	}
 	Type type = Type::Typing;
-	TimeMs until = 0;
+	crl::time until = 0;
 	int progress = 0;
 
 };

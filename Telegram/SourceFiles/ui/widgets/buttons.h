@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "ui/abstract_button.h"
+#include "ui/effects/animations.h"
 #include "styles/style_widgets.h"
 
 #include <memory>
@@ -59,7 +60,7 @@ public:
 	~RippleButton();
 
 protected:
-	void paintRipple(QPainter &p, int x, int y, TimeMs ms, const QColor *colorOverride = nullptr);
+	void paintRipple(QPainter &p, int x, int y, const QColor *colorOverride = nullptr);
 
 	void onStateChanged(State was, StateChangeSource source) override;
 
@@ -115,7 +116,6 @@ public:
 		setNumbersText(QString::number(numbers), numbers);
 	}
 	void setWidthChangedCallback(Fn<void()> callback);
-	void stepNumbersAnimation(TimeMs ms);
 	void finishNumbersAnimation();
 
 	int contentWidth() const;
@@ -181,7 +181,7 @@ private:
 	const style::icon *_iconOverrideOver = nullptr;
 	const style::color *_rippleColorOverride = nullptr;
 
-	Animation _a_over;
+	Ui::Animations::Simple _a_over;
 
 };
 
@@ -216,7 +216,7 @@ public:
 		return toggle(false, animated);
 	}
 	void finishAnimating() {
-		_a_show.finish();
+		_showAnimation.stop();
 		animationCallback();
 	}
 
@@ -234,18 +234,17 @@ protected:
 	QPoint prepareRippleStartPosition() const override;
 
 private:
-	void step_loading(TimeMs ms, bool timer);
-	bool stopLoadingAnimation(TimeMs ms);
+	bool loadingCallback(crl::time now);
+	bool stopLoadingAnimation(crl::time now);
 	void animationCallback();
 
 	const style::CrossButton &_st;
 
 	bool _shown = false;
-	Animation _a_show;
+	Ui::Animations::Simple _showAnimation;
 
-	TimeMs _loadingStartMs = 0;
-	TimeMs _loadingStopMs = 0;
-	BasicAnimation _a_loading;
+	crl::time _loadingStopMs = 0;
+	Ui::Animations::Basic _loadingAnimation;
 
 };
 

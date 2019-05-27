@@ -42,17 +42,17 @@ void WarningWidget::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
 	if (!_cache.isNull()) {
-		if (!_animation.animating(getms())) {
+		if (!_animation.animating()) {
 			if (isHidden()) {
 				return;
 			}
 		}
-		p.setOpacity(_animation.current(_hiding ? 0. : 1.));
+		p.setOpacity(_animation.value(_hiding ? 0. : 1.));
 		p.drawPixmap(_outer.topLeft(), _cache);
 		if (!_animation.animating()) {
 			_cache = QPixmap();
 			showChildren();
-			_started = getms(true);
+			_started = crl::now();
 			_timer.callOnce(100);
 		}
 		return;
@@ -88,7 +88,7 @@ void WarningWidget::refreshLang() {
 }
 
 void WarningWidget::handleTimer() {
-	auto msPassed = getms(true) - _started;
+	auto msPassed = crl::now() - _started;
 	setSecondsLeft((kWaitBeforeRevertMs - msPassed) / 1000);
 }
 

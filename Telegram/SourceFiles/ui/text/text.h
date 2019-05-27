@@ -165,8 +165,11 @@ public:
 		return _text.size();
 	}
 
-	TextWithEntities originalTextWithEntities(TextSelection selection = AllTextSelection, ExpandLinksMode mode = ExpandLinksShortened) const;
-	QString originalText(TextSelection selection = AllTextSelection, ExpandLinksMode mode = ExpandLinksShortened) const;
+	QString toString(TextSelection selection = AllTextSelection) const;
+	TextWithEntities toTextWithEntities(
+		TextSelection selection = AllTextSelection) const;
+	TextForMimeData toTextForMimeData(
+		TextSelection selection = AllTextSelection) const;
 
 	bool lastDots(int32 dots, int32 maxdots = 3) { // hack for typing animation
 		if (_text.size() < maxdots) return false;
@@ -217,6 +220,11 @@ private:
 	// it is also called from move constructor / assignment operator
 	void clearFields();
 
+	TextForMimeData toText(
+		TextSelection selection,
+		bool composeExpanded,
+		bool composeEntities) const;
+
 	QFixed _minResizeWidth;
 	QFixed _maxWidth = 0;
 	int32 _minHeight = 0;
@@ -261,7 +269,7 @@ QString textcmdStopSemibold();
 const QChar *textSkipCommand(const QChar *from, const QChar *end, bool canLink = true);
 
 inline bool chIsSpace(QChar ch, bool rich = false) {
-	return ch.isSpace() || (ch < 32 && !(rich && ch == TextCommand)) || (ch == QChar::ParagraphSeparator) || (ch == QChar::LineSeparator) || (ch == QChar::ObjectReplacementCharacter) || (ch == QChar::CarriageReturn) || (ch == QChar::Tabulation);
+	return ch.isSpace() || (ch < 32 && !(rich && ch == TextCommand)) || (ch == QChar::ParagraphSeparator) || (ch == QChar::LineSeparator) || (ch == QChar::ObjectReplacementCharacter) || (ch == QChar::CarriageReturn) || (ch == QChar::Tabulation) || (ch == QChar(8203)/*Zero width space.*/);
 }
 inline bool chIsDiac(QChar ch) { // diac and variation selectors
 	return (ch.category() == QChar::Mark_NonSpacing) || (ch == 1652) || (ch >= 64606 && ch <= 64611);

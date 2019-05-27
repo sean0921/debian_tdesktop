@@ -33,8 +33,8 @@ namespace {
 
 constexpr auto kDocumentScansLimit = 20;
 constexpr auto kTranslationScansLimit = 20;
-constexpr auto kShortPollTimeout = TimeMs(3000);
-constexpr auto kRememberCredentialsDelay = TimeMs(1800 * 1000);
+constexpr auto kShortPollTimeout = crl::time(3000);
+constexpr auto kRememberCredentialsDelay = crl::time(1800 * 1000);
 
 Config GlobalConfig;
 
@@ -897,7 +897,7 @@ void FormController::submitPassword(
 }
 
 bool FormController::handleSrpIdInvalid(mtpRequestId &guard) {
-	const auto now = getms(true);
+	const auto now = crl::now();
 	if (_lastSrpIdInvalidTime > 0
 		&& now - _lastSrpIdInvalidTime < Core::kHandleSrpIdInvalidTimeout) {
 		_password.request.id = 0;
@@ -1712,10 +1712,12 @@ void FormController::loadFile(File &file) {
 	const auto [j, ok] = _fileLoaders.emplace(
 		key,
 		std::make_unique<mtpFileLoader>(
-			file.dcId,
-			file.id,
-			file.accessHash,
-			QByteArray(), // file_reference
+			StorageFileLocation(
+				file.dcId,
+				Auth().userId(),
+				MTP_inputSecureFileLocation(
+					MTP_long(file.id),
+					MTP_long(file.accessHash))),
 			Data::FileOrigin(),
 			SecureFileLocation,
 			QString(),

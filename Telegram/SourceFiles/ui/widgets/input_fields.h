@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "ui/rp_widget.h"
+#include "ui/effects/animations.h"
 #include "styles/style_widgets.h"
 
 class UserData;
@@ -54,6 +55,8 @@ public:
 	void updatePlaceholder();
 	void setPlaceholder(Fn<QString()> placeholderFactory);
 	QRect placeholderRect() const;
+
+	void finishAnimations();
 
 	void setTextMrg(const QMargins &textMrg);
 	QRect getTextRect() const;
@@ -110,8 +113,8 @@ private:
 
 	bool _focused = false;
 	bool _placeholderVisible = true;
-	Animation _a_placeholderFocused;
-	Animation _a_placeholderVisible;
+	Animations::Simple _placeholderFocusedAnimation;
+	Animations::Simple _placeholderVisibleAnimation;
 	bool _lastPreEditTextNotEmpty = false;
 
 	const style::FlatInput &_st;
@@ -128,6 +131,7 @@ class InputField : public RpWidget, private base::Subscriber {
 public:
 	enum class Mode {
 		SingleLine,
+		NoNewlines,
 		MultiLine,
 	};
 	using TagList = TextWithTags::Tags;
@@ -460,17 +464,17 @@ private:
 	QString _placeholder;
 	Fn<QString()> _placeholderFactory;
 	int _placeholderAfterSymbols = 0;
-	Animation _a_placeholderShifted;
+	Ui::Animations::Simple _a_placeholderShifted;
 	bool _placeholderShifted = false;
 	QPainterPath _placeholderPath;
 
-	Animation _a_borderShown;
+	Ui::Animations::Simple _a_borderShown;
 	int _borderAnimationStart = 0;
-	Animation _a_borderOpacity;
+	Ui::Animations::Simple _a_borderOpacity;
 	bool _borderVisible = false;
 
-	Animation _a_focused;
-	Animation _a_error;
+	Ui::Animations::Simple _a_focused;
+	Ui::Animations::Simple _a_error;
 
 	bool _focused = false;
 	bool _error = false;
@@ -579,14 +583,14 @@ protected:
 	}
 	void setCorrectedText(QString &now, int &nowCursor, const QString &newText, int newPos);
 
-	virtual void paintAdditionalPlaceholder(Painter &p, TimeMs ms) {
+	virtual void paintAdditionalPlaceholder(Painter &p) {
 	}
 
 	style::font phFont() {
 		return _st.font;
 	}
 
-	void placeholderAdditionalPrepare(Painter &p, TimeMs ms);
+	void placeholderAdditionalPrepare(Painter &p);
 	QRect placeholderRect() const;
 
 	void setTextMargins(const QMargins &mrg);
@@ -613,17 +617,17 @@ private:
 
 	QString _placeholder;
 	Fn<QString()> _placeholderFactory;
-	Animation _a_placeholderShifted;
+	Ui::Animations::Simple _a_placeholderShifted;
 	bool _placeholderShifted = false;
 	QPainterPath _placeholderPath;
 
-	Animation _a_borderShown;
+	Ui::Animations::Simple _a_borderShown;
 	int _borderAnimationStart = 0;
-	Animation _a_borderOpacity;
+	Ui::Animations::Simple _a_borderOpacity;
 	bool _borderVisible = false;
 
-	Animation _a_focused;
-	Animation _a_error;
+	Ui::Animations::Simple _a_focused;
+	Ui::Animations::Simple _a_error;
 
 	bool _focused = false;
 	bool _error = false;
@@ -684,7 +688,7 @@ protected:
 		int wasCursor,
 		QString &now,
 		int &nowCursor) override;
-	void paintAdditionalPlaceholder(Painter &p, TimeMs ms) override;
+	void paintAdditionalPlaceholder(Painter &p) override;
 
 private:
 	QVector<int> _pattern;
@@ -736,7 +740,7 @@ protected:
 		int wasCursor,
 		QString &now,
 		int &nowCursor) override;
-	void paintAdditionalPlaceholder(Painter &p, TimeMs ms) override;
+	void paintAdditionalPlaceholder(Painter &p) override;
 
 private:
 	QString _linkPlaceholder;
@@ -757,7 +761,7 @@ protected:
 		int wasCursor,
 		QString &now,
 		int &nowCursor) override;
-	void paintAdditionalPlaceholder(Painter &p, TimeMs ms) override;
+	void paintAdditionalPlaceholder(Painter &p) override;
 
 private:
 	QVector<int> _pattern;

@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "ui/rp_widget.h"
+#include "ui/effects/animations.h"
 #include "base/timer.h"
 #include "dialogs/dialogs_key.h"
 
@@ -84,31 +85,26 @@ private:
 	void updateConnectingState();
 	void updateAdaptiveLayout();
 	int countSelectedButtonsTop(float64 selectedShown);
-	void step_connecting(TimeMs ms, bool timer);
+	void connectingAnimationCallback();
 
-	void paintTopBar(Painter &p, TimeMs ms);
+	void paintTopBar(Painter &p);
 	void paintStatus(
 		Painter &p,
 		int left,
 		int top,
 		int availableWidth,
 		int outerWidth);
-	bool paintConnectingState(
-		Painter &p,
-		int left,
-		int top,
-		int outerWidth,
-		TimeMs ms);
+	bool paintConnectingState(Painter &p, int left, int top, int outerWidth);
 	QRect getMembersShowAreaGeometry() const;
 	void updateMembersShowArea();
 	void updateOnlineDisplay();
 	void updateOnlineDisplayTimer();
-	void updateOnlineDisplayIn(TimeMs timeout);
+	void updateOnlineDisplayIn(crl::time timeout);
 
 	void infoClicked();
 	void backClicked();
 
-	void createUnreadBadge();
+	void refreshUnreadBadge();
 	void updateUnreadBadge();
 
 	not_null<Window::Controller*> _controller;
@@ -118,7 +114,7 @@ private:
 	bool _canDelete = false;
 	bool _canForward = false;
 
-	Animation _selectedShown;
+	Ui::Animations::Simple _selectedShown;
 
 	object_ptr<Ui::RoundButton> _clear;
 	object_ptr<Ui::RoundButton> _forward, _delete;

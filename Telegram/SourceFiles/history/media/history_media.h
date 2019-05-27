@@ -49,9 +49,9 @@ public:
 
 	[[nodiscard]] not_null<History*> history() const;
 
-	[[nodiscard]] virtual TextWithEntities selectedText(
+	[[nodiscard]] virtual TextForMimeData selectedText(
 			TextSelection selection) const {
-		return TextWithEntities();
+		return TextForMimeData();
 	}
 
 	[[nodiscard]] virtual bool isDisplayed() const;
@@ -72,7 +72,7 @@ public:
 		Painter &p,
 		const QRect &r,
 		TextSelection selection,
-		TimeMs ms) const = 0;
+		crl::time ms) const = 0;
 	[[nodiscard]] virtual PointState pointState(QPoint point) const;
 	[[nodiscard]] virtual TextState textState(
 		QPoint point,
@@ -141,7 +141,7 @@ public:
 			Painter &p,
 			const QRect &clip,
 			TextSelection selection,
-			TimeMs ms,
+			crl::time ms,
 			const QRect &geometry,
 			RectParts corners,
 			not_null<uint64*> cacheKey,
@@ -198,6 +198,10 @@ public:
 			|| (_inBubbleState == MediaInBubbleState::None);
 	}
 	[[nodiscard]] virtual bool skipBubbleTail() const {
+		return false;
+	}
+
+	[[nodiscard]] virtual bool hidesForwardedInfo() const {
 		return false;
 	}
 

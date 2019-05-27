@@ -12,11 +12,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "base/timer.h"
+#include "base/concurrent_timer.h"
 #include "core/update_checker.h"
 #include "core/shortcuts.h"
 #include "core/sandbox.h"
 #include "core/local_url_handlers.h"
 #include "core/launcher.h"
+#include "chat_helpers/emoji_keywords.h"
 #include "storage/localstorage.h"
 #include "platform/platform_specific.h"
 #include "mainwindow.h"
@@ -32,12 +34,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "observer_peer.h"
 #include "storage/storage_databases.h"
 #include "mainwidget.h"
-#include "mediaview.h"
+#include "media/view/media_view_overlay_widget.h"
 #include "mtproto/dc_options.h"
 #include "mtproto/mtp_instance.h"
+#include "media/audio/media_audio.h"
+#include "media/audio/media_audio_track.h"
 #include "media/player/media_player_instance.h"
-#include "media/media_audio.h"
-#include "media/media_audio_track.h"
+#include "media/clip/media_clip_reader.h" // For Media::Clip::Finish().
 #include "window/notifications_manager.h"
 #include "window/themes/window_theme.h"
 #include "window/window_lock_widgets.h"
@@ -46,6 +49,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/image/image.h"
 #include "ui/text_options.h"
 #include "ui/emoji_config.h"
+#include "ui/effects/animations.h"
 #include "storage/serialize_common.h"
 #include "window/window_controller.h"
 #include "base/qthelp_regex.h"
@@ -62,6 +66,8 @@ constexpr auto kQuitPreventTimeoutMs = 1500;
 
 } // namespace
 
+Application *Application::Instance = nullptr;
+
 struct Application::Private {
 	UserId authSessionUserId = 0;
 	QByteArray authSessionUserSerialized;
@@ -77,12 +83,51 @@ Application::Application(not_null<Launcher*> launcher)
 , _launcher(launcher)
 , _private(std::make_unique<Private>())
 , _databases(std::make_unique<Storage::Databases>())
+, _animationsManager(std::make_unique<Ui::Animations::Manager>())
 , _langpack(std::make_unique<Lang::Instance>())
+, _emojiKeywords(std::make_unique<ChatHelpers::EmojiKeywords>())
 , _audio(std::make_unique<Media::Audio::Instance>())
 , _logo(Window::LoadLogo())
 , _logoNoMargin(Window::LoadLogoNoMargin()) {
 	Expects(!_logo.isNull());
 	Expects(!_logoNoMargin.isNull());
+	Expects(Instance == nullptr);
+
+	Instance = this;
+}
+
+Application::~Application() {
+	_window.reset();
+	_mediaView.reset();
+
+	// Some MTP requests can be cancelled from data clearing.
+	authSessionDestroy();
+
+	// The langpack manager should be destroyed before MTProto instance,
+	// because it is MTP::Sender and it may have pending requests.
+	_langCloudManager.reset();
+
+	_mtproto.reset();
+	_mtprotoForKeysDestroy.reset();
+
+	Shortcuts::Finish();
+
+	Ui::Emoji::Clear();
+	Media::Clip::Finish();
+
+	stopWebLoadManager();
+	App::deinitMedia();
+
+	Window::Theme::Unload();
+
+	Media::Player::finish(_audio.get());
+	style::stopManager();
+
+	Local::finish();
+	Global::finish();
+	ThirdParty::finish();
+
+	Instance = nullptr;
 }
 
 void Application::run() {
@@ -108,7 +153,6 @@ void Application::run() {
 	QCoreApplication::instance()->installTranslator(_translator.get());
 
 	style::startManager();
-	anim::startManager();
 	Ui::InitTextOptions();
 	Ui::Emoji::Init();
 	Media::Player::start(_audio.get());
@@ -129,7 +173,7 @@ void Application::run() {
 	_window->init();
 
 	auto currentGeometry = _window->geometry();
-	_mediaView = std::make_unique<MediaView>();
+	_mediaView = std::make_unique<Media::View::OverlayWidget>();
 	_window->setGeometry(currentGeometry);
 
 	QCoreApplication::instance()->installEventFilter(this);
@@ -163,7 +207,7 @@ void Application::run() {
 	DEBUG_LOG(("Application Info: showing."));
 	_window->firstShow();
 
-	if (cStartToSettings()) {
+	if (!locked() && cStartToSettings()) {
 		_window->showSettings();
 	}
 
@@ -186,7 +230,7 @@ bool Application::hideMediaView() {
 }
 
 void Application::showPhoto(not_null<const PhotoOpenClickHandler*> link) {
-	const auto item = App::histItemById(link->context());
+	const auto item = Auth().data().message(link->context());
 	const auto peer = link->peer();
 	return (!item && peer)
 		? showPhoto(link->photo(), peer)
@@ -208,7 +252,9 @@ void Application::showPhoto(
 }
 
 void Application::showDocument(not_null<DocumentData*> document, HistoryItem *item) {
-	if (cUseExternalVideoPlayer() && document->isVideoFile()) {
+	if (cUseExternalVideoPlayer()
+		&& document->isVideoFile()
+		&& document->loaded()) {
 		QDesktopServices::openUrl(QUrl("file:///" + document->location(false).fname));
 	} else {
 		_mediaView->showDocument(document, item);
@@ -232,7 +278,7 @@ bool Application::eventFilter(QObject *object, QEvent *e) {
 	case QEvent::MouseButtonPress:
 	case QEvent::TouchBegin:
 	case QEvent::Wheel: {
-		psUserActionDone();
+		updateNonIdle();
 	} break;
 
 	case QEvent::ShortcutOverride: {
@@ -251,7 +297,7 @@ bool Application::eventFilter(QObject *object, QEvent *e) {
 
 	case QEvent::ApplicationActivate: {
 		if (object == QCoreApplication::instance()) {
-			psUserActionDone();
+			updateNonIdle();
 		}
 	} break;
 
@@ -511,9 +557,6 @@ void Application::startMtp() {
 	if (_authSession) {
 		// Skip all pending self updates so that we won't Local::writeSelf.
 		Notify::peerUpdatedSendDelayed();
-
-		Media::Player::mixer()->setVoicePlaybackDoubled(
-			Global::VoiceMsgPlaybackDoubled());
 	}
 }
 
@@ -550,7 +593,7 @@ void Application::allKeysDestroyed() {
 }
 
 void Application::suggestMainDcId(MTP::DcId mainDcId) {
-	Assert(_mtproto != nullptr);
+	Expects(_mtproto != nullptr);
 
 	_mtproto->suggestMainDcId(mainDcId);
 	if (_private->mtpConfig.mainDcId != MTP::Instance::Config::kNotSetMainDc) {
@@ -559,7 +602,7 @@ void Application::suggestMainDcId(MTP::DcId mainDcId) {
 }
 
 void Application::destroyStaleAuthorizationKeys() {
-	Assert(_mtproto != nullptr);
+	Expects(_mtproto != nullptr);
 
 	for (const auto &key : _mtproto->getKeysForWrite()) {
 		// Disable this for now.
@@ -571,6 +614,14 @@ void Application::destroyStaleAuthorizationKeys() {
 			return;
 		}
 	}
+}
+
+void Application::configUpdated() {
+	_configUpdates.fire({});
+}
+
+rpl::producer<> Application::configUpdates() const {
+	return _configUpdates.events();
 }
 
 void Application::resetAuthorizationKeys() {
@@ -630,8 +681,13 @@ void Application::forceLogOut(const TextWithEntities &explanation) {
 }
 
 void Application::checkLocalTime() {
-	const auto updated = checkms();
-	if (App::main()) App::main()->checkLastUpdate(updated);
+	if (crl::adjust_time()) {
+		base::Timer::Adjust();
+		base::ConcurrentTimerEnvironment::Adjust();
+		if (App::main()) App::main()->checkLastUpdate(true);
+	} else {
+		if (App::main()) App::main()->checkLastUpdate(false);
+	}
 }
 
 void Application::stateChanged(Qt::ApplicationState state) {
@@ -732,6 +788,11 @@ void Application::authSessionDestroy() {
 	if (_authSession) {
 		unlockTerms();
 		_mtproto->clearGlobalHandlers();
+
+		// Must be called before Auth().data() is destroyed,
+		// because streaming media holds pointers to it.
+		Media::Player::instance()->handleLogout();
+
 		_authSession = nullptr;
 		authSessionChanged().notify(true);
 		Notify::unreadCounterUpdated();
@@ -787,7 +848,7 @@ QString Application::createInternalLinkFull(const QString &query) const {
 
 void Application::checkStartUrl() {
 	if (!cStartUrl().isEmpty() && !locked()) {
-		auto url = cStartUrl();
+		const auto url = cStartUrl();
 		cSetStartUrl(QString());
 		if (!openLocalUrl(url, {})) {
 			cSetStartUrl(url);
@@ -835,6 +896,16 @@ bool Application::passcodeLocked() const {
 	return _passcodeLock.current();
 }
 
+void Application::updateNonIdle() {
+	_lastNonIdleTime = crl::now();
+}
+
+crl::time Application::lastNonIdleTime() const {
+	return std::max(
+		Platform::LastUserInputTime().value_or(0),
+		_lastNonIdleTime);
+}
+
 rpl::producer<bool> Application::passcodeLockChanges() const {
 	return _passcodeLock.changes();
 }
@@ -869,10 +940,6 @@ rpl::producer<bool> Application::termsLockValue() const {
 	return rpl::single(
 		_termsLock != nullptr
 	) | rpl::then(termsLockChanges());
-}
-
-void Application::termsDeleteNow() {
-	MTP::send(MTPaccount_DeleteAccount(MTP_string("Decline ToS update")));
 }
 
 bool Application::locked() const {
@@ -957,7 +1024,6 @@ void Application::loggedOut() {
 	clearPasscodeLock();
 	Media::Player::mixer()->stopAndClear();
 	Global::SetVoiceMsgPlaybackDoubled(false);
-	Media::Player::mixer()->setVoicePlaybackDoubled(false);
 	if (const auto window = getActiveWindow()) {
 		window->tempDirDelete(Local::ClearManagerAll);
 		window->setupIntro();
@@ -1105,41 +1171,14 @@ void Application::startShortcuts() {
 	}, _lifetime);
 }
 
-Application::~Application() {
-	_window.reset();
-	_mediaView.reset();
-
-	// Some MTP requests can be cancelled from data clearing.
-	authSessionDestroy();
-
-	// The langpack manager should be destroyed before MTProto instance,
-	// because it is MTP::Sender and it may have pending requests.
-	_langCloudManager.reset();
-
-	_mtproto.reset();
-	_mtprotoForKeysDestroy.reset();
-
-	Shortcuts::Finish();
-
-	Ui::Emoji::Clear();
-
-	anim::stopManager();
-
-	stopWebLoadManager();
-	App::deinitMedia();
-
-	Window::Theme::Unload();
-
-	Media::Player::finish(_audio.get());
-	style::stopManager();
-
-	Local::finish();
-	Global::finish();
-	ThirdParty::finish();
+bool IsAppLaunched() {
+	return (Application::Instance != nullptr);
 }
 
 Application &App() {
-	return Sandbox::Instance().application();
+	Expects(Application::Instance != nullptr);
+
+	return *Application::Instance;
 }
 
 } // namespace Core

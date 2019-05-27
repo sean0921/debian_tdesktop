@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/runtime_composer.h"
 #include "base/flags.h"
 #include "base/value_ordering.h"
+#include "data/data_media_types.h"
 
 enum class UnreadMentionType;
 struct HistoryMessageReplyMarkup;
@@ -53,6 +54,8 @@ enum class PointState : char;
 enum class Context : char;
 class ElementDelegate;
 } // namespace HistoryView
+
+struct HiddenSenderInfo;
 
 class HistoryItem : public RuntimeComposer<HistoryItem> {
 public:
@@ -108,20 +111,34 @@ public:
 	void removeMainView();
 
 	void destroy();
-	bool out() const {
+	[[nodiscard]] bool out() const {
 		return _flags & MTPDmessage::Flag::f_out;
 	}
-	bool unread() const;
-	bool mentionsMe() const {
+	[[nodiscard]] bool unread() const;
+	void markClientSideAsRead();
+	[[nodiscard]] bool mentionsMe() const {
 		return _flags & MTPDmessage::Flag::f_mentioned;
 	}
-	bool isUnreadMention() const;
-	bool isUnreadMedia() const;
-	bool hasUnreadMediaFlag() const;
+	[[nodiscard]] bool isUnreadMention() const;
+	[[nodiscard]] bool isUnreadMedia() const;
+	[[nodiscard]] bool hasUnreadMediaFlag() const;
 	void markMediaRead();
 
+
+	// For edit media in history_message.
+	virtual void returnSavedMedia() {};
+	void savePreviousMedia() {
+		_savedMedia = _media->clone(this);
+	}
+	[[nodiscard]] bool isEditingMedia() const {
+		return _savedMedia != nullptr;
+	}
+	void clearSavedMedia() {
+		_savedMedia = nullptr;
+	}
+
 	// Zero result means this message is not self-destructing right now.
-	virtual TimeMs getSelfDestructIn(TimeMs now) {
+	virtual crl::time getSelfDestructIn(crl::time now) {
 		return 0;
 	}
 
@@ -136,6 +153,16 @@ public:
 	}
 	bool isGroupEssential() const {
 		return _flags & MTPDmessage_ClientFlag::f_is_group_essential;
+	}
+	bool isLocalUpdateMedia() const {
+		return _flags & MTPDmessage_ClientFlag::f_is_local_update_media;
+	}
+	void setIsLocalUpdateMedia(bool flag) {
+		if (flag) {
+			_flags |= MTPDmessage_ClientFlag::f_is_local_update_media;
+		} else {
+			_flags &= ~MTPDmessage_ClientFlag::f_is_local_update_media;
+		}
 	}
 	bool isGroupMigrate() const {
 		return isGroupEssential() && isEmpty();
@@ -162,9 +189,12 @@ public:
 	}
 	virtual void applyEdition(const MTPDmessageService &message) {
 	}
+	void applyEditionToHistoryCleared();
 	virtual void updateSentMedia(const MTPMessageMedia *media) {
 	}
 	virtual void updateReplyMarkup(const MTPReplyMarkup *markup) {
+	}
+	virtual void updateForwardedInfo(const MTPMessageFwdHeader *fwd) {
 	}
 
 	virtual void addToUnreadMentions(UnreadMentionType type);
@@ -191,10 +221,10 @@ public:
 		return inDialogsText(DrawInDialog::WithoutSender);
 	}
 	virtual TextWithEntities originalText() const {
-		return { QString(), EntitiesInText() };
+		return TextWithEntities();
 	}
-	virtual TextWithEntities clipboardText() const {
-		return { QString(), EntitiesInText() };
+	virtual TextForMimeData clipboardText() const {
+		return TextForMimeData();
 	}
 
 	virtual void setViewsCount(int32 count) {
@@ -226,7 +256,6 @@ public:
 	bool suggestDeleteAllReport() const;
 
 	bool hasDirectLink() const;
-	QString directLink() const;
 
 	MsgId id;
 
@@ -257,7 +286,8 @@ public:
 	not_null<PeerData*> author() const;
 
 	TimeId dateOriginal() const;
-	not_null<PeerData*> senderOriginal() const;
+	PeerData *senderOriginal() const;
+	const HiddenSenderInfo *hiddenForwardedInfo() const;
 	not_null<PeerData*> fromOriginal() const;
 	QString authorOriginal() const;
 	MsgId idOriginal() const;
@@ -305,6 +335,7 @@ protected:
 	int _textWidth = -1;
 	int _textHeight = 0;
 
+	std::unique_ptr<Data::Media> _savedMedia;
 	std::unique_ptr<Data::Media> _media;
 
 private:

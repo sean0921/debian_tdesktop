@@ -90,7 +90,7 @@ QSize HistoryWallPaper::countCurrentSize(int newWidth) {
 	return { newWidth, newHeight };
 }
 
-void HistoryWallPaper::draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const {
+void HistoryWallPaper::draw(Painter &p, const QRect &r, TextSelection selection, crl::time ms) const {
 	if (width() < st::msgPadding.left() + st::msgPadding.right() + 1) return;
 
 	_data->automaticLoad(_realParent->fullId(), _parent->data());
@@ -109,7 +109,7 @@ void HistoryWallPaper::draw(Painter &p, const QRect &r, TextSelection selection,
 			_animation->radial.start(_data->progress());
 		}
 	}
-	bool radial = isRadialAnimation(ms);
+	const auto radial = isRadialAnimation();
 
 	auto rthumb = rtlrect(paintx, painty, paintw, painth, width());
 	auto roundRadius = ImageRoundRadius::Small;
@@ -137,11 +137,11 @@ void HistoryWallPaper::draw(Painter &p, const QRect &r, TextSelection selection,
 		p.setPen(Qt::NoPen);
 		if (selected) {
 			p.setBrush(st::msgDateImgBgSelected);
-		} else if (isThumbAnimation(ms)) {
-			auto over = _animation->a_thumbOver.current();
+		} else if (isThumbAnimation()) {
+			auto over = _animation->a_thumbOver.value(1.);
 			p.setBrush(anim::brush(st::msgDateImgBg, st::msgDateImgBgOver, over));
 		} else {
-			auto over = ClickHandler::showAsActive(_data->loading() ? _cancell : _savel);
+			auto over = ClickHandler::showAsActive(_data->loading() ? _cancell : _openl);
 			p.setBrush(over ? st::msgDateImgBgOver : st::msgDateImgBg);
 		}
 
@@ -246,7 +246,7 @@ TextState HistoryWallPaper::textState(QPoint point, StateRequest request) const 
 		} else if (_data->loading()) {
 			result.link = _cancell;
 		} else {
-			result.link = _savel;
+			result.link = _openl;
 		}
 	}
 	return result;

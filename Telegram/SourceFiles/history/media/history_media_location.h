@@ -20,7 +20,7 @@ public:
 		const QString &title = QString(),
 		const QString &description = QString());
 
-	void draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const override;
+	void draw(Painter &p, const QRect &r, TextSelection selection, crl::time ms) const override;
 	TextState textState(QPoint point, StateRequest request) const override;
 
 	[[nodiscard]] TextSelection adjustSelection(
@@ -40,7 +40,7 @@ public:
 		return p == _link;
 	}
 
-	TextWithEntities selectedText(TextSelection selection) const override;
+	TextForMimeData selectedText(TextSelection selection) const override;
 
 	bool needsBubble() const override;
 	bool customInfoLayout() const override {

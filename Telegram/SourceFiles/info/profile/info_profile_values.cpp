@@ -7,21 +7,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_values.h"
 
-#include <rpl/filter.h>
-#include <rpl/range.h>
-#include <rpl/then.h>
-#include <rpl/combine.h>
 #include "observer_peer.h"
 #include "core/application.h"
 #include "auth_session.h"
 #include "ui/wrap/slide_wrap.h"
 #include "data/data_peer_values.h"
 #include "data/data_shared_media.h"
-#include "data/data_feed.h"
+#include "data/data_folder.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
+
+#include "boxes/peers/edit_peer_permissions_box.h"
 
 namespace Info {
 namespace Profile {
@@ -134,7 +132,7 @@ rpl::producer<bool> IsContactValue(not_null<UserData*> user) {
 }
 
 rpl::producer<bool> CanInviteBotToGroupValue(not_null<UserData*> user) {
-	if (!user->botInfo) {
+	if (!user->isBot() || user->isSupport()) {
 		return rpl::single(false);
 	}
 	return Notify::PeerUpdateValue(
@@ -213,6 +211,35 @@ rpl::producer<int> AdminsCountValue(not_null<PeerData*> peer) {
 		});
 	}
 	Unexpected("User in AdminsCountValue().");
+}
+
+
+rpl::producer<int> RestrictionsCountValue(not_null<PeerData*> peer) {
+	const auto countOfRestrictions = [](ChatRestrictions restrictions) {
+		auto count = 0;
+		for (const auto f : Data::ListOfRestrictions()) {
+			if (restrictions & f) count++;
+		}
+		return int(Data::ListOfRestrictions().size()) - count;
+	};
+
+	using Flag = Notify::PeerUpdate::Flag;
+	if (const auto chat = peer->asChat()) {
+		return Notify::PeerUpdateValue(
+			chat,
+			Flag::RightsChanged
+		) | rpl::map([=] {
+			return countOfRestrictions(chat->defaultRestrictions());
+		});
+	} else if (const auto channel = peer->asChannel()) {
+		return Notify::PeerUpdateValue(
+			channel,
+			Flag::RightsChanged
+		) | rpl::map([=] {
+			return countOfRestrictions(channel->defaultRestrictions());
+		});
+	}
+	Unexpected("User in RestrictionsCountValue().");
 }
 
 rpl::producer<int> RestrictedCountValue(not_null<ChannelData*> channel) {
@@ -298,21 +325,21 @@ rpl::producer<bool> VerifiedValue(not_null<PeerData*> peer) {
 	}
 	return rpl::single(false);
 }
-
-rpl::producer<int> FeedChannelsCountValue(not_null<Data::Feed*> feed) {
-	using Flag = Data::FeedUpdateFlag;
-	return rpl::single(
-		Data::FeedUpdate{ feed, Flag::Channels }
-	) | rpl::then(
-		Auth().data().feedUpdated()
-	) | rpl::filter([=](const Data::FeedUpdate &update) {
-		return (update.feed == feed) && (update.flag == Flag::Channels);
-	}) | rpl::filter([=] {
-		return feed->channelsLoaded();
-	}) | rpl::map([=] {
-		return int(feed->channels().size());
-	}) | rpl::distinct_until_changed();
-}
+// // #feed
+//rpl::producer<int> FeedChannelsCountValue(not_null<Data::Feed*> feed) {
+//	using Flag = Data::FeedUpdateFlag;
+//	return rpl::single(
+//		Data::FeedUpdate{ feed, Flag::Channels }
+//	) | rpl::then(
+//		Auth().data().feedUpdated()
+//	) | rpl::filter([=](const Data::FeedUpdate &update) {
+//		return (update.feed == feed) && (update.flag == Flag::Channels);
+//	}) | rpl::filter([=] {
+//		return feed->channelsLoaded();
+//	}) | rpl::map([=] {
+//		return int(feed->channels().size());
+//	}) | rpl::distinct_until_changed();
+//}
 
 } // namespace Profile
 } // namespace Info

@@ -286,7 +286,7 @@ int CalendarBox::Inner::rowsTop() const {
 
 void CalendarBox::Inner::paintRows(Painter &p, QRect clip) {
 	p.setFont(st::calendarDaysFont);
-	auto ms = getms();
+	auto ms = crl::now();
 	auto y = rowsTop();
 	auto index = -_context->daysShift();
 	auto highlightedIndex = _context->highlightedIndex();
@@ -320,7 +320,7 @@ void CalendarBox::Inner::paintRows(Painter &p, QRect clip) {
 					}
 					return st::windowBgOver;
 				};
-				it->second->paint(p, innerLeft, innerTop, width(), ms, &(colorOverride()->c));
+				it->second->paint(p, innerLeft, innerTop, width(), &(colorOverride()->c));
 				if (it->second->empty()) {
 					_ripples.erase(it);
 				}

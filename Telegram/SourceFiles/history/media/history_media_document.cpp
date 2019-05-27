@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "layout.h"
 #include "storage/localstorage.h"
-#include "media/media_audio.h"
+#include "media/audio/media_audio.h"
 #include "media/player/media_player_instance.h"
 #include "history/history_item_components.h"
 #include "history/history.h"
@@ -24,6 +24,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_history.h"
 
 namespace {
+
+constexpr auto kAudioVoiceMsgUpdateView = crl::time(100);
 
 using TextState = HistoryView::TextState;
 
@@ -82,15 +84,18 @@ void HistoryDocument::createComponents(bool caption) {
 		mask |= HistoryDocumentCaptioned::Bit();
 	}
 	UpdateComponents(mask);
-	if (auto thumbed = Get<HistoryDocumentThumbed>()) {
+	if (const auto thumbed = Get<HistoryDocumentThumbed>()) {
 		thumbed->_linksavel = std::make_shared<DocumentSaveClickHandler>(
+			_data,
+			_parent->data()->fullId());
+		thumbed->_linkopenwithl = std::make_shared<DocumentOpenWithClickHandler>(
 			_data,
 			_parent->data()->fullId());
 		thumbed->_linkcancell = std::make_shared<DocumentCancelClickHandler>(
 			_data,
 			_parent->data()->fullId());
 	}
-	if (auto voice = Get<HistoryDocumentVoice>()) {
+	if (const auto voice = Get<HistoryDocumentVoice>()) {
 		voice->_seekl = std::make_shared<VoiceSeekClickHandler>(
 			_data,
 			_parent->data()->fullId());
@@ -98,7 +103,7 @@ void HistoryDocument::createComponents(bool caption) {
 }
 
 void HistoryDocument::fillNamedFromData(HistoryDocumentNamed *named) {
-	auto nameString = named->_name = _data->composeNameString();
+	const auto nameString = named->_name = _data->composeNameString();
 	named->_namew = st::semiboldFont->width(nameString);
 }
 
@@ -200,8 +205,10 @@ QSize HistoryDocument::countCurrentSize(int newWidth) {
 	return { newWidth, newHeight };
 }
 
-void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const {
+void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, crl::time ms) const {
 	if (width() < st::msgPadding.left() + st::msgPadding.right() + 1) return;
+
+	const auto cornerDownload = downloadInCorner();
 
 	_data->automaticLoad(_realParent->fullId(), _parent->data());
 	bool loaded = _data->loaded(), displayLoading = _data->displayLoading();
@@ -216,8 +223,8 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 			_animation->radial.start(_data->progress());
 		}
 	}
-	bool showPause = updateStatusText();
-	bool radial = isRadialAnimation(ms);
+	const auto showPause = updateStatusText();
+	const auto radial = isRadialAnimation();
 
 	auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;
 	int nameleft = 0, nametop = 0, nameright = 0, statustop = 0, linktop = 0, bottom = 0;
@@ -252,12 +259,8 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 			p.setPen(Qt::NoPen);
 			if (selected) {
 				p.setBrush(st::msgDateImgBgSelected);
-			} else if (isThumbAnimation(ms)) {
-				auto over = _animation->a_thumbOver.current();
-				p.setBrush(anim::brush(st::msgDateImgBg, st::msgDateImgBgOver, over));
 			} else {
-				auto over = ClickHandler::showAsActive(_data->loading() ? _cancell : _savel);
-				p.setBrush(over ? st::msgDateImgBgOver : st::msgDateImgBg);
+				p.setBrush(st::msgDateImgBg);
 			}
 			p.setOpacity(radialOpacity * p.opacity());
 
@@ -286,6 +289,8 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 		if (_data->status != FileUploadFailed) {
 			const auto &lnk = (_data->loading() || _data->uploading())
 				? thumbed->_linkcancell
+				: _data->loaded()
+				? thumbed->_linkopenwithl
 				: thumbed->_linksavel;
 			bool over = ClickHandler::showAsActive(lnk);
 			p.setFont(over ? st::semiboldFont->underline() : st::semiboldFont);
@@ -303,12 +308,8 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 		p.setPen(Qt::NoPen);
 		if (selected) {
 			p.setBrush(outbg ? st::msgFileOutBgSelected : st::msgFileInBgSelected);
-		} else if (isThumbAnimation(ms)) {
-			auto over = _animation->a_thumbOver.current();
-			p.setBrush(anim::brush(outbg ? st::msgFileOutBg : st::msgFileInBg, outbg ? st::msgFileOutBgOver : st::msgFileInBgOver, over));
 		} else {
-			auto over = ClickHandler::showAsActive(_data->loading() ? _cancell : _savel);
-			p.setBrush(outbg ? (over ? st::msgFileOutBgOver : st::msgFileOutBg) : (over ? st::msgFileInBgOver : st::msgFileInBg));
+			p.setBrush(outbg ? st::msgFileOutBg : st::msgFileInBg);
 		}
 
 		{
@@ -316,19 +317,13 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 			p.drawEllipse(inner);
 		}
 
-		if (radial) {
-			QRect rinner(inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine)));
-			auto fg = outbg ? (selected ? st::historyFileOutRadialFgSelected : st::historyFileOutRadialFg) : (selected ? st::historyFileInRadialFgSelected : st::historyFileInRadialFg);
-			_animation->radial.draw(p, rinner, st::msgFileRadialLine, fg);
-		}
-
-		auto icon = ([showPause, radial, this, loaded, outbg, selected] {
-			if (showPause) {
-				return &(outbg ? (selected ? st::historyFileOutPauseSelected : st::historyFileOutPause) : (selected ? st::historyFileInPauseSelected : st::historyFileInPause));
-			} else if (radial || _data->loading()) {
+		const auto icon = [&] {
+			if (!cornerDownload && (_data->loading() || _data->uploading())) {
 				return &(outbg ? (selected ? st::historyFileOutCancelSelected : st::historyFileOutCancel) : (selected ? st::historyFileInCancelSelected : st::historyFileInCancel));
-			} else if (loaded) {
-				if (_data->isAudioFile() || _data->isVoiceMessage()) {
+			} else if (showPause) {
+				return &(outbg ? (selected ? st::historyFileOutPauseSelected : st::historyFileOutPause) : (selected ? st::historyFileInPauseSelected : st::historyFileInPause));
+			} else if (loaded || _data->canBePlayed()) {
+				if (_data->canBePlayed()) {
 					return &(outbg ? (selected ? st::historyFileOutPlaySelected : st::historyFileOutPlay) : (selected ? st::historyFileInPlaySelected : st::historyFileInPlay));
 				} else if (_data->isImage()) {
 					return &(outbg ? (selected ? st::historyFileOutImageSelected : st::historyFileOutImage) : (selected ? st::historyFileInImageSelected : st::historyFileInImage));
@@ -336,14 +331,22 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 				return &(outbg ? (selected ? st::historyFileOutDocumentSelected : st::historyFileOutDocument) : (selected ? st::historyFileInDocumentSelected : st::historyFileInDocument));
 			}
 			return &(outbg ? (selected ? st::historyFileOutDownloadSelected : st::historyFileOutDownload) : (selected ? st::historyFileInDownloadSelected : st::historyFileInDownload));
-		})();
+		}();
 		icon->paintInCenter(p, inner);
+
+		if (radial && !cornerDownload) {
+			QRect rinner(inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine)));
+			auto fg = outbg ? (selected ? st::historyFileOutRadialFgSelected : st::historyFileOutRadialFg) : (selected ? st::historyFileInRadialFgSelected : st::historyFileInRadialFg);
+			_animation->radial.draw(p, rinner, st::msgFileRadialLine, fg);
+		}
+
+		drawCornerDownload(p, selected);
 	}
 	auto namewidth = width() - nameleft - nameright;
 	auto statuswidth = namewidth;
 
 	auto voiceStatusOverride = QString();
-	if (auto voice = Get<HistoryDocumentVoice>()) {
+	if (const auto voice = Get<HistoryDocumentVoice>()) {
 		const VoiceWaveform *wf = nullptr;
 		uchar norm_value = 0;
 		if (const auto voiceData = _data->voice()) {
@@ -363,7 +366,7 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 			if (voice->seeking()) {
 				return voice->seekingCurrent();
 			} else if (voice->_playback) {
-				return voice->_playback->a_progress.current();
+				return voice->_playback->progress.current();
 			}
 			return 0.;
 		})();
@@ -452,6 +455,68 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 	}
 }
 
+bool HistoryDocument::downloadInCorner() const {
+	return _data->isAudioFile()
+		&& _data->canBeStreamed()
+		&& !_data->inappPlaybackFailed()
+		&& IsServerMsgId(_parent->data()->id);
+}
+
+void HistoryDocument::drawCornerDownload(Painter &p, bool selected) const {
+	if (_data->loaded() || !downloadInCorner()) {
+		return;
+	}
+	auto outbg = _parent->hasOutLayout();
+	auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;
+	const auto shift = st::historyAudioDownloadShift;
+	const auto size = st::historyAudioDownloadSize;
+	const auto inner = rtlrect(st::msgFilePadding.left() + shift, st::msgFilePadding.top() - topMinus + shift, size, size, width());
+	auto pen = (selected
+		? (outbg ? st::msgOutBgSelected : st::msgInBgSelected)
+		: (outbg ? st::msgOutBg : st::msgInBg))->p;
+	pen.setWidth(st::lineWidth);
+	p.setPen(pen);
+	if (selected) {
+		p.setBrush(outbg ? st::msgFileOutBgSelected : st::msgFileInBgSelected);
+	} else {
+		p.setBrush(outbg ? st::msgFileOutBg : st::msgFileInBg);
+	}
+	{
+		PainterHighQualityEnabler hq(p);
+		p.drawEllipse(inner);
+	}
+	const auto icon = [&] {
+		if (_data->loading()) {
+			return &(outbg ? (selected ? st::historyAudioOutCancelSelected : st::historyAudioOutCancel) : (selected ? st::historyAudioInCancelSelected : st::historyAudioInCancel));
+		}
+		return &(outbg ? (selected ? st::historyAudioOutDownloadSelected : st::historyAudioOutDownload) : (selected ? st::historyAudioInDownloadSelected : st::historyAudioInDownload));
+	}();
+	icon->paintInCenter(p, inner);
+	if (_animation && _animation->radial.animating()) {
+		const auto rinner = inner.marginsRemoved(QMargins(st::historyAudioRadialLine, st::historyAudioRadialLine, st::historyAudioRadialLine, st::historyAudioRadialLine));
+		auto fg = outbg ? (selected ? st::historyFileOutRadialFgSelected : st::historyFileOutRadialFg) : (selected ? st::historyFileInRadialFgSelected : st::historyFileInRadialFg);
+		_animation->radial.draw(p, rinner, st::historyAudioRadialLine, fg);
+	}
+}
+
+TextState HistoryDocument::cornerDownloadTextState(
+		QPoint point,
+		StateRequest request) const {
+	auto result = TextState(_parent);
+	if (!downloadInCorner() || _data->loaded()) {
+		return result;
+	}
+	auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;
+	const auto shift = st::historyAudioDownloadShift;
+	const auto size = st::historyAudioDownloadSize;
+	const auto inner = rtlrect(st::msgFilePadding.left() + shift, st::msgFilePadding.top() - topMinus + shift, size, size, width());
+	if (inner.contains(point)) {
+		result.link = _data->loading() ? _cancell : _savel;
+	}
+	return result;
+
+}
+
 TextState HistoryDocument::textState(QPoint point, StateRequest request) const {
 	auto result = TextState(_parent);
 
@@ -465,7 +530,7 @@ TextState HistoryDocument::textState(QPoint point, StateRequest request) const {
 
 	auto nameleft = 0, nametop = 0, nameright = 0, statustop = 0, linktop = 0, bottom = 0;
 	auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;
-	if (auto thumbed = Get<HistoryDocumentThumbed>()) {
+	if (const auto thumbed = Get<HistoryDocumentThumbed>()) {
 		nameleft = st::msgFileThumbPadding.left() + st::msgFileThumbSize + st::msgFileThumbPadding.right();
 		nameright = st::msgFileThumbPadding.left();
 		nametop = st::msgFileThumbNameTop - topMinus;
@@ -473,9 +538,8 @@ TextState HistoryDocument::textState(QPoint point, StateRequest request) const {
 		bottom = st::msgFileThumbPadding.top() + st::msgFileThumbSize + st::msgFileThumbPadding.bottom() - topMinus;
 
 		QRect rthumb(rtlrect(st::msgFileThumbPadding.left(), st::msgFileThumbPadding.top() - topMinus, st::msgFileThumbSize, st::msgFileThumbSize, width()));
-
-		if ((_data->loading() || _data->uploading() || !loaded) && rthumb.contains(point)) {
-			result.link = (_data->loading() || _data->uploading()) ? _cancell : _savel;
+		if ((_data->loading() || _data->uploading()) && rthumb.contains(point)) {
+			result.link = _cancell;
 			return result;
 		}
 
@@ -483,6 +547,8 @@ TextState HistoryDocument::textState(QPoint point, StateRequest request) const {
 			if (rtlrect(nameleft, linktop, thumbed->_linkw, st::semiboldFont->height, width()).contains(point)) {
 				result.link = (_data->loading() || _data->uploading())
 					? thumbed->_linkcancell
+					: _data->loaded()
+					? thumbed->_linkopenwithl
 					: thumbed->_linksavel;
 				return result;
 			}
@@ -493,19 +559,22 @@ TextState HistoryDocument::textState(QPoint point, StateRequest request) const {
 		nametop = st::msgFileNameTop - topMinus;
 		bottom = st::msgFilePadding.top() + st::msgFileSize + st::msgFilePadding.bottom() - topMinus;
 
+		if (const auto state = cornerDownloadTextState(point, request); state.link) {
+			return state;
+		}
 		QRect inner(rtlrect(st::msgFilePadding.left(), st::msgFilePadding.top() - topMinus, st::msgFileSize, st::msgFileSize, width()));
-		if ((_data->loading() || _data->uploading() || !loaded) && inner.contains(point)) {
-			result.link = (_data->loading() || _data->uploading()) ? _cancell : _savel;
+		if ((_data->loading() || _data->uploading()) && inner.contains(point) && !downloadInCorner()) {
+			result.link = _cancell;
 			return result;
 		}
 	}
 
-	if (auto voice = Get<HistoryDocumentVoice>()) {
+	if (const auto voice = Get<HistoryDocumentVoice>()) {
 		auto namewidth = width() - nameleft - nameright;
 		auto waveformbottom = st::msgFilePadding.top() - topMinus + st::msgWaveformMax + st::msgWaveformMin;
 		if (QRect(nameleft, nametop, namewidth, waveformbottom - nametop).contains(point)) {
-			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Voice);
-			if (state.id == AudioMsgId(_data, _parent->data()->fullId())
+			const auto state = Media::Player::instance()->getState(AudioMsgId::Type::Voice);
+			if (state.id == AudioMsgId(_data, _parent->data()->fullId(), state.id.externalPlayId())
 				&& !Media::Player::IsStoppedOrStopping(state.state)) {
 				if (!voice->seeking()) {
 					voice->setSeekingStart((point.x() - nameleft) / float64(namewidth));
@@ -517,7 +586,7 @@ TextState HistoryDocument::textState(QPoint point, StateRequest request) const {
 	}
 
 	auto painth = height();
-	if (auto captioned = Get<HistoryDocumentCaptioned>()) {
+	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		if (point.y() >= bottom) {
 			result = TextState(_parent, captioned->_caption.getState(
 				point - QPoint(st::msgPadding.left(), bottom),
@@ -531,8 +600,15 @@ TextState HistoryDocument::textState(QPoint point, StateRequest request) const {
 			painth -= st::msgPadding.bottom();
 		}
 	}
-	if (QRect(0, 0, width(), painth).contains(point) && !_data->loading() && !_data->uploading() && !_data->isNull()) {
-		result.link = _openl;
+	if (QRect(0, 0, width(), painth).contains(point)
+		&& (!_data->loading() || downloadInCorner())
+		&& !_data->uploading()
+		&& !_data->isNull()) {
+		if (loaded || _data->canBePlayed()) {
+			result.link = _openl;
+		} else {
+			result.link = _savel;
+		}
 		return result;
 	}
 	return result;
@@ -575,12 +651,12 @@ bool HistoryDocument::hasTextForCopy() const {
 	return Has<HistoryDocumentCaptioned>();
 }
 
-TextWithEntities HistoryDocument::selectedText(TextSelection selection) const {
+TextForMimeData HistoryDocument::selectedText(TextSelection selection) const {
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		const auto &caption = captioned->_caption;
-		return caption.originalTextWithEntities(selection, ExpandLinksAll);
+		return captioned->_caption.toTextForMimeData(selection);
 	}
-	return TextWithEntities();
+	return TextForMimeData();
 }
 
 bool HistoryDocument::uploading() const {
@@ -621,55 +697,56 @@ bool HistoryDocument::updateStatusText() const {
 	} else if (_data->loading()) {
 		statusSize = _data->loadOffset();
 	} else if (_data->loaded()) {
-		using State = Media::Player::State;
 		statusSize = FileStatusSizeLoaded;
-		if (_data->isVoiceMessage()) {
-			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Voice);
-			if (state.id == AudioMsgId(_data, _parent->data()->fullId())
-				&& !Media::Player::IsStoppedOrStopping(state.state)) {
-				if (auto voice = Get<HistoryDocumentVoice>()) {
-					bool was = (voice->_playback != nullptr);
-					voice->ensurePlayback(this);
-					if (!was || state.position != voice->_playback->_position) {
-						auto prg = state.length ? snap(float64(state.position) / state.length, 0., 1.) : 0.;
-						if (voice->_playback->_position < state.position) {
-							voice->_playback->a_progress.start(prg);
-						} else {
-							voice->_playback->a_progress = anim::value(0., prg);
-						}
-						voice->_playback->_position = state.position;
-						voice->_playback->_a_progress.start();
-					}
-					voice->_lastDurationMs = static_cast<int>((state.length * 1000LL) / state.frequency); // Bad :(
-				}
-
-				statusSize = -1 - (state.position / state.frequency);
-				realDuration = (state.length / state.frequency);
-				showPause = (state.state == State::Playing || state.state == State::Resuming || state.state == State::Starting);
-			} else {
-				if (auto voice = Get<HistoryDocumentVoice>()) {
-					voice->checkPlaybackFinished();
-				}
-			}
-			if (!showPause && (state.id == AudioMsgId(_data, _parent->data()->fullId()))) {
-				showPause = Media::Player::instance()->isSeeking(AudioMsgId::Type::Voice);
-			}
-		} else if (_data->isAudioFile()) {
-			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Song);
-			if (state.id == AudioMsgId(_data, _parent->data()->fullId())
-				&& !Media::Player::IsStoppedOrStopping(state.state)) {
-				statusSize = -1 - (state.position / state.frequency);
-				realDuration = (state.length / state.frequency);
-				showPause = (state.state == State::Playing || state.state == State::Resuming || state.state == State::Starting);
-			} else {
-			}
-			if (!showPause && (state.id == AudioMsgId(_data, _parent->data()->fullId()))) {
-				showPause = Media::Player::instance()->isSeeking(AudioMsgId::Type::Song);
-			}
-		}
 	} else {
 		statusSize = FileStatusSizeReady;
 	}
+
+	if (_data->isVoiceMessage()) {
+		const auto state = Media::Player::instance()->getState(AudioMsgId::Type::Voice);
+		if (state.id == AudioMsgId(_data, _parent->data()->fullId(), state.id.externalPlayId())
+			&& !Media::Player::IsStoppedOrStopping(state.state)) {
+			if (auto voice = Get<HistoryDocumentVoice>()) {
+				bool was = (voice->_playback != nullptr);
+				voice->ensurePlayback(this);
+				if (!was || state.position != voice->_playback->position) {
+					auto prg = state.length ? snap(float64(state.position) / state.length, 0., 1.) : 0.;
+					if (voice->_playback->position < state.position) {
+						voice->_playback->progress.start(prg);
+					} else {
+						voice->_playback->progress = anim::value(0., prg);
+					}
+					voice->_playback->position = state.position;
+					voice->_playback->progressAnimation.start();
+				}
+				voice->_lastDurationMs = static_cast<int>((state.length * 1000LL) / state.frequency); // Bad :(
+			}
+
+			statusSize = -1 - (state.position / state.frequency);
+			realDuration = (state.length / state.frequency);
+			showPause = Media::Player::ShowPauseIcon(state.state);
+		} else {
+			if (auto voice = Get<HistoryDocumentVoice>()) {
+				voice->checkPlaybackFinished();
+			}
+		}
+		if (!showPause && (state.id == AudioMsgId(_data, _parent->data()->fullId(), state.id.externalPlayId()))) {
+			showPause = Media::Player::instance()->isSeeking(AudioMsgId::Type::Voice);
+		}
+	} else if (_data->isAudioFile()) {
+		const auto state = Media::Player::instance()->getState(AudioMsgId::Type::Song);
+		if (state.id == AudioMsgId(_data, _parent->data()->fullId(), state.id.externalPlayId())
+			&& !Media::Player::IsStoppedOrStopping(state.state)) {
+			statusSize = -1 - (state.position / state.frequency);
+			realDuration = (state.length / state.frequency);
+			showPause = Media::Player::ShowPauseIcon(state.state);
+		} else {
+		}
+		if (!showPause && (state.id == AudioMsgId(_data, _parent->data()->fullId(), state.id.externalPlayId()))) {
+			showPause = Media::Player::instance()->isSeeking(AudioMsgId::Type::Song);
+		}
+	}
+
 	if (statusSize != _statusSize) {
 		setStatusSize(statusSize, realDuration);
 	}
@@ -684,24 +761,25 @@ bool HistoryDocument::hideForwardedFrom() const {
 	return _data->isSong();
 }
 
-void HistoryDocument::step_voiceProgress(float64 ms, bool timer) {
+bool HistoryDocument::voiceProgressAnimationCallback(crl::time now) {
 	if (anim::Disabled()) {
-		ms += (2 * AudioVoiceMsgUpdateView);
+		now += (2 * kAudioVoiceMsgUpdateView);
 	}
-	if (auto voice = Get<HistoryDocumentVoice>()) {
+	if (const auto voice = Get<HistoryDocumentVoice>()) {
 		if (voice->_playback) {
-			float64 dt = ms / (2 * AudioVoiceMsgUpdateView);
-			if (dt >= 1) {
-				voice->_playback->_a_progress.stop();
-				voice->_playback->a_progress.finish();
+			const auto dt = (now - voice->_playback->progressAnimation.started())
+				/ float64(2 * kAudioVoiceMsgUpdateView);
+			if (dt >= 1.) {
+				voice->_playback->progressAnimation.stop();
+				voice->_playback->progress.finish();
 			} else {
-				voice->_playback->a_progress.update(qMin(dt, 1.), anim::linear);
+				voice->_playback->progress.update(qMin(dt, 1.), anim::linear);
 			}
-			if (timer) {
-				history()->owner().requestViewRepaint(_parent);
-			}
+			history()->owner().requestViewRepaint(_parent);
+			return (dt < 1.);
 		}
 	}
+	return false;
 }
 
 void HistoryDocument::clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) {
@@ -709,18 +787,17 @@ void HistoryDocument::clickHandlerPressedChanged(const ClickHandlerPtr &p, bool 
 		if (pressed && p == voice->_seekl && !voice->seeking()) {
 			voice->startSeeking();
 		} else if (!pressed && voice->seeking()) {
-			auto type = AudioMsgId::Type::Voice;
-			auto state = Media::Player::mixer()->currentState(type);
-			if (state.id == AudioMsgId(_data, _parent->data()->fullId()) && state.length) {
-				auto currentProgress = voice->seekingCurrent();
-				auto currentPosition = state.frequency
-					? qRound(currentProgress * state.length * 1000. / state.frequency)
-					: 0;
-				Media::Player::mixer()->seek(type, currentPosition);
+			const auto type = AudioMsgId::Type::Voice;
+			const auto state = Media::Player::instance()->getState(type);
+			if (state.id == AudioMsgId(_data, _parent->data()->fullId(), state.id.externalPlayId()) && state.length) {
+				const auto currentProgress = voice->seekingCurrent();
+				Media::Player::instance()->finishSeeking(
+					AudioMsgId::Type::Voice,
+					currentProgress);
 
 				voice->ensurePlayback(this);
-				voice->_playback->_position = 0;
-				voice->_playback->a_progress = anim::value(currentProgress, currentProgress);
+				voice->_playback->position = 0;
+				voice->_playback->progress = anim::value(currentProgress, currentProgress);
 			}
 			voice->stopSeeking();
 		}
@@ -761,7 +838,7 @@ void HistoryDocument::parentTextUpdated() {
 
 TextWithEntities HistoryDocument::getCaption() const {
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
-		return captioned->_caption.originalTextWithEntities();
+		return captioned->_caption.toTextWithEntities();
 	}
 	return TextWithEntities();
 }

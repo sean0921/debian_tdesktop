@@ -376,9 +376,9 @@ QSize Service::performCountOptimalSize() {
 }
 
 bool Service::isHidden() const {
-	if (context() == Context::Feed) {
-		return true;
-	}
+	//if (context() == Context::Feed) { // #feed
+	//	return true;
+	//}
 	return Element::isHidden();
 }
 
@@ -394,7 +394,7 @@ void Service::draw(
 		Painter &p,
 		QRect clip,
 		TextSelection selection,
-		TimeMs ms) const {
+		crl::time ms) const {
 	const auto item = message();
 	auto g = countGeometry();
 	if (g.width() < 1) {
@@ -530,8 +530,8 @@ TextState Service::textState(QPoint point, StateRequest request) const {
 void Service::updatePressed(QPoint point) {
 }
 
-TextWithEntities Service::selectedText(TextSelection selection) const {
-	return message()->_text.originalTextWithEntities(selection);
+TextForMimeData Service::selectedText(TextSelection selection) const {
+	return message()->_text.toTextForMimeData(selection);
 }
 
 TextSelection Service::adjustSelection(

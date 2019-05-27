@@ -16,6 +16,12 @@ class Application;
 class Sandbox final
 	: public QApplication
 	, private QAbstractNativeEventFilter {
+private:
+	auto createEventNestingLevel() {
+		incrementEventNestingLevel();
+		return gsl::finally([=] { decrementEventNestingLevel(); });
+	}
+
 public:
 	Sandbox(not_null<Launcher*> launcher, int &argc, char **argv);
 
@@ -29,15 +35,19 @@ public:
 
 	void postponeCall(FnMut<void()> &&callable);
 	bool notify(QObject *receiver, QEvent *e) override;
-	void registerEnterFromEventLoop();
-	auto createEventNestingLevel() {
-		incrementEventNestingLevel();
-		return gsl::finally([=] { decrementEventNestingLevel(); });
+
+	template <typename Callable>
+	auto customEnterFromEventLoop(Callable &&callable) {
+		registerEnterFromEventLoop();
+		const auto wrap = createEventNestingLevel();
+		return callable();
 	}
 
 	void activateWindowDelayed(not_null<QWidget*> widget);
 	void pauseDelayedWindowActivations();
 	void resumeDelayedWindowActivations();
+
+	rpl::producer<> widgetUpdateRequests() const;
 
 	ProxyData sandboxProxy() const;
 
@@ -45,15 +55,6 @@ public:
 		Expects(QApplication::instance() != nullptr);
 
 		return *static_cast<Sandbox*>(QApplication::instance());
-	}
-
-	bool applicationLaunched() const {
-		return _application != nullptr;
-	}
-	Application &application() const {
-		Expects(_application != nullptr);
-
-		return *_application;
 	}
 
 	~Sandbox();
@@ -72,6 +73,7 @@ private:
 
 	void closeApplication(); // will be done in aboutToQuit()
 	void checkForQuit(); // will be done in exec()
+	void registerEnterFromEventLoop();
 	void incrementEventNestingLevel();
 	void decrementEventNestingLevel();
 	bool nativeEventFilter(
@@ -81,7 +83,7 @@ private:
 	void processPostponedCalls(int level);
 	void singleInstanceChecked();
 	void launchApplication();
-	void runApplication();
+	void setupScreenScale();
 	void execExternal(const QString &cmd);
 
 	// Single instance application
@@ -117,6 +119,8 @@ private:
 
 	QByteArray _lastCrashDump;
 	ProxyData _sandboxProxy;
+
+	rpl::event_stream<> _widgetUpdateRequests;
 
 };
 

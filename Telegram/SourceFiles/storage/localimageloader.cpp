@@ -8,18 +8,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localimageloader.h"
 
 #include "data/data_document.h"
+#include "data/data_session.h"
 #include "core/file_utilities.h"
 #include "core/mime_type.h"
-#include "media/media_audio.h"
+#include "media/audio/media_audio.h"
+#include "media/clip/media_clip_reader.h"
 #include "history/history_item.h"
 #include "boxes/send_files_box.h"
-#include "media/media_clip_reader.h"
-#include "mainwidget.h"
-#include "mainwindow.h"
-#include "lang/lang_keys.h"
 #include "boxes/confirm_box.h"
+#include "lang/lang_keys.h"
 #include "storage/file_download.h"
 #include "storage/storage_media_prepare.h"
+#include "mainwidget.h"
+#include "mainwindow.h"
+#include "auth_session.h"
 
 namespace {
 
@@ -65,7 +67,7 @@ PreparedFileThumbnail PrepareFileThumbnail(QImage &&original) {
 		: std::move(original);
 	result.mtpSize = MTP_photoSize(
 		MTP_string(""),
-		MTP_fileLocationUnavailable(MTP_long(0), MTP_int(0), MTP_long(0)),
+		MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)),
 		MTP_int(result.image.width()),
 		MTP_int(result.image.height()),
 		MTP_int(0));
@@ -192,10 +194,7 @@ SendMediaReady PreparePeerPhoto(PeerId peerId, QImage &&image) {
 	const auto push = [&](const char *type, QImage &&image) {
 		photoSizes.push_back(MTP_photoSize(
 			MTP_string(type),
-			MTP_fileLocationUnavailable(
-				MTP_long(0),
-				MTP_int(0),
-				MTP_long(0)),
+			MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)),
 			MTP_int(image.width()),
 			MTP_int(image.height()), MTP_int(0)));
 		photoThumbs.emplace(type[0], std::move(image));
@@ -211,7 +210,8 @@ SendMediaReady PreparePeerPhoto(PeerId peerId, QImage &&image) {
 		MTP_long(0),
 		MTP_bytes(QByteArray()),
 		MTP_int(unixtime()),
-		MTP_vector<MTPPhotoSize>(photoSizes));
+		MTP_vector<MTPPhotoSize>(photoSizes),
+		MTP_int(MTP::maindc()));
 
 	QString file, filename;
 	int32 filesize = 0;
@@ -234,7 +234,69 @@ SendMediaReady PreparePeerPhoto(PeerId peerId, QImage &&image) {
 		0);
 }
 
-TaskQueue::TaskQueue(TimeMs stopTimeoutMs) {
+SendMediaReady PrepareWallPaper(const QImage &image) {
+	PreparedPhotoThumbs thumbnails;
+	QVector<MTPPhotoSize> sizes;
+
+	QByteArray jpeg;
+	QBuffer jpegBuffer(&jpeg);
+	image.save(&jpegBuffer, "JPG", 87);
+
+	const auto scaled = [&](int size) {
+		return image.scaled(
+			size,
+			size,
+			Qt::KeepAspectRatio,
+			Qt::SmoothTransformation);
+	};
+	const auto push = [&](const char *type, QImage &&image) {
+		sizes.push_back(MTP_photoSize(
+			MTP_string(type),
+			MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)),
+			MTP_int(image.width()),
+			MTP_int(image.height()), MTP_int(0)));
+		thumbnails.emplace(type[0], std::move(image));
+	};
+	push("s", scaled(320));
+
+	const auto filename = qsl("wallpaper.jpg");
+	auto attributes = QVector<MTPDocumentAttribute>(
+		1,
+		MTP_documentAttributeFilename(MTP_string(filename)));
+	attributes.push_back(MTP_documentAttributeImageSize(
+		MTP_int(image.width()),
+		MTP_int(image.height())));
+	const auto id = rand_value<DocumentId>();
+	const auto document = MTP_document(
+		MTP_flags(0),
+		MTP_long(id),
+		MTP_long(0),
+		MTP_bytes(QByteArray()),
+		MTP_int(unixtime()),
+		MTP_string("image/jpeg"),
+		MTP_int(jpeg.size()),
+		MTP_vector<MTPPhotoSize>(sizes),
+		MTP_int(MTP::maindc()),
+		MTP_vector<MTPDocumentAttribute>(attributes));
+
+	return SendMediaReady(
+		SendMediaType::WallPaper,
+		QString(), // filepath
+		filename,
+		jpeg.size(),
+		jpeg,
+		id,
+		0,
+		QString(),
+		PeerId(),
+		MTP_photoEmpty(MTP_long(0)),
+		thumbnails,
+		document,
+		QByteArray(),
+		0);
+}
+
+TaskQueue::TaskQueue(crl::time stopTimeoutMs) {
 	if (stopTimeoutMs > 0) {
 		_stopTimer = new QTimer(this);
 		connect(_stopTimer, SIGNAL(timeout()), this, SLOT(stop()));
@@ -414,7 +476,7 @@ void SendingAlbum::removeItem(not_null<HistoryItem*> item) {
 	if (moveCaption) {
 		const auto caption = item->originalText();
 		const auto firstId = items.front().msgId;
-		if (const auto first = App::histItemById(firstId)) {
+		if (const auto first = Auth().data().message(firstId)) {
 			// We don't need to finishEdition() here, because the whole
 			// album will be rebuilt after one item was removed from it.
 			first->setText(caption);
@@ -468,7 +530,8 @@ FileLoadTask::FileLoadTask(
 	SendMediaType type,
 	const FileLoadTo &to,
 	const TextWithTags &caption,
-	std::shared_ptr<SendingAlbum> album)
+	std::shared_ptr<SendingAlbum> album,
+	MsgId msgIdToEdit)
 : _id(rand_value<uint64>())
 , _to(to)
 , _album(std::move(album))
@@ -476,7 +539,9 @@ FileLoadTask::FileLoadTask(
 , _content(content)
 , _information(std::move(information))
 , _type(type)
-, _caption(caption) {
+, _caption(caption)
+, _msgIdToEdit(msgIdToEdit) {
+	Expects(_msgIdToEdit == 0 || IsServerMsgId(_msgIdToEdit));
 }
 
 FileLoadTask::FileLoadTask(
@@ -546,7 +611,12 @@ bool FileLoadTask::CheckForSong(
 		qstr(".ogg"),
 		qstr(".flac"),
 	};
-	if (!CheckMimeOrExtensions(filepath, result->filemime, mimes, extensions)) {
+	if (!filepath.isEmpty()
+		&& !CheckMimeOrExtensions(
+			filepath,
+			result->filemime,
+			mimes,
+			extensions)) {
 		return false;
 	}
 
@@ -636,6 +706,8 @@ void FileLoadTask::process() {
 		_to,
 		_caption,
 		_album);
+
+	_result->edit = (_msgIdToEdit > 0);
 
 	QString filename, filemime;
 	qint64 filesize = 0;
@@ -796,15 +868,15 @@ void FileLoadTask::process() {
 			} else if (_type != SendMediaType::File) {
 				auto thumb = (w > 100 || h > 100) ? fullimage.scaled(100, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation) : fullimage;
 				photoThumbs.emplace('s', thumb);
-				photoSizes.push_back(MTP_photoSize(MTP_string("s"), MTP_fileLocationUnavailable(MTP_long(0), MTP_int(0), MTP_long(0)), MTP_int(thumb.width()), MTP_int(thumb.height()), MTP_int(0)));
+				photoSizes.push_back(MTP_photoSize(MTP_string("s"), MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)), MTP_int(thumb.width()), MTP_int(thumb.height()), MTP_int(0)));
 
 				auto medium = (w > 320 || h > 320) ? fullimage.scaled(320, 320, Qt::KeepAspectRatio, Qt::SmoothTransformation) : fullimage;
 				photoThumbs.emplace('m', medium);
-				photoSizes.push_back(MTP_photoSize(MTP_string("m"), MTP_fileLocationUnavailable(MTP_long(0), MTP_int(0), MTP_long(0)), MTP_int(medium.width()), MTP_int(medium.height()), MTP_int(0)));
+				photoSizes.push_back(MTP_photoSize(MTP_string("m"), MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)), MTP_int(medium.width()), MTP_int(medium.height()), MTP_int(0)));
 
 				auto full = (w > 1280 || h > 1280) ? fullimage.scaled(1280, 1280, Qt::KeepAspectRatio, Qt::SmoothTransformation) : fullimage;
 				photoThumbs.emplace('y', full);
-				photoSizes.push_back(MTP_photoSize(MTP_string("y"), MTP_fileLocationUnavailable(MTP_long(0), MTP_int(0), MTP_long(0)), MTP_int(full.width()), MTP_int(full.height()), MTP_int(0)));
+				photoSizes.push_back(MTP_photoSize(MTP_string("y"), MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)), MTP_int(full.width()), MTP_int(full.height()), MTP_int(0)));
 
 				{
 					QBuffer buffer(&filedata);
@@ -817,7 +889,8 @@ void FileLoadTask::process() {
 					MTP_long(0),
 					MTP_bytes(QByteArray()),
 					MTP_int(unixtime()),
-					MTP_vector<MTPPhotoSize>(photoSizes));
+					MTP_vector<MTPPhotoSize>(photoSizes),
+					MTP_int(MTP::maindc()));
 
 				if (filesize < 0) {
 					filesize = _result->filesize = filedata.size();
@@ -915,7 +988,12 @@ void FileLoadTask::finish() {
 			LayerOption::KeepOther);
 		removeFromAlbum();
 	} else if (App::main()) {
-		App::main()->onSendFileConfirm(_result);
+		const auto fullId = _msgIdToEdit
+			? std::make_optional(FullMsgId(
+				peerToChannel(_to.peer),
+				_msgIdToEdit))
+			: std::nullopt;
+		App::main()->onSendFileConfirm(_result, fullId);
 	}
 }
 

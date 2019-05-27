@@ -9,10 +9,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_document.h"
 #include "data/data_file_origin.h"
+#include "data/data_session.h"
 #include "ui/image/image_source.h"
 #include "ui/widgets/input_fields.h"
 #include "storage/cache/storage_cache_types.h"
 #include "base/openssl_help.h"
+#include "auth_session.h"
 
 namespace Data {
 namespace {
@@ -61,17 +63,10 @@ Storage::Cache::Key DocumentThumbCacheKey(int32 dcId, uint64 id) {
 	};
 }
 
-Storage::Cache::Key StorageCacheKey(const StorageImageLocation &location) {
-	const auto dcId = uint64(location.dc()) & 0xFFULL;
-	return Storage::Cache::Key{
-		Data::kStorageCacheTag | (dcId << 32) | uint32(location.local()),
-		location.volume()
-	};
-}
-
 Storage::Cache::Key WebDocumentCacheKey(const WebFileLocation &location) {
-	const auto dcId = uint64(location.dc()) & 0xFFULL;
-	const auto url = location.url();
+	const auto CacheDcId = cTestMode() ? 2 : 4;
+	const auto dcId = uint64(CacheDcId) & 0xFFULL;
+	const auto &url = location.url();
 	const auto hash = openssl::Sha256(bytes::make_span(url));
 	const auto bytes = bytes::make_span(hash);
 	const auto bytes1 = bytes.subspan(0, sizeof(uint32));
@@ -173,6 +168,18 @@ bool ReplyPreview::empty() const {
 
 } // namespace Data
 
+uint32 AudioMsgId::CreateExternalPlayId() {
+	static auto Result = uint32(0);
+	return ++Result ? Result : ++Result;
+}
+
+AudioMsgId AudioMsgId::ForVideo() {
+	auto result = AudioMsgId();
+	result._externalPlayId = CreateExternalPlayId();
+	result._type = Type::Video;
+	return result;
+}
+
 void AudioMsgId::setTypeFromAudio() {
 	if (_audio->isVoiceMessage() || _audio->isVideoMessage()) {
 		_type = Type::Voice;
@@ -202,9 +209,7 @@ void MessageCursor::applyTo(not_null<Ui::InputField*> field) {
 }
 
 HistoryItem *FileClickHandler::getActionItem() const {
-	return context()
-		? App::histItemById(context())
-		: nullptr;
+	return Auth().data().message(context());
 }
 
 PeerId PeerFromMessage(const MTPmessage &message) {

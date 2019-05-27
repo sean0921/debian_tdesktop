@@ -27,7 +27,7 @@ struct TextState;
 
 enum class Context : char {
 	History,
-	Feed,
+	//Feed, // #feed
 	AdminLog,
 	ContactPreview
 };
@@ -43,7 +43,7 @@ public:
 	virtual bool elementUnderCursor(not_null<const Element*> view) = 0;
 	virtual void elementAnimationAutoplayAsync(
 		not_null<const Element*> element) = 0;
-	virtual TimeMs elementHighlightTime(
+	virtual crl::time elementHighlightTime(
 		not_null<const Element*> element) = 0;
 	virtual bool elementInSelectionMode() = 0;
 
@@ -177,7 +177,7 @@ public:
 		Painter &p,
 		QRect clip,
 		TextSelection selection,
-		TimeMs ms) const = 0;
+		crl::time ms) const = 0;
 	[[nodiscard]] virtual PointState pointState(QPoint point) const = 0;
 	[[nodiscard]] virtual TextState textState(
 		QPoint point,
@@ -195,7 +195,7 @@ public:
 		int bottom,
 		QPoint point,
 		InfoDisplayType type) const;
-	virtual TextWithEntities selectedText(
+	virtual TextForMimeData selectedText(
 		TextSelection selection) const = 0;
 	[[nodiscard]] virtual TextSelection adjustSelection(
 		TextSelection selection,

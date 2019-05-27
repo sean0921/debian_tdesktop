@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/timer.h"
 #include "ui/rp_widget.h"
+#include "ui/effects/animations.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/widgets/scroll_area.h"
 #include "history/view/history_view_top_bar_widget.h"
@@ -54,7 +55,7 @@ public:
 	void messagesReceived(PeerData *peer, const QVector<MTPMessage> &messages);
 	void messagesReceivedDown(PeerData *peer, const QVector<MTPMessage> &messages);
 
-	TextWithEntities getSelectedText() const;
+	TextForMimeData getSelectedText() const;
 
 	void touchScrollUpdated(const QPoint &screenPos);
 
@@ -188,6 +189,8 @@ private:
 	// if it returns false the enumeration stops immidiately.
 	template <typename Method>
 	void enumerateDates(Method method);
+
+	ClickHandlerPtr hiddenUserpicLink(FullMsgId id);
 
 	void scrollDateCheck();
 	void scrollDateHideByTimer();
@@ -348,9 +351,9 @@ private:
 	bool _touchPrevPosValid = false;
 	bool _touchWaitingAcceleration = false;
 	QPoint _touchSpeed;
-	TimeMs _touchSpeedTime = 0;
-	TimeMs _touchAccelerationTime = 0;
-	TimeMs _touchTime = 0;
+	crl::time _touchSpeedTime = 0;
+	crl::time _touchAccelerationTime = 0;
+	crl::time _touchTime = 0;
 	QTimer _touchScrollTimer;
 
 	base::unique_qptr<Ui::PopupMenu> _menu;
@@ -360,7 +363,7 @@ private:
 	int _visibleAreaBottom = 0;
 
 	bool _scrollDateShown = false;
-	Animation _scrollDateOpacity;
+	Ui::Animations::Simple _scrollDateOpacity;
 	SingleQueuedInvokation _scrollDateCheck;
 	base::Timer _scrollDateHideTimer;
 	Element *_scrollDateLastItem = nullptr;

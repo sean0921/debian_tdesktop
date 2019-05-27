@@ -92,7 +92,6 @@ public:
 	}
 	virtual void paintAction(
 		Painter &p,
-		TimeMs ms,
 		int x,
 		int y,
 		int outerWidth,
@@ -111,7 +110,7 @@ public:
 		Custom,
 	};
 	void refreshStatus();
-	TimeMs refreshStatusTime() const;
+	crl::time refreshStatusTime() const;
 
 	void setAbsoluteIndex(int index) {
 		_absoluteIndex = index;
@@ -158,11 +157,10 @@ public:
 		QPoint point,
 		UpdateCallback updateCallback);
 	void stopLastRipple();
-	void paintRipple(Painter &p, TimeMs ms, int x, int y, int outerWidth);
+	void paintRipple(Painter &p, int x, int y, int outerWidth);
 	void paintUserpic(
 		Painter &p,
 		const style::PeerListItem &st,
-		TimeMs ms,
 		int x,
 		int y,
 		int outerWidth);
@@ -208,7 +206,7 @@ private:
 	Text _name;
 	Text _status;
 	StatusType _statusType = StatusType::Online;
-	TimeMs _statusValidTill = 0;
+	crl::time _statusValidTill = 0;
 	base::flat_set<QChar> _nameFirstLetters;
 	int _absoluteIndex = -1;
 	State _disabledState = State::Active;
@@ -561,7 +559,7 @@ private:
 	RowIndex findRowIndex(not_null<PeerListRow*> row, RowIndex hint = RowIndex());
 	QRect getActionRect(not_null<PeerListRow*> row, RowIndex index) const;
 
-	TimeMs paintRow(Painter &p, TimeMs ms, RowIndex index);
+	crl::time paintRow(Painter &p, crl::time ms, RowIndex index);
 
 	void addRowEntry(not_null<PeerListRow*> row);
 	void addToSearchIndex(not_null<PeerListRow*> row);

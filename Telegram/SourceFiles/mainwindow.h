@@ -132,7 +132,6 @@ public slots:
 
 	void quitFromTray();
 	void showFromTray(QSystemTrayIcon::ActivationReason reason = QSystemTrayIcon::Unknown);
-	void toggleTray(QSystemTrayIcon::ActivationReason reason = QSystemTrayIcon::Unknown);
 	void toggleDisplayNotifyFromTray();
 
 	void onClearFinished(int task, void *manager);
@@ -150,6 +149,9 @@ signals:
 private:
 	[[nodiscard]] bool skipTrayClick() const;
 
+	void handleTrayIconActication(
+		QSystemTrayIcon::ActivationReason reason) override;
+
 	void hideMediaPreview();
 	void ensureLayerCreated();
 	void destroyLayer();
@@ -161,7 +163,7 @@ private:
 	void placeSmallCounter(QImage &img, int size, int count, style::color bg, const QPoint &shift, style::color color) override;
 	QImage icon16, icon32, icon64, iconbig16, iconbig32, iconbig64;
 
-	TimeMs _lastTrayClickTime = 0;
+	crl::time _lastTrayClickTime = 0;
 
 	object_ptr<Window::PasscodeLockWidget> _passcodeLock = { nullptr };
 	object_ptr<Intro::Widget> _intro = { nullptr };

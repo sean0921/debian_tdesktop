@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_memento.h"
 #include "core/click_handler_types.h"
 #include "core/application.h"
-#include "media/media_clip_reader.h"
+#include "media/clip/media_clip_reader.h"
 #include "window/window_controller.h"
 #include "history/history_item_components.h"
 #include "data/data_peer.h"
@@ -246,7 +246,7 @@ void showPeerProfile(not_null<const History*> history) {
 void showPeerHistory(
 		const PeerId &peer,
 		MsgId msgId) {
-	auto ms = getms();
+	auto ms = crl::now();
 	if (auto m = App::main()) {
 		m->ui_showPeerHistory(
 			peer,
@@ -391,6 +391,7 @@ struct Data {
 	int32 StickersRecentLimit = 30;
 	int32 StickersFavedLimit = 5;
 	int32 PinnedDialogsCountMax = 5;
+	int32 PinnedDialogsInFolderMax = 100;
 	QString InternalLinksDomain = qsl("https://t.me/");
 	int32 ChannelsReadMediaPeriod = 86400 * 7;
 	int32 CallReceiveTimeoutMs = 20000;
@@ -410,16 +411,14 @@ struct Data {
 
 	Stickers::Sets StickerSets;
 	Stickers::Order StickerSetsOrder;
-	TimeMs LastStickersUpdate = 0;
-	TimeMs LastRecentStickersUpdate = 0;
-	TimeMs LastFavedStickersUpdate = 0;
+	crl::time LastStickersUpdate = 0;
+	crl::time LastRecentStickersUpdate = 0;
+	crl::time LastFavedStickersUpdate = 0;
 	Stickers::Order FeaturedStickerSetsOrder;
 	int FeaturedStickerSetsUnreadCount = 0;
 	base::Observable<void> FeaturedStickerSetsUnreadCountChanged;
-	TimeMs LastFeaturedStickersUpdate = 0;
+	crl::time LastFeaturedStickersUpdate = 0;
 	Stickers::Order ArchivedStickerSetsOrder;
-
-	CircleMasksMap CircleMasks;
 
 	bool AskDownloadPath = false;
 	QString DownloadPath;
@@ -527,6 +526,7 @@ DefineVar(Global, bool, RevokePrivateInbox);
 DefineVar(Global, int32, StickersRecentLimit);
 DefineVar(Global, int32, StickersFavedLimit);
 DefineVar(Global, int32, PinnedDialogsCountMax);
+DefineVar(Global, int32, PinnedDialogsInFolderMax);
 DefineVar(Global, QString, InternalLinksDomain);
 DefineVar(Global, int32, ChannelsReadMediaPeriod);
 DefineVar(Global, int32, CallReceiveTimeoutMs);
@@ -544,16 +544,14 @@ DefineVar(Global, HiddenPinnedMessagesMap, HiddenPinnedMessages);
 
 DefineVar(Global, Stickers::Sets, StickerSets);
 DefineVar(Global, Stickers::Order, StickerSetsOrder);
-DefineVar(Global, TimeMs, LastStickersUpdate);
-DefineVar(Global, TimeMs, LastRecentStickersUpdate);
-DefineVar(Global, TimeMs, LastFavedStickersUpdate);
+DefineVar(Global, crl::time, LastStickersUpdate);
+DefineVar(Global, crl::time, LastRecentStickersUpdate);
+DefineVar(Global, crl::time, LastFavedStickersUpdate);
 DefineVar(Global, Stickers::Order, FeaturedStickerSetsOrder);
 DefineVar(Global, int, FeaturedStickerSetsUnreadCount);
 DefineRefVar(Global, base::Observable<void>, FeaturedStickerSetsUnreadCountChanged);
-DefineVar(Global, TimeMs, LastFeaturedStickersUpdate);
+DefineVar(Global, crl::time, LastFeaturedStickersUpdate);
 DefineVar(Global, Stickers::Order, ArchivedStickerSetsOrder);
-
-DefineRefVar(Global, CircleMasksMap, CircleMasks);
 
 DefineVar(Global, bool, AskDownloadPath);
 DefineVar(Global, QString, DownloadPath);

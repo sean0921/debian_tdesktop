@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "mtproto/sender.h"
 #include "ui/rp_widget.h"
+#include "ui/effects/animations.h"
 #include "window/window_lock_widgets.h"
 #include "core/core_cloud_password.h"
 
@@ -24,7 +25,7 @@ class FadeWrap;
 } // namespace Ui
 
 namespace Window {
-class ConnectingWidget;
+class ConnectionState;
 } // namespace Window
 
 namespace Intro {
@@ -219,7 +220,7 @@ public:
 		Fn<QString()> _errorTextFactory;
 		object_ptr<Ui::FadeWrap<Ui::FlatLabel>> _error = { nullptr };
 
-		Animation _a_show;
+		Ui::Animations::Simple _a_show;
 		CoverAnimation _coverAnimation;
 		std::unique_ptr<Ui::SlideAnimation> _slideAnimation;
 		QPixmap _coverMask;
@@ -260,7 +261,7 @@ private:
 	void getNearestDC();
 	void showTerms(Fn<void()> callback);
 
-	Animation _a_show;
+	Ui::Animations::Simple _a_show;
 	bool _showBack = false;
 	QPixmap _cacheUnder, _cacheOver;
 
@@ -268,7 +269,7 @@ private:
 
 	Data _data;
 
-	Animation _coverShownAnimation;
+	Ui::Animations::Simple _coverShownAnimation;
 	int _nextTopFrom = 0;
 	int _controlsTopFrom = 0;
 
@@ -281,7 +282,7 @@ private:
 	object_ptr<Ui::FadeWrap<Ui::RoundButton>> _resetAccount = { nullptr };
 	object_ptr<Ui::FadeWrap<Ui::FlatLabel>> _terms = { nullptr };
 
-	base::unique_qptr<Window::ConnectingWidget> _connecting;
+	std::unique_ptr<Window::ConnectionState> _connecting;
 
 	mtpRequestId _resetRequest = 0;
 

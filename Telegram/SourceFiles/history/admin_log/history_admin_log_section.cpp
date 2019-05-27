@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/admin_log/history_admin_log_filter.h"
 #include "profile/profile_back_button.h"
 #include "core/shortcuts.h"
+#include "ui/effects/animations.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/buttons.h"
@@ -77,7 +78,7 @@ private:
 	object_ptr<Ui::CrossButton> _cancel;
 	object_ptr<Ui::RoundButton> _filter;
 
-	Animation _searchShownAnimation;
+	Ui::Animations::Simple _searchShownAnimation;
 	bool _searchShown = false;
 	bool _animatingMode = false;
 	base::Timer _searchTimer;
@@ -194,7 +195,7 @@ int FixedBar::resizeGetHeight(int newWidth) {
 
 	auto searchShownLeft = st::topBarArrowPadding.left();
 	auto searchHiddenLeft = filterLeft - _search->width();
-	auto searchShown = _searchShownAnimation.current(_searchShown ? 1. : 0.);
+	auto searchShown = _searchShownAnimation.value(_searchShown ? 1. : 0.);
 	auto searchCurrentLeft = anim::interpolate(searchHiddenLeft, searchShownLeft, searchShown);
 	_search->moveToLeft(searchCurrentLeft, 0);
 	_backButton->resizeToWidth(searchCurrentLeft);
@@ -328,7 +329,7 @@ void Widget::setupShortcuts() {
 		return isActiveWindow() && !Ui::isLayerShown() && inFocusChain();
 	}) | rpl::start_with_next([=](not_null<Shortcuts::Request*> request) {
 		using Command = Shortcuts::Command;
-		request->check(Command::Search, 1) && request->handle([=] {
+		request->check(Command::Search, 2) && request->handle([=] {
 			_fixedBar->showSearch();
 			return true;
 		});
@@ -396,10 +397,10 @@ void Widget::paintEvent(QPaintEvent *e) {
 	//	updateListSize();
 	//}
 
-	//auto ms = getms();
+	//auto ms = crl::now();
 	//_historyDownShown.step(ms);
 
-	SectionWidget::PaintBackground(this, e);
+	SectionWidget::PaintBackground(this, e->rect());
 }
 
 void Widget::onScroll() {

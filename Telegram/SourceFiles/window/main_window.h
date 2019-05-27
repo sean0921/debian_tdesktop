@@ -12,7 +12,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 
 class BoxContent;
-class MediaView;
 
 namespace Window {
 
@@ -144,6 +143,9 @@ protected:
 	virtual int32 screenNameChecksum(const QString &name) const;
 
 	void setPositionInited();
+	void attachToTrayIcon(not_null<QSystemTrayIcon*> icon);
+	virtual void handleTrayIconActication(
+		QSystemTrayIcon::ActivationReason reason) = 0;
 
 private:
 	void checkAuthSession();

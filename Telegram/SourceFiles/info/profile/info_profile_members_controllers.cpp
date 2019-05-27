@@ -49,7 +49,6 @@ QSize MemberListRow::actionSize() const {
 
 void MemberListRow::paintAction(
 		Painter &p,
-		TimeMs ms,
 		int x,
 		int y,
 		int outerWidth,

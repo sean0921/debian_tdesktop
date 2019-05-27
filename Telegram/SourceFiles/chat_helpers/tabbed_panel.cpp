@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "mainwindow.h"
 #include "core/application.h"
+#include "core/qt_signal_producer.h"
 #include "styles/style_chat_helpers.h"
 
 namespace ChatHelpers {
@@ -90,11 +91,13 @@ TabbedPanel::TabbedPanel(
 		});
 	}, lifetime());
 
-	if (cPlatform() == dbipMac || cPlatform() == dbipMacOld) {
-		connect(App::wnd()->windowHandle(), &QWindow::activeChanged, this, [=] {
-			windowActiveChanged();
-		});
-	}
+	macWindowDeactivateEvents(
+	) | rpl::filter([=] {
+		return !isHidden() && !preventAutoHide();
+	}) | rpl::start_with_next([=] {
+		hideAnimated();
+	}, lifetime());
+
 	setAttribute(Qt::WA_OpaquePaintEvent, false);
 
 	hideChildren();
@@ -146,21 +149,13 @@ void TabbedPanel::updateContentHeight() {
 	update();
 }
 
-void TabbedPanel::windowActiveChanged() {
-	if (!App::wnd()->windowHandle()->isActive() && !isHidden() && !preventAutoHide()) {
-		hideAnimated();
-	}
-}
-
 void TabbedPanel::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto ms = getms();
-
 	// This call can finish _a_show animation and destroy _showAnimation.
-	auto opacityAnimating = _a_opacity.animating(ms);
+	auto opacityAnimating = _a_opacity.animating();
 
-	auto showAnimating = _a_show.animating(ms);
+	auto showAnimating = _a_show.animating();
 	if (_showAnimation && !showAnimating) {
 		_showAnimation.reset();
 		if (!opacityAnimating && !isDestroying()) {
@@ -171,11 +166,11 @@ void TabbedPanel::paintEvent(QPaintEvent *e) {
 
 	if (showAnimating) {
 		Assert(_showAnimation != nullptr);
-		if (auto opacity = _a_opacity.current(_hiding ? 0. : 1.)) {
-			_showAnimation->paintFrame(p, 0, 0, width(), _a_show.current(1.), opacity);
+		if (auto opacity = _a_opacity.value(_hiding ? 0. : 1.)) {
+			_showAnimation->paintFrame(p, 0, 0, width(), _a_show.value(1.), opacity);
 		}
 	} else if (opacityAnimating) {
-		p.setOpacity(_a_opacity.current(_hiding ? 0. : 1.));
+		p.setOpacity(_a_opacity.value(_hiding ? 0. : 1.));
 		p.drawPixmap(0, 0, _cache);
 	} else if (_hiding || isHidden()) {
 		hideFinished();
@@ -208,8 +203,7 @@ void TabbedPanel::leaveEventHook(QEvent *e) {
 	if (preventAutoHide()) {
 		return;
 	}
-	auto ms = getms();
-	if (_a_show.animating(ms) || _a_opacity.animating(ms)) {
+	if (_a_show.animating() || _a_opacity.animating()) {
 		hideAnimated();
 	} else {
 		_hideTimer.callOnce(kHideTimeoutMs);
@@ -226,8 +220,7 @@ void TabbedPanel::otherLeave() {
 		return;
 	}
 
-	auto ms = getms();
-	if (_a_opacity.animating(ms)) {
+	if (_a_opacity.animating()) {
 		hideByTimerOrLeave();
 	} else {
 		_hideTimer.callOnce(0);
@@ -239,7 +232,7 @@ void TabbedPanel::hideFast() {
 
 	_hideTimer.cancel();
 	_hiding = false;
-	_a_opacity.finish();
+	_a_opacity.stop();
 	hideFinished();
 }
 
@@ -262,15 +255,21 @@ void TabbedPanel::hideByTimerOrLeave() {
 	hideAnimated();
 }
 
-void TabbedPanel::prepareCache() {
-	if (_a_opacity.animating()) return;
+void TabbedPanel::prepareCacheFor(bool hiding) {
+	if (_a_opacity.animating()) {
+		return;
+	}
 
 	auto showAnimation = base::take(_a_show);
 	auto showAnimationData = base::take(_showAnimation);
+	_hiding = false;
 	showChildren();
+
 	_cache = Ui::GrabWidget(this);
-	_showAnimation = base::take(showAnimationData);
+
 	_a_show = base::take(showAnimation);
+	_showAnimation = base::take(showAnimationData);
+	_hiding = hiding;
 	if (_a_show.animating()) {
 		hideChildren();
 	}
@@ -280,11 +279,13 @@ void TabbedPanel::startOpacityAnimation(bool hiding) {
 	if (_selector && !_selector->isHidden()) {
 		_selector->beforeHiding();
 	}
-	_hiding = false;
-	prepareCache();
-	_hiding = hiding;
+	prepareCacheFor(hiding);
 	hideChildren();
-	_a_opacity.start([this] { opacityAnimationCallback(); }, _hiding ? 1. : 0., _hiding ? 0. : 1., st::emojiPanDuration);
+	_a_opacity.start(
+		[=] { opacityAnimationCallback(); },
+		_hiding ? 1. : 0.,
+		_hiding ? 0. : 1.,
+		st::emojiPanDuration);
 }
 
 void TabbedPanel::startShowAnimation() {
@@ -311,11 +312,14 @@ QImage TabbedPanel::grabForAnimation() {
 	showChildren();
 	Ui::SendPendingMoveResizeEvents(this);
 
-	auto result = QImage(size() * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
+	auto result = QImage(
+		size() * cIntRetinaFactor(),
+		QImage::Format_ARGB32_Premultiplied);
 	result.setDevicePixelRatio(cRetinaFactor());
 	result.fill(Qt::transparent);
 	if (_selector) {
-		_selector->render(&result, _selector->geometry().topLeft());
+		QPainter p(&result);
+		Ui::RenderWidget(p, _selector, _selector->pos());
 	}
 
 	_a_show = base::take(showAnimation);
@@ -363,7 +367,7 @@ QPointer<TabbedSelector> TabbedPanel::getSelector() const {
 
 void TabbedPanel::hideFinished() {
 	hide();
-	_a_show.finish();
+	_a_show.stop();
 	_showAnimation.reset();
 	_cache = QPixmap();
 	_hiding = false;

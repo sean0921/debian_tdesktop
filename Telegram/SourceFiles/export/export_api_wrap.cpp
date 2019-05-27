@@ -23,7 +23,7 @@ namespace {
 constexpr auto kUserpicsSliceLimit = 100;
 constexpr auto kFileChunkSize = 128 * 1024;
 constexpr auto kFileRequestsCount = 2;
-constexpr auto kFileNextRequestDelay = TimeMs(20);
+constexpr auto kFileNextRequestDelay = crl::time(20);
 constexpr auto kChatsSliceLimit = 100;
 constexpr auto kMessagesSliceLimit = 100;
 constexpr auto kTopPeerSliceLimit = 100;
@@ -53,7 +53,11 @@ LocationKey ComputeLocationKey(const Data::FileLocation &value) {
 		result.type |= (uint64(uint32(data.vlocal_id.v)) << 32);
 		result.id = data.vvolume_id.v;
 	}, [&](const MTPDinputDocumentFileLocation &data) {
+		const auto letter = data.vthumb_size.v.isEmpty()
+			? char(0)
+			: data.vthumb_size.v[0];
 		result.type |= (2ULL << 24);
+		result.type |= (uint64(uint32(letter)) << 16);
 		result.id = data.vid.v;
 	}, [&](const MTPDinputSecureFileLocation &data) {
 		result.type |= (3ULL << 24);
@@ -63,6 +67,23 @@ LocationKey ComputeLocationKey(const Data::FileLocation &value) {
 		result.id = data.vid.v;
 	}, [&](const MTPDinputTakeoutFileLocation &data) {
 		result.type |= (5ULL << 24);
+	}, [&](const MTPDinputPhotoFileLocation &data) {
+		const auto letter = data.vthumb_size.v.isEmpty()
+			? char(0)
+			: data.vthumb_size.v[0];
+		result.type |= (6ULL << 24);
+		result.type |= (uint64(uint32(letter)) << 16);
+		result.id = data.vid.v;
+	}, [&](const MTPDinputPeerPhotoFileLocation &data) {
+		const auto letter = data.is_big() ? char(1) : char(0);
+		result.type |= (7ULL << 24);
+		result.type |= (uint64(uint32(data.vlocal_id.v)) << 32);
+		result.type |= (uint64(uint32(letter)) << 16);
+		result.id = data.vvolume_id.v;
+	}, [&](const MTPDinputStickerSetThumb &data) {
+		result.type |= (8ULL << 24);
+		result.type |= (uint64(uint32(data.vlocal_id.v)) << 32);
+		result.id = data.vvolume_id.v;
 	});
 	return result;
 }
@@ -507,6 +528,7 @@ void ApiWrap::requestDialogsCount() {
 	const auto hash = 0;
 	splitRequest(_startProcess->splitIndex, MTPmessages_GetDialogs(
 		MTP_flags(0),
+		MTPint(), // folder_id
 		MTP_int(offsetDate),
 		MTP_int(offsetId),
 		offsetPeer,
@@ -1076,6 +1098,7 @@ void ApiWrap::requestDialogsSlice() {
 	const auto hash = 0;
 	splitRequest(splitIndex, MTPmessages_GetDialogs(
 		MTP_flags(0),
+		MTPint(), // folder_id
 		MTP_int(_dialogsProcess->offsetDate),
 		MTP_int(_dialogsProcess->offsetId),
 		_dialogsProcess->offsetPeer,

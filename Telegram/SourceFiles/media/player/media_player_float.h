@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "ui/rp_widget.h"
+#include "ui/effects/animations.h"
 
 namespace Window {
 class Controller;
@@ -16,10 +17,18 @@ enum class Column;
 } // namespace Window
 
 namespace Media {
-namespace Clip {
-class Playback;
-} // namespace Clip
+namespace View {
+class PlaybackProgress;
+} // namespace View
+} // namespace Media
 
+namespace Media {
+namespace Streaming {
+class Player;
+} // namespace Streaming
+} // namespace Media
+
+namespace Media {
 namespace Player {
 
 class Float : public Ui::RpWidget, private base::Subscriber {
@@ -44,7 +53,7 @@ public:
 		return outRatio();
 	}
 	bool isReady() const {
-		return (getReader() != nullptr);
+		return (getPlayer() != nullptr);
 	}
 	void detach();
 	bool detached() const {
@@ -69,14 +78,15 @@ protected:
 
 private:
 	float64 outRatio() const;
-	Clip::Reader *getReader() const;
-	Clip::Playback *getPlayback() const;
+	Streaming::Player *getPlayer() const;
+	View::PlaybackProgress *getPlayback() const;
 	void repaintItem();
 	void prepareShadow();
 	bool hasFrame() const;
 	bool fillFrame();
 	QRect getInnerRect() const;
 	void finishDrag(bool closed);
+	void pauseResume();
 
 	not_null<Window::Controller*> _controller;
 	HistoryItem *_item = nullptr;
@@ -131,6 +141,8 @@ public:
 	-> rpl::producer<FloatPlayerFilterWheelEventRequest> {
 		return _filterWheelEvent.events();
 	}
+
+	virtual ~FloatDelegate() = default;
 
 protected:
 	void floatPlayerCheckVisibility() {
@@ -189,11 +201,11 @@ private:
 		bool hiddenByHistory = false;
 		bool visible = false;
 		RectPart animationSide;
-		Animation visibleAnimation;
+		Ui::Animations::Simple visibleAnimation;
 		Window::Column column;
 		RectPart corner;
 		QPoint dragFrom;
-		Animation draggedAnimation;
+		Ui::Animations::Simple draggedAnimation;
 		bool hiddenByDrag = false;
 		object_ptr<Float> widget;
 	};

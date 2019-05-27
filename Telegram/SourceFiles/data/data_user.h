@@ -125,6 +125,9 @@ public:
 	bool isBot() const {
 		return botInfo != nullptr;
 	}
+	bool isSupport() const {
+		return flags() & MTPDuser::Flag::f_support;
+	}
 	bool isInaccessible() const {
 		constexpr auto inaccessible = 0
 			| MTPDuser::Flag::f_deleted;
@@ -224,3 +227,9 @@ private:
 		= 0xFFFFFFFFFFFFFFFFULL;
 
 };
+
+namespace Data {
+
+void ApplyUserUpdate(not_null<UserData*> user, const MTPDuserFull &update);
+
+} // namespace Data

@@ -20,6 +20,7 @@ enum class SendMediaType {
 	Photo,
 	Audio,
 	File,
+	WallPaper,
 	Secure,
 };
 
@@ -83,6 +84,7 @@ struct SendMediaReady {
 };
 
 SendMediaReady PreparePeerPhoto(PeerId peerId, QImage &&image);
+SendMediaReady PrepareWallPaper(const QImage &image);
 
 using TaskId = void*; // no interface, just id
 
@@ -103,7 +105,7 @@ class TaskQueue : public QObject {
 	Q_OBJECT
 
 public:
-	explicit TaskQueue(TimeMs stopTimeoutMs = 0); // <= 0 - never stop worker
+	explicit TaskQueue(crl::time stopTimeoutMs = 0); // <= 0 - never stop worker
 
 	TaskId addTask(std::unique_ptr<Task> &&task);
 	void addTasks(std::vector<std::unique_ptr<Task>> &&tasks);
@@ -226,6 +228,8 @@ struct FileLoadResult {
 	PreparedPhotoThumbs photoThumbs;
 	TextWithTags caption;
 
+	bool edit = false;
+
 	void setFileData(const QByteArray &filedata);
 	void setThumbData(const QByteArray &thumbdata);
 
@@ -250,7 +254,7 @@ struct FileMediaInformation {
 	};
 
 	QString filemime;
-	base::variant<Image, Song, Video> media;
+	base::optional_variant<Image, Song, Video> media;
 };
 
 class FileLoadTask final : public Task {
@@ -271,7 +275,8 @@ public:
 		SendMediaType type,
 		const FileLoadTo &to,
 		const TextWithTags &caption,
-		std::shared_ptr<SendingAlbum> album = nullptr);
+		std::shared_ptr<SendingAlbum> album = nullptr,
+		MsgId msgIdToEdit = 0);
 	FileLoadTask(
 		const QByteArray &voice,
 		int32 duration,
@@ -318,6 +323,7 @@ private:
 	VoiceWaveform _waveform;
 	SendMediaType _type;
 	TextWithTags _caption;
+	MsgId _msgIdToEdit = 0;
 
 	std::shared_ptr<FileLoadResult> _result;
 

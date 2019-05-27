@@ -10,16 +10,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_databases.h"
 #include "chat_helpers/stickers.h"
 #include "dialogs/dialogs_key.h"
+#include "dialogs/dialogs_indexed_list.h"
+#include "dialogs/dialogs_main_list.h"
 #include "data/data_groups.h"
 #include "data/data_notify_settings.h"
 #include "history/history_location_manager.h"
 #include "base/timer.h"
+#include "ui/effects/animations.h"
 
 class Image;
 class HistoryItem;
+class HistoryMessage;
+class HistoryService;
 class BoxContent;
 struct WebPageCollage;
 enum class WebPageType;
+enum class NewMessageType;
 
 namespace HistoryView {
 struct Group;
@@ -35,7 +41,7 @@ class Reader;
 } // namespace Media
 
 namespace Export {
-class ControllerWrap;
+class Controller;
 namespace View {
 class PanelController;
 } // namespace View
@@ -47,9 +53,7 @@ struct SavedCredentials;
 
 namespace Data {
 
-class Feed;
-enum class FeedUpdateFlag;
-struct FeedUpdate;
+class Folder;
 
 class WallPaper;
 
@@ -57,10 +61,15 @@ class Session final {
 public:
 	using ViewElement = HistoryView::Element;
 
+	struct SentData {
+		PeerId peerId = 0;
+		QString text;
+	};
+
 	explicit Session(not_null<AuthSession*> session);
 	~Session();
 
-	AuthSession &session() const {
+	[[nodiscard]] AuthSession &session() const {
 		return *_session;
 	}
 
@@ -70,18 +79,21 @@ public:
 	void startExport(const MTPInputPeer &singlePeer);
 	void suggestStartExport(TimeId availableAt);
 	void clearExportSuggestion();
-	rpl::producer<Export::View::PanelController*> currentExportView() const;
+	[[nodiscard]] auto currentExportView() const
+	-> rpl::producer<Export::View::PanelController*>;
 	bool exportInProgress() const;
 	void stopExportWithConfirmation(FnMut<void()> callback);
 	void stopExport();
 
-	const Passport::SavedCredentials *passportCredentials() const;
+	[[nodiscard]] auto passportCredentials() const
+	-> const Passport::SavedCredentials*;
 	void rememberPassportCredentials(
 		Passport::SavedCredentials data,
-		TimeMs rememberFor);
+		crl::time rememberFor);
 	void forgetPassportCredentials();
 
-	Storage::Cache::Database &cache();
+	[[nodiscard]] Storage::Cache::Database &cache();
+	[[nodiscard]] Storage::Cache::Database &cacheBigFile();
 
 	[[nodiscard]] not_null<PeerData*> peer(PeerId id);
 	[[nodiscard]] not_null<PeerData*> peer(UserId id) = delete;
@@ -122,21 +134,27 @@ public:
 	[[nodiscard]] not_null<History*> history(not_null<const PeerData*> peer);
 	[[nodiscard]] History *historyLoaded(const PeerData *peer);
 
+	void deleteConversationLocally(not_null<PeerData*> peer);
+
 	void registerSendAction(
 		not_null<History*> history,
 		not_null<UserData*> user,
 		const MTPSendMessageAction &action,
 		TimeId when);
 
-	[[nodiscard]] base::Variable<bool> &contactsLoaded() {
+	[[nodiscard]] rpl::variable<bool> &contactsLoaded() {
 		return _contactsLoaded;
 	}
-	[[nodiscard]] base::Variable<bool> &allChatsLoaded() {
-		return _allChatsLoaded;
+	[[nodiscard]] rpl::producer<Data::Folder*> chatsListChanges() const {
+		return _chatsListChanged.events();
 	}
-	[[nodiscard]] base::Observable<void> &moreChatsLoaded() {
-		return _moreChatsLoaded;
+	[[nodiscard]] bool chatsListLoaded(Data::Folder *folder = nullptr);
+	[[nodiscard]] rpl::producer<Data::Folder*> chatsListLoadedEvents() const {
+		return _chatsListLoadedEvents.events();
 	}
+	void chatsListChanged(FolderId folderId);
+	void chatsListChanged(Data::Folder *folder);
+	void chatsListDone(Data::Folder *folder);
 
 	struct ItemVisibilityQuery {
 		not_null<HistoryItem*> item;
@@ -171,7 +189,6 @@ public:
 	void notifyHistoryUnloaded(not_null<const History*> history);
 	[[nodiscard]] rpl::producer<not_null<const History*>> historyUnloaded() const;
 
-	void notifyItemRemoved(not_null<const HistoryItem*> item);
 	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemRemoved() const;
 	void notifyViewRemoved(not_null<const ViewElement*> view);
 	[[nodiscard]] rpl::producer<not_null<const ViewElement*>> viewRemoved() const;
@@ -197,42 +214,39 @@ public:
 	[[nodiscard]] rpl::producer<not_null<UserData*>> megagroupParticipantAdded(
 		not_null<ChannelData*> channel) const;
 
-	void notifyFeedUpdated(not_null<Feed*> feed, FeedUpdateFlag update);
-	[[nodiscard]] rpl::producer<FeedUpdate> feedUpdated() const;
-
 	void notifyStickersUpdated();
 	[[nodiscard]] rpl::producer<> stickersUpdated() const;
 	void notifySavedGifsUpdated();
 	[[nodiscard]] rpl::producer<> savedGifsUpdated() const;
 
-	bool stickersUpdateNeeded(TimeMs now) const {
+	bool stickersUpdateNeeded(crl::time now) const {
 		return stickersUpdateNeeded(_lastStickersUpdate, now);
 	}
-	void setLastStickersUpdate(TimeMs update) {
+	void setLastStickersUpdate(crl::time update) {
 		_lastStickersUpdate = update;
 	}
-	bool recentStickersUpdateNeeded(TimeMs now) const {
+	bool recentStickersUpdateNeeded(crl::time now) const {
 		return stickersUpdateNeeded(_lastRecentStickersUpdate, now);
 	}
-	void setLastRecentStickersUpdate(TimeMs update) {
+	void setLastRecentStickersUpdate(crl::time update) {
 		_lastRecentStickersUpdate = update;
 	}
-	bool favedStickersUpdateNeeded(TimeMs now) const {
+	bool favedStickersUpdateNeeded(crl::time now) const {
 		return stickersUpdateNeeded(_lastFavedStickersUpdate, now);
 	}
-	void setLastFavedStickersUpdate(TimeMs update) {
+	void setLastFavedStickersUpdate(crl::time update) {
 		_lastFavedStickersUpdate = update;
 	}
-	bool featuredStickersUpdateNeeded(TimeMs now) const {
+	bool featuredStickersUpdateNeeded(crl::time now) const {
 		return stickersUpdateNeeded(_lastFeaturedStickersUpdate, now);
 	}
-	void setLastFeaturedStickersUpdate(TimeMs update) {
+	void setLastFeaturedStickersUpdate(crl::time update) {
 		_lastFeaturedStickersUpdate = update;
 	}
-	bool savedGifsUpdateNeeded(TimeMs now) const {
+	bool savedGifsUpdateNeeded(crl::time now) const {
 		return stickersUpdateNeeded(_lastSavedGifsUpdate, now);
 	}
-	void setLastSavedGifsUpdate(TimeMs update) {
+	void setLastSavedGifsUpdate(crl::time update) {
 		_lastSavedGifsUpdate = update;
 	}
 	int featuredStickerSetsUnreadCount() const {
@@ -286,14 +300,80 @@ public:
 	void applyUpdate(const MTPDupdateChatParticipantAdmin &update);
 	void applyUpdate(const MTPDupdateChatDefaultBannedRights &update);
 
-	int pinnedDialogsCount() const;
-	const std::deque<Dialogs::Key> &pinnedDialogsOrder() const;
-	void setPinnedDialog(const Dialogs::Key &key, bool pinned);
-	void applyPinnedDialogs(const QVector<MTPDialog> &list);
-	void applyPinnedDialogs(const QVector<MTPDialogPeer> &list);
-	void reorderTwoPinnedDialogs(
+	void applyDialogs(
+		Data::Folder *requestFolder,
+		const QVector<MTPMessage> &messages,
+		const QVector<MTPDialog> &dialogs,
+		std::optional<int> count = std::nullopt);
+
+	int pinnedChatsCount(Data::Folder *folder) const;
+	int pinnedChatsLimit(Data::Folder *folder) const;
+	const std::vector<Dialogs::Key> &pinnedChatsOrder(
+		Data::Folder *folder) const;
+	void setChatPinned(const Dialogs::Key &key, bool pinned);
+	void clearPinnedChats(Data::Folder *folder);
+	void applyPinnedChats(
+		Data::Folder *folder,
+		const QVector<MTPDialogPeer> &list);
+	void reorderTwoPinnedChats(
 		const Dialogs::Key &key1,
 		const Dialogs::Key &key2);
+
+	template <typename ...Args>
+	not_null<HistoryMessage*> makeMessage(Args &&...args) {
+		return static_cast<HistoryMessage*>(
+			registerMessage(
+				std::make_unique<HistoryMessage>(
+					std::forward<Args>(args)...)));
+	}
+
+	template <typename ...Args>
+	not_null<HistoryService*> makeServiceMessage(Args &&...args) {
+		return static_cast<HistoryService*>(
+			registerMessage(
+				std::make_unique<HistoryService>(
+					std::forward<Args>(args)...)));
+	}
+	void destroyMessage(not_null<HistoryItem*> item);
+
+	// Returns true if item found and it is not detached.
+	bool checkEntitiesAndViewsUpdate(const MTPDmessage &data);
+	void updateEditedMessage(const MTPMessage &data);
+	void processMessages(
+		const QVector<MTPMessage> &data,
+		NewMessageType type);
+	void processMessages(
+		const MTPVector<MTPMessage> &data,
+		NewMessageType type);
+	void processMessagesDeleted(
+		ChannelId channelId,
+		const QVector<MTPint> &data);
+
+	[[nodiscard]] HistoryItem *message(
+		ChannelId channelId,
+		MsgId itemId) const;
+	[[nodiscard]] HistoryItem *message(
+		const ChannelData *channel,
+		MsgId itemId) const;
+	[[nodiscard]] HistoryItem *message(FullMsgId itemId) const;
+
+	void updateDependentMessages(not_null<HistoryItem*> item);
+	void registerDependentMessage(
+		not_null<HistoryItem*> dependent,
+		not_null<HistoryItem*> dependency);
+	void unregisterDependentMessage(
+		not_null<HistoryItem*> dependent,
+		not_null<HistoryItem*> dependency);
+
+	void registerMessageRandomId(uint64 randomId, FullMsgId itemId);
+	void unregisterMessageRandomId(uint64 randomId);
+	[[nodiscard]] FullMsgId messageIdByRandomId(uint64 randomId) const;
+	void registerMessageSentData(
+		uint64 randomId,
+		PeerId peerId,
+		const QString &text);
+	void unregisterMessageSentData(uint64 randomId);
+	[[nodiscard]] SentData messageSentData(uint64 randomId) const;
 
 	void photoLoadSettingsChanged();
 	void documentLoadSettingsChanged();
@@ -319,17 +399,16 @@ public:
 
 	int unreadBadge() const;
 	bool unreadBadgeMuted() const;
-	int unreadBadgeIgnoreOne(History *history) const;
-	bool unreadBadgeMutedIgnoreOne(History *history) const;
+	int unreadBadgeIgnoreOne(const Dialogs::Key &key) const;
+	bool unreadBadgeMutedIgnoreOne(const Dialogs::Key &key) const;
 	int unreadOnlyMutedBadge() const;
 
-	void unreadIncrement(int count, bool muted);
-	void unreadMuteChanged(int count, bool muted);
-	void unreadEntriesChanged(
-		int withUnreadDelta,
-		int mutedWithUnreadDelta);
+	void unreadStateChanged(
+		const Dialogs::Key &key,
+		const Dialogs::UnreadState &wasState);
+	void unreadEntryChanged(const Dialogs::Key &key, bool added);
 
-	void selfDestructIn(not_null<HistoryItem*> item, TimeMs delay);
+	void selfDestructIn(not_null<HistoryItem*> item, crl::time delay);
 
 	[[nodiscard]] not_null<PhotoData*> photo(PhotoId id);
 	not_null<PhotoData*> processPhoto(const MTPPhoto &data);
@@ -342,6 +421,8 @@ public:
 		const uint64 &access,
 		const QByteArray &fileReference,
 		TimeId date,
+		int32 dc,
+		bool hasSticker,
 		const ImagePtr &thumbnailInline,
 		const ImagePtr &thumbnailSmall,
 		const ImagePtr &thumbnail,
@@ -351,7 +432,7 @@ public:
 		const MTPPhoto &data);
 	[[nodiscard]] PhotoData *photoFromWeb(
 		const MTPWebDocument &data,
-		ImagePtr thumbnailSmall = ImagePtr(),
+		ImagePtr thumbnail = ImagePtr(),
 		bool willBecomeNormal = false);
 
 	[[nodiscard]] not_null<DocumentData*> document(DocumentId id);
@@ -492,11 +573,35 @@ public:
 	void registerItemView(not_null<ViewElement*> view);
 	void unregisterItemView(not_null<ViewElement*> view);
 
-	not_null<Feed*> feed(FeedId id);
-	Feed *feedLoaded(FeedId id);
-	void setDefaultFeedId(FeedId id);
-	FeedId defaultFeedId() const;
-	rpl::producer<FeedId> defaultFeedIdValue() const;
+	[[nodiscard]] not_null<Folder*> folder(FolderId id);
+	[[nodiscard]] Folder *folderLoaded(FolderId id) const;
+	not_null<Folder*> processFolder(const MTPFolder &data);
+	not_null<Folder*> processFolder(const MTPDfolder &data);
+	//void setDefaultFeedId(FeedId id); // #feed
+	//FeedId defaultFeedId() const;
+	//rpl::producer<FeedId> defaultFeedIdValue() const;
+
+	not_null<Dialogs::MainList*> chatsList(Data::Folder *folder = nullptr);
+	not_null<const Dialogs::MainList*> chatsList(
+		Data::Folder *folder = nullptr) const;
+	not_null<Dialogs::IndexedList*> contactsList();
+	not_null<Dialogs::IndexedList*> contactsNoChatsList();
+
+	struct RefreshChatListEntryResult {
+		bool changed = false;
+		bool importantChanged = false;
+		Dialogs::PositionChange moved;
+		Dialogs::PositionChange importantMoved;
+	};
+	RefreshChatListEntryResult refreshChatListEntry(Dialogs::Key key);
+	void removeChatListEntry(Dialogs::Key key);
+
+	struct DialogsRowReplacement {
+		not_null<Dialogs::Row*> old;
+		Dialogs::Row *now = nullptr;
+	};
+	void dialogsRowReplaced(DialogsRowReplacement replacement);
+	rpl::producer<DialogsRowReplacement> dialogsRowReplacements() const;
 
 	void requestNotifySettings(not_null<PeerData*> peer);
 	void applyNotifySetting(
@@ -508,7 +613,7 @@ public:
 		std::optional<bool> silentPosts = std::nullopt);
 	bool notifyIsMuted(
 		not_null<const PeerData*> peer,
-		TimeMs *changesIn = nullptr) const;
+		crl::time *changesIn = nullptr) const;
 	bool notifySilentPosts(not_null<const PeerData*> peer) const;
 	bool notifyMuteUnknown(not_null<const PeerData*> peer) const;
 	bool notifySilentPostsUnknown(not_null<const PeerData*> peer) const;
@@ -539,28 +644,37 @@ public:
 	}
 
 	bool updateWallpapers(const MTPaccount_WallPapers &data);
+	void removeWallpaper(const WallPaper &paper);
 	const std::vector<WallPaper> &wallpapers() const;
 	int32 wallpapersHash() const;
 
 	void clearLocalStorage();
 
 private:
+	using Messages = std::unordered_map<MsgId, std::unique_ptr<HistoryItem>>;
+
 	void suggestStartExport();
 
 	void setupContactViewsViewer();
 	void setupChannelLeavingViewer();
+	void setupPeerNameViewer();
+	void setupUserIsContactViewer();
 
 	void checkSelfDestructItems();
-	int computeUnreadBadge(
-		int full,
-		int muted,
-		int entriesFull,
-		int entriesMuted) const;
-	bool computeUnreadBadgeMuted(
-		int full,
-		int muted,
-		int entriesFull,
-		int entriesMuted) const;
+
+	int computeUnreadBadge(const Dialogs::UnreadState &state) const;
+	bool computeUnreadBadgeMuted(const Dialogs::UnreadState &state) const;
+
+	void applyDialog(Data::Folder *requestFolder, const MTPDdialog &data);
+	void applyDialog(
+		Data::Folder *requestFolder,
+		const MTPDdialogFolder &data);
+
+	const Messages *messagesList(ChannelId channelId) const;
+	not_null<Messages*> messagesListForInsert(ChannelId channelId);
+	HistoryItem *registerMessage(std::unique_ptr<HistoryItem> item);
+	void changeMessageId(ChannelId channel, MsgId wasId, MsgId nowId);
+	void removeDependencyMessage(not_null<HistoryItem*> item);
 
 	void photoApplyFields(
 		not_null<PhotoData*> photo,
@@ -573,6 +687,8 @@ private:
 		const uint64 &access,
 		const QByteArray &fileReference,
 		TimeId date,
+		int32 dc,
+		bool hasSticker,
 		const ImagePtr &thumbnailInline,
 		const ImagePtr &thumbnailSmall,
 		const ImagePtr &thumbnail,
@@ -633,21 +749,24 @@ private:
 		PhotoData *photo,
 		DocumentData *document);
 
-	bool stickersUpdateNeeded(TimeMs lastUpdate, TimeMs now) const {
-		constexpr auto kStickersUpdateTimeout = TimeMs(3600'000);
+	void folderApplyFields(
+		not_null<Folder*> folder,
+		const MTPDfolder &data);
+
+	bool stickersUpdateNeeded(crl::time lastUpdate, crl::time now) const {
+		constexpr auto kStickersUpdateTimeout = crl::time(3600'000);
 		return (lastUpdate == 0)
 			|| (now >= lastUpdate + kStickersUpdateTimeout);
 	}
 	void userIsContactUpdated(not_null<UserData*> user);
 
-	void clearPinnedDialogs();
-	void setIsPinned(const Dialogs::Key &key, bool pinned);
+	void setPinnedFromDialog(const Dialogs::Key &key, bool pinned);
 
 	NotifySettings &defaultNotifySettings(not_null<const PeerData*> peer);
 	const NotifySettings &defaultNotifySettings(
 		not_null<const PeerData*> peer) const;
 	void unmuteByFinished();
-	void unmuteByFinishedDelayed(TimeMs delay);
+	void unmuteByFinishedDelayed(crl::time delay);
 	void updateNotifySettingsLocal(not_null<PeerData*> peer);
 
 	template <typename Method>
@@ -660,23 +779,24 @@ private:
 		const MTPMessageMedia &media,
 		TimeId date);
 
-	void step_typings(TimeMs ms, bool timer);
+	bool sendActionsAnimationCallback(crl::time now);
 
 	void setWallpapers(const QVector<MTPWallPaper> &data, int32 hash);
 
 	not_null<AuthSession*> _session;
 
 	Storage::DatabasePointer _cache;
+	Storage::DatabasePointer _bigFileCache;
 
-	std::unique_ptr<Export::ControllerWrap> _export;
+	std::unique_ptr<Export::Controller> _export;
 	std::unique_ptr<Export::View::PanelController> _exportPanel;
 	rpl::event_stream<Export::View::PanelController*> _exportViewChanges;
 	TimeId _exportAvailableAt = 0;
 	QPointer<BoxContent> _exportSuggestion;
 
-	base::Variable<bool> _contactsLoaded = { false };
-	base::Variable<bool> _allChatsLoaded = { false };
-	base::Observable<void> _moreChatsLoaded;
+	rpl::variable<bool> _contactsLoaded = false;
+	rpl::event_stream<Data::Folder*> _chatsListLoadedEvents;
+	rpl::event_stream<Data::Folder*> _chatsListChanged;
 	base::Observable<ItemVisibilityQuery> _queryItemVisibility;
 	rpl::event_stream<IdChange> _itemIdChanges;
 	rpl::event_stream<not_null<const HistoryItem*>> _itemLayoutChanges;
@@ -696,15 +816,15 @@ private:
 	rpl::event_stream<not_null<History*>> _historyChanged;
 	rpl::event_stream<MegagroupParticipant> _megagroupParticipantRemoved;
 	rpl::event_stream<MegagroupParticipant> _megagroupParticipantAdded;
-	rpl::event_stream<FeedUpdate> _feedUpdates;
+	rpl::event_stream<DialogsRowReplacement> _dialogsRowReplacements;
 
 	rpl::event_stream<> _stickersUpdated;
 	rpl::event_stream<> _savedGifsUpdated;
-	TimeMs _lastStickersUpdate = 0;
-	TimeMs _lastRecentStickersUpdate = 0;
-	TimeMs _lastFavedStickersUpdate = 0;
-	TimeMs _lastFeaturedStickersUpdate = 0;
-	TimeMs _lastSavedGifsUpdate = 0;
+	crl::time _lastStickersUpdate = 0;
+	crl::time _lastRecentStickersUpdate = 0;
+	crl::time _lastFavedStickersUpdate = 0;
+	crl::time _lastFeaturedStickersUpdate = 0;
+	crl::time _lastSavedGifsUpdate = 0;
 	rpl::variable<int> _featuredStickerSetsUnreadCount = 0;
 	Stickers::Sets _stickerSets;
 	Stickers::Order _stickerSetsOrder;
@@ -712,17 +832,25 @@ private:
 	Stickers::Order _archivedStickerSetsOrder;
 	Stickers::SavedGifs _savedGifs;
 
-	int _unreadFull = 0;
-	int _unreadMuted = 0;
-	int _unreadEntriesFull = 0;
-	int _unreadEntriesMuted = 0;
+	Dialogs::MainList _chatsList;
+	Dialogs::IndexedList _contactsList;
+	Dialogs::IndexedList _contactsNoChatsList;
+
+	Messages _messages;
+	std::map<ChannelId, Messages> _channelMessages;
+	std::map<
+		not_null<HistoryItem*>,
+		base::flat_set<not_null<HistoryItem*>>> _dependentMessages;
+
+	base::flat_map<uint64, FullMsgId> _messageByRandomId;
+	base::flat_map<uint64, SentData> _sentMessagesData;
 
 	base::Timer _selfDestructTimer;
 	std::vector<FullMsgId> _selfDestructItems;
 
 	// When typing in this history started.
-	base::flat_map<not_null<History*>, TimeMs> _sendActions;
-	BasicAnimation _a_sendActions;
+	base::flat_map<not_null<History*>, crl::time> _sendActions;
+	Ui::Animations::Basic _sendActionsAnimation;
 
 	std::unordered_map<
 		PhotoId,
@@ -774,9 +902,8 @@ private:
 	base::flat_set<not_null<GameData*>> _gamesUpdated;
 	base::flat_set<not_null<PollData*>> _pollsUpdated;
 
-	std::deque<Dialogs::Key> _pinnedDialogs;
-	base::flat_map<FeedId, std::unique_ptr<Feed>> _feeds;
-	rpl::variable<FeedId> _defaultFeedId = FeedId();
+	base::flat_map<FolderId, std::unique_ptr<Folder>> _folders;
+	//rpl::variable<FeedId> _defaultFeedId = FeedId(); // #feed
 	Groups _groups;
 	std::unordered_map<
 		not_null<const HistoryItem*>,

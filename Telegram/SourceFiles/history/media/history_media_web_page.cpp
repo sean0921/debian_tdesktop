@@ -118,7 +118,7 @@ QSize HistoryWebPage::countOptimalSize() {
 			const auto simplified = simplify(_data->url);
 			const auto full = _parent->data()->originalText();
 			for (const auto &entity : full.entities) {
-				if (entity.type() != EntityInTextUrl) {
+				if (entity.type() != EntityType::Url) {
 					continue;
 				}
 				const auto link = full.text.mid(
@@ -288,7 +288,7 @@ QSize HistoryWebPage::countCurrentSize(int newWidth) {
 	auto linesMax = isLogEntryOriginal() ? kMaxOriginalEntryLines : 5;
 	auto siteNameLines = _siteNameWidth ? 1 : 0;
 	auto siteNameHeight = _siteNameWidth ? lineHeight : 0;
-	if (_asArticle) {
+	if (asArticle()) {
 		_pixh = linesMax * lineHeight;
 		do {
 			_pixw = articleThumbWidth(_data->photo, _pixh);
@@ -389,7 +389,7 @@ void HistoryWebPage::refreshParentId(not_null<HistoryItem*> realParent) {
 	}
 }
 
-void HistoryWebPage::draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const {
+void HistoryWebPage::draw(Painter &p, const QRect &r, TextSelection selection, crl::time ms) const {
 	if (width() < st::msgPadding.left() + st::msgPadding.right() + 1) return;
 	auto paintx = 0, painty = 0, paintw = width(), painth = height();
 
@@ -406,7 +406,7 @@ void HistoryWebPage::draw(Painter &p, const QRect &r, TextSelection selection, T
 	auto bshift = padding.bottom();
 	paintw -= padding.left() + padding.right();
 	auto attachAdditionalInfoText = _attach ? _attach->additionalInfoString() : QString();
-	if (_asArticle) {
+	if (asArticle()) {
 		bshift += bottomInfoPadding();
 	} else if (!attachAdditionalInfoText.isEmpty()) {
 		bshift += bottomInfoPadding();
@@ -418,7 +418,7 @@ void HistoryWebPage::draw(Painter &p, const QRect &r, TextSelection selection, T
 	p.fillRect(bar, barfg);
 
 	auto lineHeight = unitedLineHeight();
-	if (_asArticle) {
+	if (asArticle()) {
 		const auto contextId = _parent->data()->fullId();
 		_data->photo->loadThumbnail(contextId);
 		bool full = _data->photo->thumbnail()->loaded();
@@ -525,6 +525,10 @@ void HistoryWebPage::draw(Painter &p, const QRect &r, TextSelection selection, T
 	}
 }
 
+bool HistoryWebPage::asArticle() const {
+	return _asArticle && (_data->photo != nullptr);
+}
+
 TextState HistoryWebPage::textState(QPoint point, StateRequest request) const {
 	auto result = TextState(_parent);
 
@@ -537,14 +541,14 @@ TextState HistoryWebPage::textState(QPoint point, StateRequest request) const {
 	auto padding = inBubblePadding();
 	auto tshift = padding.top();
 	auto bshift = padding.bottom();
-	if (_asArticle || (isBubbleBottom() && _attach && _attach->customInfoLayout() && _attach->width() + _parent->skipBlockWidth() > paintw + bubble.left() + bubble.right())) {
+	if (asArticle() || (isBubbleBottom() && _attach && _attach->customInfoLayout() && _attach->width() + _parent->skipBlockWidth() > paintw + bubble.left() + bubble.right())) {
 		bshift += bottomInfoPadding();
 	}
 	paintw -= padding.left() + padding.right();
 
 	auto lineHeight = unitedLineHeight();
 	auto inThumb = false;
-	if (_asArticle) {
+	if (asArticle()) {
 		auto pw = qMax(_pixw, lineHeight);
 		if (rtlrect(padding.left() + paintw - pw, 0, pw, _pixh, width()).contains(point)) {
 			inThumb = true;
@@ -681,22 +685,17 @@ bool HistoryWebPage::isDisplayed() const {
 		&& !item->Has<HistoryMessageLogEntryOriginal>();
 }
 
-TextWithEntities HistoryWebPage::selectedText(TextSelection selection) const {
-	auto titleResult = _title.originalTextWithEntities(
-		selection,
-		ExpandLinksAll);
-	auto descriptionResult = _description.originalTextWithEntities(
-		toDescriptionSelection(selection),
-		ExpandLinksAll);
-	if (titleResult.text.isEmpty()) {
+TextForMimeData HistoryWebPage::selectedText(TextSelection selection) const {
+	auto titleResult = _title.toTextForMimeData(selection);
+	auto descriptionResult = _description.toTextForMimeData(
+		toDescriptionSelection(selection));
+	if (titleResult.empty()) {
 		return descriptionResult;
-	} else if (descriptionResult.text.isEmpty()) {
+	} else if (descriptionResult.empty()) {
 		return titleResult;
 	}
 
-	titleResult.text += '\n';
-	TextUtilities::Append(titleResult, std::move(descriptionResult));
-	return titleResult;
+	return titleResult.append('\n').append(std::move(descriptionResult));
 }
 
 QMargins HistoryWebPage::inBubblePadding() const {

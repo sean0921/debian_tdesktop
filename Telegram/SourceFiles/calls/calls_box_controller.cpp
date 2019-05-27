@@ -97,7 +97,6 @@ public:
 	}
 	void paintAction(
 		Painter &p,
-		TimeMs ms,
 		int x,
 		int y,
 		int outerWidth,
@@ -143,7 +142,6 @@ void BoxController::Row::paintStatusText(Painter &p, const style::PeerListItem &
 
 void BoxController::Row::paintAction(
 		Painter &p,
-		TimeMs ms,
 		int x,
 		int y,
 		int outerWidth,
@@ -151,7 +149,7 @@ void BoxController::Row::paintAction(
 		bool actionSelected) {
 	auto size = actionSize();
 	if (_actionRipple) {
-		_actionRipple->paint(p, x + st::callReDial.rippleAreaPosition.x(), y + st::callReDial.rippleAreaPosition.y(), outerWidth, ms);
+		_actionRipple->paint(p, x + st::callReDial.rippleAreaPosition.x(), y + st::callReDial.rippleAreaPosition.y(), outerWidth);
 		if (_actionRipple->empty()) {
 			_actionRipple.reset();
 		}
@@ -208,8 +206,8 @@ void BoxController::Row::stopLastActionRipple() {
 
 void BoxController::prepare() {
 	Auth().data().itemRemoved(
-	) | rpl::start_with_next([this](auto item) {
-		if (auto row = rowForItem(item)) {
+	) | rpl::start_with_next([=](not_null<const HistoryItem*> item) {
+		if (const auto row = rowForItem(item)) {
 			row->itemRemoved(item);
 			if (!row->hasItems()) {
 				delegate()->peerListRemoveRow(row);
@@ -220,8 +218,8 @@ void BoxController::prepare() {
 			delegate()->peerListRefreshRows();
 		}
 	}, lifetime());
-	subscribe(Current().newServiceMessage(), [this](const FullMsgId &msgId) {
-		if (auto item = App::histItemById(msgId)) {
+	subscribe(Current().newServiceMessage(), [=](FullMsgId msgId) {
+		if (const auto item = Auth().data().message(msgId)) {
 			insertRow(item, InsertWay::Prepend);
 		}
 	});
@@ -303,10 +301,12 @@ void BoxController::receivedCalls(const QVector<MTPMessage> &result) {
 	}
 
 	for (const auto &message : result) {
-		auto msgId = IdFromMessage(message);
-		auto peerId = PeerFromMessage(message);
-		if (auto peer = Auth().data().peerLoaded(peerId)) {
-			auto item = Auth().data().addNewMessage(message, NewMessageExisting);
+		const auto msgId = IdFromMessage(message);
+		const auto peerId = PeerFromMessage(message);
+		if (const auto peer = Auth().data().peerLoaded(peerId)) {
+			const auto item = Auth().data().addNewMessage(
+				message,
+				NewMessageType::Existing);
 			insertRow(item, InsertWay::Append);
 		} else {
 			LOG(("API Error: a search results with not loaded peer %1").arg(peerId));

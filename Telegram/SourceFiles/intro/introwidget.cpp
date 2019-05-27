@@ -30,12 +30,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_connecting_widget.h"
 #include "window/window_lock_widgets.h"
 #include "data/data_user.h"
-#include "styles/style_boxes.h"
-#include "styles/style_intro.h"
-#include "styles/style_window.h"
 #include "window/themes/window_theme.h"
 #include "lang/lang_cloud_manager.h"
 #include "auth_session.h"
+#include "styles/style_boxes.h"
+#include "styles/style_intro.h"
+#include "styles/style_window.h"
 
 namespace Intro {
 namespace {
@@ -94,6 +94,7 @@ Widget::Widget(QWidget *parent) : RpWidget(parent)
 	show();
 	showControls();
 	getStep()->showFast();
+	setInnerFocus();
 
 	cSetPasswordRecovered(false);
 
@@ -114,7 +115,7 @@ Widget::Widget(QWidget *parent) : RpWidget(parent)
 }
 
 void Widget::setupConnectingWidget() {
-	_connecting = Window::ConnectingWidget::CreateDefaultWidget(
+	_connecting = std::make_unique<Window::ConnectionState>(
 		this,
 		rpl::single(true));
 }
@@ -488,12 +489,12 @@ void Widget::showAnimated(const QPixmap &bgAnimCache, bool back) {
 
 	(_showBack ? _cacheOver : _cacheUnder) = bgAnimCache;
 
-	_a_show.finish();
+	_a_show.stop();
 	showControls();
 	(_showBack ? _cacheUnder : _cacheOver) = Ui::GrabWidget(this);
 	hideControls();
 
-	_a_show.start([this] { animationCallback(); }, 0., 1., st::slideDuration, Window::SlideAnimation::transition());
+	_a_show.start([=] { animationCallback(); }, 0., 1., st::slideDuration, Window::SlideAnimation::transition());
 
 	show();
 }
@@ -512,16 +513,12 @@ void Widget::paintEvent(QPaintEvent *e) {
 	bool trivial = (rect() == e->rect());
 	setMouseTracking(true);
 
-	if (_coverShownAnimation.animating()) {
-		_coverShownAnimation.step(getms());
-	}
-
 	QPainter p(this);
 	if (!trivial) {
 		p.setClipRect(e->rect());
 	}
 	p.fillRect(e->rect(), st::windowBg);
-	auto progress = _a_show.current(getms(), 1.);
+	auto progress = _a_show.value(1.);
 	if (_a_show.animating()) {
 		auto coordUnder = _showBack ? anim::interpolate(-st::slideShift, 0, progress) : anim::interpolate(0, -st::slideShift, progress);
 		auto coordOver = _showBack ? anim::interpolate(0, width(), progress) : anim::interpolate(width(), 0, progress);
@@ -558,7 +555,7 @@ void Widget::resizeEvent(QResizeEvent *e) {
 }
 
 void Widget::updateControlsGeometry() {
-	auto shown = _coverShownAnimation.current(1.);
+	auto shown = _coverShownAnimation.value(1.);
 
 	auto controlsTopTo = getStep()->hasCover() ? st::introCoverHeight : 0;
 	auto controlsTop = anim::interpolate(_controlsTopFrom, controlsTopTo, shown);
@@ -700,7 +697,7 @@ void Widget::Step::refreshLang() {
 }
 
 void Widget::Step::showFinished() {
-	_a_show.finish();
+	_a_show.stop();
 	_coverAnimation = CoverAnimation();
 	_slideAnimation.reset();
 	prepareCoverMask();
@@ -709,7 +706,7 @@ void Widget::Step::showFinished() {
 
 bool Widget::Step::paintAnimated(Painter &p, QRect clip) {
 	if (_slideAnimation) {
-		_slideAnimation->paintFrame(p, (width() - st::introStepWidth) / 2, contentTop(), width(), getms());
+		_slideAnimation->paintFrame(p, (width() - st::introStepWidth) / 2, contentTop(), width());
 		if (!_slideAnimation->animating()) {
 			showFinished();
 			return false;
@@ -717,7 +714,7 @@ bool Widget::Step::paintAnimated(Painter &p, QRect clip) {
 		return true;
 	}
 
-	auto dt = _a_show.current(getms(), 1.);
+	auto dt = _a_show.value(1.);
 	if (!_a_show.animating()) {
 		if (hasCover()) {
 			paintCover(p, 0);

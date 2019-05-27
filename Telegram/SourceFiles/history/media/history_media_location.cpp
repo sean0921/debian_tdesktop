@@ -123,7 +123,7 @@ TextSelection HistoryLocation::fromDescriptionSelection(
 	return HistoryView::ShiftItemSelection(selection, _title);
 }
 
-void HistoryLocation::draw(Painter &p, const QRect &r, TextSelection selection, TimeMs ms) const {
+void HistoryLocation::draw(Painter &p, const QRect &r, TextSelection selection, crl::time ms) const {
 	if (width() < st::msgPadding.left() + st::msgPadding.right() + 1) return;
 	auto paintx = 0, painty = 0, paintw = width(), painth = height();
 	bool bubble = _parent->hasBubble();
@@ -278,17 +278,16 @@ TextSelection HistoryLocation::adjustSelection(TextSelection selection, TextSele
 	return { titleSelection.from, fromDescriptionSelection(descriptionSelection).to };
 }
 
-TextWithEntities HistoryLocation::selectedText(TextSelection selection) const {
-	auto titleResult = _title.originalTextWithEntities(selection);
-	auto descriptionResult = _description.originalTextWithEntities(toDescriptionSelection(selection));
-	if (titleResult.text.isEmpty()) {
+TextForMimeData HistoryLocation::selectedText(TextSelection selection) const {
+	auto titleResult = _title.toTextForMimeData(selection);
+	auto descriptionResult = _description.toTextForMimeData(
+		toDescriptionSelection(selection));
+	if (titleResult.empty()) {
 		return descriptionResult;
-	} else if (descriptionResult.text.isEmpty()) {
+	} else if (descriptionResult.empty()) {
 		return titleResult;
 	}
-	titleResult.text += '\n';
-	TextUtilities::Append(titleResult, std::move(descriptionResult));
-	return titleResult;
+	return titleResult.append('\n').append(std::move(descriptionResult));
 }
 
 bool HistoryLocation::needsBubble() const {

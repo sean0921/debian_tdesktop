@@ -7,11 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_actions.h"
 
-#include <rpl/flatten_latest.h>
-#include <rpl/combine.h>
 #include "data/data_peer_values.h"
 #include "data/data_session.h"
-#include "data/data_feed.h"
+#include "data/data_folder.h"
 #include "data/data_channel.h"
 #include "data/data_user.h"
 #include "ui/wrap/vertical_layout.h"
@@ -167,37 +165,37 @@ private:
 	object_ptr<Ui::VerticalLayout> _wrap = { nullptr };
 
 };
-
-class FeedDetailsFiller {
-public:
-	FeedDetailsFiller(
-		not_null<Controller*> controller,
-		not_null<Ui::RpWidget*> parent,
-		not_null<Data::Feed*> feed);
-
-	object_ptr<Ui::RpWidget> fill();
-
-private:
-	object_ptr<Ui::RpWidget> setupDefaultToggle();
-
-	template <
-		typename Widget,
-		typename = std::enable_if_t<
-		std::is_base_of_v<Ui::RpWidget, Widget>>>
-	Widget *add(
-			object_ptr<Widget> &&child,
-			const style::margins &margin = style::margins()) {
-		return _wrap->add(
-			std::move(child),
-			margin);
-	}
-
-	not_null<Controller*> _controller;
-	not_null<Ui::RpWidget*> _parent;
-	not_null<Data::Feed*> _feed;
-	object_ptr<Ui::VerticalLayout> _wrap;
-
-};
+// // #feed
+//class FeedDetailsFiller {
+//public:
+//	FeedDetailsFiller(
+//		not_null<Controller*> controller,
+//		not_null<Ui::RpWidget*> parent,
+//		not_null<Data::Feed*> feed);
+//
+//	object_ptr<Ui::RpWidget> fill();
+//
+//private:
+//	object_ptr<Ui::RpWidget> setupDefaultToggle();
+//
+//	template <
+//		typename Widget,
+//		typename = std::enable_if_t<
+//		std::is_base_of_v<Ui::RpWidget, Widget>>>
+//	Widget *add(
+//			object_ptr<Widget> &&child,
+//			const style::margins &margin = style::margins()) {
+//		return _wrap->add(
+//			std::move(child),
+//			margin);
+//	}
+//
+//	not_null<Controller*> _controller;
+//	not_null<Ui::RpWidget*> _parent;
+//	not_null<Data::Feed*> _feed;
+//	object_ptr<Ui::VerticalLayout> _wrap;
+//
+//};
 
 DetailsFiller::DetailsFiller(
 	not_null<Controller*> controller,
@@ -276,11 +274,11 @@ object_ptr<Ui::RpWidget> DetailsFiller::setupInfo() {
 				if (result.text.startsWith(remove)) {
 					result.text.remove(0, remove.size());
 				}
-				result.entities.push_back(EntityInText(
-					EntityInTextCustomUrl,
+				result.entities.push_back({
+					EntityType::CustomUrl,
 					0,
 					result.text.size(),
-					link));
+					link });
 			}
 			return result;
 		});
@@ -558,12 +556,12 @@ void ActionsFiller::addBotCommandActions(not_null<UserData*> user) {
 }
 
 void ActionsFiller::addReportAction() {
-	auto peer = _peer;
+	const auto peer = _peer;
 	AddActionButton(
 		_wrap,
 		Lang::Viewer(lng_profile_report),
 		rpl::single(true),
-		[peer] { Ui::show(Box<ReportBox>(peer)); },
+		[=] { Ui::show(Box<ReportBox>(peer)); },
 		st::infoBlockButton);
 }
 
@@ -574,12 +572,12 @@ void ActionsFiller::addBlockAction(not_null<UserData*> user) {
 	) | rpl::map([user] {
 		switch (user->blockStatus()) {
 		case UserData::BlockStatus::Blocked:
-			return Lang::Viewer(user->botInfo
+			return Lang::Viewer((user->isBot() && !user->isSupport())
 				? lng_profile_restart_bot
 				: lng_profile_unblock_user);
 		case UserData::BlockStatus::NotBlocked:
 		default:
-			return Lang::Viewer(user->botInfo
+			return Lang::Viewer((user->isBot() && !user->isSupport())
 				? lng_profile_block_bot
 				: lng_profile_block_user);
 		}
@@ -652,14 +650,14 @@ void ActionsFiller::fillUserActions(not_null<UserData*> user) {
 	}
 	addClearHistoryAction(user);
 	addDeleteConversationAction(user);
-	if (!user->isSelf()) {
-		if (user->botInfo) {
+	if (!user->isSelf() && !user->isSupport()) {
+		if (user->isBot()) {
 			addBotCommandActions(user);
 		}
 		_wrap->add(CreateSkipWidget(
 			_wrap,
 			st::infoBlockButtonSkip));
-		if (user->botInfo) {
+		if (user->isBot()) {
 			addReportAction();
 		}
 		addBlockAction(user);
@@ -703,47 +701,47 @@ object_ptr<Ui::RpWidget> ActionsFiller::fill() {
 	}
 	return { nullptr };
 }
-
-FeedDetailsFiller::FeedDetailsFiller(
-	not_null<Controller*> controller,
-	not_null<Ui::RpWidget*> parent,
-	not_null<Data::Feed*> feed)
-: _controller(controller)
-, _parent(parent)
-, _feed(feed)
-, _wrap(_parent) {
-}
-
-object_ptr<Ui::RpWidget> FeedDetailsFiller::fill() {
-	add(object_ptr<BoxContentDivider>(_wrap));
-	add(CreateSkipWidget(_wrap));
-	add(setupDefaultToggle());
-	add(CreateSkipWidget(_wrap));
-	return std::move(_wrap);
-}
-
-object_ptr<Ui::RpWidget> FeedDetailsFiller::setupDefaultToggle() {
-	using namespace rpl::mappers;
-	const auto feedId = _feed->id();
-	auto result = object_ptr<Button>(
-		_wrap,
-		Lang::Viewer(lng_info_feed_is_default),
-		st::infoNotificationsButton);
-	result->toggleOn(
-		Auth().data().defaultFeedIdValue(
-		) | rpl::map(_1 == feedId)
-	)->addClickHandler([=] {
-		const auto makeDefault = (Auth().data().defaultFeedId() != feedId);
-		const auto defaultFeedId = makeDefault ? feedId : 0;
-		Auth().data().setDefaultFeedId(defaultFeedId);
-//		Auth().api().saveDefaultFeedId(feedId, makeDefault); // #feed
-	});
-	object_ptr<FloatingIcon>(
-		result,
-		st::infoIconNotifications,
-		st::infoNotificationsIconPosition);
-	return std::move(result);
-}
+// // #feed
+//FeedDetailsFiller::FeedDetailsFiller(
+//	not_null<Controller*> controller,
+//	not_null<Ui::RpWidget*> parent,
+//	not_null<Data::Feed*> feed)
+//: _controller(controller)
+//, _parent(parent)
+//, _feed(feed)
+//, _wrap(_parent) {
+//}
+//
+//object_ptr<Ui::RpWidget> FeedDetailsFiller::fill() {
+//	add(object_ptr<BoxContentDivider>(_wrap));
+//	add(CreateSkipWidget(_wrap));
+//	add(setupDefaultToggle());
+//	add(CreateSkipWidget(_wrap));
+//	return std::move(_wrap);
+//}
+//
+//object_ptr<Ui::RpWidget> FeedDetailsFiller::setupDefaultToggle() {
+//	using namespace rpl::mappers;
+//	const auto feedId = _feed->id();
+//	auto result = object_ptr<Button>(
+//		_wrap,
+//		Lang::Viewer(lng_info_feed_is_default),
+//		st::infoNotificationsButton);
+//	result->toggleOn(
+//		Auth().data().defaultFeedIdValue(
+//		) | rpl::map(_1 == feedId)
+//	)->addClickHandler([=] {
+//		const auto makeDefault = (Auth().data().defaultFeedId() != feedId);
+//		const auto defaultFeedId = makeDefault ? feedId : 0;
+//		Auth().data().setDefaultFeedId(defaultFeedId);
+////		Auth().api().saveDefaultFeedId(feedId, makeDefault); // #feed
+//	});
+//	object_ptr<FloatingIcon>(
+//		result,
+//		st::infoIconNotifications,
+//		st::infoNotificationsIconPosition);
+//	return std::move(result);
+//}
 
 } // namespace
 
@@ -840,14 +838,14 @@ object_ptr<Ui::RpWidget> SetupChannelMembers(
 
 	return std::move(result);
 }
-
-object_ptr<Ui::RpWidget> SetupFeedDetails(
-		not_null<Controller*> controller,
-		not_null<Ui::RpWidget*> parent,
-		not_null<Data::Feed*> feed) {
-	FeedDetailsFiller filler(controller, parent, feed);
-	return filler.fill();
-}
+// // #feed
+//object_ptr<Ui::RpWidget> SetupFeedDetails(
+//		not_null<Controller*> controller,
+//		not_null<Ui::RpWidget*> parent,
+//		not_null<Data::Feed*> feed) {
+//	FeedDetailsFiller filler(controller, parent, feed);
+//	return filler.fill();
+//}
 
 } // namespace Profile
 } // namespace Info

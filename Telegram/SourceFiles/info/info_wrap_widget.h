@@ -7,17 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include <rpl/variable.h>
-#include <rpl/event_stream.h>
 #include "window/section_widget.h"
+#include "ui/effects/animations.h"
 
 namespace Storage {
 enum class SharedMediaType : signed char;
 } // namespace Storage
-
-namespace Data {
-class Feed;
-} // namespace Data
 
 namespace Ui {
 class SettingsSlider;
@@ -149,7 +144,7 @@ private:
 	void startInjectingActivePeerProfiles();
 	void injectActiveProfile(Dialogs::Key key);
 	void injectActivePeerProfile(not_null<PeerData*> peer);
-	void injectActiveFeedProfile(not_null<Data::Feed*> feed);
+	//void injectActiveFeedProfile(not_null<Data::Feed*> feed); // #feed
 	void injectActiveProfileMemento(
 		std::unique_ptr<ContentMemento> memento);
 	void checkBeforeClose(Fn<void()> close);
@@ -171,6 +166,7 @@ private:
 	//void createTabs();
 	void createTopBar();
 	void highlightTopBar();
+	void setupShortcuts();
 
 	not_null<RpWidget*> topWidget() const;
 
@@ -208,7 +204,7 @@ private:
 	//object_ptr<Ui::SettingsSlider> _topTabs = { nullptr };
 	object_ptr<TopBar> _topBar = { nullptr };
 	object_ptr<Ui::RpWidget> _topBarSurrogate = { nullptr };
-	Animation _topBarOverrideAnimation;
+	Ui::Animations::Simple _topBarOverrideAnimation;
 	bool _topBarOverrideShown = false;
 
 	object_ptr<Ui::FadeShadow> _topShadow;
