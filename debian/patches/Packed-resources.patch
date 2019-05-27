@@ -69,14 +69,14 @@ Last-Update: 2017-08-22
  #include "core/main_queue_processor.h"
  #include "core/update_checker.h"
  #include "core/sandbox.h"
-@@ -207,6 +208,7 @@ void Launcher::init() {
+@@ -240,6 +241,7 @@ void Launcher::init() {
  	prepareSettings();
  
  	QApplication::setApplicationName(qsl("TelegramDesktop"));
 +	Resources::LoadAllData(); // should be called after setting an application name
  
- #ifndef OS_MAC_OLD
- 	QApplication::setAttribute(Qt::AA_DisableHighDpiScaling, true);
+ #if defined(Q_OS_LINUX) && QT_VERSION >= QT_VERSION_CHECK(5, 7, 0)
+ 	QApplication::setDesktopFileName(qsl("telegramdesktop.desktop"));
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
 @@ -52,6 +52,7 @@

@@ -21,8 +21,8 @@ Last-Update: 2017-12-30
  #include "base/ordered_set.h"
  #include "base/unique_function.h"
  #include "base/functors.h"
-@@ -49,6 +48,14 @@ using float64 = double;
- using TimeMs = int64;
+@@ -48,6 +47,14 @@ using float64 = double;
+ 
  using TimeId = int32;
  
 +#if defined(__GNUC__)
@@ -48,7 +48,7 @@ Last-Update: 2017-12-30
  int (*TestForkedMethod)()/* = nullptr*/;
 --- a/Telegram/SourceFiles/config.h
 +++ b/Telegram/SourceFiles/config.h
-@@ -207,7 +207,7 @@ constexpr auto ApiHash = "344583e45741c4
+@@ -194,7 +194,7 @@ constexpr auto ApiHash = "344583e45741c4
  #endif // TDESKTOP_API_ID && TDESKTOP_API_HASH
  
  #if Q_BYTE_ORDER == Q_BIG_ENDIAN
@@ -81,7 +81,7 @@ Last-Update: 2017-12-30
  namespace rpl {
 --- a/Telegram/SourceFiles/ui/animation.h
 +++ b/Telegram/SourceFiles/ui/animation.h
-@@ -169,9 +169,10 @@ TG_FORCE_INLINE int interpolate(int a, i
+@@ -165,9 +165,10 @@ TG_FORCE_INLINE int interpolate(int a, i
  	return qRound(a + float64(b - a) * b_ratio);
  }
  
@@ -162,7 +162,7 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<@(qrc_files)',
-@@ -148,5 +134,14 @@
+@@ -155,5 +141,14 @@
          ],
        }],
      ],
@@ -428,7 +428,7 @@ Last-Update: 2017-12-30
            '-W',
            '-fPIC',
            '-Wno-unused-variable',
-@@ -25,7 +24,7 @@
+@@ -26,7 +25,7 @@
          ],
        },
        'conditions': [
@@ -437,7 +437,24 @@ Last-Update: 2017-12-30
            'defines': [
              'Q_OS_LINUX64',
            ],
-@@ -60,7 +59,6 @@
+@@ -44,24 +43,10 @@
+               'sources': [ '__Wrong_Official_Build_Target_<(official_build_target)_' ],
+             }],
+           ],
+-        }], [ '"<!(uname -p)" == "x86_64"', {
+-          # 32 bit version can't be linked with debug info or LTO,
+-          # virtual memory exhausted :(
+-          'cflags_c': [ '-g' ],
+-          'cflags_cc': [ '-g' ],
+-          'ldflags': [ '-g' ],
+-          'configurations': {
+-            'Release': {
+-              'cflags_c': [ '-flto' ],
+-              'cflags_cc': [ '-flto' ],
+-              'ldflags': [ '-flto', '-fuse-linker-plugin' ],
+-            },
+-          },
+         }]
        ],
        'defines': [
          '_REENTRANT',
@@ -526,8 +543,8 @@ Last-Update: 2017-12-30
          'cflags_cc': [ '<!(pkg-config --cflags ayatana-appindicator3-0.1)' ],
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -824,20 +824,12 @@
- <(src_loc)/mediaview.h
+@@ -855,20 +855,12 @@
+ <(src_loc)/mainwindow.h
  <(src_loc)/observer_peer.cpp
  <(src_loc)/observer_peer.h
 -<(src_loc)/qt_static_plugins.cpp
