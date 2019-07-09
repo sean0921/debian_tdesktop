@@ -20,7 +20,7 @@ class PopupMenu;
 } // namespace Ui
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace Data {
@@ -125,7 +125,7 @@ class ListWidget final
 public:
 	ListWidget(
 		QWidget *parent,
-		not_null<Window::Controller*> controller,
+		not_null<Window::SessionController*> controller,
 		not_null<ListDelegate*> delegate);
 
 	not_null<ListDelegate*> delegate() const;
@@ -180,6 +180,10 @@ public:
 		not_null<const Element*> view) override;
 	crl::time elementHighlightTime(not_null<const Element*> element) override;
 	bool elementInSelectionMode() override;
+	bool elementIntersectsRange(
+		not_null<const Element*> view,
+		int from,
+		int till) override;
 
 	~ListWidget();
 
@@ -415,7 +419,7 @@ private:
 	static constexpr auto kMinimalIdsLimit = 24;
 
 	not_null<ListDelegate*> _delegate;
-	not_null<Window::Controller*> _controller;
+	not_null<Window::SessionController*> _controller;
 	Data::MessagePosition _aroundPosition;
 	Data::MessagePosition _shownAtPosition;
 	Context _context;

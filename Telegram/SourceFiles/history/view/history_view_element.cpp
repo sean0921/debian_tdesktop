@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 
 #include "history/view/history_view_service_message.h"
+#include "history/view/history_view_message.h"
 #include "history/history_item_components.h"
 #include "history/history_item.h"
 #include "history/media/history_media.h"
@@ -47,6 +48,42 @@ bool IsAttachedToPreviousInSavedMessages(
 
 } // namespace
 
+
+std::unique_ptr<HistoryView::Element> SimpleElementDelegate::elementCreate(
+		not_null<HistoryMessage*> message) {
+	return std::make_unique<HistoryView::Message>(this, message);
+}
+
+std::unique_ptr<HistoryView::Element> SimpleElementDelegate::elementCreate(
+		not_null<HistoryService*> message) {
+	return std::make_unique<HistoryView::Service>(this, message);
+}
+
+bool SimpleElementDelegate::elementUnderCursor(
+		not_null<const Element*> view) {
+	return false;
+}
+
+void SimpleElementDelegate::elementAnimationAutoplayAsync(
+	not_null<const Element*> element) {
+}
+
+crl::time SimpleElementDelegate::elementHighlightTime(
+	not_null<const Element*> element) {
+	return crl::time(0);
+}
+
+bool SimpleElementDelegate::elementInSelectionMode() {
+	return false;
+}
+
+bool SimpleElementDelegate::elementIntersectsRange(
+		not_null<const Element*> view,
+		int from,
+		int till) {
+	return true;
+}
+
 TextSelection UnshiftItemSelection(
 		TextSelection selection,
 		uint16 byLength) {
@@ -65,13 +102,13 @@ TextSelection ShiftItemSelection(
 
 TextSelection UnshiftItemSelection(
 		TextSelection selection,
-		const Text &byText) {
+		const Ui::Text::String &byText) {
 	return UnshiftItemSelection(selection, byText.length());
 }
 
 TextSelection ShiftItemSelection(
 		TextSelection selection,
-		const Text &byText) {
+		const Ui::Text::String &byText) {
 	return ShiftItemSelection(selection, byText.length());
 }
 
@@ -81,8 +118,8 @@ void UnreadBar::init(int newCount) {
 	}
 	count = newCount;
 	text = /*(count == kCountUnknown) // #feed
-		? lang(lng_unread_bar_some)
-		: */lng_unread_bar(lt_count, count);
+		? tr::lng_unread_bar_some(tr::now)
+		: */tr::lng_unread_bar(tr::now, lt_count, count);
 	width = st::semiboldFont->width(text);
 }
 
@@ -321,15 +358,20 @@ void Element::refreshDataId() {
 }
 
 bool Element::computeIsAttachToPrevious(not_null<Element*> previous) {
+	const auto mayBeAttached = [](not_null<HistoryItem*> item) {
+		return !item->serviceMsg()
+			&& !item->isEmpty()
+			&& !item->isPost()
+			&& (item->from() != item->history()->peer
+				|| !item->from()->isChannel());
+	};
 	const auto item = data();
 	if (!Has<DateBadge>() && !Has<UnreadBar>()) {
 		const auto prev = previous->data();
-		const auto possible = !item->serviceMsg() && !prev->serviceMsg()
-			&& !item->isEmpty() && !prev->isEmpty()
-			&& (std::abs(prev->date() - item->date())
+		const auto possible = (std::abs(prev->date() - item->date())
 				< kAttachMessageToPreviousSecondsDelta)
-			&& (/*_context == Context::Feed // #feed
-				|| */(!item->isPost() && !prev->isPost()));
+			&& mayBeAttached(item)
+			&& mayBeAttached(prev);
 		if (possible) {
 			if (item->history()->peer->isSelf()) {
 				return IsAttachedToPreviousInSavedMessages(prev, item);
@@ -524,6 +566,12 @@ TimeId Element::displayedEditDate() const {
 
 bool Element::hasVisibleText() const {
 	return false;
+}
+
+void Element::unloadHeavyPart() {
+	if (_media) {
+		_media->unloadHeavyPart();
+	}
 }
 
 HistoryBlock *Element::block() {

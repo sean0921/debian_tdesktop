@@ -9,13 +9,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "layout.h"
 #include "boxes/sticker_set_box.h"
+#include "history/history.h"
 #include "history/history_item_components.h"
 #include "history/history_item.h"
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_cursor_state.h"
 #include "ui/image/image.h"
 #include "ui/emoji_config.h"
+#include "mainwindow.h" // App::wnd()->sessionController.
+#include "window/window_session_controller.h" // isGifPausedAtLeastFor.
+#include "data/data_session.h"
 #include "data/data_document.h"
+#include "lottie/lottie_single_player.h"
 #include "styles/style_history.h"
 
 namespace {
@@ -36,12 +41,16 @@ HistorySticker::HistorySticker(
 	}
 }
 
+HistorySticker::~HistorySticker() {
+	unloadLottie();
+}
+
 QSize HistorySticker::countOptimalSize() {
 	auto sticker = _data->sticker();
 
 	if (!_packLink && sticker && sticker->set.type() != mtpc_inputStickerSetEmpty) {
 		_packLink = std::make_shared<LambdaClickHandler>([document = _data] {
-			StickerSetBox::Show(document);
+			StickerSetBox::Show(App::wnd()->sessionController(), document);
 		});
 	}
 	_pixw = _data->dimensions.width();
@@ -87,9 +96,39 @@ QSize HistorySticker::countCurrentSize(int newWidth) {
 	return { newWidth, minHeight() };
 }
 
+void HistorySticker::setupLottie() {
+	_lottie = Stickers::LottiePlayerFromDocument(
+		_data,
+		Stickers::LottieSize::MessageHistory,
+		QSize(st::maxStickerSize, st::maxStickerSize) * cIntRetinaFactor(),
+		Lottie::Quality::High);
+	_parent->data()->history()->owner().registerHeavyViewPart(_parent);
+
+	_lottie->updates(
+	) | rpl::start_with_next([=](Lottie::Update update) {
+		update.data.match([&](const Lottie::Information &information) {
+			_parent->data()->history()->owner().requestViewResize(_parent);
+		}, [&](const Lottie::DisplayFrameRequest &request) {
+			_parent->data()->history()->owner().requestViewRepaint(_parent);
+		});
+	}, _lifetime);
+}
+
+void HistorySticker::unloadLottie() {
+	if (!_lottie) {
+		return;
+	}
+	_lottie = nullptr;
+	_parent->data()->history()->owner().unregisterHeavyViewPart(_parent);
+}
+
 void HistorySticker::draw(Painter &p, const QRect &r, TextSelection selection, crl::time ms) const {
 	auto sticker = _data->sticker();
 	if (!sticker) return;
+
+	if (sticker->animated && !_lottie && _data->loaded()) {
+		const_cast<HistorySticker*>(this)->setupLottie();
+	}
 
 	if (width() < st::msgPadding.left() + st::msgPadding.right() + 1) return;
 
@@ -112,12 +151,20 @@ void HistorySticker::draw(Painter &p, const QRect &r, TextSelection selection, c
 	}
 	if (rtl()) usex = width() - usex - usew;
 
+	const auto lottieReady = (_lottie && _lottie->ready());
 	const auto &pixmap = [&]() -> const QPixmap & {
 		const auto o = item->fullId();
 		const auto w = _pixw;
 		const auto h = _pixh;
 		const auto &c = st::msgStickerOverlay;
-		if (const auto image = _data->getStickerLarge()) {
+		const auto good = _data->goodThumbnail();
+		if (!lottieReady && good && !good->loaded()) {
+			good->load({});
+		}
+		static QPixmap empty;
+		if (lottieReady) {
+			return empty;
+		} else if (const auto image = _data->getStickerLarge()) {
 			return selected
 				? image->pixColored(o, c, w, h)
 				: image->pix(o, w, h);
@@ -128,19 +175,42 @@ void HistorySticker::draw(Painter &p, const QRect &r, TextSelection selection, c
 		//	return selected
 		//		? blurred->pixBlurredColored(o, c, w, h)
 		//		: blurred->pixBlurred(o, w, h);
+		} else if (good && good->loaded()) {
+			return selected
+				? good->pixColored(o, c, w, h)
+				: good->pix(o, w, h);
 		} else if (const auto thumbnail = _data->thumbnail()) {
 			return selected
 				? thumbnail->pixBlurredColored(o, c, w, h)
 				: thumbnail->pixBlurred(o, w, h);
 		} else {
-			static QPixmap empty;
 			return empty;
 		}
 	}();
-	p.drawPixmap(
-		QPoint{ usex + (usew - _pixw) / 2, (minHeight() - _pixh) / 2 },
-		pixmap);
-
+	if (!pixmap.isNull()) {
+		p.drawPixmap(
+			QPoint{ usex + (usew - _pixw) / 2, (minHeight() - _pixh) / 2 },
+			pixmap);
+	} else if (lottieReady) {
+		auto request = Lottie::FrameRequest();
+		request.box = QSize(_pixw, _pixh) * cIntRetinaFactor();
+		if (selected) {
+			request.colored = st::msgStickerOverlay->c;
+		}
+		const auto paused = App::wnd()->sessionController()->isGifPausedAtLeastFor(Window::GifPauseReason::Any);
+		if (!paused) {
+			_lottie->markFrameShown();
+		}
+		const auto frame = _lottie->frame(request);
+		const auto size = frame.size() / cIntRetinaFactor();
+		p.drawImage(
+			QRect(
+				QPoint(
+					usex + (usew - size.width()) / 2,
+					(minHeight() - size.height()) / 2),
+				size),
+			frame);
+	}
 	if (!inWebPage) {
 		auto fullRight = usex + usew;
 		auto fullBottom = height();

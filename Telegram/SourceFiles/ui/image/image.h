@@ -27,6 +27,7 @@ ImagePtr Create(
 	QImage &&data);
 ImagePtr Create(int width, int height);
 ImagePtr Create(const StorageImageLocation &location, int size = 0);
+ImagePtr CreateStickerSetThumbnail(const StorageImageLocation &location);
 ImagePtr Create( // photoCachedSize
 	const StorageImageLocation &location,
 	const QByteArray &bytes);
@@ -55,14 +56,8 @@ public:
 	Source &operator=(Source &&other) = delete;
 	virtual ~Source() = default;
 
-	virtual void load(
-		Data::FileOrigin origin,
-		bool loadFirst,
-		bool prior) = 0;
-	virtual void loadEvenCancelled(
-		Data::FileOrigin origin,
-		bool loadFirst,
-		bool prior) = 0;
+	virtual void load(Data::FileOrigin origin) = 0;
+	virtual void loadEvenCancelled(Data::FileOrigin origin) = 0;
 	virtual QImage takeLoaded() = 0;
 	virtual void unload() = 0;
 
@@ -211,14 +206,8 @@ public:
 	void setInformation(int size, int width, int height) {
 		_source->setInformation(size, width, height);
 	}
-	void load(
-		Data::FileOrigin origin,
-		bool loadFirst = false,
-		bool prior = true);
-	void loadEvenCancelled(
-		Data::FileOrigin origin,
-		bool loadFirst = false,
-		bool prior = true);
+	void load(Data::FileOrigin origin);
+	void loadEvenCancelled(Data::FileOrigin origin);
 	const StorageImageLocation &location() const {
 		return _source->location();
 	}

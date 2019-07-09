@@ -36,7 +36,7 @@ QString ExpressionSeparators(const QString &additional) {
 
 QString Separators(const QString &additional) {
 	static const auto quotes = Quotes();
-	return qsl(" \x10\n\r\t.,:;<>|'\"[]{}~!?%^()-+=")
+	return qsl(" \x10\n\r\t.,:;<>|'\"[]{}!?%^()-+=")
 		+ QChar(0xfdd0) // QTextBeginningOfFrame
 		+ QChar(0xfdd1) // QTextEndOfFrame
 		+ QChar(QChar::ParagraphSeparator)
@@ -46,15 +46,19 @@ QString Separators(const QString &additional) {
 }
 
 QString SeparatorsBold() {
-	return Separators(qsl("`/"));
+	return Separators(qsl("`~/"));
 }
 
 QString SeparatorsItalic() {
-	return Separators(qsl("`*/"));
+	return Separators(qsl("`*~/"));
+}
+
+QString SeparatorsStrikeOut() {
+	return Separators(qsl("`*~/"));
 }
 
 QString SeparatorsMono() {
-	return Separators(qsl("*/"));
+	return Separators(qsl("*~/"));
 }
 
 QString ExpressionHashtag() {
@@ -1173,6 +1177,14 @@ QString MarkdownItalicBadAfter() {
 	return qsl("_");
 }
 
+QString MarkdownStrikeOutGoodBefore() {
+	return SeparatorsStrikeOut();
+}
+
+QString MarkdownStrikeOutBadAfter() {
+	return qsl("~");
+}
+
 QString MarkdownCodeGoodBefore() {
 	return SeparatorsMono();
 }
@@ -1322,7 +1334,7 @@ bool CutPart(TextWithEntities &sending, TextWithEntities &left, int32 limit) {
 		if (s > half) {
 			bool inEntity = (currentEntity < entityCount) && (ch > start + left.entities[currentEntity].offset()) && (ch < start + left.entities[currentEntity].offset() + left.entities[currentEntity].length());
 			EntityType entityType = (currentEntity < entityCount) ? left.entities[currentEntity].type() : EntityType::Invalid;
-			bool canBreakEntity = (entityType == EntityType::Pre || entityType == EntityType::Code);
+			bool canBreakEntity = (entityType == EntityType::Pre || entityType == EntityType::Code); // #TODO entities
 			int32 noEntityLevel = inEntity ? 0 : 1;
 
 			auto markGoodAsLevel = [&](int newLevel) {
@@ -1463,45 +1475,48 @@ EntitiesInText EntitiesFromMTP(const QVector<MTPMessageEntity> &entities) {
 		result.reserve(entities.size());
 		for_const (auto &entity, entities) {
 			switch (entity.type()) {
-			case mtpc_messageEntityUrl: { auto &d = entity.c_messageEntityUrl(); result.push_back({ EntityType::Url, d.voffset.v, d.vlength.v }); } break;
-			case mtpc_messageEntityTextUrl: { auto &d = entity.c_messageEntityTextUrl(); result.push_back({ EntityType::CustomUrl, d.voffset.v, d.vlength.v, Clean(qs(d.vurl)) }); } break;
-			case mtpc_messageEntityEmail: { auto &d = entity.c_messageEntityEmail(); result.push_back({ EntityType::Email, d.voffset.v, d.vlength.v }); } break;
-			case mtpc_messageEntityHashtag: { auto &d = entity.c_messageEntityHashtag(); result.push_back({ EntityType::Hashtag, d.voffset.v, d.vlength.v }); } break;
-			case mtpc_messageEntityCashtag: { auto &d = entity.c_messageEntityCashtag(); result.push_back({ EntityType::Cashtag, d.voffset.v, d.vlength.v }); } break;
+			case mtpc_messageEntityUrl: { auto &d = entity.c_messageEntityUrl(); result.push_back({ EntityType::Url, d.voffset().v, d.vlength().v }); } break;
+			case mtpc_messageEntityTextUrl: { auto &d = entity.c_messageEntityTextUrl(); result.push_back({ EntityType::CustomUrl, d.voffset().v, d.vlength().v, Clean(qs(d.vurl())) }); } break;
+			case mtpc_messageEntityEmail: { auto &d = entity.c_messageEntityEmail(); result.push_back({ EntityType::Email, d.voffset().v, d.vlength().v }); } break;
+			case mtpc_messageEntityHashtag: { auto &d = entity.c_messageEntityHashtag(); result.push_back({ EntityType::Hashtag, d.voffset().v, d.vlength().v }); } break;
+			case mtpc_messageEntityCashtag: { auto &d = entity.c_messageEntityCashtag(); result.push_back({ EntityType::Cashtag, d.voffset().v, d.vlength().v }); } break;
 			case mtpc_messageEntityPhone: break; // Skipping phones.
-			case mtpc_messageEntityMention: { auto &d = entity.c_messageEntityMention(); result.push_back({ EntityType::Mention, d.voffset.v, d.vlength.v }); } break;
+			case mtpc_messageEntityMention: { auto &d = entity.c_messageEntityMention(); result.push_back({ EntityType::Mention, d.voffset().v, d.vlength().v }); } break;
 			case mtpc_messageEntityMentionName: {
 				auto &d = entity.c_messageEntityMentionName();
 				auto data = [&d] {
-					if (auto user = Auth().data().userLoaded(d.vuser_id.v)) {
+					if (auto user = Auth().data().userLoaded(d.vuser_id().v)) {
 						return MentionNameDataFromFields({
-							d.vuser_id.v,
+							d.vuser_id().v,
 							user->accessHash() });
 					}
-					return MentionNameDataFromFields(d.vuser_id.v);
+					return MentionNameDataFromFields(d.vuser_id().v);
 				};
-				result.push_back({ EntityType::MentionName, d.voffset.v, d.vlength.v, data() });
+				result.push_back({ EntityType::MentionName, d.voffset().v, d.vlength().v, data() });
 			} break;
 			case mtpc_inputMessageEntityMentionName: {
 				auto &d = entity.c_inputMessageEntityMentionName();
 				auto data = ([&d]() -> QString {
-					if (d.vuser_id.type() == mtpc_inputUserSelf) {
+					if (d.vuser_id().type() == mtpc_inputUserSelf) {
 						return MentionNameDataFromFields(Auth().userId());
-					} else if (d.vuser_id.type() == mtpc_inputUser) {
-						auto &user = d.vuser_id.c_inputUser();
-						return MentionNameDataFromFields({ user.vuser_id.v, user.vaccess_hash.v });
+					} else if (d.vuser_id().type() == mtpc_inputUser) {
+						auto &user = d.vuser_id().c_inputUser();
+						return MentionNameDataFromFields({ user.vuser_id().v, user.vaccess_hash().v });
 					}
 					return QString();
 				})();
 				if (!data.isEmpty()) {
-					result.push_back({ EntityType::MentionName, d.voffset.v, d.vlength.v, data });
+					result.push_back({ EntityType::MentionName, d.voffset().v, d.vlength().v, data });
 				}
 			} break;
-			case mtpc_messageEntityBotCommand: { auto &d = entity.c_messageEntityBotCommand(); result.push_back({ EntityType::BotCommand, d.voffset.v, d.vlength.v }); } break;
-			case mtpc_messageEntityBold: { auto &d = entity.c_messageEntityBold(); result.push_back({ EntityType::Bold, d.voffset.v, d.vlength.v }); } break;
-			case mtpc_messageEntityItalic: { auto &d = entity.c_messageEntityItalic(); result.push_back({ EntityType::Italic, d.voffset.v, d.vlength.v }); } break;
-			case mtpc_messageEntityCode: { auto &d = entity.c_messageEntityCode(); result.push_back({ EntityType::Code, d.voffset.v, d.vlength.v }); } break;
-			case mtpc_messageEntityPre: { auto &d = entity.c_messageEntityPre(); result.push_back({ EntityType::Pre, d.voffset.v, d.vlength.v, Clean(qs(d.vlanguage)) }); } break;
+			case mtpc_messageEntityBotCommand: { auto &d = entity.c_messageEntityBotCommand(); result.push_back({ EntityType::BotCommand, d.voffset().v, d.vlength().v }); } break;
+			case mtpc_messageEntityBold: { auto &d = entity.c_messageEntityBold(); result.push_back({ EntityType::Bold, d.voffset().v, d.vlength().v }); } break;
+			case mtpc_messageEntityItalic: { auto &d = entity.c_messageEntityItalic(); result.push_back({ EntityType::Italic, d.voffset().v, d.vlength().v }); } break;
+			case mtpc_messageEntityUnderline: { auto &d = entity.c_messageEntityUnderline(); result.push_back({ EntityType::Underline, d.voffset().v, d.vlength().v }); } break;
+			case mtpc_messageEntityStrike: { auto &d = entity.c_messageEntityStrike(); result.push_back({ EntityType::StrikeOut, d.voffset().v, d.vlength().v }); } break;
+			case mtpc_messageEntityCode: { auto &d = entity.c_messageEntityCode(); result.push_back({ EntityType::Code, d.voffset().v, d.vlength().v }); } break;
+			case mtpc_messageEntityPre: { auto &d = entity.c_messageEntityPre(); result.push_back({ EntityType::Pre, d.voffset().v, d.vlength().v, Clean(qs(d.vlanguage())) }); } break;
+				// #TODO entities
 			}
 		}
 	}
@@ -1516,7 +1531,9 @@ MTPVector<MTPMessageEntity> EntitiesToMTP(const EntitiesInText &entities, Conver
 		if (option == ConvertOption::SkipLocal
 			&& entity.type() != EntityType::Bold
 			&& entity.type() != EntityType::Italic
-			&& entity.type() != EntityType::Code
+			&& entity.type() != EntityType::Underline
+			&& entity.type() != EntityType::StrikeOut
+			&& entity.type() != EntityType::Code // #TODO entities
 			&& entity.type() != EntityType::Pre
 			&& entity.type() != EntityType::MentionName
 			&& entity.type() != EntityType::CustomUrl) {
@@ -1549,7 +1566,9 @@ MTPVector<MTPMessageEntity> EntitiesToMTP(const EntitiesInText &entities, Conver
 		case EntityType::BotCommand: v.push_back(MTP_messageEntityBotCommand(offset, length)); break;
 		case EntityType::Bold: v.push_back(MTP_messageEntityBold(offset, length)); break;
 		case EntityType::Italic: v.push_back(MTP_messageEntityItalic(offset, length)); break;
-		case EntityType::Code: v.push_back(MTP_messageEntityCode(offset, length)); break;
+		case EntityType::Underline: v.push_back(MTP_messageEntityUnderline(offset, length)); break;
+		case EntityType::StrikeOut: v.push_back(MTP_messageEntityStrike(offset, length)); break;
+		case EntityType::Code: v.push_back(MTP_messageEntityCode(offset, length)); break; // #TODO entities
 		case EntityType::Pre: v.push_back(MTP_messageEntityPre(offset, length, MTP_string(entity.data()))); break;
 		}
 	}

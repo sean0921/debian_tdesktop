@@ -27,7 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "mainwidget.h"
 #include "auth_session.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/labels.h"
 #include "observer_peer.h"
@@ -42,7 +42,10 @@ constexpr auto kInlineBotRequestDelay = 400;
 
 } // namespace
 
-Inner::Inner(QWidget *parent, not_null<Window::Controller*> controller) : TWidget(parent)
+Inner::Inner(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
+: TWidget(parent)
 , _controller(controller)
 , _updateInlineItems([=] { updateInlineItems(); })
 , _previewTimer([=] { showPreview(); }) {
@@ -82,12 +85,12 @@ void Inner::visibleTopBottomUpdated(
 
 void Inner::checkRestrictedPeer() {
 	if (_inlineQueryPeer) {
-		const auto errorKey = Data::RestrictionErrorKey(
+		const auto error = Data::RestrictionError(
 			_inlineQueryPeer,
 			ChatRestriction::f_send_inline);
-		if (errorKey) {
+		if (error) {
 			if (!_restrictedLabel) {
-				_restrictedLabel.create(this, lang(*errorKey), Ui::FlatLabel::InitType::Simple, st::stickersRestrictedLabel);
+				_restrictedLabel.create(this, *error, st::stickersRestrictedLabel);
 				_restrictedLabel->show();
 				_restrictedLabel->move(st::inlineResultsLeft - st::buttonRadius, st::stickerPanPadding);
 				if (_switchPmButton) {
@@ -128,6 +131,17 @@ int Inner::countHeight() {
 	return result + st::stickerPanPadding;
 }
 
+QString Inner::tooltipText() const {
+	if (const auto lnk = ClickHandler::getActive()) {
+		return lnk->tooltip();
+	}
+	return QString();
+}
+
+QPoint Inner::tooltipPos() const {
+	return _lastMousePos;
+}
+
 Inner::~Inner() = default;
 
 void Inner::paintEvent(QPaintEvent *e) {
@@ -148,7 +162,7 @@ void Inner::paintInlineItems(Painter &p, const QRect &r) {
 	if (_rows.isEmpty() && !_switchPmButton) {
 		p.setFont(st::normalFont);
 		p.setPen(st::noContactsColor);
-		p.drawText(QRect(0, 0, width(), (height() / 3) * 2 + st::normalFont->height), lang(lng_inline_bot_no_results), style::al_center);
+		p.drawText(QRect(0, 0, width(), (height() / 3) * 2 + st::normalFont->height), tr::lng_inline_bot_no_results(tr::now), style::al_center);
 		return;
 	}
 	auto gifPaused = _controller->isGifPausedAtLeastFor(Window::GifPauseReason::InlineResults);
@@ -245,6 +259,7 @@ void Inner::mouseMoveEvent(QMouseEvent *e) {
 
 void Inner::leaveEventHook(QEvent *e) {
 	clearSelection();
+	Ui::Tooltip::Hide();
 }
 
 void Inner::leaveToChildEvent(QEvent *e, QWidget *child) {
@@ -425,15 +440,14 @@ void Inner::refreshSwitchPmButton(const CacheEntry *entry) {
 		_switchPmStartToken.clear();
 	} else {
 		if (!_switchPmButton) {
-			_switchPmButton.create(this, Fn<QString()>(), st::switchPmButton);
+			_switchPmButton.create(this, nullptr, st::switchPmButton);
 			_switchPmButton->show();
 			_switchPmButton->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
 			connect(_switchPmButton, SIGNAL(clicked()), this, SLOT(onSwitchPm()));
 		}
-		auto text = entry->switchPmText;
-		_switchPmButton->setText([text] { return text; }); // doesn't perform text.toUpper()
+		_switchPmButton->setText(rpl::single(entry->switchPmText));
 		_switchPmStartToken = entry->switchPmStartToken;
-		auto buttonTop = st::stickerPanPadding;
+		const auto buttonTop = st::stickerPanPadding;
 		_switchPmButton->move(st::inlineResultsLeft - st::buttonRadius, buttonTop);
 		if (isRestrictedView()) {
 			_switchPmButton->hide();
@@ -669,18 +683,24 @@ void Inner::updateSelected() {
 			_pressed = _selected;
 			if (row >= 0 && col >= 0) {
 				auto layout = _rows.at(row).items.at(col);
-				if (const auto previewDocument = layout->getPreviewDocument()) {
-					Ui::showMediaPreview(
-						Data::FileOrigin(),
-						previewDocument);
-				} else if (auto previewPhoto = layout->getPreviewPhoto()) {
-					Ui::showMediaPreview(Data::FileOrigin(), previewPhoto);
+				if (const auto w = App::wnd()) {
+					if (const auto previewDocument = layout->getPreviewDocument()) {
+						w->showMediaPreview(
+							Data::FileOrigin(),
+							previewDocument);
+					} else if (auto previewPhoto = layout->getPreviewPhoto()) {
+						w->showMediaPreview(Data::FileOrigin(), previewPhoto);
+					}
 				}
 			}
 		}
 	}
 	if (ClickHandler::setActive(lnk, lnkhost)) {
 		setCursor(lnk ? style::cur_pointer : style::cur_default);
+		Ui::Tooltip::Hide();
+	}
+	if (lnk) {
+		Ui::Tooltip::Show(1000, this);
 	}
 }
 
@@ -690,12 +710,14 @@ void Inner::showPreview() {
 	int row = _pressed / MatrixRowShift, col = _pressed % MatrixRowShift;
 	if (row < _rows.size() && col < _rows.at(row).items.size()) {
 		auto layout = _rows.at(row).items.at(col);
-		if (const auto previewDocument = layout->getPreviewDocument()) {
-			Ui::showMediaPreview(Data::FileOrigin(), previewDocument);
-			_previewShown = true;
-		} else if (const auto previewPhoto = layout->getPreviewPhoto()) {
-			Ui::showMediaPreview(Data::FileOrigin(), previewPhoto);
-			_previewShown = true;
+		if (const auto w = App::wnd()) {
+			if (const auto previewDocument = layout->getPreviewDocument()) {
+				w->showMediaPreview(Data::FileOrigin(), previewDocument);
+				_previewShown = true;
+			} else if (const auto previewPhoto = layout->getPreviewPhoto()) {
+				w->showMediaPreview(Data::FileOrigin(), previewPhoto);
+				_previewShown = true;
+			}
 		}
 	}
 }
@@ -720,7 +742,7 @@ void Inner::onSwitchPm() {
 
 Widget::Widget(
 	QWidget *parent,
-	not_null<Window::Controller*> controller)
+	not_null<Window::SessionController*> controller)
 : RpWidget(parent)
 , _controller(controller)
 , _contentMaxHeight(st::emojiPanMaxHeight)
@@ -930,7 +952,8 @@ Widget::~Widget() = default;
 
 void Widget::hideFinished() {
 	hide();
-	_controller->disableGifPauseReason(Window::GifPauseReason::InlineResults);
+	_controller->disableGifPauseReason(
+		Window::GifPauseReason::InlineResults);
 
 	_inner->hideFinish(true);
 	_a_show.stop();
@@ -951,7 +974,8 @@ void Widget::showStarted() {
 		recountContentMaxHeight();
 		_inner->preloadImages();
 		show();
-		_controller->enableGifPauseReason(Window::GifPauseReason::InlineResults);
+		_controller->enableGifPauseReason(
+			Window::GifPauseReason::InlineResults);
 		startShowAnimation();
 	} else if (_hiding) {
 		startOpacityAnimation(false);
@@ -1021,20 +1045,21 @@ void Widget::inlineResultsDone(const MTPmessages_BotResults &result) {
 	auto adding = (it != _inlineCache.cend());
 	if (result.type() == mtpc_messages_botResults) {
 		auto &d = result.c_messages_botResults();
-		Auth().data().processUsers(d.vusers);
+		Auth().data().processUsers(d.vusers());
 
-		auto &v = d.vresults.v;
-		auto queryId = d.vquery_id.v;
+		auto &v = d.vresults().v;
+		auto queryId = d.vquery_id().v;
 
 		if (it == _inlineCache.cend()) {
 			it = _inlineCache.emplace(_inlineQuery, std::make_unique<internal::CacheEntry>()).first;
 		}
 		auto entry = it->second.get();
-		entry->nextOffset = qs(d.vnext_offset);
-		if (d.has_switch_pm() && d.vswitch_pm.type() == mtpc_inlineBotSwitchPM) {
-			auto &switchPm = d.vswitch_pm.c_inlineBotSwitchPM();
-			entry->switchPmText = qs(switchPm.vtext);
-			entry->switchPmStartToken = qs(switchPm.vstart_param);
+		entry->nextOffset = qs(d.vnext_offset().value_or_empty());
+		if (const auto switchPm = d.vswitch_pm()) {
+			switchPm->match([&](const MTPDinlineBotSwitchPM &data) {
+				entry->switchPmText = qs(data.vtext());
+				entry->switchPmStartToken = qs(data.vstart_param());
+			});
 		}
 
 		if (auto count = v.size()) {

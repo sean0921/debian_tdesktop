@@ -55,7 +55,7 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
     mkdir Libraries
     cd Libraries
 
-    git clone https://github.com/ericniebler/range-v3 range-v3
+    git clone --branch 0.5.0 https://github.com/ericniebler/range-v3 range-v3
 
     git clone https://github.com/telegramdesktop/lzma.git
     cd lzma\C\Util\LzmaLib
@@ -66,17 +66,12 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
     git clone https://github.com/openssl/openssl.git
     cd openssl
     git checkout OpenSSL_1_0_1-stable
-    perl Configure no-shared --prefix=%cd%\Release --openssldir=%cd%\Release VC-WIN32
+    perl Configure no-shared --prefix="C:\Program Files (x86)\OpenSSL" --openssldir="C:\Program Files (x86)\Common Files\SSL" VC-WIN32
     ms\do_ms
     nmake -f ms\nt.mak
-    nmake -f ms\nt.mak install
-    xcopy tmp32\lib.pdb Release\lib\
-    nmake -f ms\nt.mak clean
-    perl Configure no-shared --prefix=%cd%\Debug --openssldir=%cd%\Debug debug-VC-WIN32
+    perl Configure no-shared --prefix="C:\Program Files (x86)\OpenSSL" --openssldir="C:\Program Files (x86)\Common Files\SSL" debug-VC-WIN32
     ms\do_ms
     nmake -f ms\nt.mak
-    nmake -f ms\nt.mak install
-    xcopy tmp32.dbg\lib.pdb Debug\lib\
     cd ..
 
     git clone https://github.com/telegramdesktop/zlib.git
@@ -89,7 +84,7 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
 
     git clone https://github.com/telegramdesktop/openal-soft.git
     cd openal-soft
-    git checkout fix_macro
+    git checkout fix_capture
     cd build
     cmake -G "Visual Studio 16 2019" -A Win32 -D LIBTYPE:STRING=STATIC -D FORCE_STATIC_VCRT:STRING=ON ..
     msbuild OpenAL.vcxproj /property:Configuration=Debug

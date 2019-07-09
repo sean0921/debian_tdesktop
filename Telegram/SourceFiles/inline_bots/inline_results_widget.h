@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/rp_widget.h"
 #include "ui/abstract_button.h"
+#include "ui/widgets/tooltip.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/panel_animation.h"
 #include "base/timer.h"
@@ -25,7 +26,7 @@ class RippleAnimation;
 } // namesapce Ui
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace InlineBots {
@@ -48,11 +49,15 @@ struct CacheEntry {
 	Results results;
 };
 
-class Inner : public TWidget, public Context, private base::Subscriber {
+class Inner
+	: public TWidget
+	, public Ui::AbstractTooltipShower
+	, public Context
+	, private base::Subscriber {
 	Q_OBJECT
 
 public:
-	Inner(QWidget *parent, not_null<Window::Controller*> controller);
+	Inner(QWidget *parent, not_null<Window::SessionController*> controller);
 
 	void hideFinish(bool completely);
 
@@ -75,6 +80,10 @@ public:
 	void setResultSelectedCallback(Fn<void(Result *result, UserData *bot)> callback) {
 		_resultSelectedCallback = std::move(callback);
 	}
+
+	// Ui::AbstractTooltipShower interface.
+	QString tooltipText() const override;
+	QPoint tooltipPos() const override;
 
 	~Inner();
 
@@ -128,7 +137,7 @@ private:
 	int validateExistingInlineRows(const Results &results);
 	void selectInlineResult(int row, int column);
 
-	not_null<Window::Controller*> _controller;
+	not_null<Window::SessionController*> _controller;
 
 	int _visibleTop = 0;
 	int _visibleBottom = 0;
@@ -165,7 +174,7 @@ class Widget : public Ui::RpWidget, private MTP::Sender {
 	Q_OBJECT
 
 public:
-	Widget(QWidget *parent, not_null<Window::Controller*> controller);
+	Widget(QWidget *parent, not_null<Window::SessionController*> controller);
 
 	void moveBottom(int bottom);
 
@@ -233,7 +242,7 @@ private:
 	bool refreshInlineRows(int *added = nullptr);
 	void inlineResultsDone(const MTPmessages_BotResults &result);
 
-	not_null<Window::Controller*> _controller;
+	not_null<Window::SessionController*> _controller;
 
 	int _contentMaxHeight = 0;
 	int _contentHeight = 0;

@@ -90,6 +90,8 @@ boxLayerTitleAdditionalSkip: 9px;
 boxLayerTitleAdditionalFont: normalFont;
 boxLayerScroll: defaultSolidScroll;
 
+boxRowPadding: margins(23px, 0px, 23px, 0px);
+
 boxTopMargin: 6px;
 
 boxTitleClose: IconButton(defaultIconButton) {
@@ -557,6 +559,7 @@ confirmCaptionArea: InputField(defaultInputField) {
 }
 confirmBg: windowBgOver;
 confirmMaxHeight: 245px;
+confirmMaxHeightSkip: 25px;
 confirmCompressedSkip: 10px;
 
 supportInfoField: InputField(defaultInputField) {
@@ -970,3 +973,18 @@ backgroundCheck: ServiceCheck {
 	color: msgServiceFg;
 	duration: 200;
 }
+
+urlAuthCheckbox: Checkbox(defaultBoxCheckbox) {
+	width: 240px;
+}
+
+linkedChatAbout: membersAbout;
+linkedChatAboutPadding: margins(20px, 20px, 20px, 20px);
+
+addContactFieldMargin: margins(19px, 0px, 19px, 10px);
+addContactWarningMargin: margins(19px, 10px, 19px, 5px);
+blockUserConfirmation: FlatLabel(boxLabel) {
+	minWidth: 240px;
+}
+
+transferCheckWidth: 300px;

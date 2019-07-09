@@ -34,13 +34,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/special_buttons.h"
 #include "ui/text_options.h"
 #include "ui/widgets/input_fields.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "ui/widgets/checkbox.h"
 #include "confirm_box.h"
 
 EditCaptionBox::EditCaptionBox(
 	QWidget*,
-	not_null<Window::Controller*> controller,
+	not_null<Window::SessionController*> controller,
 	not_null<HistoryItem*> item)
 : _controller(controller)
 , _msgId(item->fullId()) {
@@ -75,11 +75,7 @@ EditCaptionBox::EditCaptionBox(
 		}
 		doc = document;
 	}
-	const auto original = item->originalText();
-	const auto editData = TextWithTags {
-		original.text,
-		ConvertEntitiesToTextTags(original.entities)
-	};
+	const auto editData = PrepareEditText(item);
 
 	if (!_animated && (dimensions.isEmpty() || doc || !image)) {
 		if (!image) {
@@ -111,7 +107,7 @@ EditCaptionBox::EditCaptionBox(
 
 		if (doc) {
 			const auto nameString = doc->isVoiceMessage()
-				? lang(lng_media_audio)
+				? tr::lng_media_audio(tr::now)
 				: doc->composeNameString();
 			setName(nameString, doc->size);
 			_isImage = doc->isImage();
@@ -253,7 +249,7 @@ EditCaptionBox::EditCaptionBox(
 		this,
 		st::confirmCaptionArea,
 		Ui::InputField::Mode::MultiLine,
-		langFactory(lng_photo_caption),
+		tr::lng_photo_caption(),
 		editData);
 	_field->setMaxLength(Global::CaptionLengthMax());
 	_field->setSubmitSettings(Ui::InputField::SubmitSettings::Both);
@@ -266,7 +262,7 @@ EditCaptionBox::EditCaptionBox(
 		this,
 		object_ptr<Ui::Checkbox>(
 			this,
-			lang(lng_send_file),
+			tr::lng_send_file(tr::now),
 			false,
 			st::defaultBoxCheckbox),
 		st::editMediaCheckboxMargins);
@@ -444,13 +440,16 @@ void EditCaptionBox::updateEditPreview() {
 		_doc = true;
 	}
 
-	_wayWrap->toggle(_photo && !_isAlbum, anim::type::instant);
+	const auto showCheckbox = _photo && !_isAlbum;
+	_wayWrap->toggle(showCheckbox, anim::type::instant);
 
 	if (!_doc) {
 		_thumb = App::pixmapFromImageInPlace(
 			file->preview.scaled(
 				st::sendMediaPreviewSize * cIntRetinaFactor(),
-				st::confirmMaxHeight * cIntRetinaFactor(),
+				(st::confirmMaxHeight - (showCheckbox
+					? st::confirmMaxHeightSkip
+					: 0)) * cIntRetinaFactor(),
 				Qt::KeepAspectRatio));
 		_thumbw = _thumb.width() / cIntRetinaFactor();
 		_thumbh = _thumb.height() / cIntRetinaFactor();
@@ -485,7 +484,7 @@ void EditCaptionBox::createEditMediaButton() {
 		const auto isValidFile = [](QString mimeType) {
 			if (mimeType == qstr("image/webp")) {
 				Ui::show(
-					Box<InformBox>(lang(lng_edit_media_invalid_file)),
+					Box<InformBox>(tr::lng_edit_media_invalid_file(tr::now)),
 					LayerOption::KeepOther);
 				return false;
 			}
@@ -513,7 +512,7 @@ void EditCaptionBox::createEditMediaButton() {
 				if (ranges::find(albumMimes, file->mime) == end(albumMimes)
 					|| file->type == Storage::PreparedFile::AlbumType::None) {
 					Ui::show(
-						Box<InformBox>(lang(lng_edit_media_album_error)),
+						Box<InformBox>(tr::lng_edit_media_album_error(tr::now)),
 						LayerOption::KeepOther);
 					return;
 				}
@@ -543,7 +542,7 @@ void EditCaptionBox::createEditMediaButton() {
 				});
 				if (!valid) {
 					Ui::show(
-						Box<InformBox>(lang(lng_edit_media_album_error)),
+						Box<InformBox>(tr::lng_edit_media_album_error(tr::now)),
 						LayerOption::KeepOther);
 					return;
 				}
@@ -567,7 +566,7 @@ void EditCaptionBox::createEditMediaButton() {
 			: QStringList(FileDialog::AllFilesFilter());
 		FileDialog::GetOpenPath(
 			this,
-			lang(lng_choose_file),
+			tr::lng_choose_file(tr::now),
 			filters.join(qsl(";;")),
 			crl::guard(this, callback));
 	};
@@ -587,13 +586,13 @@ void EditCaptionBox::createEditMediaButton() {
 }
 
 void EditCaptionBox::prepare() {
-	addButton(langFactory(lng_settings_save), [this] { save(); });
+	addButton(tr::lng_settings_save(), [this] { save(); });
 	if (_isAllowedEditMedia) {
 		createEditMediaButton();
 	} else {
 		_preparedList.files.clear();
 	}
-	addButton(langFactory(lng_cancel), [this] { closeBox(); });
+	addButton(tr::lng_cancel(), [this] { closeBox(); });
 
 	updateBoxSize();
 	connect(_field, &Ui::InputField::submitted, [=] { save(); });
@@ -678,7 +677,7 @@ bool EditCaptionBox::fileFromClipboard(not_null<const QMimeData*> data) {
 	if (list.files.front().type == Storage::PreparedFile::AlbumType::None
 		&& _isAlbum) {
 		Ui::show(
-			Box<InformBox>(lang(lng_edit_media_album_error)),
+			Box<InformBox>(tr::lng_edit_media_album_error(tr::now)),
 			LayerOption::KeepOther);
 		return false;
 	}
@@ -831,7 +830,7 @@ void EditCaptionBox::paintEvent(QPaintEvent *e) {
 	} else {
 		p.setFont(st::boxTitleFont);
 		p.setPen(st::boxTextFg);
-		p.drawTextLeft(_field->x(), st::boxPhotoPadding.top(), width(), lang(lng_edit_message));
+		p.drawTextLeft(_field->x(), st::boxPhotoPadding.top(), width(), tr::lng_edit_message(tr::now));
 	}
 
 	if (!_error.isEmpty()) {
@@ -879,7 +878,7 @@ void EditCaptionBox::save() {
 
 	const auto item = Auth().data().message(_msgId);
 	if (!item) {
-		_error = lang(lng_edit_deleted);
+		_error = tr::lng_edit_deleted(tr::now);
 		update();
 		return;
 	}
@@ -949,7 +948,7 @@ bool EditCaptionBox::saveFail(const RPCError &error) {
 	_saveRequestId = 0;
 	QString err = error.type();
 	if (err == qstr("MESSAGE_ID_INVALID") || err == qstr("CHAT_ADMIN_REQUIRED") || err == qstr("MESSAGE_EDIT_TIME_EXPIRED")) {
-		_error = lang(lng_edit_error);
+		_error = tr::lng_edit_error(tr::now);
 	} else if (err == qstr("MESSAGE_NOT_MODIFIED")) {
 		closeBox();
 		return true;
@@ -957,7 +956,7 @@ bool EditCaptionBox::saveFail(const RPCError &error) {
 		_field->setFocus();
 		_field->showError();
 	} else {
-		_error = lang(lng_edit_error);
+		_error = tr::lng_edit_error(tr::now);
 	}
 	update();
 	return true;

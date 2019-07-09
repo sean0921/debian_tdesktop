@@ -31,7 +31,7 @@ class FadeWrapScaled;
 } // namespace Ui
 
 namespace Window {
-class Controller;
+class SessionController;
 class ConnectionState;
 } // namespace Window
 
@@ -49,7 +49,7 @@ class Widget : public Window::AbstractSectionWidget, public RPCSender {
 	Q_OBJECT
 
 public:
-	Widget(QWidget *parent, not_null<Window::Controller*> controller);
+	Widget(QWidget *parent, not_null<Window::SessionController*> controller);
 
 	void updateDragInScroll(bool inScroll);
 
@@ -153,6 +153,7 @@ private:
 	QPixmap grabForFolderSlideAnimation();
 	void startSlideAnimation();
 
+	void fullSearchRefreshOn(rpl::producer<> events);
 	void applyFilterUpdate(bool force = false);
 	void refreshLoadMoreButton(bool mayBlock, bool isBlocked);
 	void loadMoreBlockedByDate();
@@ -210,6 +211,7 @@ private:
 
 	QString _searchQuery;
 	UserData *_searchQueryFrom = nullptr;
+	int32 _searchNextRate = 0;
 	bool _searchFull = false;
 	bool _searchFullMigrated = false;
 	mtpRequestId _searchRequest = 0;

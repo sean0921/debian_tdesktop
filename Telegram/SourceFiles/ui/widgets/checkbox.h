@@ -150,8 +150,9 @@ public:
 		const style::Checkbox &st,
 		std::unique_ptr<AbstractCheckView> check);
 
-	void setText(const QString &text);
+	void setText(const QString &text, bool rich = false);
 	void setCheckAlignment(style::align alignment);
+	void setAllowMultiline(bool allow);
 
 	bool checked() const;
 	rpl::producer<bool> checkedChanges() const;
@@ -190,14 +191,16 @@ protected:
 private:
 	void resizeToText();
 	QPixmap grabCheckCache() const;
+	int countTextMinWidth() const;
 
 	const style::Checkbox &_st;
 	std::unique_ptr<AbstractCheckView> _check;
 	rpl::event_stream<bool> _checkedChanges;
 	QPixmap _checkCache;
 
-	Text _text;
+	Text::String _text;
 	style::align _checkAlignment = style::al_left;
+	bool _allowMultiline = false;
 
 };
 

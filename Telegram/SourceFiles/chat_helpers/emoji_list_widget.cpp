@@ -379,7 +379,7 @@ void EmojiColorPicker::drawVariant(Painter &p, int variant) {
 
 EmojiListWidget::EmojiListWidget(
 	QWidget *parent,
-	not_null<Window::Controller*> controller)
+	not_null<Window::SessionController*> controller)
 : Inner(parent, controller)
 , _picker(this)
 , _showPickerTimer([=] { showPicker(); }) {
@@ -529,7 +529,7 @@ void EmojiListWidget::paintEvent(QPaintEvent *e) {
 		if (info.section > 0 && r.top() < info.rowsTop) {
 			p.setFont(st::emojiPanHeaderFont);
 			p.setPen(st::emojiPanHeaderFg);
-			p.drawTextLeft(st::emojiPanHeaderLeft - st::buttonRadius, info.top + st::emojiPanHeaderTop, width(), lang(LangKey(lng_emoji_category1 + info.section - 1)));
+			p.drawTextLeft(st::emojiPanHeaderLeft - st::buttonRadius, info.top + st::emojiPanHeaderTop, width(), Ui::Emoji::CategoryTitle(info.section)(tr::now));
 		}
 		if (r.top() + r.height() > info.rowsTop) {
 			ensureLoaded(info.section);

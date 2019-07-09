@@ -11,8 +11,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_flags.h"
 #include "data/data_notify_settings.h"
 
-enum LangKey : int;
-
 namespace Ui {
 class EmptyUserpic;
 } // namespace Ui
@@ -22,6 +20,10 @@ class PeerData;
 class UserData;
 class ChatData;
 class ChannelData;
+
+namespace Main {
+class Account;
+} // namespace Main
 
 namespace Data {
 
@@ -99,18 +101,32 @@ private:
 };
 
 class PeerData {
+private:
+	static constexpr auto kSettingsUnknown = MTPDpeerSettings::Flag(1U << 9);
+
 protected:
 	PeerData(not_null<Data::Session*> owner, PeerId id);
 	PeerData(const PeerData &other) = delete;
 	PeerData &operator=(const PeerData &other) = delete;
 
 public:
+	static constexpr auto kEssentialSettings = 0
+		| MTPDpeerSettings::Flag::f_report_spam
+		| MTPDpeerSettings::Flag::f_add_contact
+		| MTPDpeerSettings::Flag::f_block_contact
+		| MTPDpeerSettings::Flag::f_share_contact
+		| kSettingsUnknown;
+	using Settings = Data::Flags<
+		MTPDpeerSettings::Flags,
+		kEssentialSettings.value()>;
+
 	virtual ~PeerData();
 
 	static constexpr auto kServiceNotificationsId = peerFromUser(777000);
 
 	[[nodiscard]] Data::Session &owner() const;
 	[[nodiscard]] AuthSession &session() const;
+	[[nodiscard]] Main::Account &account() const;
 
 	[[nodiscard]] bool isUser() const {
 		return peerIsUser(id);
@@ -125,6 +141,7 @@ public:
 		return (input.type() == mtpc_inputPeerSelf);
 	}
 	[[nodiscard]] bool isVerified() const;
+	[[nodiscard]] bool isScam() const;
 	[[nodiscard]] bool isMegagroup() const;
 
 	[[nodiscard]] bool isNotificationsUser() const {
@@ -186,8 +203,9 @@ public:
 		return (_lastFullUpdate != 0);
 	}
 
-	[[nodiscard]] const Text &dialogName() const;
+	[[nodiscard]] const Ui::Text::String &nameText() const;
 	[[nodiscard]] const QString &shortName() const;
+	[[nodiscard]] const Ui::Text::String &topBarNameText() const;
 	[[nodiscard]] QString userName() const;
 
 	[[nodiscard]] int32 bareId() const {
@@ -229,7 +247,7 @@ public:
 		int x,
 		int y,
 		int size) const;
-	void loadUserpic(bool loadFirst = false, bool prior = true);
+	void loadUserpic();
 	[[nodiscard]] bool userpicLoaded() const;
 	[[nodiscard]] bool useEmptyUserpic() const;
 	[[nodiscard]] InMemoryKey userpicUniqueKey() const;
@@ -284,6 +302,20 @@ public:
 
 	void checkFolder(FolderId folderId);
 
+	void setSettings(MTPDpeerSettings::Flags which) {
+		_settings.set(which);
+	}
+	auto settings() const {
+		return (_settings.current() & kSettingsUnknown)
+			? std::nullopt
+			: std::make_optional(_settings.current());
+	}
+	auto settingsValue() const {
+		return (_settings.current() & kSettingsUnknown)
+			? _settings.changes()
+			: (_settings.value() | rpl::type_erased());
+	}
+
 	enum LoadedStatus {
 		NotLoaded = 0x00,
 		MinimalLoaded = 0x01,
@@ -292,7 +324,6 @@ public:
 
 	const PeerId id;
 	QString name;
-	Text nameText;
 	LoadedStatus loadedStatus = NotLoaded;
 	MTPinputPeer input;
 
@@ -327,6 +358,7 @@ private:
 	PhotoId _userpicPhotoId = kUnknownPhotoId;
 	mutable std::unique_ptr<Ui::EmptyUserpic> _userpicEmpty;
 	StorageImageLocation _userpicLocation;
+	Ui::Text::String _nameText;
 
 	Data::NotifySettings _notify;
 
@@ -337,6 +369,8 @@ private:
 	crl::time _lastFullUpdate = 0;
 	MsgId _pinnedMessageId = 0;
 
+	Settings _settings = { kSettingsUnknown };
+
 	QString _about;
 
 };
@@ -345,7 +379,7 @@ namespace Data {
 
 std::vector<ChatRestrictions> ListOfRestrictions();
 
-std::optional<LangKey> RestrictionErrorKey(
+std::optional<QString> RestrictionError(
 	not_null<PeerData*> peer,
 	ChatRestriction restriction);
 

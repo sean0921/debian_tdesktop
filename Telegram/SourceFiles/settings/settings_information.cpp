@@ -38,7 +38,7 @@ constexpr auto kSaveBioTimeout = 1000;
 
 void SetupPhoto(
 		not_null<Ui::VerticalLayout*> container,
-		not_null<Window::Controller*> controller,
+		not_null<Window::SessionController*> controller,
 		not_null<UserData*> self) {
 	const auto wrap = container->add(object_ptr<BoxContentDivider>(
 		container,
@@ -51,7 +51,7 @@ void SetupPhoto(
 		st::settingsInfoPhoto);
 	const auto upload = Ui::CreateChild<Ui::RoundButton>(
 		wrap,
-		langFactory(lng_settings_upload),
+		tr::lng_settings_upload(),
 		st::settingsInfoPhotoSet);
 	upload->setFullRadius(true);
 	upload->addClickHandler([=] {
@@ -71,12 +71,12 @@ void SetupPhoto(
 			if (image.isNull()
 				|| image.width() > 10 * image.height()
 				|| image.height() > 10 * image.width()) {
-				Ui::show(Box<InformBox>(lang(lng_bad_photo)));
+				Ui::show(Box<InformBox>(tr::lng_bad_photo(tr::now)));
 				return;
 			}
 
 			const auto box = Ui::show(
-				Box<PhotoCropBox>(image, lang(lng_settings_crop_profile)));
+				Box<PhotoCropBox>(image, tr::lng_settings_crop_profile(tr::now)));
 			box->ready(
 			) | rpl::start_with_next([=](QImage &&image) {
 				Auth().api().uploadPeerPhoto(self, std::move(image));
@@ -84,7 +84,7 @@ void SetupPhoto(
 		};
 		FileDialog::GetOpenPath(
 			upload,
-			lang(lng_choose_image),
+			tr::lng_choose_image(tr::now),
 			filter,
 			crl::guard(upload, callback));
 	});
@@ -218,17 +218,17 @@ void SetupRows(
 
 	AddRow(
 		container,
-		Lang::Viewer(lng_settings_name_label),
+		tr::lng_settings_name_label(),
 		Info::Profile::NameValue(self),
-		lang(lng_profile_copy_fullname),
+		tr::lng_profile_copy_fullname(tr::now),
 		[=] { Ui::show(Box<EditNameBox>(self)); },
 		st::settingsInfoName);
 
 	AddRow(
 		container,
-		Lang::Viewer(lng_settings_phone_label),
+		tr::lng_settings_phone_label(),
 		Info::Profile::PhoneValue(self),
-		lang(lng_profile_copy_phone),
+		tr::lng_profile_copy_phone(tr::now),
 		[] { Ui::show(Box<ChangePhoneBox>()); },
 		st::settingsInfoPhone);
 
@@ -239,14 +239,14 @@ void SetupRows(
 		return username.text.isEmpty();
 	});
 	auto label = rpl::combine(
-		Lang::Viewer(lng_settings_username_label),
+		tr::lng_settings_username_label(),
 		std::move(empty)
 	) | rpl::map([](const QString &label, bool empty) {
 		return empty ? "t.me/username" : label;
 	});
 	auto value = rpl::combine(
 		std::move(username),
-		Lang::Viewer(lng_settings_username_add)
+		tr::lng_settings_username_add()
 	) | rpl::map([](const TextWithEntities &username, const QString &add) {
 		if (!username.text.isEmpty()) {
 			return username;
@@ -263,7 +263,7 @@ void SetupRows(
 		container,
 		std::move(label),
 		std::move(value),
-		lang(lng_context_copy_mention),
+		tr::lng_context_copy_mention(tr::now),
 		[=] { Ui::show(Box<UsernameBox>()); },
 		st::settingsInfoUsername);
 
@@ -297,14 +297,13 @@ BioManager SetupBio(
 			container,
 			*style,
 			Ui::InputField::Mode::MultiLine,
-			langFactory(lng_bio_placeholder),
+			tr::lng_bio_placeholder(),
 			*current),
 		st::settingsBioMargins);
 
 	const auto countdown = Ui::CreateChild<Ui::FlatLabel>(
 		container.get(),
 		QString(),
-		Ui::FlatLabel::InitType::Simple,
 		st::settingsBioCountdown);
 
 	rpl::combine(
@@ -393,7 +392,7 @@ BioManager SetupBio(
 	container->add(
 		object_ptr<Ui::FlatLabel>(
 			container,
-			Lang::Viewer(lng_settings_about_bio),
+			tr::lng_settings_about_bio(),
 			st::boxDividerLabel),
 		st::settingsBioLabelPadding);
 
@@ -409,7 +408,7 @@ BioManager SetupBio(
 
 Information::Information(
 	QWidget *parent,
-	not_null<Window::Controller*> controller,
+	not_null<Window::SessionController*> controller,
 	not_null<UserData*> self)
 : Section(parent)
 , _self(self) {
@@ -424,7 +423,7 @@ Information::Information(
 //	_save(std::move(done));
 //}
 
-void Information::setupContent(not_null<Window::Controller*> controller) {
+void Information::setupContent(not_null<Window::SessionController*> controller) {
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 
 	SetupPhoto(content, controller, _self);

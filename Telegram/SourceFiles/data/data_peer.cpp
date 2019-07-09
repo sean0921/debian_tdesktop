@@ -20,7 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "auth_session.h"
 #include "core/application.h"
 #include "mainwindow.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "ui/image/image.h"
 #include "ui/empty_userpic.h"
 #include "ui/text_options.h"
@@ -77,14 +77,14 @@ PeerClickHandler::PeerClickHandler(not_null<PeerData*> peer)
 
 void PeerClickHandler::onClick(ClickContext context) const {
 	if (context.button == Qt::LeftButton && App::wnd()) {
-		auto controller = App::wnd()->controller();
+		const auto controller = App::wnd()->sessionController();
 		if (_peer
 			&& _peer->isChannel()
 			&& controller->activeChatCurrent().peer() != _peer) {
 			if (!_peer->asChannel()->isPublic() && !_peer->asChannel()->amIn()) {
-				Ui::show(Box<InformBox>(lang(_peer->isMegagroup()
-					? lng_group_not_accessible
-					: lng_channel_not_accessible)));
+				Ui::show(Box<InformBox>(_peer->isMegagroup()
+					? tr::lng_group_not_accessible(tr::now)
+					: tr::lng_channel_not_accessible(tr::now)));
 			} else {
 				controller->showPeerHistory(
 					_peer,
@@ -100,7 +100,7 @@ PeerData::PeerData(not_null<Data::Session*> owner, PeerId id)
 : id(id)
 , _owner(owner)
 , _userpicEmpty(createEmptyUserpic()) {
-	nameText.setText(st::msgNameStyle, QString(), Ui::NameTextOptions());
+	_nameText.setText(st::msgNameStyle, QString(), Ui::NameTextOptions());
 }
 
 Data::Session &PeerData::owner() const {
@@ -109,6 +109,10 @@ Data::Session &PeerData::owner() const {
 
 AuthSession &PeerData::session() const {
 	return _owner->session();
+}
+
+Main::Account &PeerData::account() const {
+	return session().account();
 }
 
 void PeerData::updateNameDelayed(
@@ -130,7 +134,7 @@ void PeerData::updateNameDelayed(
 		}
 	}
 	name = newName;
-	nameText.setText(st::msgNameStyle, name, Ui::NameTextOptions());
+	_nameText.setText(st::msgNameStyle, name, Ui::NameTextOptions());
 	refreshEmptyUserpic();
 	Notify::PeerUpdate update(this);
 	if (nameVersion++ > 1) {
@@ -239,8 +243,8 @@ void PeerData::paintUserpicSquare(Painter &p, int x, int y, int size) const {
 	}
 }
 
-void PeerData::loadUserpic(bool loadFirst, bool prior) {
-	_userpic->load(userpicOrigin(), loadFirst, prior);
+void PeerData::loadUserpic() {
+	_userpic->load(userpicOrigin());
 }
 
 bool PeerData::userpicLoaded() const {
@@ -323,8 +327,8 @@ void PeerData::updateUserpic(
 				MTP_inputPeerPhotoFileLocation(
 					MTP_flags(0),
 					input,
-					deprecated.vvolume_id,
-					deprecated.vlocal_id)),
+					deprecated.vvolume_id(),
+					deprecated.vlocal_id())),
 			size,
 			size);
 	});
@@ -451,7 +455,7 @@ void PeerData::fillNames() {
 		appendToIndex(user->username);
 		if (isSelf()) {
 			const auto english = qsl("Saved messages");
-			const auto localized = lang(lng_saved_messages);
+			const auto localized = tr::lng_saved_messages(tr::now);
 			appendToIndex(english);
 			if (localized != english) {
 				appendToIndex(localized);
@@ -588,32 +592,56 @@ not_null<const PeerData*> PeerData::migrateToOrMe() const {
 	return this;
 }
 
-const Text &PeerData::dialogName() const {
-	return migrateTo()
-		? migrateTo()->dialogName()
-		: (isUser() && !asUser()->phoneText.isEmpty())
-			? asUser()->phoneText
-			: nameText;
+const Ui::Text::String &PeerData::topBarNameText() const {
+	if (const auto to = migrateTo()) {
+		return to->topBarNameText();
+	} else if (const auto user = asUser()) {
+		if (!user->phoneText.isEmpty()) {
+			return user->phoneText;
+		}
+	}
+	return _nameText;
+}
+
+const Ui::Text::String &PeerData::nameText() const {
+	if (const auto to = migrateTo()) {
+		return to->nameText();
+	}
+	return _nameText;
 }
 
 const QString &PeerData::shortName() const {
-	return isUser() ? asUser()->firstName : name;
+	if (const auto user = asUser()) {
+		return user->firstName.isEmpty() ? user->lastName : user->firstName;
+	}
+	return name;
 }
 
 QString PeerData::userName() const {
-	return isUser()
-		? asUser()->username
-		: isChannel()
-			? asChannel()->username
-			: QString();
+	if (const auto user = asUser()) {
+		return user->username;
+	} else if (const auto channel = asChannel()) {
+		return channel->username;
+	}
+	return QString();
 }
 
 bool PeerData::isVerified() const {
-	return isUser()
-		? asUser()->isVerified()
-		: isChannel()
-			? asChannel()->isVerified()
-			: false;
+	if (const auto user = asUser()) {
+		return user->isVerified();
+	} else if (const auto channel = asChannel()) {
+		return channel->isVerified();
+	}
+	return false;
+}
+
+bool PeerData::isScam() const {
+	if (const auto user = asUser()) {
+		return user->isScam();
+	} else if (const auto channel = asChannel()) {
+		return channel->isScam();
+	}
+	return false;
 }
 
 bool PeerData::isMegagroup() const {
@@ -621,13 +649,14 @@ bool PeerData::isMegagroup() const {
 }
 
 bool PeerData::canWrite() const {
-	return isChannel()
-		? asChannel()->canWrite()
-		: isChat()
-			? asChat()->canWrite()
-			: isUser()
-				? asUser()->canWrite()
-				: false;
+	if (const auto user = asUser()) {
+		return user->canWrite();
+	} else if (const auto channel = asChannel()) {
+		return channel->canWrite();
+	} else if (const auto chat = asChat()) {
+		return chat->canWrite();
+	}
+	return false;
 }
 
 Data::RestrictionCheckResult PeerData::amRestricted(
@@ -692,7 +721,7 @@ std::vector<ChatRestrictions> ListOfRestrictions() {
 	};
 }
 
-std::optional<LangKey> RestrictionErrorKey(
+std::optional<QString> RestrictionError(
 		not_null<PeerData*> peer,
 		ChatRestriction restriction) {
 	using Flag = ChatRestriction;
@@ -701,29 +730,29 @@ std::optional<LangKey> RestrictionErrorKey(
 		switch (restriction) {
 		case Flag::f_send_polls:
 			return all
-				? lng_restricted_send_polls_all
-				: lng_restricted_send_polls;
+				? tr::lng_restricted_send_polls_all(tr::now)
+				: tr::lng_restricted_send_polls(tr::now);
 		case Flag::f_send_messages:
 			return all
-				? lng_restricted_send_message_all
-				: lng_restricted_send_message;
+				? tr::lng_restricted_send_message_all(tr::now)
+				: tr::lng_restricted_send_message(tr::now);
 		case Flag::f_send_media:
 			return all
-				? lng_restricted_send_media_all
-				: lng_restricted_send_media;
+				? tr::lng_restricted_send_media_all(tr::now)
+				: tr::lng_restricted_send_media(tr::now);
 		case Flag::f_send_stickers:
 			return all
-				? lng_restricted_send_stickers_all
-				: lng_restricted_send_stickers;
+				? tr::lng_restricted_send_stickers_all(tr::now)
+				: tr::lng_restricted_send_stickers(tr::now);
 		case Flag::f_send_gifs:
 			return all
-				? lng_restricted_send_gifs_all
-				: lng_restricted_send_gifs;
+				? tr::lng_restricted_send_gifs_all(tr::now)
+				: tr::lng_restricted_send_gifs(tr::now);
 		case Flag::f_send_inline:
 		case Flag::f_send_games:
 			return all
-				? lng_restricted_send_inline_all
-				: lng_restricted_send_inline;
+				? tr::lng_restricted_send_inline_all(tr::now)
+				: tr::lng_restricted_send_inline(tr::now);
 		}
 		Unexpected("Restriction in Data::RestrictionErrorKey.");
 	}

@@ -63,7 +63,7 @@ class SlideWrap;
 } // namespace Ui
 
 namespace Window {
-class Controller;
+class SessionController;
 template <typename Inner>
 class TopBarWrapWidget;
 class SectionMemento;
@@ -97,7 +97,7 @@ class MainWidget
 public:
 	using SectionShow = Window::SectionShow;
 
-	MainWidget(QWidget *parent, not_null<Window::Controller*> controller);
+	MainWidget(QWidget *parent, not_null<Window::SessionController*> controller);
 
 	AuthSession &session() const;
 
@@ -199,7 +199,6 @@ public:
 
 	// While HistoryInner is not HistoryView::ListWidget.
 	crl::time highlightStartTime(not_null<const HistoryItem*> item) const;
-	bool historyInSelectionMode() const;
 
 	MsgId currentReplyToIdFor(not_null<History*> history) const;
 
@@ -286,6 +285,8 @@ public:
 	void notify_userIsBotChanged(UserData *bot);
 	void notify_historyMuteUpdated(History *history);
 
+	void closeBothPlayers();
+
 	bool isQuitPrevent();
 
 	~MainWidget();
@@ -348,7 +349,6 @@ private:
 
 	void setupConnectingWidget();
 	void createPlayer();
-	void closeBothPlayers();
 	void playerHeightUpdated();
 
 	void setCurrentCall(Calls::Call *call);
@@ -410,7 +410,7 @@ private:
 
 	not_null<Media::Player::FloatDelegate*> floatPlayerDelegate();
 	not_null<Ui::RpWidget*> floatPlayerWidget() override;
-	not_null<Window::Controller*> floatPlayerController() override;
+	not_null<Window::SessionController*> floatPlayerController() override;
 	not_null<Window::AbstractSectionWidget*> floatPlayerGetSection(
 		Window::Column column) override;
 	void floatPlayerEnumerateSections(Fn<void(
@@ -443,7 +443,9 @@ private:
 		const Data::WallPaper &background,
 		QImage &&image);
 
-	not_null<Window::Controller*> _controller;
+	void handleHistoryBack();
+
+	not_null<Window::SessionController*> _controller;
 	bool _started = false;
 
 	Ui::Animations::Simple _a_show;

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/player/media_player_widget.h"
 
+#include "platform/platform_specific.h"
 #include "data/data_document.h"
 #include "data/data_session.h"
 #include "ui/widgets/labels.h"
@@ -146,9 +147,6 @@ Widget::Widget(QWidget *parent) : RpWidget(parent)
 			updateRepeatTrackIcon();
 		}
 	});
-	subscribe(instance()->updatedNotifier(), [this](const TrackState &state) {
-		handleSongUpdate(state);
-	});
 	subscribe(instance()->trackChangedNotifier(), [this](AudioMsgId::Type type) {
 		if (type == _type) {
 			handleSongChange();
@@ -164,6 +162,12 @@ Widget::Widget(QWidget *parent) : RpWidget(parent)
 			}
 		}
 	});
+
+	instance()->updatedNotifier(
+	) | rpl::start_with_next([=](const TrackState &state) {
+		handleSongUpdate(state);
+	}, lifetime());
+
 	setType(AudioMsgId::Type::Song);
 	_playPause->finishTransform();
 }
@@ -518,11 +522,18 @@ void Widget::handleSongChange() {
 				const auto time = parsed.time().toString(cTimeFormat());
 				const auto today = QDateTime::currentDateTime().date();
 				if (date == today) {
-					return lng_player_message_today(lt_time, time);
+					return tr::lng_player_message_today(
+						tr::now,
+						lt_time,
+						time);
 				} else if (date.addDays(1) == today) {
-					return lng_player_message_yesterday(lt_time, time);
+					return tr::lng_player_message_yesterday(
+						tr::now,
+						lt_time,
+						time);
 				}
-				return lng_player_message_date(
+				return tr::lng_player_message_date(
+					tr::now,
 					lt_date,
 					langDayOfMonthFull(date),
 					lt_time,
@@ -536,7 +547,7 @@ void Widget::handleSongChange() {
 				name.size(),
 				QString()));
 		} else {
-			textWithEntities.text = lang(lng_media_audio);
+			textWithEntities.text = tr::lng_media_audio(tr::now);
 		}
 	} else {
 		const auto song = document->song();

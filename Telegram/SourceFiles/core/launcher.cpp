@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "platform/platform_launcher.h"
 #include "platform/platform_specific.h"
+#include "platform/platform_info.h"
 #include "core/crash_reports.h"
 #include "core/main_queue_processor.h"
 #include "core/update_checker.h"
@@ -241,7 +242,11 @@ void Launcher::init() {
 
 	QApplication::setApplicationName(qsl("TelegramDesktop"));
 
-#if defined(Q_OS_LINUX) && QT_VERSION >= QT_VERSION_CHECK(5, 7, 0)
+#ifdef TDESKTOP_LAUNCHER_FILENAME
+#define TDESKTOP_LAUNCHER_FILENAME_TO_STRING_HELPER(V) #V
+#define TDESKTOP_LAUNCHER_FILENAME_TO_STRING(V) TDESKTOP_LAUNCHER_FILENAME_TO_STRING_HELPER(V)
+	QApplication::setDesktopFileName(qsl(TDESKTOP_LAUNCHER_FILENAME_TO_STRING(TDESKTOP_LAUNCHER_FILENAME)));
+#elif defined(Q_OS_LINUX) && QT_VERSION >= QT_VERSION_CHECK(5, 7, 0)
 	QApplication::setDesktopFileName(qsl("telegramdesktop.desktop"));
 #endif
 #ifndef OS_MAC_OLD
@@ -330,44 +335,6 @@ bool Launcher::customWorkingDir() const {
 }
 
 void Launcher::prepareSettings() {
-#ifdef Q_OS_MAC
-#ifndef OS_MAC_OLD
-	if (QSysInfo::macVersion() >= QSysInfo::MV_10_11) {
-		gIsElCapitan = true;
-	}
-#else // OS_MAC_OLD
-	if (QSysInfo::macVersion() < QSysInfo::MV_10_7) {
-		gIsSnowLeopard = true;
-	}
-#endif // OS_MAC_OLD
-#endif // Q_OS_MAC
-
-	switch (cPlatform()) {
-	case dbipWindows:
-#ifndef OS_WIN_STORE
-		gPlatformString = qsl("Windows");
-#else // OS_WIN_STORE
-		gPlatformString = qsl("WinStore");
-#endif // OS_WIN_STORE
-	break;
-	case dbipMac:
-#ifndef OS_MAC_STORE
-		gPlatformString = qsl("MacOS");
-#else // OS_MAC_STORE
-		gPlatformString = qsl("MacAppStore");
-#endif // OS_MAC_STORE
-	break;
-	case dbipMacOld:
-		gPlatformString = qsl("MacOSold");
-	break;
-	case dbipLinux64:
-		gPlatformString = qsl("Linux64bit");
-	break;
-	case dbipLinux32:
-		gPlatformString = qsl("Linux32bit");
-	break;
-	}
-
 	auto path = Platform::CurrentExecutablePath(_argc, _argv);
 	LOG(("Executable path before check: %1").arg(path));
 	if (!path.isEmpty()) {
@@ -421,6 +388,7 @@ void Launcher::processArguments() {
 		{ "-sendpath"       , KeyFormat::AllLeftValues },
 		{ "-workdir"        , KeyFormat::OneValue },
 		{ "--"              , KeyFormat::OneValue },
+		{ "-scale"          , KeyFormat::OneValue },
 	};
 	auto parseResult = QMap<QByteArray, QStringList>();
 	auto parsingKey = QByteArray();
@@ -470,6 +438,14 @@ void Launcher::processArguments() {
 		}
 	}
 	gStartUrl = parseResult.value("--", {}).join(QString());
+
+	const auto scaleKey = parseResult.value("-scale", {});
+	if (scaleKey.size() > 0) {
+		const auto value = scaleKey[0].toInt();
+		gConfigScale = ((value < 75) || (value > 300))
+			? kInterfaceScaleAuto
+			: value;
+	}
 }
 
 int Launcher::executeApplication() {

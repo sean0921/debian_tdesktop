@@ -75,7 +75,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_top_bar_wrap.h"
 #include "window/notifications_manager.h"
 #include "window/window_slide_animation.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "window/themes/window_theme.h"
 #include "window/window_history_hider.h"
 #include "mtproto/dc_options.h"
@@ -124,7 +124,7 @@ enum class DataIsLoadedResult {
 };
 
 bool IsForceLogoutNotification(const MTPDupdateServiceNotification &data) {
-	return qs(data.vtype).startsWith(qstr("AUTH_KEY_DROP_"));
+	return qs(data.vtype()).startsWith(qstr("AUTH_KEY_DROP_"));
 }
 
 bool HasForceLogoutNotification(const MTPUpdates &updates) {
@@ -145,11 +145,11 @@ bool HasForceLogoutNotification(const MTPUpdates &updates) {
 	};
 	switch (updates.type()) {
 	case mtpc_updates:
-		return checkVector(updates.c_updates().vupdates);
+		return checkVector(updates.c_updates().vupdates());
 	case mtpc_updatesCombined:
-		return checkVector(updates.c_updatesCombined().vupdates);
+		return checkVector(updates.c_updatesCombined().vupdates());
 	case mtpc_updateShort:
-		return checkUpdate(updates.c_updateShort().vupdate);
+		return checkUpdate(updates.c_updateShort().vupdate());
 	}
 	return false;
 }
@@ -158,19 +158,22 @@ bool ForwardedInfoDataLoaded(
 		not_null<AuthSession*> session,
 		const MTPMessageFwdHeader &header) {
 	return header.match([&](const MTPDmessageFwdHeader &data) {
-		if (data.has_channel_id()) {
-			if (!session->data().channelLoaded(data.vchannel_id.v)) {
+		if (const auto channelId = data.vchannel_id()) {
+			if (!session->data().channelLoaded(channelId->v)) {
 				return false;
 			}
-			if (data.has_from_id()) {
-				const auto from = session->data().user(data.vfrom_id.v);
+			if (const auto fromId = data.vfrom_id()) {
+				const auto from = session->data().user(fromId->v);
+				// Minimal loaded is fine in this case.
 				if (from->loadedStatus == PeerData::NotLoaded) {
 					return false;
 				}
 			}
-		} else if (data.has_from_id()
-			&& !session->data().userLoaded(data.vfrom_id.v)) {
-			return false;
+		} else if (const auto fromId = data.vfrom_id()) {
+			// Fully loaded is required in this case.
+			if (!session->data().userLoaded(fromId->v)) {
+				return false;
+			}
 		}
 		return true;
 	});
@@ -182,13 +185,13 @@ bool MentionUsersLoaded(
 	for (const auto &entity : entities.v) {
 		auto type = entity.type();
 		if (type == mtpc_messageEntityMentionName) {
-			if (!session->data().userLoaded(entity.c_messageEntityMentionName().vuser_id.v)) {
+			if (!session->data().userLoaded(entity.c_messageEntityMentionName().vuser_id().v)) {
 				return false;
 			}
 		} else if (type == mtpc_inputMessageEntityMentionName) {
-			auto &inputUser = entity.c_inputMessageEntityMentionName().vuser_id;
+			auto &inputUser = entity.c_inputMessageEntityMentionName().vuser_id();
 			if (inputUser.type() == mtpc_inputUser) {
-				if (!session->data().userLoaded(inputUser.c_inputUser().vuser_id.v)) {
+				if (!session->data().userLoaded(inputUser.c_inputUser().vuser_id().v)) {
 					return false;
 				}
 			}
@@ -201,46 +204,50 @@ DataIsLoadedResult AllDataLoadedForMessage(
 		not_null<AuthSession*> session,
 		const MTPMessage &message) {
 	return message.match([&](const MTPDmessage &message) {
-		if (!message.is_post() && message.has_from_id()) {
-			if (!session->data().userLoaded(message.vfrom_id.v)) {
+		if (const auto fromId = message.vfrom_id()) {
+			if (!message.is_post()
+				&& !session->data().userLoaded(fromId->v)) {
 				return DataIsLoadedResult::FromNotLoaded;
 			}
 		}
-		if (message.has_via_bot_id()) {
-			if (!session->data().userLoaded(message.vvia_bot_id.v)) {
+		if (const auto viaBotId = message.vvia_bot_id()) {
+			if (!session->data().userLoaded(viaBotId->v)) {
 				return DataIsLoadedResult::NotLoaded;
 			}
 		}
-		if (message.has_fwd_from()
-			&& !ForwardedInfoDataLoaded(session, message.vfwd_from)) {
-			return DataIsLoadedResult::NotLoaded;
+		if (const auto fwd = message.vfwd_from()) {
+			if (!ForwardedInfoDataLoaded(session, *fwd)) {
+				return DataIsLoadedResult::NotLoaded;
+			}
 		}
-		if (message.has_entities()
-			&& !MentionUsersLoaded(session, message.ventities)) {
-			return DataIsLoadedResult::MentionNotLoaded;
+		if (const auto entities = message.ventities()) {
+			if (!MentionUsersLoaded(session, *entities)) {
+				return DataIsLoadedResult::MentionNotLoaded;
+			}
 		}
 		return DataIsLoadedResult::Ok;
 	}, [&](const MTPDmessageService &message) {
-		if (!message.is_post() && message.has_from_id()) {
-			if (!session->data().userLoaded(message.vfrom_id.v)) {
+		if (const auto fromId = message.vfrom_id()) {
+			if (!message.is_post()
+				&& !session->data().userLoaded(fromId->v)) {
 				return DataIsLoadedResult::FromNotLoaded;
 			}
 		}
-		return message.vaction.match(
+		return message.vaction().match(
 		[&](const MTPDmessageActionChatAddUser &action) {
-			for (const MTPint &userId : action.vusers.v) {
+			for (const MTPint &userId : action.vusers().v) {
 				if (!session->data().userLoaded(userId.v)) {
 					return DataIsLoadedResult::NotLoaded;
 				}
 			}
 			return DataIsLoadedResult::Ok;
 		}, [&](const MTPDmessageActionChatJoinedByLink &action) {
-			if (!session->data().userLoaded(action.vinviter_id.v)) {
+			if (!session->data().userLoaded(action.vinviter_id().v)) {
 				return DataIsLoadedResult::NotLoaded;
 			}
 			return DataIsLoadedResult::Ok;
 		}, [&](const MTPDmessageActionChatDeleteUser &action) {
-			if (!session->data().userLoaded(action.vuser_id.v)) {
+			if (!session->data().userLoaded(action.vuser_id().v)) {
 				return DataIsLoadedResult::NotLoaded;
 			}
 			return DataIsLoadedResult::Ok;
@@ -355,7 +362,7 @@ MainWidget::SettingBackground::SettingBackground(
 
 MainWidget::MainWidget(
 	QWidget *parent,
-	not_null<Window::Controller*> controller)
+	not_null<Window::SessionController*> controller)
 : RpWidget(parent)
 , _controller(controller)
 , _dialogsWidth(st::columnMinimalWidthLeft)
@@ -385,23 +392,13 @@ MainWidget::MainWidget(
 
 	connect(_dialogs, SIGNAL(cancelled()), this, SLOT(dialogsCancelled()));
 	connect(this, SIGNAL(dialogsUpdated()), _dialogs, SLOT(onListScroll()));
-	connect(_history, &HistoryWidget::cancelled, [=] {
-		const auto historyFromFolder = _history->history()
-			? _history->history()->folder()
-			: nullptr;
-		const auto openedFolder = controller->openedFolder().current();
-		if (!openedFolder
-			|| historyFromFolder == openedFolder
-			|| Adaptive::OneColumn()) {
-			controller->showBackFromStack();
-			_dialogs->setInnerFocus();
-		} else {
-			controller->closeFolder();
-		}
-	});
-	subscribe(
-		Media::Player::instance()->updatedNotifier(),
-		[=](const Media::Player::TrackState &state) { handleAudioUpdate(state); });
+	connect(_history, &HistoryWidget::cancelled, [=] { handleHistoryBack(); });
+
+	Media::Player::instance()->updatedNotifier(
+	) | rpl::start_with_next([=](const Media::Player::TrackState &state) {
+		handleAudioUpdate(state);
+	}, lifetime());
+
 	subscribe(session().calls().currentCallChanged(), [this](Calls::Call *call) { setCurrentCall(call); });
 
 	session().data().currentExportView(
@@ -509,7 +506,7 @@ not_null<Ui::RpWidget*> MainWidget::floatPlayerWidget() {
 	return this;
 }
 
-not_null<Window::Controller*> MainWidget::floatPlayerController() {
+not_null<Window::SessionController*> MainWidget::floatPlayerController() {
 	return _controller;
 }
 
@@ -606,7 +603,10 @@ bool MainWidget::setForwardDraft(PeerId peerId, MessageIdsList &&items) {
 	}
 
 	peer->owner().history(peer)->setForwardDraft(std::move(items));
-	Ui::showPeerHistory(peer, ShowAtUnreadMsgId);
+	_controller->showPeerHistory(
+		peer,
+		SectionShow::Way::Forward,
+		ShowAtUnreadMsgId);
 	_history->cancelReply();
 	return true;
 }
@@ -619,7 +619,7 @@ bool MainWidget::shareUrl(
 
 	const auto peer = session().data().peer(peerId);
 	if (!peer->canWrite()) {
-		Ui::show(Box<InformBox>(lang(lng_share_cant)));
+		Ui::show(Box<InformBox>(tr::lng_share_cant(tr::now)));
 		return false;
 	}
 	TextWithTags textWithTags = {
@@ -655,7 +655,7 @@ bool MainWidget::inlineSwitchChosen(PeerId peerId, const QString &botAndQuery) {
 
 	const auto peer = session().data().peer(peerId);
 	if (!peer->canWrite()) {
-		Ui::show(Box<InformBox>(lang(lng_inline_switch_cant)));
+		Ui::show(Box<InformBox>(tr::lng_inline_switch_cant(tr::now)));
 		return false;
 	}
 	const auto h = peer->owner().history(peer);
@@ -695,12 +695,12 @@ bool MainWidget::sendPaths(PeerId peerId) {
 
 	auto peer = session().data().peer(peerId);
 	if (!peer->canWrite()) {
-		Ui::show(Box<InformBox>(lang(lng_forward_send_files_cant)));
+		Ui::show(Box<InformBox>(tr::lng_forward_send_files_cant(tr::now)));
 		return false;
-	} else if (const auto key = Data::RestrictionErrorKey(
+	} else if (const auto error = Data::RestrictionError(
 			peer,
 			ChatRestriction::f_send_media)) {
-		Ui::show(Box<InformBox>(lang(*key)));
+		Ui::show(Box<InformBox>(*error));
 		return false;
 	}
 	Ui::showPeerHistory(peer, ShowAtTheEndMsgId);
@@ -723,7 +723,7 @@ void MainWidget::onFilesOrForwardDrop(
 	} else {
 		auto peer = session().data().peer(peerId);
 		if (!peer->canWrite()) {
-			Ui::show(Box<InformBox>(lang(lng_forward_send_files_cant)));
+			Ui::show(Box<InformBox>(tr::lng_forward_send_files_cant(tr::now)));
 			return;
 		}
 		Ui::showPeerHistory(peer, ShowAtTheEndMsgId);
@@ -832,14 +832,14 @@ void MainWidget::showForwardLayer(MessageIdsList &&items) {
 	};
 	hiderLayer(base::make_unique_q<Window::HistoryHider>(
 		this,
-		lang(lng_forward_choose),
+		tr::lng_forward_choose(tr::now),
 		std::move(callback)));
 }
 
 void MainWidget::showSendPathsLayer() {
 	hiderLayer(base::make_unique_q<Window::HistoryHider>(
 		this,
-		lang(lng_forward_choose),
+		tr::lng_forward_choose(tr::now),
 		[=](PeerId peer) { return sendPaths(peer); }));
 	if (_hider) {
 		connect(_hider, &QObject::destroyed, [] {
@@ -870,16 +870,16 @@ void MainWidget::cancelUploadLayer(not_null<HistoryItem*> item) {
 		session().uploader().unpause();
 	};
 	Ui::show(Box<ConfirmBox>(
-		lang(lng_selected_cancel_sure_this),
-		lang(lng_selected_upload_stop),
-		lang(lng_continue),
+		tr::lng_selected_cancel_sure_this(tr::now),
+		tr::lng_selected_upload_stop(tr::now),
+		tr::lng_continue(tr::now),
 		stopUpload,
 		continueUpload));
 }
 
 void MainWidget::deletePhotoLayer(PhotoData *photo) {
 	if (!photo) return;
-	Ui::show(Box<ConfirmBox>(lang(lng_delete_photo_sure), lang(lng_box_delete), crl::guard(this, [=] {
+	Ui::show(Box<ConfirmBox>(tr::lng_delete_photo_sure(tr::now), tr::lng_box_delete(tr::now), crl::guard(this, [=] {
 		session().api().clearPeerPhoto(photo);
 		Ui::hideLayer();
 	})));
@@ -895,7 +895,7 @@ void MainWidget::shareUrlLayer(const QString &url, const QString &text) {
 	};
 	hiderLayer(base::make_unique_q<Window::HistoryHider>(
 		this,
-		lang(lng_forward_choose),
+		tr::lng_forward_choose(tr::now),
 		std::move(callback)));
 }
 
@@ -905,7 +905,7 @@ void MainWidget::inlineSwitchLayer(const QString &botAndQuery) {
 	};
 	hiderLayer(base::make_unique_q<Window::HistoryHider>(
 		this,
-		lang(lng_inline_switch_choose),
+		tr::lng_inline_switch_choose(tr::now),
 		std::move(callback)));
 }
 
@@ -926,8 +926,8 @@ bool MainWidget::sendMessageFail(const RPCError &error) {
 	} else if (error.type() == qstr("USER_BANNED_IN_CHANNEL")) {
 		const auto link = textcmdLink(
 			Core::App().createInternalLinkFull(qsl("spambot")),
-			lang(lng_cant_more_info));
-		const auto text = lng_error_public_groups_denied(lt_more_info, link);
+			tr::lng_cant_more_info(tr::now));
+		const auto text = tr::lng_error_public_groups_denied(tr::now, lt_more_info, link);
 		Ui::show(Box<InformBox>(text));
 		return true;
 	}
@@ -941,7 +941,7 @@ void MainWidget::cacheBackground() {
 		auto &bg = Window::Theme::Background()->pixmapForTiled();
 
 		auto result = QImage(_willCacheFor.width() * cIntRetinaFactor(), _willCacheFor.height() * cIntRetinaFactor(), QImage::Format_RGB32);
-        result.setDevicePixelRatio(cRetinaFactor());
+		result.setDevicePixelRatio(cRetinaFactor());
 		{
 			QPainter p(&result);
 			auto left = 0;
@@ -978,10 +978,6 @@ void MainWidget::cacheBackground() {
 
 crl::time MainWidget::highlightStartTime(not_null<const HistoryItem*> item) const {
 	return _history->highlightStartTime(item);
-}
-
-bool MainWidget::historyInSelectionMode() const {
-	return _history->inSelectionMode();
 }
 
 MsgId MainWidget::currentReplyToIdFor(not_null<History*> history) const {
@@ -1270,7 +1266,7 @@ void MainWidget::documentLoadFailed(FileLoader *loader, bool started) {
 	if (started) {
 		const auto origin = loader->fileOrigin();
 		const auto failedFileName = loader->fileName();
-		Ui::show(Box<ConfirmBox>(lang(lng_download_finish_failed), crl::guard(this, [=] {
+		Ui::show(Box<ConfirmBox>(tr::lng_download_finish_failed(tr::now), crl::guard(this, [=] {
 			Ui::hideLayer();
 			if (document) {
 				document->save(origin, failedFileName);
@@ -1280,7 +1276,7 @@ void MainWidget::documentLoadFailed(FileLoader *loader, bool started) {
 		// Sometimes we have LOCATION_INVALID error in documents / stickers.
 		// Sometimes FILE_REFERENCE_EXPIRED could not be handled.
 		//
-		//Ui::show(Box<ConfirmBox>(lang(lng_download_path_failed), lang(lng_download_path_settings), crl::guard(this, [=] {
+		//Ui::show(Box<ConfirmBox>(tr::lng_download_path_failed(tr::now), tr::lng_download_path_settings(tr::now), crl::guard(this, [=] {
 		//	Global::SetDownloadPath(QString());
 		//	Global::SetDownloadPathBookmark(QByteArray());
 		//	Ui::show(Box<DownloadPathBox>());
@@ -2205,7 +2201,7 @@ bool MainWidget::deleteChannelFailed(const RPCError &error) {
 	if (MTP::isDefaultHandledError(error)) return false;
 
 	//if (error.type() == qstr("CHANNEL_TOO_LARGE")) {
-	//	Ui::show(Box<InformBox>(lang(lng_cant_delete_channel)));
+	//	Ui::show(Box<InformBox>(tr::lng_cant_delete_channel(tr::now)));
 	//}
 
 	return true;
@@ -2315,7 +2311,7 @@ void MainWidget::hideAll() {
 void MainWidget::showAll() {
 	if (cPasswordRecovered()) {
 		cSetPasswordRecovered(false);
-		Ui::show(Box<InformBox>(lang(lng_signin_password_removed)));
+		Ui::show(Box<InformBox>(tr::lng_signin_password_removed(tr::now)));
 	}
 	if (Adaptive::OneColumn()) {
 		_sideShadow->hide();
@@ -2717,7 +2713,9 @@ bool MainWidget::eventFilter(QObject *o, QEvent *e) {
 		}
 	} else if (e->type() == QEvent::MouseButtonPress) {
 		if (static_cast<QMouseEvent*>(e)->button() == Qt::BackButton) {
-			_controller->showBackFromStack();
+			if (!Core::App().hideMediaView()) {
+				handleHistoryBack();
+			}
 			return true;
 		}
 	} else if (e->type() == QEvent::Wheel) {
@@ -2733,6 +2731,21 @@ void MainWidget::handleAdaptiveLayoutUpdate() {
 	_sideShadow->setVisible(!Adaptive::OneColumn());
 	if (_player) {
 		_player->updateAdaptiveLayout();
+	}
+}
+
+void MainWidget::handleHistoryBack() {
+	const auto historyFromFolder = _history->history()
+		? _history->history()->folder()
+		: nullptr;
+	const auto openedFolder = _controller->openedFolder().current();
+	if (!openedFolder
+		|| historyFromFolder == openedFolder
+		|| _dialogs->isHidden()) {
+		_controller->showBackFromStack();
+		_dialogs->setInnerFocus();
+	} else {
+		_controller->closeFolder();
 	}
 }
 
@@ -2871,38 +2884,38 @@ void MainWidget::gotChannelDifference(
 	_channelFailDifferenceTimeout.remove(channel);
 
 	const auto timeout = difference.match([&](const auto &data) {
-		return data.has_timeout() ? data.vtimeout.v : 0;
+		return data.vtimeout().value_or_empty();
 	});
 	const auto isFinal = difference.match([&](const auto &data) {
 		return data.is_final();
 	});
 	difference.match([&](const MTPDupdates_channelDifferenceEmpty &data) {
-		channel->ptsInit(data.vpts.v);
+		channel->ptsInit(data.vpts().v);
 	}, [&](const MTPDupdates_channelDifferenceTooLong &data) {
-		session().data().processUsers(data.vusers);
-		session().data().processChats(data.vchats);
+		session().data().processUsers(data.vusers());
+		session().data().processChats(data.vchats());
 		const auto history = session().data().historyLoaded(channel->id);
 		if (history) {
 			history->setNotLoadedAtBottom();
 			session().api().requestChannelRangeDifference(history);
 		}
-		data.vdialog.match([&](const MTPDdialog &data) {
-			if (data.has_pts()) {
-				channel->ptsInit(data.vpts.v);
+		data.vdialog().match([&](const MTPDdialog &data) {
+			if (const auto pts = data.vpts()) {
+				channel->ptsInit(pts->v);
 			}
 		}, [&](const MTPDdialogFolder &) {
 		});
 		session().data().applyDialogs(
 			nullptr,
-			data.vmessages.v,
-			QVector<MTPDialog>(1, data.vdialog));
+			data.vmessages().v,
+			QVector<MTPDialog>(1, data.vdialog()));
 		if (_history->peer() == channel) {
 			_history->updateHistoryDownVisibility();
 			_history->preloadHistoryIfNeeded();
 		}
 	}, [&](const MTPDupdates_channelDifference &data) {
 		feedChannelDifference(data);
-		channel->ptsInit(data.vpts.v);
+		channel->ptsInit(data.vpts().v);
 	});
 
 	channel->ptsSetRequesting(false);
@@ -2919,15 +2932,15 @@ void MainWidget::gotChannelDifference(
 
 void MainWidget::feedChannelDifference(
 		const MTPDupdates_channelDifference &data) {
-	session().data().processUsers(data.vusers);
-	session().data().processChats(data.vchats);
+	session().data().processUsers(data.vusers());
+	session().data().processChats(data.vchats());
 
 	_handlingChannelDifference = true;
-	feedMessageIds(data.vother_updates);
+	feedMessageIds(data.vother_updates());
 	session().data().processMessages(
-		data.vnew_messages,
+		data.vnew_messages(),
 		NewMessageType::Unread);
-	feedUpdateVector(data.vother_updates, true);
+	feedUpdateVector(data.vother_updates(), true);
 	_handlingChannelDifference = false;
 }
 
@@ -2941,7 +2954,7 @@ bool MainWidget::failChannelDifference(ChannelData *channel, const RPCError &err
 
 void MainWidget::gotState(const MTPupdates_State &state) {
 	auto &d = state.c_updates_state();
-	updSetState(d.vpts.v, d.vdate.v, d.vqts.v, d.vseq.v);
+	updSetState(d.vpts().v, d.vdate().v, d.vqts().v, d.vseq().v);
 
 	_lastUpdateTime = crl::now();
 	_noUpdatesTimer.callOnce(kNoUpdatesTimeout);
@@ -2957,7 +2970,7 @@ void MainWidget::gotDifference(const MTPupdates_Difference &difference) {
 	switch (difference.type()) {
 	case mtpc_updates_differenceEmpty: {
 		auto &d = difference.c_updates_differenceEmpty();
-		updSetState(_ptsWaiter.current(), d.vdate.v, updQts, d.vseq.v);
+		updSetState(_ptsWaiter.current(), d.vdate().v, updQts, d.vseq().v);
 
 		_lastUpdateTime = crl::now();
 		_noUpdatesTimer.callOnce(kNoUpdatesTimeout);
@@ -2966,10 +2979,10 @@ void MainWidget::gotDifference(const MTPupdates_Difference &difference) {
 	} break;
 	case mtpc_updates_differenceSlice: {
 		auto &d = difference.c_updates_differenceSlice();
-		feedDifference(d.vusers, d.vchats, d.vnew_messages, d.vother_updates);
+		feedDifference(d.vusers(), d.vchats(), d.vnew_messages(), d.vother_updates());
 
-		auto &s = d.vintermediate_state.c_updates_state();
-		updSetState(s.vpts.v, s.vdate.v, s.vqts.v, s.vseq.v);
+		auto &s = d.vintermediate_state().c_updates_state();
+		updSetState(s.vpts().v, s.vdate().v, s.vqts().v, s.vseq().v);
 
 		_ptsWaiter.setRequesting(false);
 
@@ -2978,9 +2991,9 @@ void MainWidget::gotDifference(const MTPupdates_Difference &difference) {
 	} break;
 	case mtpc_updates_difference: {
 		auto &d = difference.c_updates_difference();
-		feedDifference(d.vusers, d.vchats, d.vnew_messages, d.vother_updates);
+		feedDifference(d.vusers(), d.vchats(), d.vnew_messages(), d.vother_updates());
 
-		gotState(d.vstate);
+		gotState(d.vstate());
 	} break;
 	case mtpc_updates_differenceTooLong: {
 		auto &d = difference.c_updates_differenceTooLong();
@@ -3303,9 +3316,9 @@ void MainWidget::usernameResolveDone(QPair<MsgId, QString> msgIdAndStartToken, c
 	if (result.type() != mtpc_contacts_resolvedPeer) return;
 
 	const auto &d(result.c_contacts_resolvedPeer());
-	session().data().processUsers(d.vusers);
-	session().data().processChats(d.vchats);
-	PeerId peerId = peerFromMTP(d.vpeer);
+	session().data().processUsers(d.vusers());
+	session().data().processChats(d.vchats());
+	PeerId peerId = peerFromMTP(d.vpeer());
 	if (!peerId) return;
 
 	PeerData *peer = session().data().peer(peerId);
@@ -3349,7 +3362,7 @@ bool MainWidget::usernameResolveFail(QString name, const RPCError &error) {
 	if (MTP::isDefaultHandledError(error)) return false;
 
 	if (error.code() == 400) {
-		Ui::show(Box<InformBox>(lng_username_not_found(lt_user, name)));
+		Ui::show(Box<InformBox>(tr::lng_username_not_found(tr::now, lt_user, name)));
 	}
 	return true;
 }
@@ -3369,7 +3382,7 @@ void MainWidget::incrementSticker(DocumentData *sticker) {
 			it = sets.insert(Stickers::CloudRecentSetId, Stickers::Set(
 				Stickers::CloudRecentSetId,
 				uint64(0),
-				lang(lng_recent_stickers),
+				tr::lng_recent_stickers(tr::now),
 				QString(),
 				0, // count
 				0, // hash
@@ -3377,7 +3390,7 @@ void MainWidget::incrementSticker(DocumentData *sticker) {
 				TimeId(0),
 				ImagePtr()));
 		} else {
-			it->title = lang(lng_recent_stickers);
+			it->title = tr::lng_recent_stickers(tr::now);
 		}
 	}
 	auto removedFromEmoji = std::vector<not_null<EmojiPtr>>();
@@ -3531,6 +3544,7 @@ void MainWidget::updateOnline(bool gotOtherOffline) {
 
 	bool isOnline = !App::quitting() && App::wnd()->isActive();
 	int updateIn = Global::OnlineUpdatePeriod();
+	Assert(updateIn >= 0);
 	if (isOnline) {
 		const auto idle = crl::now() - Core::App().lastNonIdleTime();
 		if (idle >= Global::OfflineIdleTimeout()) {
@@ -3541,6 +3555,7 @@ void MainWidget::updateOnline(bool gotOtherOffline) {
 			}
 		} else {
 			updateIn = qMin(updateIn, int(Global::OfflineIdleTimeout() - idle));
+			Assert(updateIn >= 0);
 		}
 	}
 	auto ms = crl::now();
@@ -3575,6 +3590,7 @@ void MainWidget::updateOnline(bool gotOtherOffline) {
 		_lastSetOnline = ms;
 	} else if (isOnline) {
 		updateIn = qMin(updateIn, int(_lastSetOnline + Global::OnlineUpdatePeriod() - ms));
+		Assert(updateIn >= 0);
 	}
 	_onlineTimer.callOnce(updateIn);
 }
@@ -3694,123 +3710,130 @@ void MainWidget::feedUpdates(const MTPUpdates &updates, uint64 randomId) {
 	switch (updates.type()) {
 	case mtpc_updates: {
 		auto &d = updates.c_updates();
-		if (d.vseq.v) {
-			if (d.vseq.v <= updSeq) {
+		if (d.vseq().v) {
+			if (d.vseq().v <= updSeq) {
 				return;
 			}
-			if (d.vseq.v > updSeq + 1) {
-				_bySeqUpdates.insert(d.vseq.v, updates);
+			if (d.vseq().v > updSeq + 1) {
+				_bySeqUpdates.insert(d.vseq().v, updates);
 				_bySeqTimer.callOnce(PtsWaiter::kWaitForSkippedTimeout);
 				return;
 			}
 		}
 
-		session().data().processUsers(d.vusers);
-		session().data().processChats(d.vchats);
-		feedUpdateVector(d.vupdates);
+		session().data().processUsers(d.vusers());
+		session().data().processChats(d.vchats());
+		feedUpdateVector(d.vupdates());
 
-		updSetState(0, d.vdate.v, updQts, d.vseq.v);
+		updSetState(0, d.vdate().v, updQts, d.vseq().v);
 	} break;
 
 	case mtpc_updatesCombined: {
 		auto &d = updates.c_updatesCombined();
-		if (d.vseq_start.v) {
-			if (d.vseq_start.v <= updSeq) {
+		if (d.vseq_start().v) {
+			if (d.vseq_start().v <= updSeq) {
 				return;
 			}
-			if (d.vseq_start.v > updSeq + 1) {
-				_bySeqUpdates.insert(d.vseq_start.v, updates);
+			if (d.vseq_start().v > updSeq + 1) {
+				_bySeqUpdates.insert(d.vseq_start().v, updates);
 				_bySeqTimer.callOnce(PtsWaiter::kWaitForSkippedTimeout);
 				return;
 			}
 		}
 
-		session().data().processUsers(d.vusers);
-		session().data().processChats(d.vchats);
-		feedUpdateVector(d.vupdates);
+		session().data().processUsers(d.vusers());
+		session().data().processChats(d.vchats());
+		feedUpdateVector(d.vupdates());
 
-		updSetState(0, d.vdate.v, updQts, d.vseq.v);
+		updSetState(0, d.vdate().v, updQts, d.vseq().v);
 	} break;
 
 	case mtpc_updateShort: {
 		auto &d = updates.c_updateShort();
-		feedUpdate(d.vupdate);
+		feedUpdate(d.vupdate());
 
-		updSetState(0, d.vdate.v, updQts, updSeq);
+		updSetState(0, d.vdate().v, updQts, updSeq);
 	} break;
 
 	case mtpc_updateShortMessage: {
 		auto &d = updates.c_updateShortMessage();
-		if (!session().data().userLoaded(d.vuser_id.v)
-			|| (d.has_via_bot_id() && !session().data().userLoaded(d.vvia_bot_id.v))
-			|| (d.has_entities() && !MentionUsersLoaded(&session(), d.ventities))
-			|| (d.has_fwd_from() && !ForwardedInfoDataLoaded(&session(), d.vfwd_from))) {
+		const auto viaBotId = d.vvia_bot_id();
+		const auto entities = d.ventities();
+		const auto fwd = d.vfwd_from();
+		if (!session().data().userLoaded(d.vuser_id().v)
+			|| (viaBotId && !session().data().userLoaded(viaBotId->v))
+			|| (entities && !MentionUsersLoaded(&session(), *entities))
+			|| (fwd && !ForwardedInfoDataLoaded(&session(), *fwd))) {
 			MTP_LOG(0, ("getDifference { good - getting user for updateShortMessage }%1").arg(cTestMode() ? " TESTMODE" : ""));
 			return getDifference();
 		}
-		if (ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, updates)) {
+		if (ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, updates)) {
 			// Update date as well.
-			updSetState(0, d.vdate.v, updQts, updSeq);
+			updSetState(0, d.vdate().v, updQts, updSeq);
 		}
 	} break;
 
 	case mtpc_updateShortChatMessage: {
 		auto &d = updates.c_updateShortChatMessage();
-		const auto noFrom = !session().data().userLoaded(d.vfrom_id.v);
-		const auto chat = session().data().chatLoaded(d.vchat_id.v);
+		const auto noFrom = !session().data().userLoaded(d.vfrom_id().v);
+		const auto chat = session().data().chatLoaded(d.vchat_id().v);
+		const auto viaBotId = d.vvia_bot_id();
+		const auto entities = d.ventities();
+		const auto fwd = d.vfwd_from();
 		if (!chat
 			|| noFrom
-			|| (d.has_via_bot_id() && !session().data().userLoaded(d.vvia_bot_id.v))
-			|| (d.has_entities() && !MentionUsersLoaded(&session(), d.ventities))
-			|| (d.has_fwd_from() && !ForwardedInfoDataLoaded(&session(), d.vfwd_from))) {
+			|| (viaBotId && !session().data().userLoaded(viaBotId->v))
+			|| (entities && !MentionUsersLoaded(&session(), *entities))
+			|| (fwd && !ForwardedInfoDataLoaded(&session(), *fwd))) {
 			MTP_LOG(0, ("getDifference { good - getting user for updateShortChatMessage }%1").arg(cTestMode() ? " TESTMODE" : ""));
 			if (chat && noFrom) {
 				session().api().requestFullPeer(chat);
 			}
 			return getDifference();
 		}
-		if (ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, updates)) {
+		if (ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, updates)) {
 			// Update date as well.
-			updSetState(0, d.vdate.v, updQts, updSeq);
+			updSetState(0, d.vdate().v, updQts, updSeq);
 		}
 	} break;
 
 	case mtpc_updateShortSentMessage: {
 		auto &d = updates.c_updateShortSentMessage();
-		if (!IsServerMsgId(d.vid.v)) {
-			LOG(("API Error: Bad msgId got from server: %1").arg(d.vid.v));
+		if (!IsServerMsgId(d.vid().v)) {
+			LOG(("API Error: Bad msgId got from server: %1").arg(d.vid().v));
 		} else if (randomId) {
-			PeerId peerId = 0;
-			QString text;
-			session().data().registerMessageSentData(randomId, peerId, text);
-
-			const auto wasAlready = (peerId != 0)
-				&& (session().data().message(peerToChannel(peerId), d.vid.v) != nullptr);
-			feedUpdate(MTP_updateMessageID(d.vid, MTP_long(randomId))); // ignore real date
-			if (peerId) {
-				if (auto item = session().data().message(peerToChannel(peerId), d.vid.v)) {
-					if (d.has_entities() && !MentionUsersLoaded(&session(), d.ventities)) {
-						session().api().requestMessageData(
-							item->history()->peer->asChannel(),
-							item->id,
-							ApiWrap::RequestMessageDataCallback());
-					}
-					const auto entities = d.has_entities()
-						? TextUtilities::EntitiesFromMTP(d.ventities.v)
-						: EntitiesInText();
-					const auto media = d.has_media() ? &d.vmedia : nullptr;
-					item->setText({ text, entities });
-					item->updateSentMedia(media);
-					if (!wasAlready) {
-						item->indexAsNewItem();
-					}
+			const auto sent = session().data().messageSentData(randomId);
+			const auto lookupMessage = [&] {
+				return sent.peerId
+					? session().data().message(
+						peerToChannel(sent.peerId),
+						d.vid().v)
+					: nullptr;
+			};
+			const auto wasAlready = (lookupMessage() != nullptr);
+			feedUpdate(MTP_updateMessageID(d.vid(), MTP_long(randomId))); // ignore real date
+			if (const auto item = lookupMessage()) {
+				const auto list = d.ventities();
+				if (list && !MentionUsersLoaded(&session(), *list)) {
+					session().api().requestMessageData(
+						item->history()->peer->asChannel(),
+						item->id,
+						ApiWrap::RequestMessageDataCallback());
+				}
+				item->setText({
+					sent.text,
+					TextUtilities::EntitiesFromMTP(list.value_or_empty())
+				});
+				item->updateSentMedia(d.vmedia());
+				if (!wasAlready) {
+					item->indexAsNewItem();
 				}
 			}
 		}
 
-		if (ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, updates)) {
+		if (ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, updates)) {
 			// Update date as well.
-			updSetState(0, d.vdate.v, updQts, updSeq);
+			updSetState(0, d.vdate().v, updQts, updSeq);
 		}
 	} break;
 
@@ -3829,7 +3852,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	case mtpc_updateNewMessage: {
 		auto &d = update.c_updateNewMessage();
 
-		const auto isDataLoaded = AllDataLoadedForMessage(&session(), d.vmessage);
+		const auto isDataLoaded = AllDataLoadedForMessage(&session(), d.vmessage());
 		if (!requestingDifference() && isDataLoaded != DataIsLoadedResult::Ok) {
 			MTP_LOG(0, ("getDifference { good - "
 				"after not all data loaded in updateNewMessage }%1"
@@ -3840,13 +3863,13 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 			return getDifference();
 		}
 
-		ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
+		ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
 	} break;
 
 	case mtpc_updateNewChannelMessage: {
 		auto &d = update.c_updateNewChannelMessage();
-		auto channel = session().data().channelLoaded(peerToChannel(PeerFromMessage(d.vmessage)));
-		const auto isDataLoaded = AllDataLoadedForMessage(&session(), d.vmessage);
+		auto channel = session().data().channelLoaded(peerToChannel(PeerFromMessage(d.vmessage())));
+		const auto isDataLoaded = AllDataLoadedForMessage(&session(), d.vmessage());
 		if (!requestingDifference() && (!channel || isDataLoaded != DataIsLoadedResult::Ok)) {
 			MTP_LOG(0, ("getDifference { good - "
 				"after not all data loaded in updateNewChannelMessage }%1"
@@ -3869,7 +3892,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
 				return;
 			}
-			channel->ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
+			channel->ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
 		} else {
 			session().api().applyUpdateNoPtsCheck(update);
 		}
@@ -3877,10 +3900,10 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateMessageID: {
 		const auto &d = update.c_updateMessageID();
-		const auto randomId = d.vrandom_id.v;
+		const auto randomId = d.vrandom_id().v;
 		if (const auto id = session().data().messageIdByRandomId(randomId)) {
 			const auto channel = id.channel;
-			const auto newId = d.vid.v;
+			const auto newId = d.vid().v;
 			if (const auto local = session().data().message(id)) {
 				const auto existing = session().data().message(channel, newId);
 				if (existing && !local->mainView()) {
@@ -3891,7 +3914,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 					if (existing) {
 						existing->destroy();
 					}
-					local->setRealId(d.vid.v);
+					local->setRealId(d.vid().v);
 				}
 			}
 			session().data().unregisterMessageRandomId(randomId);
@@ -3902,12 +3925,12 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	// Message contents being read.
 	case mtpc_updateReadMessagesContents: {
 		auto &d = update.c_updateReadMessagesContents();
-		ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
+		ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
 	} break;
 
 	case mtpc_updateChannelReadMessagesContents: {
 		auto &d = update.c_updateChannelReadMessagesContents();
-		auto channel = session().data().channelLoaded(d.vchannel_id.v);
+		auto channel = session().data().channelLoaded(d.vchannel_id().v);
 		if (!channel) {
 			if (!_byMinChannelTimer.isActive()) {
 				// getDifference after timeout.
@@ -3916,7 +3939,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 			return;
 		}
 		auto possiblyReadMentions = base::flat_set<MsgId>();
-		for_const (auto &msgId, d.vmessages.v) {
+		for_const (auto &msgId, d.vmessages().v) {
 			if (auto item = session().data().message(channel, msgId.v)) {
 				if (item->isUnreadMedia() || item->isUnreadMention()) {
 					item->markMediaRead();
@@ -3933,18 +3956,18 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	// Edited messages.
 	case mtpc_updateEditMessage: {
 		auto &d = update.c_updateEditMessage();
-		ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
+		ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
 	} break;
 
 	case mtpc_updateEditChannelMessage: {
 		auto &d = update.c_updateEditChannelMessage();
-		auto channel = session().data().channelLoaded(peerToChannel(PeerFromMessage(d.vmessage)));
+		auto channel = session().data().channelLoaded(peerToChannel(PeerFromMessage(d.vmessage())));
 
 		if (channel && !_handlingChannelDifference) {
 			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
 				return;
 			} else {
-				channel->ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
+				channel->ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
 			}
 		} else {
 			session().api().applyUpdateNoPtsCheck(update);
@@ -3954,12 +3977,12 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	// Messages being read.
 	case mtpc_updateReadHistoryInbox: {
 		auto &d = update.c_updateReadHistoryInbox();
-		ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
+		ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
 	} break;
 
 	case mtpc_updateReadHistoryOutbox: {
 		auto &d = update.c_updateReadHistoryOutbox();
-		if (ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update)) {
+		if (ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update)) {
 			// We could've updated the double checks.
 			// Better would be for history to be subscribed to outbox read events.
 			_history->update();
@@ -3968,22 +3991,21 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateReadChannelInbox: {
 		const auto &d = update.c_updateReadChannelInbox();
-		const auto peer = peerFromChannel(d.vchannel_id.v);
+		const auto peer = peerFromChannel(d.vchannel_id().v);
 		if (const auto history = session().data().historyLoaded(peer)) {
-			const auto folderId = d.has_folder_id() ? d.vfolder_id.v : 0;
 			history->applyInboxReadUpdate(
-				folderId,
-				d.vmax_id.v,
-				d.vstill_unread_count.v,
-				d.vpts.v);
+				d.vfolder_id().value_or_empty(),
+				d.vmax_id().v,
+				d.vstill_unread_count().v,
+				d.vpts().v);
 		}
 	} break;
 
 	case mtpc_updateReadChannelOutbox: {
 		const auto &d = update.c_updateReadChannelOutbox();
-		const auto peer = peerFromChannel(d.vchannel_id.v);
+		const auto peer = peerFromChannel(d.vchannel_id().v);
 		if (const auto history = session().data().historyLoaded(peer)) {
-			history->outboxRead(d.vmax_id.v);
+			history->outboxRead(d.vmax_id().v);
 			if (!requestingDifference()) {
 				if (const auto user = history->peer->asUser()) {
 					user->madeAction(unixtime());
@@ -3997,14 +4019,14 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 
 	//case mtpc_updateReadFeed: { // #feed
 	//	const auto &d = update.c_updateReadFeed();
-	//	const auto feedId = d.vfeed_id.v;
+	//	const auto feedId = d.vfeed_id().v;
 	//	if (const auto feed = session().data().feedLoaded(feedId)) {
 	//		feed->setUnreadPosition(
-	//			Data::FeedPositionFromMTP(d.vmax_position));
-	//		if (d.has_unread_count() && d.has_unread_muted_count()) {
+	//			Data::FeedPositionFromMTP(d.vmax_position()));
+	//		if (d.vunread_count() && d.vunread_muted_count()) {
 	//			feed->setUnreadCounts(
-	//				d.vunread_count.v,
-	//				d.vunread_muted_count.v);
+	//				d.vunread_count()->v,
+	//				d.vunread_muted_count()->v);
 	//		} else {
 	//			session().api().requestDialogEntry(feed);
 	//		}
@@ -4013,14 +4035,14 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateDialogUnreadMark: {
 		const auto &data = update.c_updateDialogUnreadMark();
-		data.vpeer.match(
+		data.vpeer().match(
 		[&](const MTPDdialogPeer &dialog) {
-			const auto id = peerFromMTP(dialog.vpeer);
+			const auto id = peerFromMTP(dialog.vpeer());
 			if (const auto history = session().data().historyLoaded(id)) {
 				history->setUnreadMark(data.is_unread());
 			}
 		}, [&](const MTPDdialogPeerFolder &dialog) {
-			const auto id = dialog.vfolder_id.v; // #TODO archive
+			const auto id = dialog.vfolder_id().v; // #TODO archive
 			//if (const auto folder = session().data().folderLoaded(id)) {
 			//	folder->setUnreadMark(data.is_unread());
 			//}
@@ -4030,25 +4052,25 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	case mtpc_updateFolderPeers: {
 		const auto &data = update.c_updateFolderPeers();
 
-		ptsUpdateAndApply(data.vpts.v, data.vpts_count.v, update);
+		ptsUpdateAndApply(data.vpts().v, data.vpts_count().v, update);
 	} break;
 
 	// Deleted messages.
 	case mtpc_updateDeleteMessages: {
 		auto &d = update.c_updateDeleteMessages();
 
-		ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
+		ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
 	} break;
 
 	case mtpc_updateDeleteChannelMessages: {
 		auto &d = update.c_updateDeleteChannelMessages();
-		auto channel = session().data().channelLoaded(d.vchannel_id.v);
+		auto channel = session().data().channelLoaded(d.vchannel_id().v);
 
 		if (channel && !_handlingChannelDifference) {
 			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
 				return;
 			}
-			channel->ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
+			channel->ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
 		} else {
 			session().api().applyUpdateNoPtsCheck(update);
 		}
@@ -4058,27 +4080,27 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 		auto &d = update.c_updateWebPage();
 
 		// Update web page anyway.
-		session().data().processWebpage(d.vwebpage);
+		session().data().processWebpage(d.vwebpage());
 		_history->updatePreview();
 		session().data().sendWebPageGamePollNotifications();
 
-		ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
+		ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
 	} break;
 
 	case mtpc_updateChannelWebPage: {
 		auto &d = update.c_updateChannelWebPage();
 
 		// Update web page anyway.
-		session().data().processWebpage(d.vwebpage);
+		session().data().processWebpage(d.vwebpage());
 		_history->updatePreview();
 		session().data().sendWebPageGamePollNotifications();
 
-		auto channel = session().data().channelLoaded(d.vchannel_id.v);
+		auto channel = session().data().channelLoaded(d.vchannel_id().v);
 		if (channel && !_handlingChannelDifference) {
 			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
 				return;
 			} else {
-				channel->ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
+				channel->ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
 			}
 		} else {
 			session().api().applyUpdateNoPtsCheck(update);
@@ -4091,31 +4113,31 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateUserTyping: {
 		auto &d = update.c_updateUserTyping();
-		const auto userId = peerFromUser(d.vuser_id);
+		const auto userId = peerFromUser(d.vuser_id());
 		const auto history = session().data().historyLoaded(userId);
-		const auto user = session().data().userLoaded(d.vuser_id.v);
+		const auto user = session().data().userLoaded(d.vuser_id().v);
 		if (history && user) {
 			const auto when = requestingDifference() ? 0 : unixtime();
-			session().data().registerSendAction(history, user, d.vaction, when);
+			session().data().registerSendAction(history, user, d.vaction(), when);
 		}
 	} break;
 
 	case mtpc_updateChatUserTyping: {
 		auto &d = update.c_updateChatUserTyping();
 		const auto history = [&]() -> History* {
-			if (const auto chat = session().data().chatLoaded(d.vchat_id.v)) {
+			if (const auto chat = session().data().chatLoaded(d.vchat_id().v)) {
 				return session().data().historyLoaded(chat->id);
-			} else if (const auto channel = session().data().channelLoaded(d.vchat_id.v)) {
+			} else if (const auto channel = session().data().channelLoaded(d.vchat_id().v)) {
 				return session().data().historyLoaded(channel->id);
 			}
 			return nullptr;
 		}();
-		const auto user = (d.vuser_id.v == session().userId())
+		const auto user = (d.vuser_id().v == session().userId())
 			? nullptr
-			: session().data().userLoaded(d.vuser_id.v);
+			: session().data().userLoaded(d.vuser_id().v);
 		if (history && user) {
 			const auto when = requestingDifference() ? 0 : unixtime();
-			session().data().registerSendAction(history, user, d.vaction, when);
+			session().data().registerSendAction(history, user, d.vaction(), when);
 		}
 	} break;
 
@@ -4141,8 +4163,8 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateUserStatus: {
 		auto &d = update.c_updateUserStatus();
-		if (auto user = session().data().userLoaded(d.vuser_id.v)) {
-			switch (d.vstatus.type()) {
+		if (auto user = session().data().userLoaded(d.vuser_id().v)) {
+			switch (d.vstatus().type()) {
 			case mtpc_userStatusEmpty: user->onlineTill = 0; break;
 			case mtpc_userStatusRecently:
 				if (user->onlineTill > -10) { // don't modify pseudo-online
@@ -4151,50 +4173,50 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 			break;
 			case mtpc_userStatusLastWeek: user->onlineTill = -3; break;
 			case mtpc_userStatusLastMonth: user->onlineTill = -4; break;
-			case mtpc_userStatusOffline: user->onlineTill = d.vstatus.c_userStatusOffline().vwas_online.v; break;
-			case mtpc_userStatusOnline: user->onlineTill = d.vstatus.c_userStatusOnline().vexpires.v; break;
+			case mtpc_userStatusOffline: user->onlineTill = d.vstatus().c_userStatusOffline().vwas_online().v; break;
+			case mtpc_userStatusOnline: user->onlineTill = d.vstatus().c_userStatusOnline().vexpires().v; break;
 			}
 			Notify::peerUpdatedDelayed(
 				user,
 				Notify::PeerUpdate::Flag::UserOnlineChanged);
 		}
-		if (d.vuser_id.v == session().userId()) {
-			if (d.vstatus.type() == mtpc_userStatusOffline || d.vstatus.type() == mtpc_userStatusEmpty) {
+		if (d.vuser_id().v == session().userId()) {
+			if (d.vstatus().type() == mtpc_userStatusOffline || d.vstatus().type() == mtpc_userStatusEmpty) {
 				updateOnline(true);
-				if (d.vstatus.type() == mtpc_userStatusOffline) {
-					cSetOtherOnline(d.vstatus.c_userStatusOffline().vwas_online.v);
+				if (d.vstatus().type() == mtpc_userStatusOffline) {
+					cSetOtherOnline(d.vstatus().c_userStatusOffline().vwas_online().v);
 				}
-			} else if (d.vstatus.type() == mtpc_userStatusOnline) {
-				cSetOtherOnline(d.vstatus.c_userStatusOnline().vexpires.v);
+			} else if (d.vstatus().type() == mtpc_userStatusOnline) {
+				cSetOtherOnline(d.vstatus().c_userStatusOnline().vexpires().v);
 			}
 		}
 	} break;
 
 	case mtpc_updateUserName: {
 		auto &d = update.c_updateUserName();
-		if (auto user = session().data().userLoaded(d.vuser_id.v)) {
-			if (user->contactStatus() != UserData::ContactStatus::Contact) {
+		if (auto user = session().data().userLoaded(d.vuser_id().v)) {
+			if (!user->isContact()) {
 				user->setName(
-					TextUtilities::SingleLine(qs(d.vfirst_name)),
-					TextUtilities::SingleLine(qs(d.vlast_name)),
+					TextUtilities::SingleLine(qs(d.vfirst_name())),
+					TextUtilities::SingleLine(qs(d.vlast_name())),
 					user->nameOrPhone,
-					TextUtilities::SingleLine(qs(d.vusername)));
+					TextUtilities::SingleLine(qs(d.vusername())));
 			} else {
 				user->setName(
 					TextUtilities::SingleLine(user->firstName),
 					TextUtilities::SingleLine(user->lastName),
 					user->nameOrPhone,
-					TextUtilities::SingleLine(qs(d.vusername)));
+					TextUtilities::SingleLine(qs(d.vusername())));
 			}
 		}
 	} break;
 
 	case mtpc_updateUserPhoto: {
 		auto &d = update.c_updateUserPhoto();
-		if (auto user = session().data().userLoaded(d.vuser_id.v)) {
-			user->setPhoto(d.vphoto);
+		if (auto user = session().data().userLoaded(d.vuser_id().v)) {
+			user->setPhoto(d.vphoto());
 			user->loadUserpic();
-			if (mtpIsTrue(d.vprevious) || !user->userpicPhotoId()) {
+			if (mtpIsTrue(d.vprevious()) || !user->userpicPhotoId()) {
 				session().storage().remove(Storage::UserPhotosRemoveAfter(
 					user->bareId(),
 					user->userpicPhotoId()));
@@ -4206,19 +4228,26 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 		}
 	} break;
 
-	case mtpc_updateContactLink: {
-		const auto &d = update.c_updateContactLink();
-		App::feedUserLink(d.vuser_id, d.vmy_link, d.vforeign_link);
+	case mtpc_updatePeerSettings: {
+		const auto &d = update.c_updatePeerSettings();
+		const auto peerId = peerFromMTP(d.vpeer());
+		if (const auto peer = session().data().peerLoaded(peerId)) {
+			const auto settings = d.vsettings().match([](
+					const MTPDpeerSettings &data) {
+				return data.vflags().v;
+			});
+			peer->setSettings(settings);
+		}
 	} break;
 
 	case mtpc_updateNotifySettings: {
 		auto &d = update.c_updateNotifySettings();
-		session().data().applyNotifySetting(d.vpeer, d.vnotify_settings);
+		session().data().applyNotifySetting(d.vpeer(), d.vnotify_settings());
 	} break;
 
 	case mtpc_updateDcOptions: {
 		auto &d = update.c_updateDcOptions();
-		Core::App().dcOptions()->addFromList(d.vdc_options);
+		Core::App().dcOptions()->addFromList(d.vdc_options());
 	} break;
 
 	case mtpc_updateConfig: {
@@ -4226,15 +4255,15 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	} break;
 
 	case mtpc_updateUserPhone: {
-		auto &d = update.c_updateUserPhone();
-		if (auto user = session().data().userLoaded(d.vuser_id.v)) {
-			auto newPhone = qs(d.vphone);
+		const auto &d = update.c_updateUserPhone();
+		if (const auto user = session().data().userLoaded(d.vuser_id().v)) {
+			const auto newPhone = qs(d.vphone());
 			if (newPhone != user->phone()) {
 				user->setPhone(newPhone);
 				user->setName(
 					user->firstName,
 					user->lastName,
-					((user->contactStatus() == UserData::ContactStatus::Contact
+					((user->isContact()
 						|| user->isServiceUser()
 						|| user->isSelf()
 						|| user->phone().isEmpty())
@@ -4270,57 +4299,87 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	} break;
 
 	case mtpc_updateUserBlocked: {
-		auto &d = update.c_updateUserBlocked();
-		if (auto user = session().data().userLoaded(d.vuser_id.v)) {
-			user->setBlockStatus(mtpIsTrue(d.vblocked) ? UserData::BlockStatus::Blocked : UserData::BlockStatus::NotBlocked);
+		const auto &d = update.c_updateUserBlocked();
+		if (const auto user = session().data().userLoaded(d.vuser_id().v)) {
+			user->setIsBlocked(mtpIsTrue(d.vblocked()));
 		}
 	} break;
 
 	case mtpc_updateServiceNotification: {
 		const auto &d = update.c_updateServiceNotification();
 		const auto text = TextWithEntities {
-			qs(d.vmessage),
-			TextUtilities::EntitiesFromMTP(d.ventities.v)
+			qs(d.vmessage()),
+			TextUtilities::EntitiesFromMTP(d.ventities().v)
 		};
 		if (IsForceLogoutNotification(d)) {
 			Core::App().forceLogOut(text);
 		} else if (d.is_popup()) {
 			Ui::show(Box<InformBox>(text));
 		} else {
-			session().data().serviceNotification(text, d.vmedia);
+			session().data().serviceNotification(text, d.vmedia());
 			session().data().checkNewAuthorization();
 		}
 	} break;
 
 	case mtpc_updatePrivacy: {
 		auto &d = update.c_updatePrivacy();
-		session().api().handlePrivacyChange(d.vkey.type(), d.vrules);
+		const auto allChatsLoaded = [&](const MTPVector<MTPint> &ids) {
+			for (const auto &chatId : ids.v) {
+				if (!session().data().chatLoaded(chatId.v)
+					&& !session().data().channelLoaded(chatId.v)) {
+					return false;
+				}
+			}
+			return true;
+		};
+		const auto allLoaded = [&] {
+			for (const auto &rule : d.vrules().v) {
+				const auto loaded = rule.match([&](
+					const MTPDprivacyValueAllowChatParticipants & data) {
+					return allChatsLoaded(data.vchats());
+				}, [&](const MTPDprivacyValueDisallowChatParticipants & data) {
+					return allChatsLoaded(data.vchats());
+				}, [](auto &&) { return true; });
+				if (!loaded) {
+					return false;
+				}
+			}
+			return true;
+		};
+		if (const auto key = ApiWrap::Privacy::KeyFromMTP(d.vkey().type())) {
+			if (allLoaded()) {
+				session().api().handlePrivacyChange(*key, d.vrules());
+			} else {
+				session().api().reloadPrivacy(*key);
+			}
+		}
 	} break;
 
 	case mtpc_updatePinnedDialogs: {
 		const auto &d = update.c_updatePinnedDialogs();
-		const auto folderId = d.has_folder_id() ? d.vfolder_id.v : 0;
+		const auto folderId = d.vfolder_id().value_or_empty();
 		const auto loaded = !folderId
 			|| (session().data().folderLoaded(folderId) != nullptr);
 		const auto folder = folderId
 			? session().data().folder(folderId).get()
 			: nullptr;
 		const auto done = [&] {
-			if (!d.has_order()) {
+			const auto list = d.vorder();
+			if (!list) {
 				return false;
 			}
-			const auto &order = d.vorder.v;
+			const auto &order = list->v;
 			const auto notLoaded = [&](const MTPDialogPeer &peer) {
 				return peer.match([&](const MTPDdialogPeer &data) {
 					return !session().data().historyLoaded(
-						peerFromMTP(data.vpeer));
+						peerFromMTP(data.vpeer()));
 				}, [&](const MTPDdialogPeerFolder &data) {
 					if (folderId) {
 						LOG(("API Error: "
 							"updatePinnedDialogs has nested folders."));
 						return true;
 					}
-					return !session().data().folderLoaded(data.vfolder_id.v);
+					return !session().data().folderLoaded(data.vfolder_id().v);
 				});
 			};
 			const auto allLoaded = ranges::find_if(order, notLoaded)
@@ -4341,12 +4400,12 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateDialogPinned: {
 		const auto &d = update.c_updateDialogPinned();
-		const auto folderId = d.has_folder_id() ? d.vfolder_id.v : 0;
+		const auto folderId = d.vfolder_id().value_or_empty();
 		const auto folder = folderId
 			? session().data().folder(folderId).get()
 			: nullptr;
-		const auto done = d.vpeer.match([&](const MTPDdialogPeer &data) {
-			const auto id = peerFromMTP(data.vpeer);
+		const auto done = d.vpeer().match([&](const MTPDdialogPeer &data) {
+			const auto id = peerFromMTP(data.vpeer());
 			if (const auto history = session().data().historyLoaded(id)) {
 				history->applyPinnedUpdate(d);
 				return true;
@@ -4362,7 +4421,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 				DEBUG_LOG(("API Error: Nested folders updateDialogPinned."));
 				return false;
 			}
-			const auto id = data.vfolder_id.v;
+			const auto id = data.vfolder_id().v;
 			if (const auto folder = session().data().folderLoaded(id)) {
 				folder->applyPinnedUpdate(d);
 				return true;
@@ -4381,7 +4440,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateChannel: {
 		auto &d = update.c_updateChannel();
-		if (const auto channel = session().data().channelLoaded(d.vchannel_id.v)) {
+		if (const auto channel = session().data().channelLoaded(d.vchannel_id().v)) {
 			channel->inviter = UserId(0);
 			if (channel->amIn()) {
 				const auto history = channel->owner().history(channel);
@@ -4404,9 +4463,10 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	} break;
 
 	case mtpc_updateChannelTooLong: {
-		auto &d = update.c_updateChannelTooLong();
-		if (auto channel = session().data().channelLoaded(d.vchannel_id.v)) {
-			if (!d.has_pts() || channel->pts() < d.vpts.v) {
+		const auto &d = update.c_updateChannelTooLong();
+		if (const auto channel = session().data().channelLoaded(d.vchannel_id().v)) {
+			const auto pts = d.vpts();
+			if (!pts || channel->pts() < pts->v) {
 				getChannelDifference(channel);
 			}
 		}
@@ -4414,17 +4474,17 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateChannelMessageViews: {
 		auto &d = update.c_updateChannelMessageViews();
-		if (auto item = session().data().message(d.vchannel_id.v, d.vid.v)) {
-			item->setViewsCount(d.vviews.v);
+		if (auto item = session().data().message(d.vchannel_id().v, d.vid().v)) {
+			item->setViewsCount(d.vviews().v);
 		}
 	} break;
 
 	case mtpc_updateChannelAvailableMessages: {
 		auto &d = update.c_updateChannelAvailableMessages();
-		if (const auto channel = session().data().channelLoaded(d.vchannel_id.v)) {
-			channel->setAvailableMinId(d.vavailable_min_id.v);
+		if (const auto channel = session().data().channelLoaded(d.vchannel_id().v)) {
+			channel->setAvailableMinId(d.vavailable_min_id().v);
 			if (const auto history = session().data().historyLoaded(channel)) {
-				history->clearUpTill(d.vavailable_min_id.v);
+				history->clearUpTill(d.vavailable_min_id().v);
 			}
 		}
 	} break;
@@ -4432,38 +4492,38 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	// Pinned message.
 	case mtpc_updateUserPinnedMessage: {
 		const auto &d = update.c_updateUserPinnedMessage();
-		if (const auto user = session().data().userLoaded(d.vuser_id.v)) {
-			user->setPinnedMessageId(d.vid.v);
+		if (const auto user = session().data().userLoaded(d.vuser_id().v)) {
+			user->setPinnedMessageId(d.vid().v);
 		}
 	} break;
 
 	case mtpc_updateChatPinnedMessage: {
 		const auto &d = update.c_updateChatPinnedMessage();
-		if (const auto chat = session().data().chatLoaded(d.vchat_id.v)) {
-			const auto status = chat->applyUpdateVersion(d.vversion.v);
+		if (const auto chat = session().data().chatLoaded(d.vchat_id().v)) {
+			const auto status = chat->applyUpdateVersion(d.vversion().v);
 			if (status == ChatData::UpdateStatus::Good) {
-				chat->setPinnedMessageId(d.vid.v);
+				chat->setPinnedMessageId(d.vid().v);
 			}
 		}
 	} break;
 
 	case mtpc_updateChannelPinnedMessage: {
 		const auto &d = update.c_updateChannelPinnedMessage();
-		if (const auto channel = session().data().channelLoaded(d.vchannel_id.v)) {
-			channel->setPinnedMessageId(d.vid.v);
+		if (const auto channel = session().data().channelLoaded(d.vchannel_id().v)) {
+			channel->setPinnedMessageId(d.vid().v);
 		}
 	} break;
 
 	////// Cloud sticker sets
 	case mtpc_updateNewStickerSet: {
 		const auto &d = update.c_updateNewStickerSet();
-		Stickers::NewSetReceived(d.vstickerset);
+		Stickers::NewSetReceived(d.vstickerset());
 	} break;
 
 	case mtpc_updateStickerSetsOrder: {
 		auto &d = update.c_updateStickerSetsOrder();
 		if (!d.is_masks()) {
-			auto &order = d.vorder.v;
+			auto &order = d.vorder().v;
 			auto &sets = session().data().stickerSets();
 			Stickers::Order result;
 			for (const auto &item : order) {
@@ -4515,25 +4575,25 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	////// Cloud drafts
 	case mtpc_updateDraftMessage: {
 		const auto &data = update.c_updateDraftMessage();
-		const auto peerId = peerFromMTP(data.vpeer);
-		data.vdraft.match([&](const MTPDdraftMessage &data) {
+		const auto peerId = peerFromMTP(data.vpeer());
+		data.vdraft().match([&](const MTPDdraftMessage &data) {
 			Data::applyPeerCloudDraft(peerId, data);
 		}, [&](const MTPDdraftMessageEmpty &data) {
 			Data::clearPeerCloudDraft(
 				peerId,
-				TimeId(data.has_date() ? data.vdate.v : 0));
+				data.vdate().value_or_empty());
 		});
 	} break;
 
 	////// Cloud langpacks
 	case mtpc_updateLangPack: {
 		const auto &data = update.c_updateLangPack();
-		Lang::CurrentCloudManager().applyLangPackDifference(data.vdifference);
+		Lang::CurrentCloudManager().applyLangPackDifference(data.vdifference());
 	} break;
 
 	case mtpc_updateLangPackTooLong: {
 		const auto &data = update.c_updateLangPackTooLong();
-		const auto code = qs(data.vlang_code);
+		const auto code = qs(data.vlang_code());
 		if (!code.isEmpty()) {
 			Lang::CurrentCloudManager().requestLangPackDifference(code);
 		}

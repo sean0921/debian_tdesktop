@@ -29,6 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "window/themes/window_theme.h"
 #include "window/notifications_manager.h"
+#include "window/window_controller.h"
 #include "platform/platform_notifications_manager.h"
 #include "storage/file_upload.h"
 #include "storage/localstorage.h"
@@ -102,8 +103,8 @@ namespace App {
 	}
 
 	MainWindow *wnd() {
-		return Core::IsAppLaunched()
-			? Core::App().getActiveWindow()
+		return (Core::IsAppLaunched() && Core::App().activeWindow())
+			? Core::App().activeWindow()->widget().get()
 			: nullptr;
 	}
 
@@ -141,51 +142,13 @@ namespace App {
 		}
 	}
 
-	void feedUserLink(MTPint userId, const MTPContactLink &myLink, const MTPContactLink &foreignLink) {
-		if (const auto user = Auth().data().userLoaded(userId.v)) {
-			const auto wasShowPhone = (user->contactStatus() == UserData::ContactStatus::CanAdd);
-			switch (myLink.type()) {
-			case mtpc_contactLinkContact:
-				user->setContactStatus(UserData::ContactStatus::Contact);
-			break;
-			case mtpc_contactLinkHasPhone:
-				user->setContactStatus(UserData::ContactStatus::CanAdd);
-			break;
-			case mtpc_contactLinkNone:
-			case mtpc_contactLinkUnknown:
-				user->setContactStatus(UserData::ContactStatus::PhoneUnknown);
-			break;
-			}
-			if (user->contactStatus() == UserData::ContactStatus::PhoneUnknown
-				&& !user->phone().isEmpty()
-				&& user->id != Auth().userPeerId()) {
-				user->setContactStatus(UserData::ContactStatus::CanAdd);
-			}
-
-			const auto showPhone = !user->isServiceUser()
-				&& !user->isSelf()
-				&& user->contactStatus() == UserData::ContactStatus::CanAdd;
-			const auto showPhoneChanged = !user->isServiceUser()
-				&& !user->isSelf()
-				&& (showPhone != wasShowPhone);
-			if (showPhoneChanged) {
-				user->setName(
-					TextUtilities::SingleLine(user->firstName),
-					TextUtilities::SingleLine(user->lastName),
-					showPhone
-						? App::formatPhone(user->phone())
-						: QString(),
-					TextUtilities::SingleLine(user->username));
-			}
-		}
-	}
-
 	QString peerName(const PeerData *peer, bool forDialogs) {
-		return peer ? ((forDialogs && peer->isUser() && !peer->asUser()->nameOrPhone.isEmpty()) ? peer->asUser()->nameOrPhone : peer->name) : lang(lng_deleted);
+		return peer ? ((forDialogs && peer->isUser() && !peer->asUser()->nameOrPhone.isEmpty()) ? peer->asUser()->nameOrPhone : peer->name) : tr::lng_deleted(tr::now);
 	}
 
 	void prepareCorners(RoundCorners index, int32 radius, const QBrush &brush, const style::color *shadow = nullptr, QImage *cors = nullptr) {
 		Expects(::corners.size() > index);
+
 		int32 r = radius * cIntRetinaFactor(), s = st::msgShadow * cIntRetinaFactor();
 		QImage rect(r * 3, r * 3 + (shadow ? s : 0), QImage::Format_ARGB32_Premultiplied), localCors[4];
 		{

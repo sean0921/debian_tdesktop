@@ -29,7 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/audio/media_audio.h"
 #include "core/application.h"
 #include "mainwindow.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "core/crash_reports.h"
 #include "data/data_session.h"
 #include "data/data_messages.h"
@@ -62,13 +62,13 @@ not_null<HistoryItem*> CreateUnsupportedMessage(
 		UserId from) {
 	const auto siteLink = qsl("https://desktop.telegram.org");
 	auto text = TextWithEntities{
-		lng_message_unsupported(lt_link, siteLink)
+		tr::lng_message_unsupported(tr::now, lt_link, siteLink)
 	};
 	TextUtilities::ParseEntities(text, Ui::ItemTextNoMonoOptions().flags);
 	text.entities.push_front(
 		EntityInText(EntityType::Italic, 0, text.text.size()));
 	flags &= ~MTPDmessage::Flag::f_post_author;
-	flags |= MTPDmessage_ClientFlag::f_is_unsupported;
+	flags |= MTPDmessage::Flag::f_legacy;
 	return history->owner().makeMessage(
 		history,
 		msgId,
@@ -88,47 +88,49 @@ MediaCheckResult CheckMessageMedia(const MTPMessageMedia &media) {
 	}, [](const MTPDmessageMediaContact &) {
 		return Result::Good;
 	}, [](const MTPDmessageMediaGeo &data) {
-		return data.vgeo.match([](const MTPDgeoPoint &) {
+		return data.vgeo().match([](const MTPDgeoPoint &) {
 			return Result::Good;
 		}, [](const MTPDgeoPointEmpty &) {
 			return Result::Empty;
 		});
 	}, [](const MTPDmessageMediaVenue &data) {
-		return data.vgeo.match([](const MTPDgeoPoint &) {
+		return data.vgeo().match([](const MTPDgeoPoint &) {
 			return Result::Good;
 		}, [](const MTPDgeoPointEmpty &) {
 			return Result::Empty;
 		});
 	}, [](const MTPDmessageMediaGeoLive &data) {
-		return data.vgeo.match([](const MTPDgeoPoint &) {
+		return data.vgeo().match([](const MTPDgeoPoint &) {
 			return Result::Good;
 		}, [](const MTPDgeoPointEmpty &) {
 			return Result::Empty;
 		});
 	}, [](const MTPDmessageMediaPhoto &data) {
-		if (data.has_ttl_seconds()) {
+		const auto photo = data.vphoto();
+		if (data.vttl_seconds()) {
 			return Result::HasTimeToLive;
-		} else if (!data.has_photo()) {
+		} else if (!photo) {
 			return Result::Empty;
 		}
-		return data.vphoto.match([](const MTPDphoto &) {
+		return photo->match([](const MTPDphoto &) {
 			return Result::Good;
 		}, [](const MTPDphotoEmpty &) {
 			return Result::Empty;
 		});
 	}, [](const MTPDmessageMediaDocument &data) {
-		if (data.has_ttl_seconds()) {
+		const auto document = data.vdocument();
+		if (data.vttl_seconds()) {
 			return Result::HasTimeToLive;
-		} else if (!data.has_document()) {
+		} else if (!document) {
 			return Result::Empty;
 		}
-		return data.vdocument.match([](const MTPDdocument &) {
+		return document->match([](const MTPDdocument &) {
 			return Result::Good;
 		}, [](const MTPDdocumentEmpty &) {
 			return Result::Empty;
 		});
 	}, [](const MTPDmessageMediaWebPage &data) {
-		return data.vwebpage.match([](const MTPDwebPage &) {
+		return data.vwebpage().match([](const MTPDwebPage &) {
 			return Result::Good;
 		}, [](const MTPDwebPageEmpty &) {
 			return Result::Good;
@@ -138,7 +140,7 @@ MediaCheckResult CheckMessageMedia(const MTPMessageMedia &media) {
 			return Result::Unsupported;
 		});
 	}, [](const MTPDmessageMediaGame &data) {
-		return data.vgame.match([](const MTPDgame &) {
+		return data.vgame().match([](const MTPDgame &) {
 			return Result::Good;
 		});
 	}, [](const MTPDmessageMediaInvoice &) {
@@ -218,6 +220,32 @@ ReplyKeyboard *HistoryItem::inlineReplyKeyboard() {
 	return nullptr;
 }
 
+ChannelData *HistoryItem::discussionPostOriginalSender() const {
+	if (!history()->peer->isMegagroup()) {
+		return nullptr;
+	}
+	if (const auto forwarded = Get<HistoryMessageForwarded>()) {
+		const auto from = forwarded->savedFromPeer;
+		if (const auto result = from ? from->asChannel() : nullptr) {
+			return result;
+		}
+	}
+	return nullptr;
+}
+
+bool HistoryItem::isDiscussionPost() const {
+	return (discussionPostOriginalSender() != nullptr);
+}
+
+PeerData *HistoryItem::displayFrom() const {
+	if (const auto sender = discussionPostOriginalSender()) {
+		return sender;
+	} else if (history()->peer->isSelf()) {
+		return senderOriginal();
+	}
+	return author().get();
+}
+
 void HistoryItem::invalidateChatListEntry() {
 	if (const auto main = App::main()) {
 		// #TODO feeds search results
@@ -253,6 +281,14 @@ bool HistoryItem::hasUnreadMediaFlag() const {
 
 bool HistoryItem::isUnreadMention() const {
 	return mentionsMe() && (_flags & MTPDmessage::Flag::f_media_unread);
+}
+
+bool HistoryItem::mentionsMe() const {
+	if (Has<HistoryServicePinned>()
+		&& !history()->session().settings().notifyAboutPinned()) {
+		return false;
+	}
+	return _flags & MTPDmessage::Flag::f_mentioned;
 }
 
 bool HistoryItem::isUnreadMedia() const {
@@ -693,7 +729,7 @@ QString HistoryItem::inDialogsText(DrawInDialog way) const {
 	auto getText = [this]() {
 		if (_media) {
 			if (_groupId) {
-				return textcmdLink(1, TextUtilities::Clean(lang(lng_in_dlg_album)));
+				return textcmdLink(1, TextUtilities::Clean(tr::lng_in_dlg_album(tr::now)));
 			}
 			return _media->chatListText();
 		} else if (!emptyText()) {
@@ -706,16 +742,16 @@ QString HistoryItem::inDialogsText(DrawInDialog way) const {
 		if (isPost() || isEmpty() || (way == DrawInDialog::WithoutSender)) {
 			return nullptr;
 		} else if (!_history->peer->isUser() || out()) {
-			return author();
+			return displayFrom();
 		} else if (_history->peer->isSelf() && !Has<HistoryMessageForwarded>()) {
 			return senderOriginal();
 		}
 		return nullptr;
 	}();
 	if (sender) {
-		auto fromText = sender->isSelf() ? lang(lng_from_you) : sender->shortName();
-		auto fromWrapped = textcmdLink(1, lng_dialogs_text_from_wrapped(lt_from, TextUtilities::Clean(fromText)));
-		return lng_dialogs_text_with_from(lt_from_part, fromWrapped, lt_message, plainText);
+		auto fromText = sender->isSelf() ? tr::lng_from_you(tr::now) : sender->shortName();
+		auto fromWrapped = textcmdLink(1, tr::lng_dialogs_text_from_wrapped(tr::now, lt_from, TextUtilities::Clean(fromText)));
+		return tr::lng_dialogs_text_with_from(tr::now, lt_from_part, fromWrapped, lt_message, plainText);
 	}
 	return plainText;
 }
@@ -727,7 +763,7 @@ void HistoryItem::drawInDialog(
 		bool selected,
 		DrawInDialog way,
 		const HistoryItem *&cacheFor,
-		Text &cache) const {
+		Ui::Text::String &cache) const {
 	if (r.isEmpty()) {
 		return;
 	}
@@ -768,7 +804,7 @@ ClickHandlerPtr goToMessageClickHandler(
 					main->pushReplyReturn(returnTo);
 				}
 			}
-			App::wnd()->controller()->showPeerHistory(
+			App::wnd()->sessionController()->showPeerHistory(
 				peer,
 				Window::SectionShow::Way::Forward,
 				msgId);
@@ -780,42 +816,43 @@ not_null<HistoryItem*> HistoryItem::Create(
 		not_null<History*> history,
 		const MTPMessage &message) {
 	return message.match([&](const MTPDmessage &data) -> HistoryItem* {
-		const auto checked = data.has_media()
-			? CheckMessageMedia(data.vmedia)
+		const auto media = data.vmedia();
+		const auto checked = media
+			? CheckMessageMedia(*media)
 			: MediaCheckResult::Good;
 		if (checked == MediaCheckResult::Unsupported) {
 			return CreateUnsupportedMessage(
 				history,
-				data.vid.v,
-				data.vflags.v,
-				data.vreply_to_msg_id.v,
-				data.vvia_bot_id.v,
-				data.vdate.v,
-				data.vfrom_id.v);
+				data.vid().v,
+				data.vflags().v,
+				data.vreply_to_msg_id().value_or_empty(),
+				data.vvia_bot_id().value_or_empty(),
+				data.vdate().v,
+				data.vfrom_id().value_or_empty());
 		} else if (checked == MediaCheckResult::Empty) {
 			const auto text = HistoryService::PreparedText {
-				lang(lng_message_empty)
+				tr::lng_message_empty(tr::now)
 			};
 			return history->owner().makeServiceMessage(
 				history,
-				data.vid.v,
-				data.vdate.v,
+				data.vid().v,
+				data.vdate().v,
 				text,
-				data.vflags.v,
-				data.has_from_id() ? data.vfrom_id.v : UserId(0));
+				data.vflags().v,
+				data.vfrom_id().value_or_empty());
 		} else if (checked == MediaCheckResult::HasTimeToLive) {
 			return history->owner().makeServiceMessage(history, data);
 		}
 		return history->owner().makeMessage(history, data);
 	}, [&](const MTPDmessageService &data) -> HistoryItem* {
-		if (data.vaction.type() == mtpc_messageActionPhoneCall) {
+		if (data.vaction().type() == mtpc_messageActionPhoneCall) {
 			return history->owner().makeMessage(history, data);
 		}
 		return history->owner().makeServiceMessage(history, data);
 	}, [&](const MTPDmessageEmpty &data) -> HistoryItem* {
 		const auto text = HistoryService::PreparedText{
-			lang(lng_message_empty)
+			tr::lng_message_empty(tr::now)
 		};
-		return history->owner().makeServiceMessage(history, data.vid.v, TimeId(0), text);
+		return history->owner().makeServiceMessage(history, data.vid().v, TimeId(0), text);
 	});
 }

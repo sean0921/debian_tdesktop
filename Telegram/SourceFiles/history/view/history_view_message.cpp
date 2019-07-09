@@ -16,11 +16,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
+#include "data/data_channel.h"
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "auth_session.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "layout.h"
 #include "styles/style_widgets.h"
 #include "styles/style_history.h"
@@ -84,16 +85,17 @@ void KeyboardStyle::paintButtonIcon(
 		const QRect &rect,
 		int outerWidth,
 		HistoryMessageMarkupButton::Type type) const {
-	using Button = HistoryMessageMarkupButton;
-	auto getIcon = [](Button::Type type) -> const style::icon* {
+	using Type = HistoryMessageMarkupButton::Type;
+	const auto getIcon = [](Type type) -> const style::icon* {
 		switch (type) {
-		case Button::Type::Url: return &st::msgBotKbUrlIcon;
-		case Button::Type::SwitchInlineSame:
-		case Button::Type::SwitchInline: return &st::msgBotKbSwitchPmIcon;
+		case Type::Url:
+		case Type::Auth: return &st::msgBotKbUrlIcon;
+		case Type::SwitchInlineSame:
+		case Type::SwitchInline: return &st::msgBotKbSwitchPmIcon;
 		}
 		return nullptr;
 	};
-	if (auto icon = getIcon(type)) {
+	if (const auto icon = getIcon(type)) {
 		icon->paint(p, rect.x() + rect.width() - icon->width() - st::msgBotKbIconPadding, rect.y() + st::msgBotKbIconPadding, outerWidth);
 	}
 }
@@ -105,14 +107,15 @@ void KeyboardStyle::paintButtonLoading(Painter &p, const QRect &rect) const {
 
 int KeyboardStyle::minButtonWidth(
 		HistoryMessageMarkupButton::Type type) const {
-	using Button = HistoryMessageMarkupButton;
+	using Type = HistoryMessageMarkupButton::Type;
 	int result = 2 * buttonPadding(), iconWidth = 0;
 	switch (type) {
-	case Button::Type::Url: iconWidth = st::msgBotKbUrlIcon.width(); break;
-	case Button::Type::SwitchInlineSame:
-	case Button::Type::SwitchInline: iconWidth = st::msgBotKbSwitchPmIcon.width(); break;
-	case Button::Type::Callback:
-	case Button::Type::Game: iconWidth = st::historySendingInvertedIcon.width(); break;
+	case Type::Url:
+	case Type::Auth: iconWidth = st::msgBotKbUrlIcon.width(); break;
+	case Type::SwitchInlineSame:
+	case Type::SwitchInline: iconWidth = st::msgBotKbSwitchPmIcon.width(); break;
+	case Type::Callback:
+	case Type::Game: iconWidth = st::historySendingInvertedIcon.width(); break;
 	}
 	if (iconWidth > 0) {
 		result = std::max(result, 2 * iconWidth + 4 * int(st::msgBotKbIconPadding));
@@ -120,12 +123,14 @@ int KeyboardStyle::minButtonWidth(
 	return result;
 }
 
-QString AdminBadgeText() {
-	return lang(lng_admin_badge);
+QString MessageBadgeText(not_null<const HistoryMessage*> message) {
+	return message->hasAdminBadge()
+		? tr::lng_admin_badge(tr::now)
+		: tr::lng_channel_badge(tr::now);
 }
 
 QString FastReplyText() {
-	return lang(lng_fast_reply);
+	return tr::lng_fast_reply(tr::now);
 }
 
 void PaintBubble(Painter &p, QRect rect, int outerWidth, bool selected, bool outbg, RectPart tailSide) {
@@ -290,7 +295,7 @@ QSize Message::performCountOptimalSize() {
 			if (displayFromName()) {
 				const auto from = item->displayFrom();
 				const auto &name = from
-					? from->nameText
+					? from->nameText()
 					: item->hiddenForwardedInfo()->nameText;
 				auto namew = st::msgPadding.left()
 					+ name.maxWidth()
@@ -301,9 +306,9 @@ QSize Message::performCountOptimalSize() {
 				const auto replyWidth = hasFastReply()
 					? st::msgFont->width(FastReplyText())
 					: 0;
-				if (item->hasAdminBadge()) {
+				if (item->hasMessageBadge()) {
 					const auto badgeWidth = st::msgFont->width(
-						AdminBadgeText());
+						MessageBadgeText(item));
 					namew += st::msgPadding.right()
 						+ std::max(badgeWidth, replyWidth);
 				} else if (replyWidth) {
@@ -520,8 +525,8 @@ void Message::paintFromName(
 	const auto item = message();
 	if (displayFromName()) {
 		const auto badgeWidth = [&] {
-			if (item->hasAdminBadge()) {
-				return st::msgFont->width(AdminBadgeText());
+			if (item->hasMessageBadge()) {
+				return st::msgFont->width(MessageBadgeText(item));
 			}
 			return 0;
 		}();
@@ -539,14 +544,14 @@ void Message::paintFromName(
 		}
 
 		p.setFont(st::msgNameFont);
-		const auto nameText = [&]() -> const Text* {
+		const auto nameText = [&]() -> const Ui::Text::String * {
 			const auto from = item->displayFrom();
 			if (item->isPost()) {
 				p.setPen(selected ? st::msgInServiceFgSelected : st::msgInServiceFg);
-				return &from->nameText;
+				return &from->nameText();
 			} else if (from) {
 				p.setPen(FromNameFg(from->id, selected));
-				return &from->nameText;
+				return &from->nameText();
 			} else if (const auto info = item->hiddenForwardedInfo()) {
 				p.setPen(FromNameFg(info->colorPeerId, selected));
 				return &info->nameText;
@@ -576,7 +581,7 @@ void Message::paintFromName(
 			p.drawText(
 				trect.left() + trect.width() - rightWidth,
 				trect.top() + st::msgFont->ascent,
-				replyWidth ? FastReplyText() : AdminBadgeText());
+				replyWidth ? FastReplyText() : MessageBadgeText(item));
 		}
 		trect.setY(trect.y() + st::msgNameFont->height);
 	}
@@ -881,9 +886,9 @@ bool Message::getStateFromName(
 				availableWidth -= st::msgPadding.right() + replyWidth;
 			}
 			const auto from = item->displayFrom();
-			const auto nameText = [&]() -> const Text* {
+			const auto nameText = [&]() -> const Ui::Text::String * {
 				if (from) {
-					return &from->nameText;
+					return &from->nameText();
 				} else if (const auto info = item->hiddenForwardedInfo()) {
 					return &info->nameText;
 				} else {
@@ -894,7 +899,7 @@ bool Message::getStateFromName(
 				&& point.x() < availableLeft + availableWidth
 				&& point.x() < availableLeft + nameText->maxWidth()) {
 				static const auto hidden = std::make_shared<LambdaClickHandler>([] {
-					Ui::Toast::Show(lang(lng_forwarded_hidden));
+					Ui::Toast::Show(tr::lng_forwarded_hidden(tr::now));
 				});
 				outResult->link = from ? from->openLink() : hidden;
 				return true;
@@ -927,7 +932,7 @@ bool Message::getStateForwardedInfo(
 			auto breakEverywhere = (forwarded->text.countHeight(trect.width()) > 2 * st::semiboldFont->height);
 			auto textRequest = request.forText();
 			if (breakEverywhere) {
-				textRequest.flags |= Text::StateRequest::Flag::BreakEverywhere;
+				textRequest.flags |= Ui::Text::StateRequest::Flag::BreakEverywhere;
 			}
 			*outResult = TextState(item, forwarded->text.getState(
 				point - trect.topLeft(),
@@ -1334,9 +1339,14 @@ bool Message::displayFromName() const {
 
 bool Message::displayForwardedFrom() const {
 	const auto item = message();
+	if (item->history()->peer->isSelf()) {
+		return false;
+	}
 	if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
-		if (item->history()->peer->isSelf()) {
-			return false;
+		if (const auto sender = item->discussionPostOriginalSender()) {
+			if (sender == forwarded->originalSender) {
+				return false;
+			}
 		}
 		const auto media = this->media();
 		return item->Has<HistoryMessageVia>()
@@ -1418,11 +1428,8 @@ bool Message::displayFastShare() const {
 
 bool Message::displayGoToOriginal() const {
 	const auto item = message();
-	const auto peer = item->history()->peer;
-	if (peer->isSelf()) {
-		if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
-			return forwarded->savedFromPeer && forwarded->savedFromMsgId;
-		}
+	if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
+		return forwarded->savedFromPeer && forwarded->savedFromMsgId;
 	}
 	return false;
 }
@@ -1459,7 +1466,7 @@ ClickHandlerPtr Message::rightActionLink() const {
 		_rightActionLink = std::make_shared<LambdaClickHandler>([=] {
 			if (const auto item = Auth().data().message(itemId)) {
 				if (savedFromPeer && savedFromMsgId) {
-					App::wnd()->controller()->showPeerHistory(
+					App::wnd()->sessionController()->showPeerHistory(
 						savedFromPeer,
 						Window::SectionShow::Way::Forward,
 						savedFromMsgId);
@@ -1544,8 +1551,8 @@ void Message::fromNameUpdated(int width) const {
 	const auto replyWidth = hasFastReply()
 		? st::msgFont->width(FastReplyText())
 		: 0;
-	if (item->hasAdminBadge()) {
-		const auto badgeWidth = st::msgFont->width(AdminBadgeText());
+	if (item->hasMessageBadge()) {
+		const auto badgeWidth = st::msgFont->width(MessageBadgeText(item));
 		width -= st::msgPadding.right() + std::max(badgeWidth, replyWidth);
 	} else if (replyWidth) {
 		width -= st::msgPadding.right() + replyWidth;
@@ -1554,9 +1561,9 @@ void Message::fromNameUpdated(int width) const {
 	item->_fromNameVersion = from ? from->nameVersion : 1;
 	if (const auto via = item->Get<HistoryMessageVia>()) {
 		if (!displayForwardedFrom()) {
-			const auto nameText = [&]() -> const Text* {
+			const auto nameText = [&]() -> const Ui::Text::String * {
 				if (from) {
-					return &from->nameText;
+					return &from->nameText();
 				} else if (const auto info = item->hiddenForwardedInfo()) {
 					return &info->nameText;
 				} else {
@@ -1797,9 +1804,9 @@ void Message::initTime() {
 		item->_timeWidth = st::msgDateFont->width(item->_timeText);
 	}
 	if (const auto views = item->Get<HistoryMessageViews>()) {
-		views->_viewsText = (views->_views >= 0)
-			? FormatViewsCount(views->_views)
-			: QString();
+		views->_viewsText = (views->_views > 0)
+			? Lang::FormatCountToShort(views->_views).string
+			: QString("1");
 		views->_viewsWidth = views->_viewsText.isEmpty()
 			? 0
 			: st::msgDateFont->width(views->_viewsText);

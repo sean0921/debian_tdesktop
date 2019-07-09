@@ -253,7 +253,7 @@ void StatusText::update(int newSize, int fullSize, int duration, crl::time realD
 	} else if (_size == FileStatusSizeLoaded) {
 		_text = (duration >= 0) ? formatDurationText(duration) : (duration < -1 ? qsl("GIF") : formatSizeText(fullSize));
 	} else if (_size == FileStatusSizeFailed) {
-		_text = lang(lng_attach_failed);
+		_text = tr::lng_attach_failed(tr::now);
 	} else if (_size >= 0) {
 		_text = formatDownloadText(_size, fullSize);
 	} else {
@@ -595,7 +595,8 @@ Voice::Voice(
 	TextParseOptions opts = { TextParseRichText, 0, 0, Qt::LayoutDirectionAuto };
 	_details.setText(
 		st::defaultTextStyle,
-		lng_date_and_duration(
+		tr::lng_date_and_duration(
+			tr::now,
 			lt_date,
 			dateText,
 			lt_duration,
@@ -821,9 +822,9 @@ void Voice::updateName() {
 	auto version = 0;
 	if (const auto forwarded = parent()->Get<HistoryMessageForwarded>()) {
 		if (parent()->fromOriginal()->isChannel()) {
-			_name.setText(st::semiboldTextStyle, lng_forwarded_channel(lt_channel, App::peerName(parent()->fromOriginal())), Ui::NameTextOptions());
+			_name.setText(st::semiboldTextStyle, tr::lng_forwarded_channel(tr::now, lt_channel, App::peerName(parent()->fromOriginal())), Ui::NameTextOptions());
 		} else {
-			_name.setText(st::semiboldTextStyle, lng_forwarded(lt_user, App::peerName(parent()->fromOriginal())), Ui::NameTextOptions());
+			_name.setText(st::semiboldTextStyle, tr::lng_forwarded(tr::now, lt_user, App::peerName(parent()->fromOriginal())), Ui::NameTextOptions());
 		}
 	} else {
 		_name.setText(st::semiboldTextStyle, App::peerName(parent()->from()), Ui::NameTextOptions());
@@ -1088,7 +1089,9 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 }
 
 void Document::drawCornerDownload(Painter &p, bool selected, const PaintContext *context) const {
-	if (_data->loaded() || !downloadInCorner()) {
+	if (_data->loaded()
+		|| _data->loadedInMediaCache()
+		|| !downloadInCorner()) {
 		return;
 	}
 	const auto size = st::overviewSmallCheck.size;
@@ -1124,7 +1127,9 @@ TextState Document::cornerDownloadTextState(
 		QPoint point,
 		StateRequest request) const {
 	auto result = TextState(parent());
-	if (!downloadInCorner() || _data->loaded()) {
+	if (!downloadInCorner()
+		|| _data->loaded()
+		|| _data->loadedInMediaCache()) {
 		return result;
 	}
 	const auto size = st::overviewSmallCheck.size;
@@ -1163,7 +1168,8 @@ TextState Document::getState(
 			_st.songThumbSize,
 			_width);
 		if (inner.contains(point)) {
-			const auto link = (_data->loading() || _data->uploading())
+			const auto link = (!downloadInCorner()
+				&& (_data->loading() || _data->uploading()))
 				? _cancell
 				: (loaded || _data->canBePlayed())
 				? _openl

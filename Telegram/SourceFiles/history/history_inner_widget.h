@@ -28,7 +28,7 @@ class EmptyPainter;
 } // namespace HistoryView
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace Ui {
@@ -48,7 +48,7 @@ public:
 
 	HistoryInner(
 		not_null<HistoryWidget*> historyWidget,
-		not_null<Window::Controller*> controller,
+		not_null<Window::SessionController*> controller,
 		Ui::ScrollArea *scroll,
 		not_null<History*> history);
 
@@ -73,6 +73,10 @@ public:
 	MessageIdsList getSelectedItems() const;
 	void selectItem(not_null<HistoryItem*> item);
 	bool inSelectionMode() const;
+	bool elementIntersectsRange(
+		not_null<const Element*> view,
+		int from,
+		int till) const;
 
 	void updateBotInfo(bool recount = true);
 
@@ -296,7 +300,9 @@ private:
 	// Does any of the shown histories has this flag set.
 	bool hasPendingResizedItems() const;
 
-	not_null<Window::Controller*> _controller;
+	static HistoryInner *Instance;
+
+	not_null<Window::SessionController*> _controller;
 
 	const not_null<PeerData*> _peer;
 	const not_null<History*> _history;

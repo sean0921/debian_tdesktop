@@ -30,6 +30,7 @@ enum class NewMessageType;
 namespace HistoryView {
 struct Group;
 class Element;
+class ElementDelegate;
 } // namespace HistoryView
 
 class AuthSession;
@@ -38,6 +39,9 @@ namespace Media {
 namespace Clip {
 class Reader;
 } // namespace Clip
+namespace Streaming {
+class Reader;
+} // namespace Streaming
 } // namespace Media
 
 namespace Export {
@@ -54,7 +58,7 @@ struct SavedCredentials;
 namespace Data {
 
 class Folder;
-
+class LocationPoint;
 class WallPaper;
 
 class Session final {
@@ -198,6 +202,15 @@ public:
 	[[nodiscard]] rpl::producer<not_null<History*>> historyChanged() const;
 	void sendHistoryChangeNotifications();
 
+	void registerHeavyViewPart(not_null<ViewElement*> view);
+	void unregisterHeavyViewPart(not_null<ViewElement*> view);
+	void unloadHeavyViewParts(
+		not_null<HistoryView::ElementDelegate*> delegate);
+	void unloadHeavyViewParts(
+		not_null<HistoryView::ElementDelegate*> delegate,
+		int from,
+		int till);
+
 	using MegagroupParticipant = std::tuple<
 		not_null<ChannelData*>,
 		not_null<UserData*>>;
@@ -216,8 +229,12 @@ public:
 
 	void notifyStickersUpdated();
 	[[nodiscard]] rpl::producer<> stickersUpdated() const;
+	void notifyRecentStickersUpdated();
+	[[nodiscard]] rpl::producer<> recentStickersUpdated() const;
 	void notifySavedGifsUpdated();
 	[[nodiscard]] rpl::producer<> savedGifsUpdated() const;
+	void notifyPinnedDialogsOrderUpdated();
+	[[nodiscard]] rpl::producer<> pinnedDialogsOrderUpdated() const;
 
 	bool stickersUpdateNeeded(crl::time now) const {
 		return stickersUpdateNeeded(_lastStickersUpdate, now);
@@ -229,6 +246,9 @@ public:
 		return stickersUpdateNeeded(_lastRecentStickersUpdate, now);
 	}
 	void setLastRecentStickersUpdate(crl::time update) {
+		if (update) {
+			notifyRecentStickersUpdated();
+		}
 		_lastRecentStickersUpdate = update;
 	}
 	bool favedStickersUpdateNeeded(crl::time now) const {
@@ -385,6 +405,11 @@ public:
 	void markMediaRead(not_null<const DocumentData*> document);
 	void requestPollViewRepaint(not_null<const PollData*> poll);
 
+	std::shared_ptr<::Media::Streaming::Reader> documentStreamedReader(
+		not_null<DocumentData*> document,
+		FileOrigin origin,
+		bool forceRemoteLoader = false);
+
 	HistoryItem *addNewMessage(const MTPMessage &data, NewMessageType type);
 
 	struct SendActionAnimationUpdate {
@@ -501,8 +526,8 @@ public:
 	not_null<PollData*> processPoll(const MTPPoll &data);
 	not_null<PollData*> processPoll(const MTPDmessageMediaPoll &data);
 
-	[[nodiscard]] not_null<LocationData*> location(
-		const LocationCoords &coords);
+	[[nodiscard]] not_null<LocationThumbnail*> location(
+		const LocationPoint &point);
 
 	void registerPhotoItem(
 		not_null<const PhotoData*> photo,
@@ -819,7 +844,9 @@ private:
 	rpl::event_stream<DialogsRowReplacement> _dialogsRowReplacements;
 
 	rpl::event_stream<> _stickersUpdated;
+	rpl::event_stream<> _recentStickersUpdated;
 	rpl::event_stream<> _savedGifsUpdated;
+	rpl::event_stream<> _pinnedDialogsOrderUpdated;
 	crl::time _lastStickersUpdate = 0;
 	crl::time _lastRecentStickersUpdate = 0;
 	crl::time _lastFavedStickersUpdate = 0;
@@ -874,8 +901,8 @@ private:
 		not_null<const WebPageData*>,
 		base::flat_set<not_null<ViewElement*>>> _webpageViews;
 	std::unordered_map<
-		LocationCoords,
-		std::unique_ptr<LocationData>> _locations;
+		LocationPoint,
+		std::unique_ptr<LocationThumbnail>> _locations;
 	std::unordered_map<
 		PollId,
 		std::unique_ptr<PollData>> _polls;
@@ -902,12 +929,19 @@ private:
 	base::flat_set<not_null<GameData*>> _gamesUpdated;
 	base::flat_set<not_null<PollData*>> _pollsUpdated;
 
+	base::flat_map<
+		not_null<DocumentData*>,
+		std::weak_ptr<::Media::Streaming::Reader>> _streamedReaders;
+
 	base::flat_map<FolderId, std::unique_ptr<Folder>> _folders;
 	//rpl::variable<FeedId> _defaultFeedId = FeedId(); // #feed
+
 	Groups _groups;
 	std::unordered_map<
 		not_null<const HistoryItem*>,
 		std::vector<not_null<ViewElement*>>> _views;
+
+	base::flat_set<not_null<ViewElement*>> _heavyViewParts;
 
 	PeerData *_proxyPromoted = nullptr;
 

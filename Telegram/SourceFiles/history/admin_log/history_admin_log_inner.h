@@ -29,7 +29,7 @@ class PopupMenu;
 } // namespace Ui
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace AdminLog {
@@ -45,7 +45,7 @@ class InnerWidget final
 public:
 	InnerWidget(
 		QWidget *parent,
-		not_null<Window::Controller*> controller,
+		not_null<Window::SessionController*> controller,
 		not_null<ChannelData*> channel);
 
 	base::Observable<void> showSearchSignal;
@@ -89,6 +89,10 @@ public:
 	crl::time elementHighlightTime(
 		not_null<const HistoryView::Element*> element) override;
 	bool elementInSelectionMode() override;
+	bool elementIntersectsRange(
+		not_null<const HistoryView::Element*> view,
+		int from,
+		int till) override;
 
 	~InnerWidget();
 
@@ -203,7 +207,7 @@ private:
 	template <typename Method>
 	void enumerateDates(Method method);
 
-	not_null<Window::Controller*> _controller;
+	not_null<Window::SessionController*> _controller;
 	not_null<ChannelData*> _channel;
 	not_null<History*> _history;
 	std::vector<OwnedItem> _items;
@@ -236,7 +240,7 @@ private:
 	bool _upLoaded = true;
 	bool _downLoaded = true;
 	bool _filterChanged = false;
-	Text _emptyText;
+	Ui::Text::String _emptyText;
 
 	MouseAction _mouseAction = MouseAction::None;
 	TextSelectType _mouseSelectType = TextSelectType::Letters;

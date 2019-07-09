@@ -17,7 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "data/data_session.h"
 #include "data/data_channel.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "core/application.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -34,8 +34,8 @@ constexpr auto kWaitingForAllGroupedDelay = crl::time(1000);
 
 } // namespace
 
-System::System(AuthSession *session)
-: _authSession(session)
+System::System(not_null<AuthSession*> session)
+: _session(session)
 , _waitTimer([=] { showNext(); })
 , _waitForAllGroupedTimer([=] { showGrouped(); }) {
 	createManager();
@@ -489,7 +489,7 @@ void Manager::openNotificationMessage(
 	if (openExactlyMessage) {
 		Ui::showPeerHistory(history, messageId);
 	//} else if (messageFeed) { // #feed
-	//	App::wnd()->controller()->showSection(
+	//	App::wnd()->sessionController()->showSection(
 	//		HistoryFeed::Memento(messageFeed));
 	} else {
 		Ui::showPeerHistory(history, ShowAtUnreadMsgId);
@@ -510,6 +510,11 @@ void Manager::notificationReplied(
 	message.replyTo = (msgId > 0 && !history->peer->isUser()) ? msgId : 0;
 	message.clearDraft = false;
 	Auth().api().sendMessage(std::move(message));
+
+	const auto item = history->owner().message(history->channelId(), msgId);
+	if (item && item->isUnreadMention() && !item->isUnreadMedia()) {
+		Auth().api().markMediaRead(item);
+	}
 }
 
 void NativeManager::doShowNotification(HistoryItem *item, int forwardedCount) {
@@ -518,10 +523,10 @@ void NativeManager::doShowNotification(HistoryItem *item, int forwardedCount) {
 	const auto title = options.hideNameAndPhoto ? qsl("Telegram Desktop") : item->history()->peer->name;
 	const auto subtitle = options.hideNameAndPhoto ? QString() : item->notificationHeader();
 	const auto text = options.hideMessageText
-		? lang(lng_notification_preview)
+		? tr::lng_notification_preview(tr::now)
 		: (forwardedCount < 2
-			? (item->groupId() ? lang(lng_in_dlg_album) : item->notificationText())
-			: lng_forward_messages(lt_count, forwardedCount));
+			? (item->groupId() ? tr::lng_in_dlg_album(tr::now) : item->notificationText())
+			: tr::lng_forward_messages(tr::now, lt_count, forwardedCount));
 
 	doShowNativeNotification(
 		item->history()->peer,

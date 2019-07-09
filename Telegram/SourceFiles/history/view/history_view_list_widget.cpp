@@ -23,7 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "apiwrap.h"
 #include "layout.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "window/window_peer_menu.h"
 #include "auth_session.h"
 #include "ui/widgets/popup_menu.h"
@@ -232,7 +232,7 @@ void ListWidget::enumerateDates(Method method) {
 
 ListWidget::ListWidget(
 	QWidget *parent,
-	not_null<Window::Controller*> controller,
+	not_null<Window::SessionController*> controller,
 	not_null<ListDelegate*> delegate)
 : RpWidget(parent)
 , _delegate(delegate)
@@ -857,7 +857,7 @@ bool ListWidget::isInsideSelection(
 		&& _selectedTextItem == view->data()
 		&& state.pointState != PointState::Outside) {
 		StateRequest stateRequest;
-		stateRequest.flags |= Text::StateRequest::Flag::LookupSymbol;
+		stateRequest.flags |= Ui::Text::StateRequest::Flag::LookupSymbol;
 		const auto dragState = view->textState(
 			state.point,
 			stateRequest);
@@ -1124,6 +1124,17 @@ crl::time ListWidget::elementHighlightTime(
 
 bool ListWidget::elementInSelectionMode() {
 	return hasSelectedItems() || !_dragSelected.empty();
+}
+
+bool ListWidget::elementIntersectsRange(
+		not_null<const Element*> view,
+		int from,
+		int till) {
+	Expects(view->delegate() == this);
+
+	const auto top = itemTop(view);
+	const auto bottom = top + view->height();
+	return (top < till && bottom > from);
 }
 
 void ListWidget::saveState(not_null<ListMemento*> memento) {
@@ -1558,7 +1569,7 @@ void ListWidget::switchToWordSelection() {
 	Expects(_overElement != nullptr);
 
 	StateRequest request;
-	request.flags |= Text::StateRequest::Flag::LookupSymbol;
+	request.flags |= Ui::Text::StateRequest::Flag::LookupSymbol;
 	auto dragState = _overElement->textState(_pressState.point, request);
 	if (dragState.cursor != CursorState::Text) {
 		return;
@@ -1889,7 +1900,7 @@ void ListWidget::mouseActionStart(
 		auto validStartPoint = startDistance < QApplication::startDragDistance();
 		if (_trippleClickStartTime != 0 && validStartPoint) {
 			StateRequest request;
-			request.flags = Text::StateRequest::Flag::LookupSymbol;
+			request.flags = Ui::Text::StateRequest::Flag::LookupSymbol;
 			dragState = pressElement->textState(_pressState.point, request);
 			if (dragState.cursor == CursorState::Text) {
 				setTextSelection(pressElement, TextSelection(
@@ -1904,7 +1915,7 @@ void ListWidget::mouseActionStart(
 			}
 		} else if (pressElement) {
 			StateRequest request;
-			request.flags = Text::StateRequest::Flag::LookupSymbol;
+			request.flags = Ui::Text::StateRequest::Flag::LookupSymbol;
 			dragState = pressElement->textState(_pressState.point, request);
 		}
 		if (_mouseSelectType != TextSelectType::Paragraphs) {
@@ -2085,7 +2096,7 @@ void ListWidget::mouseActionUpdate() {
 		}
 		StateRequest request;
 		if (_mouseAction == MouseAction::Selecting) {
-			request.flags |= Text::StateRequest::Flag::LookupSymbol;
+			request.flags |= Ui::Text::StateRequest::Flag::LookupSymbol;
 		} else {
 			inTextSelection = false;
 		}
@@ -2237,7 +2248,7 @@ void ListWidget::mouseActionUpdate() {
 
 ClickHandlerPtr ListWidget::hiddenUserpicLink(FullMsgId id) {
 	static const auto result = std::make_shared<LambdaClickHandler>([] {
-		Ui::Toast::Show(lang(lng_forwarded_hidden));
+		Ui::Toast::Show(tr::lng_forwarded_hidden(tr::now));
 	});
 	return result;
 }

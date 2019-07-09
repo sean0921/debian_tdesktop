@@ -20,7 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/message_field.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "lang/lang_keys.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "storage/storage_media_prepare.h"
 #include "storage/localimageloader.h"
 #include "core/sandbox.h"
@@ -61,7 +61,7 @@ EditInfoBox::EditInfoBox(
 	this,
 	st::supportInfoField,
 	Ui::InputField::Mode::MultiLine,
-	[] { return QString("Support information"); },
+	rpl::single(qsl("Support information")), // #TODO hard_lang
 	text)
 , _submit(std::move(submit)) {
 	_field->setMaxLength(kMaxSupportInfoLength);
@@ -73,7 +73,7 @@ EditInfoBox::EditInfoBox(
 }
 
 void EditInfoBox::prepare() {
-	setTitle([] { return QString("Edit support information"); });
+	setTitle(rpl::single(qsl("Edit support information"))); // #TODO hard_lang
 
 	const auto save = [=] {
 		const auto done = crl::guard(this, [=](bool success) {
@@ -85,8 +85,8 @@ void EditInfoBox::prepare() {
 		});
 		_submit(_field->getTextWithAppliedMarkdown(), done);
 	};
-	addButton(langFactory(lng_settings_save), save);
-	addButton(langFactory(lng_cancel), [=] { closeBox(); });
+	addButton(tr::lng_settings_save(), save);
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
 
 	connect(_field, &Ui::InputField::submitted, save);
 	connect(_field, &Ui::InputField::cancelled, [=] { closeBox(); });
@@ -121,15 +121,18 @@ QString FormatDateTime(TimeId value) {
 	const auto now = QDateTime::currentDateTime();
 	const auto date = ParseDateTime(value);
 	if (date.date() == now.date()) {
-		return lng_mediaview_today(
+		return tr::lng_mediaview_today(
+			tr::now,
 			lt_time,
 			date.time().toString(cTimeFormat()));
 	} else if (date.date().addDays(1) == now.date()) {
-		return lng_mediaview_yesterday(
+		return tr::lng_mediaview_yesterday(
+			tr::now,
 			lt_time,
 			date.time().toString(cTimeFormat()));
 	} else {
-		return lng_mediaview_date_time(
+		return tr::lng_mediaview_date_time(
+			tr::now,
 			lt_date,
 			date.date().toString(qsl("dd.MM.yy")),
 			lt_time,
@@ -277,7 +280,7 @@ Helper::Helper(not_null<AuthSession*> session)
 	request(MTPhelp_GetSupportName(
 	)).done([=](const MTPhelp_SupportName &result) {
 		result.match([&](const MTPDhelp_supportName &data) {
-			setSupportName(qs(data.vname));
+			setSupportName(qs(data.vname()));
 		});
 	}).fail([=](const RPCError &error) {
 		setSupportName(
@@ -293,7 +296,7 @@ std::unique_ptr<Helper> Helper::Create(not_null<AuthSession*> session) {
 	return valid ? std::make_unique<Helper>(session) : nullptr;
 }
 
-void Helper::registerWindow(not_null<Window::Controller*> controller) {
+void Helper::registerWindow(not_null<Window::SessionController*> controller) {
 	controller->activeChatValue(
 	) | rpl::map([](Dialogs::Key key) {
 		const auto history = key.history();
@@ -349,7 +352,7 @@ void Helper::checkOccupiedChats() {
 }
 
 void Helper::updateOccupiedHistory(
-		not_null<Window::Controller*> controller,
+		not_null<Window::SessionController*> controller,
 		History *history) {
 	if (isOccupiedByMe(_occupiedHistory)) {
 		_occupiedHistory->clearCloudDraft();
@@ -431,11 +434,11 @@ void Helper::applyInfo(
 	};
 	result.match([&](const MTPDhelp_userInfo &data) {
 		auto info = UserInfo();
-		info.author = qs(data.vauthor);
-		info.date = data.vdate.v;
+		info.author = qs(data.vauthor());
+		info.date = data.vdate().v;
 		info.text = TextWithEntities{
-			qs(data.vmessage),
-			TextUtilities::EntitiesFromMTP(data.ventities.v) };
+			qs(data.vmessage()),
+			TextUtilities::EntitiesFromMTP(data.ventities().v) };
 		if (info.text.empty()) {
 			remove();
 		} else if (_userInformation[user] != info) {

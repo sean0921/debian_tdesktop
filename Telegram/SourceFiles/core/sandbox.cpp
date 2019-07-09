@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/sandbox.h"
 
-#include "platform/platform_specific.h"
+#include "platform/platform_info.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "storage/localstorage.h"
@@ -178,7 +178,7 @@ void Sandbox::setupScreenScale() {
 
 	const auto ratio = devicePixelRatio();
 	if (ratio > 1.) {
-		if ((cPlatform() != dbipMac && cPlatform() != dbipMacOld) || (ratio != 2.)) {
+		if (!Platform::IsMac() || (ratio != 2.)) {
 			LOG(("Found non-trivial Device Pixel Ratio: %1").arg(ratio));
 			LOG(("Environmental variables: QT_DEVICE_PIXEL_RATIO='%1'").arg(QString::fromLatin1(qgetenv("QT_DEVICE_PIXEL_RATIO"))));
 			LOG(("Environmental variables: QT_SCALE_FACTOR='%1'").arg(QString::fromLatin1(qgetenv("QT_SCALE_FACTOR"))));
@@ -502,15 +502,11 @@ bool Sandbox::notify(QObject *receiver, QEvent *e) {
 	const auto wrap = createEventNestingLevel();
 	const auto type = e->type();
 	if (type == QEvent::UpdateRequest) {
+		const auto weak = make_weak(receiver);
 		_widgetUpdateRequests.fire({});
-		// Profiling.
-		//const auto time = crl::now();
-		//LOG(("[%1] UPDATE STARTED").arg(time));
-		//const auto guard = gsl::finally([&] {
-		//	const auto now = crl::now();
-		//	LOG(("[%1] UPDATE FINISHED (%2)").arg(now).arg(now - time));
-		//});
-		//return QApplication::notify(receiver, e);
+		if (!weak) {
+			return true;
+		}
 	}
 	return QApplication::notify(receiver, e);
 }
@@ -598,3 +594,11 @@ void Sandbox::execExternal(const QString &cmd) {
 }
 
 } // namespace Core
+
+namespace crl {
+
+rpl::producer<> on_main_update_requests() {
+	return Core::Sandbox::Instance().widgetUpdateRequests();
+}
+
+} // namespace crl

@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "styles/style_boxes.h"
 #include "ui/widgets/shadow.h"
+#include "platform/platform_info.h"
 #include "styles/style_mediaview.h"
 #include "ui/widgets/input_fields.h"
 
@@ -517,7 +518,7 @@ void EditColorBox::Field::wheelEvent(QWheelEvent *e) {
 	}
 
 	auto deltaX = e->angleDelta().x(), deltaY = e->angleDelta().y();
-	if (cPlatform() == dbipMac || cPlatform() == dbipMacOld) {
+	if (Platform::IsMac()) {
 		deltaY *= -1;
 	} else {
 		deltaX *= -1;
@@ -630,7 +631,7 @@ EditColorBox::EditColorBox(QWidget*, const QString &title, QColor current) : Box
 }
 
 void EditColorBox::prepare() {
-	setTitle([=] { return _title; });
+	setTitle(rpl::single(_title));
 
 	const auto hsvChanged = [=] { updateFromHSVFields(); };
 	const auto rgbChanged = [=] { updateFromRGBFields(); };
@@ -653,8 +654,8 @@ void EditColorBox::prepare() {
 	connect(_blueField, &Ui::MaskedInputField::submitted, submitted);
 	connect(_result, &Ui::MaskedInputField::submitted, submitted);
 
-	addButton(langFactory(lng_settings_save), [=] { saveColor(); });
-	addButton(langFactory(lng_cancel), [=] { closeBox(); });
+	addButton(tr::lng_settings_save(), [=] { saveColor(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
 
 	auto height = st::colorEditSkip + st::colorPickerSize + st::colorEditSkip + st::colorSliderWidth + st::colorEditSkip;
 	setDimensions(st::colorEditWidth, height);

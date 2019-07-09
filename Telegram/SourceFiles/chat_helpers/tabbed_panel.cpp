@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/shadow.h"
 #include "ui/image/image_prepare.h"
 #include "chat_helpers/tabbed_selector.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "mainwindow.h"
 #include "core/application.h"
 #include "core/qt_signal_producer.h"
@@ -26,7 +26,7 @@ constexpr auto kDelayedHideTimeoutMs = 3000;
 
 TabbedPanel::TabbedPanel(
 	QWidget *parent,
-	not_null<Window::Controller*> controller)
+	not_null<Window::SessionController*> controller)
 : TabbedPanel(
 	parent,
 	controller,
@@ -35,7 +35,7 @@ TabbedPanel::TabbedPanel(
 
 TabbedPanel::TabbedPanel(
 	QWidget *parent,
-	not_null<Window::Controller*> controller,
+	not_null<Window::SessionController*> controller,
 	object_ptr<TabbedSelector> selector)
 : RpWidget(parent)
 , _controller(controller)
@@ -45,14 +45,16 @@ TabbedPanel::TabbedPanel(
 , _maxContentHeight(st::emojiPanMaxHeight) {
 	_selector->setParent(this);
 	_selector->setRoundRadius(st::buttonRadius);
-	_selector->setAfterShownCallback([this](SelectorTab tab) {
-		if (tab == SelectorTab::Gifs) {
-			_controller->enableGifPauseReason(Window::GifPauseReason::SavedGifs);
+	_selector->setAfterShownCallback([=](SelectorTab tab) {
+		if (tab == SelectorTab::Gifs || tab == SelectorTab::Stickers) {
+			_controller->enableGifPauseReason(
+				Window::GifPauseReason::SavedGifs);
 		}
 	});
-	_selector->setBeforeHidingCallback([this](SelectorTab tab) {
-		if (tab == SelectorTab::Gifs) {
-			_controller->disableGifPauseReason(Window::GifPauseReason::SavedGifs);
+	_selector->setBeforeHidingCallback([=](SelectorTab tab) {
+		if (tab == SelectorTab::Gifs || tab == SelectorTab::Stickers) {
+			_controller->disableGifPauseReason(
+				Window::GifPauseReason::SavedGifs);
 		}
 	});
 	_selector->showRequests(
@@ -230,6 +232,9 @@ void TabbedPanel::otherLeave() {
 void TabbedPanel::hideFast() {
 	if (isHidden()) return;
 
+	if (_selector && !_selector->isHidden()) {
+		_selector->beforeHiding();
+	}
 	_hideTimer.cancel();
 	_hiding = false;
 	_a_opacity.stop();

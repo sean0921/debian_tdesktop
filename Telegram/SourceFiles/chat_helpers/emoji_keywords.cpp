@@ -11,8 +11,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_instance.h"
 #include "lang/lang_cloud_manager.h"
 #include "core/application.h"
-#include "platform/platform_specific.h"
+#include "platform/platform_info.h"
 #include "ui/emoji_config.h"
+#include "main/main_account.h"
 #include "auth_session.h"
 #include "apiwrap.h"
 
@@ -49,8 +50,7 @@ struct LangPackData {
 [[nodiscard]] bool SkipExactKeyword(
 		const QString &language,
 		const QString &word) {
-	if ((word.size() == 1)
-		&& (word[0] >= '0' && word[0] <= '9')) {
+	if ((word.size() == 1) && !word[0].isLetter()) {
 		return true;
 	} else if (word == qstr("10")) {
 		return true;
@@ -218,13 +218,13 @@ void ApplyDifference(
 	data.version = version;
 	for (const auto &keyword : keywords) {
 		keyword.match([&](const MTPDemojiKeyword &keyword) {
-			const auto word = NormalizeKey(qs(keyword.vkeyword));
+			const auto word = NormalizeKey(qs(keyword.vkeyword()));
 			if (word.isEmpty()) {
 				return;
 			}
 			auto &list = data.emoji[word];
 			auto &&emoji = ranges::view::all(
-				keyword.vemoticons.v
+				keyword.vemoticons().v
 			) | ranges::view::transform([](const MTPstring &string) {
 				const auto text = qs(string);
 				const auto emoji = MustAddPostfix(text)
@@ -241,7 +241,7 @@ void ApplyDifference(
 			});
 			list.insert(end(list), emoji.begin(), emoji.end());
 		}, [&](const MTPDemojiKeywordDeleted &keyword) {
-			const auto word = NormalizeKey(qs(keyword.vkeyword));
+			const auto word = NormalizeKey(qs(keyword.vkeyword()));
 			if (word.isEmpty()) {
 				return;
 			}
@@ -250,7 +250,7 @@ void ApplyDifference(
 				return;
 			}
 			auto &list = i->second;
-			for (const auto &emoji : keyword.vemoticons.v) {
+			for (const auto &emoji : keyword.vemoticons().v) {
 				list.erase(
 					ranges::remove(list, qs(emoji), &LangPackEmoji::text),
 					end(list));
@@ -388,9 +388,9 @@ void EmojiKeywords::LangPack::refresh() {
 void EmojiKeywords::LangPack::applyDifference(
 		const MTPEmojiKeywordsDifference &result) {
 	result.match([&](const MTPDemojiKeywordsDifference &data) {
-		const auto code = qs(data.vlang_code);
-		const auto version = data.vversion.v;
-		const auto &keywords = data.vkeywords.v;
+		const auto code = qs(data.vlang_code());
+		const auto version = data.vversion().v;
+		const auto &keywords = data.vkeywords().v;
 		if (code != _id) {
 			LOG(("API Error: Bad lang_code for emoji keywords %1 -> %2"
 				).arg(_id
@@ -487,12 +487,9 @@ void EmojiKeywords::langPackRefreshed() {
 }
 
 void EmojiKeywords::handleAuthSessionChanges() {
-	rpl::single(
-		rpl::empty_value()
-	) | rpl::then(base::ObservableViewer(
-		Core::App().authSessionChanged()
-	)) | rpl::map([] {
-		return AuthSession::Exists() ? &Auth().api() : nullptr;
+	Core::App().activeAccount().sessionValue(
+	) | rpl::map([](AuthSession *session) {
+		return session ? &session->api() : nullptr;
 	}) | rpl::start_with_next([=](ApiWrap *api) {
 		apiChanged(api);
 	}, _lifetime);
@@ -637,7 +634,7 @@ void EmojiKeywords::refreshRemoteList() {
 			result.v
 		) | ranges::view::transform([](const MTPEmojiLanguage &language) {
 			return language.match([&](const MTPDemojiLanguage &language) {
-				return qs(language.vlang_code);
+				return qs(language.vlang_code());
 			});
 		}) | ranges::to_vector);
 		_langsRequestId = 0;

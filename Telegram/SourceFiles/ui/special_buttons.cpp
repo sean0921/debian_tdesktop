@@ -23,7 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "boxes/photo_crop_box.h"
 #include "boxes/confirm_box.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "lang/lang_keys.h"
 #include "auth_session.h"
 #include "apiwrap.h"
@@ -37,11 +37,11 @@ constexpr int kWideScale = 5;
 
 QString CropTitle(not_null<PeerData*> peer) {
 	if (peer->isChat() || peer->isMegagroup()) {
-		return lang(lng_create_group_crop);
+		return tr::lng_create_group_crop(tr::now);
 	} else if (peer->isChannel()) {
-		return lang(lng_create_channel_crop);
+		return tr::lng_create_channel_crop(tr::now);
 	} else {
-		return lang(lng_settings_crop_profile);
+		return tr::lng_settings_crop_profile(tr::now);
 	}
 }
 
@@ -70,7 +70,7 @@ void SuggestPhoto(
 		|| badAspect(image.width(), image.height())
 		|| badAspect(image.height(), image.width())) {
 		Ui::show(
-			Box<InformBox>(lang(lng_bad_photo)),
+			Box<InformBox>(tr::lng_bad_photo(tr::now)),
 			LayerOption::KeepOther);
 		return;
 	}
@@ -125,7 +125,7 @@ void ShowChoosePhotoBox(
 	};
 	FileDialog::GetOpenPath(
 		parent,
-		lang(lng_choose_image),
+		tr::lng_choose_image(tr::now),
 		filter,
 		std::move(handleChosenPhoto));
 }
@@ -158,16 +158,13 @@ void HistoryDownButton::paintEvent(QPaintEvent *e) {
 	((over || down) ? _st.iconAboveOver : _st.iconAbove).paint(p, _st.iconPosition, width());
 	if (_unreadCount > 0) {
 		auto unreadString = QString::number(_unreadCount);
-		if (unreadString.size() > 4) {
-			unreadString = qsl("..") + unreadString.mid(unreadString.size() - 4);
-		}
 
 		Dialogs::Layout::UnreadBadgeStyle st;
 		st.align = style::al_center;
 		st.font = st::historyToDownBadgeFont;
 		st.size = st::historyToDownBadgeSize;
 		st.sizeId = Dialogs::Layout::UnreadBadgeInHistoryToDown;
-		Dialogs::Layout::paintUnreadCount(p, unreadString, width(), 0, st, nullptr);
+		Dialogs::Layout::paintUnreadCount(p, unreadString, width(), 0, st, nullptr, 4);
 	}
 }
 
@@ -448,7 +445,7 @@ UserpicButton::UserpicButton(
 
 UserpicButton::UserpicButton(
 	QWidget *parent,
-	not_null<Window::Controller*> controller,
+	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer,
 	Role role,
 	const style::UserpicButton &st)
@@ -694,7 +691,7 @@ void UserpicButton::processPeerPhoto() {
 
 	_waiting = !_peer->userpicLoaded();
 	if (_waiting) {
-		_peer->loadUserpic(true);
+		_peer->loadUserpic();
 	}
 	if (_role == Role::OpenPhoto) {
 		if (_peer->userpicPhotoUnknown()) {
@@ -883,7 +880,7 @@ void UserpicButton::prepareUserpicPixmap() {
 // // #feed
 //FeedUserpicButton::FeedUserpicButton(
 //	QWidget *parent,
-//	not_null<Window::Controller*> controller,
+//	not_null<Window::SessionController*> controller,
 //	not_null<Data::Feed*> feed,
 //	const style::FeedUserpicButton &st)
 //: AbstractButton(parent)
@@ -1024,7 +1021,9 @@ void SilentToggle::mouseReleaseEvent(QMouseEvent *e) {
 }
 
 QString SilentToggle::tooltipText() const {
-	return lang(_checked ? lng_wont_be_notified : lng_will_be_notified);
+	return _checked
+		? tr::lng_wont_be_notified(tr::now)
+		: tr::lng_will_be_notified(tr::now);
 }
 
 QPoint SilentToggle::tooltipPos() const {

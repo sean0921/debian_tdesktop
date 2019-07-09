@@ -13,6 +13,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/radial_animation.h"
 #include "ui/text/text.h"
 
+namespace Lottie {
+class SinglePlayer;
+} // namespace Lottie
+
 namespace InlineBots {
 namespace Layout {
 namespace internal {
@@ -151,6 +155,7 @@ private:
 class Sticker : public FileBase {
 public:
 	Sticker(not_null<Context*> context, Result *result);
+	~Sticker();
 	// Not used anywhere currently.
 	//Sticker(not_null<Context*> context, DocumentData *document);
 
@@ -173,14 +178,18 @@ public:
 	void clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) override;
 
 private:
+	void setupLottie(not_null<DocumentData*> document) const;
 	QSize getThumbSize() const;
+	void prepareThumbnail() const;
 
 	mutable Ui::Animations::Simple _a_over;
 	mutable bool _active = false;
 
 	mutable QPixmap _thumb;
 	mutable bool _thumbLoaded = false;
-	void prepareThumbnail() const;
+
+	mutable std::unique_ptr<Lottie::SinglePlayer> _lottie;
+	mutable rpl::lifetime _lifetime;
 
 };
 
@@ -199,7 +208,7 @@ private:
 	ClickHandlerPtr _link;
 
 	mutable QPixmap _thumb;
-	Text _title, _description;
+	Ui::Text::String _title, _description;
 	QString _duration;
 	int _durationWidth = 0;
 
@@ -286,7 +295,7 @@ private:
 	};
 	mutable std::unique_ptr<AnimationData> _animation;
 
-	Text _title, _description;
+	Ui::Text::String _title, _description;
 	ClickHandlerPtr _open, _cancel;
 
 	// >= 0 will contain download / upload string, _statusSize = loaded bytes
@@ -317,7 +326,7 @@ public:
 
 private:
 	mutable QPixmap _thumb;
-	Text _title, _description;
+	Ui::Text::String _title, _description;
 
 	void prepareThumbnail(int width, int height) const;
 
@@ -340,7 +349,7 @@ private:
 
 	bool _withThumb;
 	mutable QPixmap _thumb;
-	Text _title, _description;
+	Ui::Text::String _title, _description;
 	QString _thumbLetter, _urlText;
 	int32 _urlWidth;
 
@@ -375,7 +384,7 @@ private:
 	mutable QPixmap _thumb;
 	mutable bool _thumbGood = false;
 	mutable std::unique_ptr<Ui::RadialAnimation> _radial;
-	Text _title, _description;
+	Ui::Text::String _title, _description;
 
 	QSize _frameSize;
 

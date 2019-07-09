@@ -275,8 +275,7 @@ void SuggestionsWidget::keyPressEvent(QKeyEvent *e) {
 bool SuggestionsWidget::handleKeyEvent(int key) {
 	if (key == Qt::Key_Enter || key == Qt::Key_Return) {
 		return triggerSelectedRow();
-	} else if (key == Qt::Key_Tab
-		&& (!AuthSession::Exists() || !Auth().supportMode())) {
+	} else if (key == Qt::Key_Tab) {
 		if (_selected < 0 || _selected >= _rows.size()) {
 			setSelected(0);
 		}
@@ -503,9 +502,11 @@ void SuggestionsWidget::leaveEventHook(QEvent *e) {
 
 SuggestionsController::SuggestionsController(
 	not_null<QWidget*> outer,
-	not_null<QTextEdit*> field)
+	not_null<QTextEdit*> field,
+	const Options &options)
 : _field(field)
-, _showExactTimer([=] { showWithQuery(getEmojiQuery()); }) {
+, _showExactTimer([=] { showWithQuery(getEmojiQuery()); })
+, _options(options) {
 	_container = base::make_unique_q<InnerDropdown>(
 		outer,
 		st::emojiSuggestionsDropdown);
@@ -555,11 +556,13 @@ SuggestionsController::SuggestionsController(
 
 SuggestionsController *SuggestionsController::Init(
 		not_null<QWidget*> outer,
-		not_null<Ui::InputField*> field) {
+		not_null<Ui::InputField*> field,
+		const Options &options) {
 	const auto result = Ui::CreateChild<SuggestionsController>(
 		field.get(),
 		outer,
-		field->rawTextEdit());
+		field->rawTextEdit(),
+		options);
 	result->setReplaceCallback([=](
 			int from,
 			int till,
@@ -679,7 +682,8 @@ QString SuggestionsController::getEmojiQuery() {
 	const auto is = [&](QLatin1String string) {
 		return (text.compare(string, Qt::CaseInsensitive) == 0);
 	};
-	if (!length
+	if (!_options.suggestExactFirstWord
+		|| !length
 		|| text[0].isSpace()
 		|| (length > modernLimit)
 		|| (_queryStartPosition != 0)

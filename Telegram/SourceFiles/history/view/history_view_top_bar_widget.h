@@ -22,7 +22,7 @@ class InfiniteRadialAnimation;
 } // namespace Ui
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace HistoryView {
@@ -31,7 +31,7 @@ class TopBarWidget : public Ui::RpWidget, private base::Subscriber {
 public:
 	TopBarWidget(
 		QWidget *parent,
-		not_null<Window::Controller*> controller);
+		not_null<Window::SessionController*> controller);
 
 	struct SelectedState {
 		bool textSelected = false;
@@ -107,7 +107,7 @@ private:
 	void refreshUnreadBadge();
 	void updateUnreadBadge();
 
-	not_null<Window::Controller*> _controller;
+	not_null<Window::SessionController*> _controller;
 	Dialogs::Key _activeChat;
 
 	int _selectedCount = 0;
@@ -132,7 +132,7 @@ private:
 	object_ptr<TWidget> _membersShowArea = { nullptr };
 	rpl::event_stream<bool> _membersShowAreaActive;
 
-	Text _titlePeerText;
+	Ui::Text::String _titlePeerText;
 	bool _titlePeerTextOnline = false;
 	int _leftTaken = 0;
 	int _rightTaken = 0;

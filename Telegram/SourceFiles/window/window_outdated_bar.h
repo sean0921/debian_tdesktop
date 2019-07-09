@@ -5,6 +5,14 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-#include "mtproto/type_utils.h"
+#pragma once
 
-const MTPVector<MTPMessageEntity> MTPnullEntities = MTP_vector<MTPMessageEntity>(0);
+namespace Ui {
+class RpWidget;
+} // namespace Ui
+
+namespace Window {
+
+object_ptr<Ui::RpWidget> CreateOutdatedBar(not_null<QWidget*> parent);
+
+} // namespace Window

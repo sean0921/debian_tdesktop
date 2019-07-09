@@ -8,6 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/message_field.h"
 
 #include "history/history_widget.h"
+#include "history/history.h" // History::session
+#include "history/history_item.h" // HistoryItem::originalText
 #include "base/qthelp_regex.h"
 #include "base/qthelp_url.h"
 #include "boxes/abstract_box.h"
@@ -15,7 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "auth_session.h"
@@ -110,7 +112,7 @@ void EditLinkBox::prepare() {
 		object_ptr<Ui::InputField>(
 			content,
 			st::defaultInputField,
-			langFactory(lng_formatting_link_text),
+			tr::lng_formatting_link_text(),
 			_startText),
 		st::markdownLinkFieldPadding);
 	text->setInstantReplaces(Ui::InstantReplaces::Default());
@@ -123,7 +125,7 @@ void EditLinkBox::prepare() {
 		object_ptr<Ui::InputField>(
 			content,
 			st::defaultInputField,
-			langFactory(lng_formatting_link_url),
+			tr::lng_formatting_link_url(),
 			_startLink.trimmed()),
 		st::markdownLinkFieldPadding);
 
@@ -155,13 +157,12 @@ void EditLinkBox::prepare() {
 		}
 	});
 
-	const auto title = url->getLastText().isEmpty()
-			? lng_formatting_link_create_title
-			: lng_formatting_link_edit_title;
-	setTitle(langFactory(title));
+	setTitle(url->getLastText().isEmpty()
+		? tr::lng_formatting_link_create_title()
+		: tr::lng_formatting_link_edit_title());
 
-	addButton(langFactory(lng_formatting_link_create), submit);
-	addButton(langFactory(lng_cancel), [=] { closeBox(); });
+	addButton(tr::lng_formatting_link_create(), submit);
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
 
 	content->resizeToWidth(st::boxWidth);
 	content->moveToLeft(0, 0);
@@ -170,6 +171,32 @@ void EditLinkBox::prepare() {
 	_setInnerFocus = [=] {
 		(_startText.isEmpty() ? text : url)->setFocusFast();
 	};
+}
+
+TextWithEntities StripSupportHashtag(TextWithEntities &&text) {
+	static const auto expression = QRegularExpression(
+		qsl("\\n?#tsf[a-z0-9_-]*[\\s#a-z0-9_-]*$"),
+		QRegularExpression::CaseInsensitiveOption);
+	const auto match = expression.match(text.text);
+	if (!match.hasMatch()) {
+		return std::move(text);
+	}
+	text.text.chop(match.capturedLength());
+	const auto length = text.text.size();
+	if (!length) {
+		return TextWithEntities();
+	}
+	for (auto i = text.entities.begin(); i != text.entities.end();) {
+		auto &entity = *i;
+		if (entity.offset() >= length) {
+			i = text.entities.erase(i);
+			continue;
+		} else if (entity.offset() + entity.length() > length) {
+			entity.shrinkFromRight(length - entity.offset());
+		}
+		++i;
+	}
+	return std::move(text);
 }
 
 } // namespace
@@ -210,9 +237,13 @@ EntitiesInText ConvertTextTagsToEntities(const TextWithTags::Tags &tags) {
 			push(EntityType::Bold);
 		} else if (tag.id == Ui::InputField::kTagItalic) {
 			push(EntityType::Italic);
+		} else if (tag.id == Ui::InputField::kTagUnderline) {
+			push(EntityType::Underline);
+		} else if (tag.id == Ui::InputField::kTagStrikeOut) {
+			push(EntityType::StrikeOut);
 		} else if (tag.id == Ui::InputField::kTagCode) {
 			push(EntityType::Code);
-		} else if (tag.id == Ui::InputField::kTagPre) {
+		} else if (tag.id == Ui::InputField::kTagPre) { // #TODO entities
 			push(EntityType::Pre);
 		} else /*if (ValidateUrl(tag.id)) */{ // We validate when we insert.
 			push(EntityType::CustomUrl, tag.id);
@@ -248,7 +279,13 @@ TextWithTags::Tags ConvertEntitiesToTextTags(const EntitiesInText &entities) {
 		} break;
 		case EntityType::Bold: push(Ui::InputField::kTagBold); break;
 		case EntityType::Italic: push(Ui::InputField::kTagItalic); break;
-		case EntityType::Code: push(Ui::InputField::kTagCode); break;
+		case EntityType::Underline:
+			push(Ui::InputField::kTagUnderline);
+			break;
+		case EntityType::StrikeOut:
+			push(Ui::InputField::kTagStrikeOut);
+			break;
+		case EntityType::Code: push(Ui::InputField::kTagCode); break; // #TODO entities
 		case EntityType::Pre: push(Ui::InputField::kTagPre); break;
 		}
 	}
@@ -286,6 +323,16 @@ void SetClipboardText(
 	}
 }
 
+TextWithTags PrepareEditText(not_null<HistoryItem*> item) {
+	const auto original = item->history()->session().supportMode()
+		? StripSupportHashtag(item->originalText())
+		: item->originalText();
+	return TextWithTags{
+		original.text,
+		ConvertEntitiesToTextTags(original.entities)
+	};
+}
+
 Fn<bool(
 	Ui::InputField::EditLinkSelection selection,
 	QString text,
@@ -313,9 +360,8 @@ Fn<bool(
 	};
 }
 
-
 void InitMessageField(
-		not_null<Window::Controller*> controller,
+		not_null<Window::SessionController*> controller,
 		not_null<Ui::InputField*> field) {
 	field->setMinHeight(st::historySendSize.height() - 2 * st::historySendPadding);
 	field->setMaxHeight(st::historyComposeFieldMaxHeight);
@@ -559,6 +605,12 @@ void MessageLinksParser::parse() {
 		_list = QStringList();
 		return;
 	}
+	const auto tagCanIntersectWithLink = [](const QString &tag) {
+		return (tag == Ui::InputField::kTagBold)
+			|| (tag == Ui::InputField::kTagItalic)
+			|| (tag == Ui::InputField::kTagUnderline)
+			|| (tag == Ui::InputField::kTagStrikeOut);
+	};
 
 	auto ranges = QVector<LinkRange>();
 
@@ -574,7 +626,9 @@ void MessageLinksParser::parse() {
 		++tag;
 	};
 	const auto processTagsBefore = [&](int offset) {
-		while (tag != tagsEnd && tag->offset + tag->length <= offset) {
+		while (tag != tagsEnd
+			&& (tag->offset + tag->length <= offset
+				|| tagCanIntersectWithLink(tag->id))) {
 			processTag();
 		}
 	};
@@ -594,9 +648,9 @@ void MessageLinksParser::parse() {
 		while (markdownTag != markdownTagsEnd
 			&& (markdownTag->adjustedStart
 				+ markdownTag->adjustedLength <= from
-				|| !markdownTag->closed)) {
+				|| !markdownTag->closed
+				|| tagCanIntersectWithLink(markdownTag->tag))) {
 			++markdownTag;
-			continue;
 		}
 		if (markdownTag == markdownTagsEnd
 			|| markdownTag->adjustedStart >= from + length) {

@@ -9,6 +9,25 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_peer.h"
 #include "data/data_pts_waiter.h"
+#include "data/data_location.h"
+
+struct ChannelLocation {
+	QString address;
+	Data::LocationPoint point;
+
+	friend inline bool operator==(
+			const ChannelLocation &a,
+			const ChannelLocation &b) {
+		return a.address.isEmpty()
+			? b.address.isEmpty()
+			: (a.address == b.address && a.point == b.point);
+	}
+	friend inline bool operator!=(
+			const ChannelLocation &a,
+			const ChannelLocation &b) {
+		return !(a == b);
+	}
+};
 
 class MegagroupInfo {
 public:
@@ -34,6 +53,9 @@ public:
 	ChatData *getMigrateFromChat() const;
 	void setMigrateFromChat(ChatData *chat);
 
+	const ChannelLocation *getLocation() const;
+	void setLocation(const ChannelLocation &location);
+
 	std::deque<not_null<UserData*>> lastParticipants;
 	base::flat_map<not_null<UserData*>, Admin> lastAdmins;
 	base::flat_map<not_null<UserData*>, Restricted> lastRestricted;
@@ -57,6 +79,7 @@ public:
 
 private:
 	ChatData *_migratedFrom = nullptr;
+	ChannelLocation _location;
 
 };
 
@@ -68,6 +91,7 @@ public:
 		| MTPDchannel_ClientFlag::f_forbidden
 		| MTPDchannel::Flag::f_broadcast
 		| MTPDchannel::Flag::f_verified
+		| MTPDchannel::Flag::f_scam
 		| MTPDchannel::Flag::f_megagroup
 		| MTPDchannel::Flag::f_restricted
 		| MTPDchannel::Flag::f_signatures
@@ -79,7 +103,8 @@ public:
 	static constexpr auto kEssentialFullFlags = 0
 		| MTPDchannelFull::Flag::f_can_view_participants
 		| MTPDchannelFull::Flag::f_can_set_username
-		| MTPDchannelFull::Flag::f_can_set_stickers;
+		| MTPDchannelFull::Flag::f_can_set_stickers
+		| MTPDchannelFull::Flag::f_location;
 	using FullFlags = Data::Flags<
 		MTPDchannelFull::Flags,
 		kEssentialFullFlags>;
@@ -131,9 +156,12 @@ public:
 	}
 
 	int membersCount() const {
-		return _membersCount;
+		return std::max(_membersCount, 1);
 	}
 	void setMembersCount(int newMembersCount);
+	bool membersCountKnown() const {
+		return (_membersCount >= 0);
+	}
 
 	int adminsCount() const {
 		return _adminsCount;
@@ -164,6 +192,9 @@ public:
 	}
 	bool isVerified() const {
 		return flags() & MTPDchannel::Flag::f_verified;
+	}
+	bool isScam() const {
+		return flags() & MTPDchannel::Flag::f_scam;
 	}
 
 	static MTPChatBannedRights KickedRestrictedRights();
@@ -203,8 +234,14 @@ public:
 	bool isBroadcast() const {
 		return flags() & MTPDchannel::Flag::f_broadcast;
 	}
-	bool isPublic() const {
+	bool hasUsername() const {
 		return flags() & MTPDchannel::Flag::f_username;
+	}
+	bool hasLocation() const {
+		return fullFlags() & MTPDchannelFull::Flag::f_location;
+	}
+	bool isPublic() const {
+		return hasUsername() || hasLocation();
 	}
 	bool amCreator() const {
 		return flags() & MTPDchannel::Flag::f_creator;
@@ -275,6 +312,12 @@ public:
 	void setInviteLink(const QString &newInviteLink);
 	QString inviteLink() const;
 	bool canHaveInviteLink() const;
+
+	void setLocation(const MTPChannelLocation &data);
+	const ChannelLocation *getLocation() const;
+
+	void setLinkedChat(ChannelData *linked);
+	ChannelData *linkedChat() const;
 
 	void ptsInit(int32 pts) {
 		_ptsWaiter.init(pts);
@@ -364,7 +407,7 @@ private:
 
 	PtsWaiter _ptsWaiter;
 
-	int _membersCount = 1;
+	int _membersCount = -1;
 	int _adminsCount = 1;
 	int _restrictedCount = 0;
 	int _kickedCount = 0;
@@ -377,8 +420,8 @@ private:
 	TimeId _restrictedUntil;
 
 	QString _unavailableReason;
-
 	QString _inviteLink;
+	ChannelData *_linkedChat = nullptr;
 
 	rpl::lifetime _lifetime;
 

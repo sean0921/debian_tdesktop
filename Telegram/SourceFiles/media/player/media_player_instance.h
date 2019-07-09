@@ -26,7 +26,7 @@ class PlaybackProgress;
 namespace Media {
 namespace Streaming {
 class Player;
-class Loader;
+class Reader;
 struct PlaybackOptions;
 struct Update;
 enum class Error;
@@ -131,9 +131,6 @@ public:
 	base::Observable<bool> &playerWidgetOver() {
 		return _playerWidgetOver;
 	}
-	base::Observable<TrackState> &updatedNotifier() {
-		return _updatedNotifier;
-	}
 	base::Observable<AudioMsgId::Type> &tracksFinishedNotifier() {
 		return _tracksFinishedNotifier;
 	}
@@ -146,9 +143,18 @@ public:
 
 	rpl::producer<> playlistChanges(AudioMsgId::Type type) const;
 
-	void documentLoadProgress(DocumentData *document);
+	void playerWidgetToggledNotify(bool toggled) {
+		_playerWidgetToggled.fire_copy({toggled});
+	}
+	rpl::producer<bool> playerWidgetToggled() const {
+		return _playerWidgetToggled.events();
+	}
+	rpl::producer<TrackState> updatedNotifier() const {
+		return _updatedNotifier.events();
+	}
 
-	void handleLogout();
+
+	void documentLoadProgress(DocumentData *document);
 
 private:
 	using SharedMediaType = Storage::SharedMediaType;
@@ -187,7 +193,7 @@ private:
 	void setupShortcuts();
 	void playStreamed(
 		const AudioMsgId &audioId,
-		std::unique_ptr<Streaming::Loader> loader);
+		std::shared_ptr<Streaming::Reader> reader);
 	Streaming::PlaybackOptions streamingOptions(
 		const AudioMsgId &audioId,
 		crl::time position = 0);
@@ -246,11 +252,12 @@ private:
 
 	base::Observable<Switch> _switchToNextNotifier;
 	base::Observable<bool> _playerWidgetOver;
-	base::Observable<TrackState> _updatedNotifier;
 	base::Observable<AudioMsgId::Type> _tracksFinishedNotifier;
 	base::Observable<AudioMsgId::Type> _trackChangedNotifier;
 	base::Observable<AudioMsgId::Type> _repeatChangedNotifier;
 
+	rpl::event_stream<bool> _playerWidgetToggled;
+	rpl::event_stream<TrackState> _updatedNotifier;
 	rpl::lifetime _lifetime;
 
 };

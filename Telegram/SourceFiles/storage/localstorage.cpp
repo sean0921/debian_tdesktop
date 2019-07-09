@@ -31,7 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "apiwrap.h"
 #include "auth_session.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "base/flags.h"
 #include "data/data_session.h"
 #include "history/history.h"
@@ -518,7 +518,7 @@ enum { // Local Storage Keys
 	lskRecentHashtagsAndBots = 0x0a, // no data
 	lskStickersOld = 0x0b, // no data
 	lskSavedPeersOld = 0x0c, // no data
-	lskReportSpamStatuses = 0x0d, // no data
+	lskReportSpamStatusesOld = 0x0d, // no data
 	lskSavedGifsOld = 0x0e, // no data
 	lskSavedGifs = 0x0f, // no data
 	lskStickersKeys = 0x10, // no data
@@ -645,7 +645,7 @@ typedef QMap<QString, FileLocationPair> FileLocationPairs;
 FileLocationPairs _fileLocationPairs;
 typedef QMap<MediaKey, MediaKey> FileLocationAliases;
 FileLocationAliases _fileLocationAliases;
-FileKey _locationsKey = 0, _reportSpamStatusesKey = 0, _trustedBotsKey = 0;
+FileKey _locationsKey = 0, _trustedBotsKey = 0;
 
 using TrustedBots = OrderedSet<uint64>;
 TrustedBots _trustedBots;
@@ -709,6 +709,8 @@ AuthSessionSettings &GetStoredAuthSessionCache() {
 void _writeMap(WriteMapWhen when = WriteMapWhen::Soon);
 
 void _writeLocations(WriteMapWhen when = WriteMapWhen::Soon) {
+	Expects(_manager != nullptr);
+
 	if (when != WriteMapWhen::Now) {
 		_manager->writeLocations(when == WriteMapWhen::Fast);
 		return;
@@ -810,7 +812,9 @@ void _readLocations() {
 		MediaKey key(first, second);
 
 		_fileLocations.insert(key, loc);
-		_fileLocationPairs.insert(loc.fname, FileLocationPair(key, loc));
+		if (!loc.inMediaCache()) {
+			_fileLocationPairs.insert(loc.fname, FileLocationPair(key, loc));
+		}
 	}
 
 	if (endMarkFound) {
@@ -836,75 +840,12 @@ void _readLocations() {
 	}
 }
 
-void _writeReportSpamStatuses() {
-	if (!_working()) return;
-
-	if (cReportSpamStatuses().isEmpty()) {
-		if (_reportSpamStatusesKey) {
-			clearKey(_reportSpamStatusesKey);
-			_reportSpamStatusesKey = 0;
-			_mapChanged = true;
-			_writeMap();
-		}
-	} else {
-		if (!_reportSpamStatusesKey) {
-			_reportSpamStatusesKey = genKey();
-			_mapChanged = true;
-			_writeMap(WriteMapWhen::Fast);
-		}
-		const ReportSpamStatuses &statuses(cReportSpamStatuses());
-
-		quint32 size = sizeof(qint32);
-		for (ReportSpamStatuses::const_iterator i = statuses.cbegin(), e = statuses.cend(); i != e; ++i) {
-			// peer + status
-			size += sizeof(quint64) + sizeof(qint32);
-		}
-
-		EncryptedDescriptor data(size);
-		data.stream << qint32(statuses.size());
-		for (ReportSpamStatuses::const_iterator i = statuses.cbegin(), e = statuses.cend(); i != e; ++i) {
-			data.stream << quint64(i.key()) << qint32(i.value());
-		}
-
-		FileWriteDescriptor file(_reportSpamStatusesKey);
-		file.writeEncrypted(data);
-	}
-}
-
-void _readReportSpamStatuses() {
-	FileReadDescriptor statuses;
-	if (!readEncryptedFile(statuses, _reportSpamStatusesKey)) {
-		clearKey(_reportSpamStatusesKey);
-		_reportSpamStatusesKey = 0;
-		_writeMap();
-		return;
-	}
-
-	ReportSpamStatuses &map(cRefReportSpamStatuses());
-	map.clear();
-
-	qint32 size = 0;
-	statuses.stream >> size;
-	for (int32 i = 0; i < size; ++i) {
-		quint64 peer = 0;
-		qint32 status = 0;
-		statuses.stream >> peer >> status;
-		map.insert(peer, DBIPeerReportSpamStatus(status));
-	}
-}
-
 struct ReadSettingsContext {
-	int legacyLanguageId = Lang::kLegacyLanguageNone;
-	QString legacyLanguageFile;
 	MTP::DcOptions dcOptions;
 };
 
 void applyReadContext(ReadSettingsContext &&context) {
 	Core::App().dcOptions()->addFromOther(std::move(context.dcOptions));
-	if (context.legacyLanguageId != Lang::kLegacyLanguageNone) {
-		Lang::Current().fillFromLegacy(context.legacyLanguageId, context.legacyLanguageFile);
-		writeLangPack();
-	}
 }
 
 QByteArray serializeCallSettings(){
@@ -1521,23 +1462,22 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 		stream >> v;
 		if (!_checkStreamStatus(stream)) return false;
 
-		SetScaleChecked(v);
+		// If cConfigScale() has value then it was set via command line.
+		if (cConfigScale() == kInterfaceScaleAuto) {
+			SetScaleChecked(v);
+		}
 	} break;
 
 	case dbiLangOld: {
 		qint32 v;
 		stream >> v;
 		if (!_checkStreamStatus(stream)) return false;
-
-		context.legacyLanguageId = v;
 	} break;
 
 	case dbiLangFileOld: {
 		QString v;
 		stream >> v;
 		if (!_checkStreamStatus(stream)) return false;
-
-		context.legacyLanguageFile = v;
 	} break;
 
 	case dbiWindowPosition: {
@@ -2347,8 +2287,9 @@ ReadMapState _readMap(const QByteArray &pass) {
 		case lskLocations: {
 			map.stream >> locationsKey;
 		} break;
-		case lskReportSpamStatuses: {
+		case lskReportSpamStatusesOld: {
 			map.stream >> reportSpamStatusesKey;
+			clearKey(reportSpamStatusesKey);
 		} break;
 		case lskTrustedBots: {
 			map.stream >> trustedBotsKey;
@@ -2407,7 +2348,6 @@ ReadMapState _readMap(const QByteArray &pass) {
 	_draftsNotReadMap = draftsNotReadMap;
 
 	_locationsKey = locationsKey;
-	_reportSpamStatusesKey = reportSpamStatusesKey;
 	_trustedBotsKey = trustedBotsKey;
 	_recentStickersKeyOld = recentStickersKeyOld;
 	_installedStickersKey = installedStickersKey;
@@ -2432,9 +2372,6 @@ ReadMapState _readMap(const QByteArray &pass) {
 	if (_locationsKey) {
 		_readLocations();
 	}
-	if (_reportSpamStatusesKey) {
-		_readReportSpamStatuses();
-	}
 
 	_readUserSettings();
 	_readMtpData();
@@ -2453,6 +2390,8 @@ ReadMapState _readMap(const QByteArray &pass) {
 }
 
 void _writeMap(WriteMapWhen when) {
+	Expects(_manager != nullptr);
+
 	if (when != WriteMapWhen::Now) {
 		_manager->writeMap(when == WriteMapWhen::Fast);
 		return;
@@ -2511,7 +2450,6 @@ void _writeMap(WriteMapWhen when) {
 	if (!_draftsMap.isEmpty()) mapSize += sizeof(quint32) * 2 + _draftsMap.size() * sizeof(quint64) * 2;
 	if (!_draftCursorsMap.isEmpty()) mapSize += sizeof(quint32) * 2 + _draftCursorsMap.size() * sizeof(quint64) * 2;
 	if (_locationsKey) mapSize += sizeof(quint32) + sizeof(quint64);
-	if (_reportSpamStatusesKey) mapSize += sizeof(quint32) + sizeof(quint64);
 	if (_trustedBotsKey) mapSize += sizeof(quint32) + sizeof(quint64);
 	if (_recentStickersKeyOld) mapSize += sizeof(quint32) + sizeof(quint64);
 	if (_installedStickersKey || _featuredStickersKey || _recentStickersKey || _archivedStickersKey) {
@@ -2542,9 +2480,6 @@ void _writeMap(WriteMapWhen when) {
 	}
 	if (_locationsKey) {
 		mapData.stream << quint32(lskLocations) << quint64(_locationsKey);
-	}
-	if (_reportSpamStatusesKey) {
-		mapData.stream << quint32(lskReportSpamStatuses) << quint64(_reportSpamStatusesKey);
 	}
 	if (_trustedBotsKey) {
 		mapData.stream << quint32(lskTrustedBots) << quint64(_trustedBotsKey);
@@ -2589,7 +2524,7 @@ void finish() {
 		_writeMap(WriteMapWhen::Now);
 		_manager->finish();
 		_manager->deleteLater();
-		_manager = 0;
+		_manager = nullptr;
 		delete base::take(_localLoader);
 	}
 }
@@ -2832,7 +2767,7 @@ void reset() {
 	_fileLocationPairs.clear();
 	_fileLocationAliases.clear();
 	_draftsNotReadMap.clear();
-	_locationsKey = _reportSpamStatusesKey = _trustedBotsKey = 0;
+	_locationsKey = _trustedBotsKey = 0;
 	_recentStickersKeyOld = 0;
 	_installedStickersKey = _featuredStickersKey = _recentStickersKey = _favedStickersKey = _archivedStickersKey = 0;
 	_savedGifsKey = 0;
@@ -2874,7 +2809,6 @@ void setPasscode(const QByteArray &passcode) {
 base::flat_set<QString> CollectGoodNames() {
 	const auto keys = {
 		_locationsKey,
-		_reportSpamStatusesKey,
 		_userSettingsKey,
 		_installedStickersKey,
 		_featuredStickersKey,
@@ -3130,52 +3064,70 @@ bool hasDraft(const PeerId &peer) {
 }
 
 void writeFileLocation(MediaKey location, const FileLocation &local) {
-	if (local.fname.isEmpty()) return;
-
-	FileLocationAliases::const_iterator aliasIt = _fileLocationAliases.constFind(location);
-	if (aliasIt != _fileLocationAliases.cend()) {
-		location = aliasIt.value();
+	if (local.fname.isEmpty()) {
+		return;
 	}
-
-	FileLocationPairs::iterator i = _fileLocationPairs.find(local.fname);
-	if (i != _fileLocationPairs.cend()) {
-		if (i.value().second == local) {
-			if (i.value().first != location) {
-				_fileLocationAliases.insert(location, i.value().first);
-				_writeLocations(WriteMapWhen::Fast);
-			}
-			return;
+	if (!local.inMediaCache()) {
+		FileLocationAliases::const_iterator aliasIt = _fileLocationAliases.constFind(location);
+		if (aliasIt != _fileLocationAliases.cend()) {
+			location = aliasIt.value();
 		}
-		if (i.value().first != location) {
-			for (FileLocations::iterator j = _fileLocations.find(i.value().first), e = _fileLocations.end(); (j != e) && (j.key() == i.value().first);) {
-				if (j.value() == i.value().second) {
-					_fileLocations.erase(j);
-					break;
+
+		FileLocationPairs::iterator i = _fileLocationPairs.find(local.fname);
+		if (i != _fileLocationPairs.cend()) {
+			if (i.value().second == local) {
+				if (i.value().first != location) {
+					_fileLocationAliases.insert(location, i.value().first);
+					_writeLocations(WriteMapWhen::Fast);
 				}
+				return;
 			}
-			_fileLocationPairs.erase(i);
+			if (i.value().first != location) {
+				for (FileLocations::iterator j = _fileLocations.find(i.value().first), e = _fileLocations.end(); (j != e) && (j.key() == i.value().first);) {
+					if (j.value() == i.value().second) {
+						_fileLocations.erase(j);
+						break;
+					}
+				}
+				_fileLocationPairs.erase(i);
+			}
+		}
+		_fileLocationPairs.insert(local.fname, FileLocationPair(location, local));
+	} else {
+		for (FileLocations::iterator i = _fileLocations.find(location); (i != _fileLocations.end()) && (i.key() == location);) {
+			if (i.value().inMediaCache() || i.value().check()) {
+				return;
+			}
+			i = _fileLocations.erase(i);
 		}
 	}
 	_fileLocations.insert(location, local);
-	_fileLocationPairs.insert(local.fname, FileLocationPair(location, local));
 	_writeLocations(WriteMapWhen::Fast);
 }
 
-FileLocation readFileLocation(MediaKey location, bool check) {
+void removeFileLocation(MediaKey location) {
+	FileLocations::iterator i = _fileLocations.find(location);
+	if (i == _fileLocations.end()) {
+		return;
+	}
+	while (i != _fileLocations.end() && (i.key() == location)) {
+		i = _fileLocations.erase(i);
+	}
+	_writeLocations(WriteMapWhen::Fast);
+}
+
+FileLocation readFileLocation(MediaKey location) {
 	FileLocationAliases::const_iterator aliasIt = _fileLocationAliases.constFind(location);
 	if (aliasIt != _fileLocationAliases.cend()) {
 		location = aliasIt.value();
 	}
 
-	FileLocations::iterator i = _fileLocations.find(location);
 	for (FileLocations::iterator i = _fileLocations.find(location); (i != _fileLocations.end()) && (i.key() == location);) {
-		if (check) {
-			if (!i.value().check()) {
-				_fileLocationPairs.remove(i.value().fname);
-				i = _fileLocations.erase(i);
-				_writeLocations();
-				continue;
-			}
+		if (!i.value().inMediaCache() && !i.value().check()) {
+			_fileLocationPairs.remove(i.value().fname);
+			i = _fileLocations.erase(i);
+			_writeLocations();
+			continue;
 		}
 		return i.value();
 	}
@@ -3526,13 +3478,13 @@ void _readStickerSets(FileKey &stickersKey, Stickers::Order *outOrder = nullptr,
 
 		setFlags = MTPDstickerSet::Flags::from_raw(setFlagsValue);
 		if (setId == Stickers::DefaultSetId) {
-			setTitle = lang(lng_stickers_default_set);
+			setTitle = tr::lng_stickers_default_set(tr::now);
 			setFlags |= MTPDstickerSet::Flag::f_official | MTPDstickerSet_ClientFlag::f_special;
 		} else if (setId == Stickers::CustomSetId) {
 			setTitle = qsl("Custom stickers");
 			setFlags |= MTPDstickerSet_ClientFlag::f_special;
 		} else if (setId == Stickers::CloudRecentSetId) {
-			setTitle = lang(lng_recent_stickers);
+			setTitle = tr::lng_recent_stickers(tr::now);
 			setFlags |= MTPDstickerSet_ClientFlag::f_special;
 		} else if (setId == Stickers::FavedSetId) {
 			setTitle = Lang::Hard::FavedSetTitle();
@@ -3554,7 +3506,7 @@ void _readStickerSets(FileKey &stickersKey, Stickers::Order *outOrder = nullptr,
 				setHash,
 				MTPDstickerSet::Flags(setFlags),
 				setInstallDate,
-				Images::Create(setThumbnail)));
+				Images::CreateStickerSetThumbnail(setThumbnail)));
 		}
 		auto &set = it.value();
 		auto inputSet = MTP_inputStickerSetID(MTP_long(set.id), MTP_long(set.access));
@@ -3763,7 +3715,7 @@ void importOldRecentStickers() {
 	auto &def = sets.insert(Stickers::DefaultSetId, Stickers::Set(
 		Stickers::DefaultSetId,
 		uint64(0),
-		lang(lng_stickers_default_set),
+		tr::lng_stickers_default_set(tr::now),
 		QString(),
 		0, // count
 		0, // hash
@@ -4712,22 +4664,26 @@ void WriteExportSettings(const Export::Settings &settings) {
 			<< quint32(settings.format)
 			<< settings.path
 			<< quint32(settings.availableAt);
-		settings.singlePeer.match([&](const MTPDinputPeerUser &user) {
+		settings.singlePeer.match([&](const MTPDinputPeerUser & user) {
 			data.stream
 				<< kSinglePeerTypeUser
-				<< qint32(user.vuser_id.v)
-				<< quint64(user.vaccess_hash.v);
-		}, [&](const MTPDinputPeerChat &chat) {
-			data.stream << kSinglePeerTypeChat << qint32(chat.vchat_id.v);
-		}, [&](const MTPDinputPeerChannel &channel) {
+				<< qint32(user.vuser_id().v)
+				<< quint64(user.vaccess_hash().v);
+		}, [&](const MTPDinputPeerChat & chat) {
+			data.stream << kSinglePeerTypeChat << qint32(chat.vchat_id().v);
+		}, [&](const MTPDinputPeerChannel & channel) {
 			data.stream
 				<< kSinglePeerTypeChannel
-				<< qint32(channel.vchannel_id.v)
-				<< quint64(channel.vaccess_hash.v);
+				<< qint32(channel.vchannel_id().v)
+				<< quint64(channel.vaccess_hash().v);
 		}, [&](const MTPDinputPeerSelf &) {
 			data.stream << kSinglePeerTypeSelf;
 		}, [&](const MTPDinputPeerEmpty &) {
 			data.stream << kSinglePeerTypeEmpty;
+		}, [&](const MTPDinputPeerUserFromMessage &) {
+			Unexpected("From message peer in single peer export settings.");
+		}, [&](const MTPDinputPeerChannelFromMessage &) {
+			Unexpected("From message peer in single peer export settings.");
 		});
 		data.stream << qint32(settings.singlePeerFrom);
 		data.stream << qint32(settings.singlePeerTill);
@@ -4809,10 +4765,6 @@ Export::Settings ReadExportSettings() {
 	return (file.stream.status() == QDataStream::Ok && result.validate())
 		? result
 		: Export::Settings();
-}
-
-void writeReportSpamStatuses() {
-	_writeReportSpamStatuses();
 }
 
 void writeSelf() {
@@ -4947,10 +4899,6 @@ bool ClearManager::addTask(int task) {
 		}
 		if (_locationsKey) {
 			_locationsKey = 0;
-			_mapChanged = true;
-		}
-		if (_reportSpamStatusesKey) {
-			_reportSpamStatusesKey = 0;
 			_mapChanged = true;
 		}
 		if (_trustedBotsKey) {

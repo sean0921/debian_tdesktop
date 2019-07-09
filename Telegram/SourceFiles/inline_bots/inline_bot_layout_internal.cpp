@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat_helpers.h"
 #include "styles/style_widgets.h"
 #include "inline_bots/inline_bot_result.h"
+#include "lottie/lottie_single_player.h"
 #include "media/audio/media_audio.h"
 #include "media/clip/media_clip_reader.h"
 #include "media/player/media_player_instance.h"
@@ -387,6 +388,8 @@ Sticker::Sticker(not_null<Context*> context, Result *result)
 : FileBase(context, result) {
 }
 
+Sticker::~Sticker() = default;
+
 void Sticker::initDimensions() {
 	_maxw = st::stickerPanSize.width();
 	_minh = st::stickerPanSize.height();
@@ -411,7 +414,17 @@ void Sticker::paint(Painter &p, const QRect &clip, const PaintContext *context) 
 	}
 
 	prepareThumbnail();
-	if (!_thumb.isNull()) {
+	if (_lottie && _lottie->ready()) {
+		const auto frame = _lottie->frame();
+		_lottie->markFrameShown();
+		const auto size = frame.size() / cIntRetinaFactor();
+		const auto pos = QPoint(
+			(st::stickerPanSize.width() - size.width()) / 2,
+			(st::stickerPanSize.height() - size.height()) / 2);
+		p.drawImage(
+			QRect(pos, size),
+			frame);
+	} else if (!_thumb.isNull()) {
 		int w = _thumb.width() / cIntRetinaFactor(), h = _thumb.height() / cIntRetinaFactor();
 		QPoint pos = QPoint((st::stickerPanSize.width() - w) / 2, (st::stickerPanSize.height() - h) / 2);
 		p.drawPixmap(pos, _thumb);
@@ -450,11 +463,31 @@ QSize Sticker::getThumbSize() const {
 	return QSize(qMax(w, 1), qMax(h, 1));
 }
 
+void Sticker::setupLottie(not_null<DocumentData*> document) const {
+	_lottie = Stickers::LottiePlayerFromDocument(
+		document,
+		Stickers::LottieSize::InlineResults,
+		QSize(
+			st::stickerPanSize.width() - st::buttonRadius * 2,
+			st::stickerPanSize.height() - st::buttonRadius * 2
+		) * cIntRetinaFactor());
+
+	_lottie->updates(
+	) | rpl::start_with_next([=] {
+		update();
+	}, _lifetime);
+}
+
 void Sticker::prepareThumbnail() const {
 	if (const auto document = getShownDocument()) {
+		if (document->sticker()->animated
+			&& !_lottie
+			&& document->loaded()) {
+			setupLottie(document);
+		}
 		document->checkStickerSmall();
 		if (const auto sticker = document->getStickerSmall()) {
-			if (!_thumbLoaded && sticker->loaded()) {
+			if (!_lottie && !_thumbLoaded && sticker->loaded()) {
 				const auto thumbSize = getThumbSize();
 				_thumb = sticker->pix(
 					document->stickerSetOrigin(),
@@ -608,7 +641,7 @@ void Video::initDimensions() {
 	TextParseOptions titleOpts = { 0, _maxw, 2 * st::semiboldFont->height, Qt::LayoutDirectionAuto };
 	auto title = TextUtilities::SingleLine(_result->getLayoutTitle());
 	if (title.isEmpty()) {
-		title = lang(lng_media_video);
+		title = tr::lng_media_video(tr::now);
 	}
 	_title.setText(st::semiboldTextStyle, title, titleOpts);
 	int32 titleHeight = qMin(_title.countHeight(_maxw), 2 * st::semiboldFont->height);
@@ -926,7 +959,7 @@ void File::setStatusSize(int32 newSize, int32 fullSize, int32 duration, qint64 r
 	} else if (_statusSize == FileStatusSizeLoaded) {
 		_statusText = (duration >= 0) ? formatDurationText(duration) : (duration < -1 ? qsl("GIF") : formatSizeText(fullSize));
 	} else if (_statusSize == FileStatusSizeFailed) {
-		_statusText = lang(lng_attach_failed);
+		_statusText = tr::lng_attach_failed(tr::now);
 	} else if (_statusSize >= 0) {
 		_statusText = formatDownloadText(_statusSize, fullSize);
 	} else {
@@ -1025,9 +1058,10 @@ Article::Article(not_null<Context*> context, Result *result, bool withThumb) : I
 , _withThumb(withThumb)
 , _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip) {
-	LocationCoords location;
-	if (!_link && result->getLocationCoords(&location)) {
-		_link = std::make_shared<LocationClickHandler>(location);
+	if (!_link) {
+		if (const auto point = result->getLocationPoint()) {
+			_link = std::make_shared<LocationClickHandler>(*point);
+		}
 	}
 	_thumbLetter = getResultThumbLetter();
 }

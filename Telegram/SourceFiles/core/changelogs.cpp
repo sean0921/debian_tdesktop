@@ -19,58 +19,6 @@ namespace {
 std::map<int, const char*> BetaLogs() {
 	return {
 	{
-		1004004,
-		"- Interface scaling for large screens, up to 300% "
-		"(up to 150% for macOS retina screens).\n"
-
-		"- Updated emoji."
-	},
-	{
-		1004005,
-		"- Listen to voice and video messages in 2X mode "
-		"if you're in a hurry.\n"
-
-		"- Find video messages in the shared voice messages section.\n"
-
-		"- Add a comment when you share posts from channels.\n"
-
-		"- View all photos and videos "
-		"in Twitter and Instagram link previews.\n"
-
-		"- Bug fixes and other minor improvements."
-	},
-	{
-		1004008,
-		"- Add emoji to media captions.\n"
-
-		"- Switch off the 'Count unread messages' option "
-		"in Settings > Notifications if you want to see "
-		"the unread chats count in the badge instead."
-	},
-	{
-		1005005,
-		"- Support for auto-download of files and music.\n"
-
-		"- Improved auto-download settings.\n"
-
-		"- Bug fixes and other minor improvements."
-	},
-	{
-		1005007,
-		"- Choose the emoji set you would like to use "
-		"in Settings > Chat Settings.\n"
-
-		"- Choose input and output devices for Telegram Calls "
-		"in Settings > Adavanced > Call Settings."
-	},
-	{
-		1005016,
-		"- Play video files and listen to received music "
-		"without waiting for them to download.\n"
-
-		"- Press CTRL+0 (CMD+0 on macOS) to jump to your Saved Messages."
-	},
-	{
 		1006004,
 		"- Replace media when editing messages with media content.\n"
 
@@ -80,9 +28,32 @@ std::map<int, const char*> BetaLogs() {
 
 		"- Help Telegram improve emoji suggestions in your language "
 		"using this interface https://translations.telegram.org/en/emoji"
+	},
+	{
+		1007001,
+		"- Disable pinned messages notifications in Settings."
+	},
+	{
+		1007004,
+		"- Download video files while watching them using streaming."
+	},
+	{
+		1007008,
+		"\xE2\x80\xA2 Hide archived chats in the main menu.\n"
+
+		"\xE2\x80\xA2 See who is online straight from the chat list.\n"
+
+		"\xE2\x80\xA2 Apply formatting to selected text parts "
+		"from the MacBook Pro TouchBar."
+	},
+	{
+		1007011,
+		"\xE2\x80\xA2 Use strikethrough and underline formatting.\n"
+
+		"\xE2\x80\xA2 Bug fixes and other minor improvements."
 	}
 	};
-}
+};
 
 QString FormatVersionDisplay(int version) {
 	return QString::number(version / 1000000)
@@ -133,10 +104,10 @@ void Changelogs::requestCloudLogs() {
 			resultEmpty = false;
 			break;
 		case mtpc_updatesCombined:
-			resultEmpty = result.c_updatesCombined().vupdates.v.isEmpty();
+			resultEmpty = result.c_updatesCombined().vupdates().v.isEmpty();
 			break;
 		case mtpc_updates:
-			resultEmpty = result.c_updates().vupdates.v.isEmpty();
+			resultEmpty = result.c_updates().vupdates().v.isEmpty();
 			break;
 		case mtpc_updatesTooLong:
 		case mtpc_updateShortSentMessage:
@@ -157,11 +128,12 @@ void Changelogs::addLocalLogs() {
 		addBetaLogs();
 	}
 	if (!_addedSomeLocal) {
-		const auto text = lng_new_version_wrap(
+		const auto text = tr::lng_new_version_wrap(
+			tr::now,
 			lt_version,
 			QString::fromLatin1(AppVersionStr),
 			lt_changes,
-			lang(lng_new_version_minor),
+			tr::lng_new_version_minor(tr::now),
 			lt_link,
 			qsl("https://desktop.telegram.org/changelog"));
 		addLocalLog(text.trimmed());

@@ -11,7 +11,7 @@ namespace Dialogs {
 
 class Row;
 class FakeRow;
-class RippleRow;
+class BasicRow;
 
 namespace Layout {
 
@@ -51,7 +51,7 @@ public:
 
 void PaintCollapsedRow(
 	Painter &p,
-	const RippleRow &row,
+	const BasicRow &row,
 	Data::Folder *folder,
 	const QString &text,
 	int unread,
@@ -63,6 +63,7 @@ enum UnreadBadgeSize {
 	UnreadBadgeInHistoryToDown,
 	UnreadBadgeInStickersPanel,
 	UnreadBadgeInStickersBox,
+	UnreadBadgeInTouchBar,
 
 	UnreadBadgeSizesCount
 };
@@ -81,11 +82,12 @@ struct UnreadBadgeStyle {
 };
 void paintUnreadCount(
 	Painter &p,
-	const QString &text,
+	const QString &t,
 	int x,
 	int y,
 	const UnreadBadgeStyle &st,
-	int *outUnreadWidth = nullptr);
+	int *outUnreadWidth = nullptr,
+	int allowDigits = 0);
 
 void clearUnreadBadgesCache();
 

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+class GenericBox;
+
 namespace Ui {
 class RpWidget;
 } // namespace Ui
@@ -18,6 +20,7 @@ class Folder;
 namespace Window {
 
 class Controller;
+class SessionController;
 
 enum class PeerMenuSource {
 	ChatsList,
@@ -30,12 +33,12 @@ using PeerMenuCallback = Fn<QAction*(
 	Fn<void()> handler)>;
 
 void FillPeerMenu(
-	not_null<Controller*> controller,
+	not_null<SessionController*> controller,
 	not_null<PeerData*> peer,
 	const PeerMenuCallback &addAction,
 	PeerMenuSource source);
 void FillFolderMenu(
-	not_null<Controller*> controller,
+	not_null<SessionController*> controller,
 	not_null<Data::Folder*> folder,
 	const PeerMenuCallback &addAction,
 	PeerMenuSource source);
@@ -47,10 +50,14 @@ void PeerMenuAddMuteAction(
 void PeerMenuExportChat(not_null<PeerData*> peer);
 void PeerMenuDeleteContact(not_null<UserData*> user);
 void PeerMenuShareContactBox(not_null<UserData*> user);
-void PeerMenuAddContact(not_null<UserData*> user);
 void PeerMenuAddChannelMembers(not_null<ChannelData*> channel);
 //void PeerMenuUngroupFeed(not_null<Data::Feed*> feed); // #feed
 void PeerMenuCreatePoll(not_null<PeerData*> peer);
+void PeerMenuBlockUserBox(
+	not_null<GenericBox*> box,
+	not_null<Window::Controller*> window,
+	not_null<UserData*> user);
+void PeerMenuUnblockUserWithBotRestart(not_null<UserData*> user);
 
 void ToggleHistoryArchived(not_null<History*> history, bool archived);
 Fn<void()> ClearHistoryHandler(not_null<PeerData*> peer);

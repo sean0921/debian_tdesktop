@@ -88,7 +88,7 @@ QSize HistoryVideo::countOptimalDimensions() const {
 
 QSize HistoryVideo::countOptimalSize() {
 	if (_parent->media() != this) {
-		_caption = Text();
+		_caption = Ui::Text::String();
 	} else if (_caption.hasSkipBlock()) {
 		_caption.updateSkipBlock(
 			_parent->skipBlockWidth(),
@@ -274,7 +274,7 @@ void HistoryVideo::draw(Painter &p, const QRect &r, TextSelection selection, crl
 void HistoryVideo::drawCornerStatus(Painter &p, bool selected) const {
 	const auto padding = st::msgDateImgPadding;
 	const auto radial = _animation && _animation->radial.animating();
-	const auto cornerDownload = downloadInCorner() && !_data->loaded();
+	const auto cornerDownload = downloadInCorner() && !_data->loaded() && !_data->loadedInMediaCache();
 	const auto addWidth = cornerDownload ? (st::historyVideoDownloadSize + 2 * padding.y()) : 0;
 	const auto downloadWidth = cornerDownload ? st::normalFont->width(_downloadSize) : 0;
 	const auto statusW = std::max(downloadWidth, st::normalFont->width(_statusText)) + 2 * padding.x() + addWidth;
@@ -598,7 +598,7 @@ bool HistoryVideo::needsBubble() const {
 void HistoryVideo::parentTextUpdated() {
 	_caption = (_parent->media() == this)
 		? createCaption(_parent->data())
-		: Text();
+		: Ui::Text::String();
 	history()->owner().requestViewResize(_parent);
 }
 

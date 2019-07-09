@@ -243,8 +243,11 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 		if (const auto normal = _data->thumbnail()) {
 			if (normal->loaded()) {
 				thumb = normal->pixSingle(_realParent->fullId(), thumbed->_thumbw, 0, st::msgFileThumbSize, st::msgFileThumbSize, roundRadius);
-			} else if (const auto blurred = _data->thumbnailInline()) {
-				thumb = blurred->pixBlurredSingle(_realParent->fullId(), thumbed->_thumbw, 0, st::msgFileThumbSize, st::msgFileThumbSize, roundRadius);
+			} else {
+				_data->loadThumbnail(_realParent->fullId());
+				if (const auto blurred = _data->thumbnailInline()) {
+					thumb = blurred->pixBlurredSingle(_realParent->fullId(), thumbed->_thumbw, 0, st::msgFileThumbSize, st::msgFileThumbSize, roundRadius);
+				}
 			}
 		}
 		p.drawPixmap(rthumb.topLeft(), thumb);
@@ -672,15 +675,15 @@ void HistoryDocument::setStatusSize(int newSize, qint64 realDuration) const {
 	HistoryFileMedia::setStatusSize(newSize, _data->size, duration, realDuration);
 	if (auto thumbed = Get<HistoryDocumentThumbed>()) {
 		if (_statusSize == FileStatusSizeReady) {
-			thumbed->_link = lang(lng_media_download).toUpper();
+			thumbed->_link = tr::lng_media_download(tr::now).toUpper();
 		} else if (_statusSize == FileStatusSizeLoaded) {
-			thumbed->_link = lang(lng_media_open_with).toUpper();
+			thumbed->_link = tr::lng_media_open_with(tr::now).toUpper();
 		} else if (_statusSize == FileStatusSizeFailed) {
-			thumbed->_link = lang(lng_media_download).toUpper();
+			thumbed->_link = tr::lng_media_download(tr::now).toUpper();
 		} else if (_statusSize >= 0) {
-			thumbed->_link = lang(lng_media_cancel).toUpper();
+			thumbed->_link = tr::lng_media_cancel(tr::now).toUpper();
 		} else {
-			thumbed->_link = lang(lng_media_open_with).toUpper();
+			thumbed->_link = tr::lng_media_open_with(tr::now).toUpper();
 		}
 		thumbed->_linkw = st::semiboldFont->width(thumbed->_link);
 	}
@@ -825,7 +828,7 @@ void HistoryDocument::refreshParentId(not_null<HistoryItem*> realParent) {
 void HistoryDocument::parentTextUpdated() {
 	auto caption = (_parent->media() == this)
 		? createCaption(_parent->data())
-		: Text();
+		: Ui::Text::String();
 	if (!caption.isEmpty()) {
 		AddComponents(HistoryDocumentCaptioned::Bit());
 		auto captioned = Get<HistoryDocumentCaptioned>();

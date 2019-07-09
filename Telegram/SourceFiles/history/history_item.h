@@ -43,7 +43,7 @@ class Media;
 } // namespace Data
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace HistoryView {
@@ -116,9 +116,7 @@ public:
 	}
 	[[nodiscard]] bool unread() const;
 	void markClientSideAsRead();
-	[[nodiscard]] bool mentionsMe() const {
-		return _flags & MTPDmessage::Flag::f_mentioned;
-	}
+	[[nodiscard]] bool mentionsMe() const;
 	[[nodiscard]] bool isUnreadMention() const;
 	[[nodiscard]] bool isUnreadMedia() const;
 	[[nodiscard]] bool hasUnreadMediaFlag() const;
@@ -238,7 +236,7 @@ public:
 		bool selected,
 		DrawInDialog way,
 		const HistoryItem *&cacheFor,
-		Text &cache) const;
+		Ui::Text::String &cache) const;
 
 	bool emptyText() const {
 		return _text.isEmpty();
@@ -296,6 +294,19 @@ public:
 
 	MessageGroupId groupId() const;
 
+	const HistoryMessageReplyMarkup *inlineReplyMarkup() const {
+		return const_cast<HistoryItem*>(this)->inlineReplyMarkup();
+	}
+	const ReplyKeyboard *inlineReplyKeyboard() const {
+		return const_cast<HistoryItem*>(this)->inlineReplyKeyboard();
+	}
+	HistoryMessageReplyMarkup *inlineReplyMarkup();
+	ReplyKeyboard *inlineReplyKeyboard();
+
+	[[nodiscard]] ChannelData *discussionPostOriginalSender() const;
+	[[nodiscard]] bool isDiscussionPost() const;
+	[[nodiscard]] PeerData *displayFrom() const;
+
 	virtual std::unique_ptr<HistoryView::Element> createView(
 		not_null<HistoryView::ElementDelegate*> delegate) = 0;
 
@@ -319,19 +330,11 @@ protected:
 	not_null<PeerData*> _from;
 	MTPDmessage::Flags _flags = 0;
 
-	const HistoryMessageReplyMarkup *inlineReplyMarkup() const {
-		return const_cast<HistoryItem*>(this)->inlineReplyMarkup();
-	}
-	const ReplyKeyboard *inlineReplyKeyboard() const {
-		return const_cast<HistoryItem*>(this)->inlineReplyKeyboard();
-	}
-	HistoryMessageReplyMarkup *inlineReplyMarkup();
-	ReplyKeyboard *inlineReplyKeyboard();
 	void invalidateChatListEntry();
 
 	void setGroupId(MessageGroupId groupId);
 
-	Text _text = { st::msgMinWidth };
+	Ui::Text::String _text = { st::msgMinWidth };
 	int _textWidth = -1;
 	int _textHeight = 0;
 
@@ -344,7 +347,7 @@ private:
 	HistoryView::Element *_mainView = nullptr;
 	friend class HistoryView::Element;
 
-	MessageGroupId _groupId = MessageGroupId::None;
+	MessageGroupId _groupId = MessageGroupId();
 
 };
 
