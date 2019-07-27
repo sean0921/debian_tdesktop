@@ -126,7 +126,7 @@ Last-Update: 2017-12-30
        'crl.gyp:crl',
        'lib_base.gyp:lib_base',
        'lib_export.gyp:lib_export',
-@@ -84,10 +81,8 @@
+@@ -86,10 +83,8 @@
      ],
  
      'defines': [
@@ -137,7 +137,7 @@ Last-Update: 2017-12-30
        'TDESKTOP_API_ID=<(api_id)',
        'TDESKTOP_API_HASH=<(api_hash)',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-@@ -96,20 +91,11 @@
+@@ -98,20 +93,11 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -162,7 +162,7 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<@(qrc_files)',
-@@ -155,5 +141,14 @@
+@@ -158,5 +144,14 @@
          ],
        }],
      ],
@@ -248,6 +248,62 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<(src_loc)/export/export_api_wrap.cpp',
+--- a/Telegram/gyp/lib_ffmpeg.gyp
++++ b/Telegram/gyp/lib_ffmpeg.gyp
+@@ -36,11 +36,7 @@
+     'include_dirs': [
+       '<(src_loc)',
+       '<(SHARED_INTERMEDIATE_DIR)',
+-      '<(libs_loc)/ffmpeg',
+-      '<(libs_loc)/range-v3/include',
+-      '<(submodules_loc)/GSL/include',
+-      '<(submodules_loc)/variant/include',
+-      '<(submodules_loc)/crl/src',
++      '../../debian/crl/src',
+     ],
+     'sources': [
+       '<(src_loc)/ffmpeg/ffmpeg_utility.cpp',
+--- a/Telegram/gyp/lib_lottie.gyp
++++ b/Telegram/gyp/lib_lottie.gyp
+@@ -29,31 +29,26 @@
+     'dependencies': [
+       'crl.gyp:crl',
+       'lib_base.gyp:lib_base',
+-      'lib_rlottie.gyp:lib_rlottie',
+       'lib_ffmpeg.gyp:lib_ffmpeg',
+-      'lib_lz4.gyp:lib_lz4',
+     ],
+     'export_dependent_settings': [
+       'crl.gyp:crl',
+       'lib_base.gyp:lib_base',
+-      'lib_rlottie.gyp:lib_rlottie',
+       'lib_ffmpeg.gyp:lib_ffmpeg',
+-      'lib_lz4.gyp:lib_lz4',
+     ],
++    'link_settings': {
++      'libraries': [
++        'lz4',
++        'rlottie',
++      ],
++    },
+     'defines': [
+       'LOT_BUILD',
+     ],
+     'include_dirs': [
+       '<(src_loc)',
+       '<(SHARED_INTERMEDIATE_DIR)',
+-      '<(libs_loc)/range-v3/include',
+-      '<(libs_loc)/zlib',
+-      '<(libs_loc)/ffmpeg',
+-      '<(rlottie_loc)',
+-      '<(lz4_loc)',
+-      '<(submodules_loc)/GSL/include',
+-      '<(submodules_loc)/variant/include',
+-      '<(submodules_loc)/crl/src',
++      '../../debian/crl/src',
+     ],
+     'sources': [
+       '<(src_loc)/lottie/lottie_animation.cpp',
 --- a/Telegram/gyp/lib_storage.gyp
 +++ b/Telegram/gyp/lib_storage.gyp
 @@ -27,9 +27,6 @@
@@ -410,7 +466,7 @@ Last-Update: 2017-12-30
        ],
 --- a/Telegram/gyp/qt_moc.gypi
 +++ b/Telegram/gyp/qt_moc.gypi
-@@ -17,6 +17,7 @@
+@@ -20,6 +20,7 @@
        # Silence "Note: No relevant classes found. No output generated."
        '--no-notes',
  
@@ -428,7 +484,7 @@ Last-Update: 2017-12-30
            '-W',
            '-fPIC',
            '-Wno-unused-variable',
-@@ -26,7 +25,7 @@
+@@ -28,7 +27,7 @@
          ],
        },
        'conditions': [
@@ -437,7 +493,7 @@ Last-Update: 2017-12-30
            'defines': [
              'Q_OS_LINUX64',
            ],
-@@ -44,24 +43,10 @@
+@@ -46,24 +45,10 @@
                'sources': [ '__Wrong_Official_Build_Target_<(official_build_target)_' ],
              }],
            ],
@@ -543,7 +599,7 @@ Last-Update: 2017-12-30
          'cflags_cc': [ '<!(pkg-config --cflags ayatana-appindicator3-0.1)' ],
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -855,20 +855,12 @@
+@@ -888,20 +888,12 @@
  <(src_loc)/mainwindow.h
  <(src_loc)/observer_peer.cpp
  <(src_loc)/observer_peer.h

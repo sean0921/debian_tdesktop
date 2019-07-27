@@ -61,22 +61,22 @@ Last-Update: 2017-08-22
 +} // namespace Resources
 --- a/Telegram/SourceFiles/core/launcher.cpp
 +++ b/Telegram/SourceFiles/core/launcher.cpp
-@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesk
- #include "platform/platform_launcher.h"
+@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesk
  #include "platform/platform_specific.h"
+ #include "platform/platform_info.h"
  #include "core/crash_reports.h"
 +#include "core/file_utilities.h"
  #include "core/main_queue_processor.h"
  #include "core/update_checker.h"
  #include "core/sandbox.h"
-@@ -240,6 +241,7 @@ void Launcher::init() {
+@@ -241,6 +242,7 @@ void Launcher::init() {
  	prepareSettings();
  
  	QApplication::setApplicationName(qsl("TelegramDesktop"));
 +	Resources::LoadAllData(); // should be called after setting an application name
  
- #if defined(Q_OS_LINUX) && QT_VERSION >= QT_VERSION_CHECK(5, 7, 0)
- 	QApplication::setDesktopFileName(qsl("telegramdesktop.desktop"));
+ #ifdef TDESKTOP_LAUNCHER_FILENAME
+ #define TDESKTOP_LAUNCHER_FILENAME_TO_STRING_HELPER(V) #V
 --- a/Telegram/gyp/Telegram.gyp
 +++ b/Telegram/gyp/Telegram.gyp
 @@ -52,6 +52,7 @@
@@ -87,7 +87,7 @@ Last-Update: 2017-08-22
        'pch_source': '<(src_loc)/stdafx.cpp',
        'pch_header': '<(src_loc)/stdafx.h',
      },
-@@ -98,7 +99,6 @@
+@@ -100,7 +101,6 @@
        '/usr/include/opus',
      ],
      'sources': [
@@ -95,7 +95,7 @@ Last-Update: 2017-08-22
        '<@(style_files)',
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg))',
        'telegram_sources.txt',
-@@ -112,6 +112,31 @@
+@@ -114,6 +114,31 @@
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg) --exclude_for <(build_os))',
      ],
      'conditions': [
