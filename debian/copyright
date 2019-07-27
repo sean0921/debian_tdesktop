@@ -6,6 +6,10 @@ Files: *
 Copyright: 2014-2019 John Preston <johnprestonmail@gmail.com>
 License: GPL-3.0+ with OpenSSL exception
 
+Files: lib/xdg/telegramdesktop.appdata.xml
+Copyright: Jan Grulich <grulja@gmail.com> (github: grulja)
+License: CC0-1.0
+
 Files: Telegram/Patches/qtbase_5_6_2.diff
 Copyright: 1985, 1987, 1990, 1998 The Open Group
            1987 Digital Equipment Corporation, Maynard, Massachusetts
@@ -68,6 +72,7 @@ License: Public-domain
 Comment: Contributing policy - https://cla-assistant.io/telegramdesktop/tdesktop
 
 Files: debian/crl/*
+       debian/patches/Do-not-use-private-Qt-color-API.patch
 Copyright: 2014-2019 John Preston <johnprestonmail@gmail.com>
 License: GPL-3.0+ with OpenSSL exception
 Comment: Source code on GitHub - https://github.com/telegramdesktop/crl
@@ -109,6 +114,11 @@ License: BSD-1-Clause
  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: CC0-1.0
+ This work has been placed in the public domain. Full text of the license is
+ available in file /usr/share/common-licenses/CC0-1.0 or at Creative Commons
+ web-site https://creativecommons.org/publicdomain/zero/1.0/legalcode.
 
 License: Expat
  Permission is hereby granted, free of charge, to any person obtaining a copy of
