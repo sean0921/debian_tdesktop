@@ -1,4 +1,4 @@
-Description: Do not upload wallpaper after updating
+Description: Do not upload wallpaper after updating or login
  * This behaviour may be unexpected for a user and cause to leak
    private pictures to the remote server.
  * The patch prevents the checkUploadWallPaper() method from being
@@ -7,20 +7,20 @@ Description: Do not upload wallpaper after updating
    To do this, he can click on the link "Choose from file".
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Bug: https://github.com/telegramdesktop/tdesktop/pull/5860
-Last-Update: Fri, 29 Mar 2019 09:20:52 +0300
+Last-Update: Sat, 27 Jul 2019 14:38:17 +0300
 
 --- a/Telegram/SourceFiles/window/themes/window_theme.cpp
 +++ b/Telegram/SourceFiles/window/themes/window_theme.cpp
-@@ -389,11 +389,7 @@ void ChatBackground::start() {
- }
+@@ -400,11 +400,8 @@ void ChatBackground::start() {
+ 	}
  
- void ChatBackground::refreshSession() {
--	const auto session = AuthSession::Exists() ? &Auth() : nullptr;
--	if (_session != session) {
--		_session = session;
+ 	Core::App().activeAccount().sessionValue(
+-	) | rpl::filter([=](AuthSession *session) {
+-		return session != _session;
+-	}) | rpl::start_with_next([=](AuthSession *session) {
++	) | rpl::start_with_next([=](AuthSession *session) {
+ 		_session = session;
 -		checkUploadWallPaper();
--	}
-+	_session = AuthSession::Exists() ? &Auth() : nullptr;
+ 	}, _lifetime);
  }
  
- void ChatBackground::checkUploadWallPaper() {
