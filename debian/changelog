@@ -1,3 +1,20 @@
+telegram-desktop (1.7.14-1) unstable; urgency=medium
+
+  * New upstream release (closes: #932457).
+  * Import crl subproject (commit 9ea8700).
+  * Update patches:
+     - Amend Modify-build-scripts.patch to include fixes for lottie lib.
+     - Automatically refresh Packed-resources.patch with quilt.
+     - Add Do-not-use-private-Qt-color-API.patch taken from upstream Git.
+     - Reimplement Do-not-sync-wallpaper.patch as the code in that
+       place was rewritten completely.
+  * Refine copyright info for AppStream metadata.
+  * Update debhelper compatibility level to 12.
+     - Increase limit of debug information entries for dwz to 100 million.
+  * Bump standards version to 4.4.0, no related changes.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sat, 27 Jul 2019 18:01:22 +0300
+
 telegram-desktop (1.7.0-1) experimental; urgency=medium
 
   * New upstream version.
