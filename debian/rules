@@ -78,5 +78,9 @@ override_dh_auto_configure:
 override_dh_installchangelogs:
 	dh_installchangelogs changelog.txt
 
+# Double up the limit of debug information entries.
+override_dh_dwz:
+	dh_dwz -- -L 100000000
+
 override_dh_gencontrol:
 	dh_gencontrol -- $(EXTRA_SUBSTVARS:%="-V%")
