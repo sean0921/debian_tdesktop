@@ -1,5 +1,5 @@
 Modify-build-scripts.patch
 Packed-resources.patch
 Use-system-wide-font.patch
-Do-not-use-private-Qt-color-API.patch
 Do-not-sync-wallpaper.patch
+Ignore-emoji-pack.patch

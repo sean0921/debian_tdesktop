@@ -126,7 +126,7 @@ Last-Update: 2017-12-30
        'crl.gyp:crl',
        'lib_base.gyp:lib_base',
        'lib_export.gyp:lib_export',
-@@ -86,10 +83,8 @@
+@@ -87,10 +84,8 @@
      ],
  
      'defines': [
@@ -137,7 +137,7 @@ Last-Update: 2017-12-30
        'TDESKTOP_API_ID=<(api_id)',
        'TDESKTOP_API_HASH=<(api_hash)',
        '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-@@ -98,20 +93,11 @@
+@@ -99,20 +94,11 @@
      'include_dirs': [
        '<(src_loc)',
        '<(SHARED_INTERMEDIATE_DIR)',
@@ -162,7 +162,7 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<@(qrc_files)',
-@@ -158,5 +144,14 @@
+@@ -159,5 +145,14 @@
          ],
        }],
      ],
@@ -304,6 +304,20 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<(src_loc)/lottie/lottie_animation.cpp',
+--- a/Telegram/gyp/lib_mtproto.gyp
++++ b/Telegram/gyp/lib_mtproto.gyp
+@@ -47,10 +47,7 @@
+     'include_dirs': [
+       '<(src_loc)',
+       '<(SHARED_INTERMEDIATE_DIR)',
+-      '<(libs_loc)/range-v3/include',
+-      '<(submodules_loc)/GSL/include',
+-      '<(submodules_loc)/variant/include',
+-      '<(submodules_loc)/crl/src',
++      '../../debian/crl/src',
+     ],
+     'sources': [
+       '<(src_loc)/mtproto/mtp_abstract_socket.cpp',
 --- a/Telegram/gyp/lib_storage.gyp
 +++ b/Telegram/gyp/lib_storage.gyp
 @@ -27,9 +27,6 @@
@@ -599,7 +613,7 @@ Last-Update: 2017-12-30
          'cflags_cc': [ '<!(pkg-config --cflags ayatana-appindicator3-0.1)' ],
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -888,20 +888,12 @@
+@@ -901,20 +901,12 @@
  <(src_loc)/mainwindow.h
  <(src_loc)/observer_peer.cpp
  <(src_loc)/observer_peer.h

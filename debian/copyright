@@ -72,7 +72,6 @@ License: Public-domain
 Comment: Contributing policy - https://cla-assistant.io/telegramdesktop/tdesktop
 
 Files: debian/crl/*
-       debian/patches/Do-not-use-private-Qt-color-API.patch
 Copyright: 2014-2019 John Preston <johnprestonmail@gmail.com>
 License: GPL-3.0+ with OpenSSL exception
 Comment: Source code on GitHub - https://github.com/telegramdesktop/crl
