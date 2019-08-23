@@ -1,3 +1,13 @@
+telegram-desktop (1.8.2-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Patches:
+    - Update Modify-build-scripts.patch.
+    - Remove Do-not-use-private-Qt-color-API.patch.
+    - Add Ignore-emoji-pack.patch.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Fri, 23 Aug 2019 20:15:33 +0300
+
 telegram-desktop (1.7.14-1) unstable; urgency=medium
 
   * New upstream release (closes: #932457).
