@@ -10,10 +10,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_info.h"
 #include "base/timer.h"
 #include "base/bytes.h"
+#include "base/unixtime.h"
 #include "storage/localstorage.h"
 #include "core/application.h"
-#include "mainwindow.h"
 #include "core/click_handler_types.h"
+#include "mainwindow.h"
+#include "main/main_account.h"
 #include "info/info_memento.h"
 #include "info/settings/info_settings_widget.h"
 #include "window/window_session_controller.h"
@@ -634,7 +636,7 @@ void HttpChecker::gotResponse() {
 		return;
 	}
 
-	cSetLastUpdateCheck(unixtime());
+	cSetLastUpdateCheck(base::unixtime::now());
 	const auto response = _reply->readAll();
 	clearSentRequest();
 
@@ -1134,7 +1136,7 @@ void Updater::handleReady() {
 	stop();
 	_action = Action::Ready;
 	if (!App::quitting()) {
-		cSetLastUpdateCheck(unixtime());
+		cSetLastUpdateCheck(base::unixtime::now());
 		Local::writeSettings();
 	}
 }
@@ -1162,7 +1164,7 @@ void Updater::handleProgress() {
 void Updater::scheduleNext() {
 	stop();
 	if (!App::quitting()) {
-		cSetLastUpdateCheck(unixtime());
+		cSetLastUpdateCheck(base::unixtime::now());
 		Local::writeSettings();
 		start(true);
 	}
@@ -1208,7 +1210,7 @@ void Updater::start(bool forceWait) {
 	const auto updateInSecs = cLastUpdateCheck()
 		+ constDelay
 		+ int(rand() % randDelay)
-		- unixtime();
+		- base::unixtime::now();
 	auto sendRequest = (updateInSecs <= 0)
 		|| (updateInSecs > constDelay + randDelay);
 	if (!sendRequest && !forceWait) {
@@ -1389,7 +1391,7 @@ Updater::~Updater() {
 UpdateChecker::UpdateChecker()
 : _updater(GetUpdaterInstance()) {
 	if (IsAppLaunched()) {
-		if (const auto mtproto = Core::App().mtp()) {
+		if (const auto mtproto = Core::App().activeAccount().mtp()) {
 			_updater->setMtproto(mtproto);
 		}
 	}

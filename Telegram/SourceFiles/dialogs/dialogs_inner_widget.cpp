@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_user.h"
 #include "data/data_peer_values.h"
+#include "base/unixtime.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -33,7 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/themes/window_theme.h"
 #include "observer_peer.h"
 #include "chat_helpers/stickers.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "window/notifications_manager.h"
 #include "window/window_session_controller.h"
 #include "window/window_peer_menu.h"
@@ -249,7 +250,7 @@ InnerWidget::InnerWidget(
 	setupShortcuts();
 }
 
-AuthSession &InnerWidget::session() const {
+Main::Session &InnerWidget::session() const {
 	return _controller->session();
 }
 
@@ -1999,6 +2000,7 @@ bool InnerWidget::hasHistoryInResults(not_null<History*> history) const {
 
 bool InnerWidget::searchReceived(
 		const QVector<MTPMessage> &messages,
+		HistoryItem *inject,
 		SearchRequestType type,
 		int fullCount) {
 	const auto uniquePeers = uniqueSearchResults();
@@ -2009,6 +2011,16 @@ bool InnerWidget::searchReceived(
 	auto isMigratedSearch = (type == SearchRequestType::MigratedFromStart || type == SearchRequestType::MigratedFromOffset);
 
 	TimeId lastDateFound = 0;
+	if (inject
+		&& (!_searchInChat
+			|| inject->history() == _searchInChat.history())) {
+		Assert(_searchResults.empty());
+		_searchResults.push_back(
+			std::make_unique<FakeRow>(
+				_searchInChat,
+				inject));
+		++fullCount;
+	}
 	for (const auto &message : messages) {
 		auto msgId = IdFromMessage(message);
 		auto peerId = PeerFromMessage(message);
@@ -2017,6 +2029,7 @@ bool InnerWidget::searchReceived(
 			if (lastDate) {
 				const auto item = session().data().addNewMessage(
 					message,
+					MTPDmessage_ClientFlags(),
 					NewMessageType::Existing);
 				const auto history = item->history();
 				if (!uniquePeers || !hasHistoryInResults(history)) {
@@ -2889,7 +2902,7 @@ void InnerWidget::userOnlineUpdated(const Notify::PeerUpdate &update) {
 		const auto visible = (top < _visibleBottom)
 			&& (top + st::dialogsRowHeight > _visibleTop);
 		row->setOnline(
-			Data::OnlineTextActive(user, unixtime()),
+			Data::OnlineTextActive(user, base::unixtime::now()),
 			visible ? Fn<void()>(crl::guard(this, repaint)) : nullptr);
 	}
 }
