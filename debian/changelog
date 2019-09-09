@@ -1,3 +1,9 @@
+telegram-desktop (1.8.4-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Mon, 09 Sep 2019 18:06:55 +0300
+
 telegram-desktop (1.8.2-2) unstable; urgency=medium
 
   * Apply Deprecated-ranges.patch.
