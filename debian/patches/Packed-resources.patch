@@ -2,7 +2,7 @@ From: Nicholas Guriev <guriev-ns@ya.ru>
 Date: Tue, 22 Aug 2017 16:15:36 +0300
 Subject: [PATCH] Packed resources
 Bug: https://github.com/telegramdesktop/tdesktop/pull/3817
-Last-Update: 2017-08-22
+Last-Update: Tue, 10 Sep 2019 21:37:13 +0300
 
 --- a/Telegram/Resources/qrc/telegram.qrc
 +++ b/Telegram/Resources/qrc/telegram.qrc
@@ -26,7 +26,15 @@ Last-Update: 2017-08-22
    </qresource>
 --- a/Telegram/SourceFiles/core/file_utilities.cpp
 +++ b/Telegram/SourceFiles/core/file_utilities.cpp
-@@ -344,3 +344,20 @@ bool GetDefault(
+@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesk
+ 
+ #include <QtWidgets/QFileDialog>
+ #include <QtCore/QCoreApplication>
++#include <QtCore/QResource>
+ #include <QtCore/QStandardPaths>
+ #include <QtGui/QDesktopServices>
+ 
+@@ -397,3 +398,20 @@ bool GetDefault(
  
  } // namespace internal
  } // namespace FileDialog
@@ -49,7 +57,7 @@ Last-Update: 2017-08-22
 +}
 --- a/Telegram/SourceFiles/core/file_utilities.h
 +++ b/Telegram/SourceFiles/core/file_utilities.h
-@@ -105,3 +105,9 @@ bool GetDefault(
+@@ -107,3 +107,9 @@ bool GetDefault(
  
  } // namespace internal
  } // namespace FileDialog
@@ -69,7 +77,7 @@ Last-Update: 2017-08-22
  #include "core/main_queue_processor.h"
  #include "core/update_checker.h"
  #include "core/sandbox.h"
-@@ -241,6 +242,7 @@ void Launcher::init() {
+@@ -243,6 +244,7 @@ void Launcher::init() {
  	prepareSettings();
  
  	QApplication::setApplicationName(qsl("TelegramDesktop"));
@@ -87,7 +95,7 @@ Last-Update: 2017-08-22
        'pch_source': '<(src_loc)/stdafx.cpp',
        'pch_header': '<(src_loc)/stdafx.h',
      },
-@@ -100,7 +101,6 @@
+@@ -101,7 +102,6 @@
        '/usr/include/opus',
      ],
      'sources': [
@@ -95,7 +103,7 @@ Last-Update: 2017-08-22
        '<@(style_files)',
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg))',
        'telegram_sources.txt',
-@@ -114,6 +114,31 @@
+@@ -115,6 +115,31 @@
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg) --exclude_for <(build_os))',
      ],
      'conditions': [
