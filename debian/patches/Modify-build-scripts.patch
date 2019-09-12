@@ -48,7 +48,7 @@ Last-Update: 2017-12-30
  int (*TestForkedMethod)()/* = nullptr*/;
 --- a/Telegram/SourceFiles/config.h
 +++ b/Telegram/SourceFiles/config.h
-@@ -194,7 +194,7 @@ constexpr auto ApiHash = "344583e45741c4
+@@ -182,7 +182,7 @@ constexpr auto ApiHash = "344583e45741c4
  #endif // TDESKTOP_API_ID && TDESKTOP_API_HASH
  
  #if Q_BYTE_ORDER == Q_BIG_ENDIAN
@@ -179,7 +179,7 @@ Last-Update: 2017-12-30
  }
 --- a/Telegram/gyp/common.gypi
 +++ b/Telegram/gyp/common.gypi
-@@ -91,6 +91,7 @@
+@@ -93,6 +93,7 @@
  
      'library%': 'static_library',
  
@@ -318,6 +318,19 @@ Last-Update: 2017-12-30
      ],
      'sources': [
        '<(src_loc)/mtproto/mtp_abstract_socket.cpp',
+--- a/Telegram/gyp/lib_scheme.gyp
++++ b/Telegram/gyp/lib_scheme.gyp
+@@ -31,6 +31,10 @@
+       'include_dirs': [
+         '/usr/local/macold/include/c++/v1',
+       ],
++    }], [ '"<!(dpkg-architecture -q DEB_HOST_ARCH)" == "mips64el"', {
++      'cflags_cc': [
++        '-mxgot',
++      ],
+     }]],
+     'include_dirs': [
+       '<(src_loc)',
 --- a/Telegram/gyp/lib_storage.gyp
 +++ b/Telegram/gyp/lib_storage.gyp
 @@ -27,9 +27,6 @@
@@ -613,7 +626,7 @@ Last-Update: 2017-12-30
          'cflags_cc': [ '<!(pkg-config --cflags ayatana-appindicator3-0.1)' ],
 --- a/Telegram/gyp/telegram_sources.txt
 +++ b/Telegram/gyp/telegram_sources.txt
-@@ -901,20 +901,12 @@
+@@ -925,20 +925,12 @@
  <(src_loc)/mainwindow.h
  <(src_loc)/observer_peer.cpp
  <(src_loc)/observer_peer.h
@@ -652,7 +665,7 @@ Last-Update: 2017-12-30
      '<(src_loc)/base/tests_main.cpp',
 --- a/Telegram/gyp/tests/tests.gyp
 +++ b/Telegram/gyp/tests/tests.gyp
-@@ -132,6 +132,9 @@
+@@ -133,6 +133,9 @@
        '<(src_loc)/platform/win/windows_dlls.cpp',
        '<(src_loc)/platform/win/windows_dlls.h',
      ],
