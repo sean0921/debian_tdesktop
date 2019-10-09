@@ -43,9 +43,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_session_controller.h"
-#include <rpl/flatten_latest.h>
-#include <rpl/range.h>
 #include "info/profile/info_profile_icon.h"
+#include "app.h"
+#include "facades.h"
 
 namespace {
 
@@ -235,7 +235,7 @@ void ShowEditPermissions(not_null<PeerData*> peer) {
 
 namespace {
 
-constexpr auto kMaxGroupChannelTitle = 255; // See also add_contact_box.
+constexpr auto kMaxGroupChannelTitle = 128; // See also add_contact_box.
 constexpr auto kMaxChannelDescription = 255; // See also add_contact_box.
 
 class Controller

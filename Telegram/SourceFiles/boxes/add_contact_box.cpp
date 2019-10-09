@@ -25,12 +25,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/buttons.h"
-#include "ui/widgets/input_fields.h"
 #include "ui/widgets/labels.h"
 #include "ui/toast/toast.h"
 #include "ui/special_buttons.h"
+#include "ui/special_fields.h"
 #include "ui/text_options.h"
 #include "ui/unread_badge.h"
+#include "ui/ui_utility.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
@@ -40,13 +41,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "observer_peer.h"
 #include "main/main_session.h"
+#include "facades.h"
 
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
 
 namespace {
 
-constexpr auto kMaxGroupChannelTitle = 255; // See also edit_peer_info_box.
+constexpr auto kMaxGroupChannelTitle = 128; // See also edit_peer_info_box.
+constexpr auto kMaxUserFirstLastName = 64; // See also edit_contact_box.
 constexpr auto kMaxChannelDescription = 255; // See also edit_peer_info_box.
 constexpr auto kMinUsernameLength = 5;
 
@@ -577,7 +580,7 @@ void GroupInfoBox::createGroup(
 	}).fail([=](const RPCError &error) {
 		_creationRequestId = 0;
 		if (error.type() == qstr("NO_CHAT_TITLE")) {
-			auto weak = make_weak(this);
+			auto weak = Ui::MakeWeak(this);
 			selectUsersBox->closeBox();
 			if (weak) {
 				_title->showError();
@@ -616,7 +619,7 @@ void GroupInfoBox::submit() {
 	if (_type != Type::Group) {
 		createChannel(title, description);
 	} else {
-		auto initBox = [title, weak = make_weak(this)](
+		auto initBox = [title, weak = Ui::MakeWeak(this)](
 				not_null<PeerListBox*> box) {
 			auto create = [box, title, weak] {
 				if (weak) {
@@ -1176,8 +1179,8 @@ void EditNameBox::prepare() {
 	if (_invertOrder) {
 		setTabOrder(_last, _first);
 	}
-	_first->setMaxLength(kMaxGroupChannelTitle);
-	_last->setMaxLength(kMaxGroupChannelTitle);
+	_first->setMaxLength(kMaxUserFirstLastName);
+	_last->setMaxLength(kMaxUserFirstLastName);
 
 	connect(_first, &Ui::InputField::submitted, [=] { submit(); });
 	connect(_last, &Ui::InputField::submitted, [=] { submit(); });
@@ -1360,7 +1363,7 @@ void RevokePublicLinkBox::Inner::updateSelected() {
 	PeerData *selected = nullptr;
 	auto top = _rowsTop;
 	for (const auto &row : _rows) {
-		auto revokeLink = rtlrect(width() - st::contactsPadding.right() - st::contactsCheckPosition.x() - _revokeWidth, top + st::contactsPadding.top() + (st::contactsPhotoSize - st::normalFont->height) / 2, _revokeWidth, st::normalFont->height, width());
+		auto revokeLink = style::rtlrect(width() - st::contactsPadding.right() - st::contactsCheckPosition.x() - _revokeWidth, top + st::contactsPadding.top() + (st::contactsPhotoSize - st::normalFont->height) / 2, _revokeWidth, st::normalFont->height, width());
 		if (revokeLink.contains(point)) {
 			selected = row.peer;
 			break;

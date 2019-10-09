@@ -17,6 +17,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_document.h"
 #include "apiwrap.h"
+#include "app.h"
+#include "facades.h"
 #include "styles/style_history.h"
 
 #include <QtCore/QBuffer>
@@ -45,7 +47,7 @@ private:
 
 namespace {
 
-constexpr auto kRefreshTimeout = TimeId(7200);
+constexpr auto kRefreshTimeout = 7200 * crl::time(1000);
 constexpr auto kClearSourceTimeout = 10 * crl::time(1000);
 
 [[nodiscard]] QSize SingleSize() {

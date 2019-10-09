@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer.h"
 #include "data/data_session.h"
 #include "api/api_hash.h"
+#include "api/api_text_entities.h"
 #include "main/main_session.h"
 #include "history/history.h"
 #include "history/history_item_components.h"
@@ -193,13 +194,7 @@ void ScheduledMessages::removeSending(not_null<HistoryItem*> item) {
 	Expects(item->isSending() || item->hasFailed());
 	Expects(item->isScheduled());
 
-	const auto history = item->history();
-	auto &list = _data[history];
-	Assert(!list.itemById.contains(item->id));
-	Assert(!list.idByItem.contains(item));
-	list.items.erase(
-		ranges::remove(list.items, item.get(), &OwnedItem::get),
-		end(list.items));
+	item->destroy();
 }
 
 rpl::producer<> ScheduledMessages::updates(not_null<History*> history) {
@@ -304,8 +299,7 @@ HistoryItem *ScheduledMessages::append(
 		message.match([&](const MTPDmessage &data) {
 			existing->updateSentContent({
 				qs(data.vmessage()),
-				TextUtilities::EntitiesFromMTP(
-					data.ventities().value_or_empty())
+				Api::EntitiesFromMTP(data.ventities().value_or_empty())
 			}, data.vmedia());
 			existing->updateReplyMarkup(data.vreply_markup());
 			existing->updateForwardedInfo(data.vfwd_from());

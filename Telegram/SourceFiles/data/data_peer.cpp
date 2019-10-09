@@ -13,7 +13,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 #include "data/data_folder.h"
 #include "data/data_session.h"
+#include "data/data_file_origin.h"
 #include "base/unixtime.h"
+#include "base/crc32hash.h"
 #include "lang/lang_keys.h"
 #include "observer_peer.h"
 #include "apiwrap.h"
@@ -28,6 +30,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/view/history_view_element.h"
 #include "history/history_item.h"
+#include "facades.h"
+#include "app.h"
 
 namespace {
 
@@ -67,7 +71,7 @@ style::color PeerUserpicColor(PeerId peerId) {
 PeerId FakePeerIdForJustName(const QString &name) {
 	return peerFromUser(name.isEmpty()
 		? 777
-		: hashCrc32(name.constData(), name.size() * sizeof(QChar)));
+		: base::crc32(name.constData(), name.size() * sizeof(QChar)));
 }
 
 } // namespace Data
@@ -698,6 +702,7 @@ Data::RestrictionCheckResult PeerData::amRestricted(
 
 bool PeerData::canRevokeFullHistory() const {
 	return isUser()
+		&& !isSelf()
 		&& Global::RevokePrivateInbox()
 		&& (Global::RevokePrivateTimeLimit() == 0x7FFFFFFF);
 }
@@ -749,6 +754,38 @@ std::optional<QString> RestrictionError(
 	using Flag = ChatRestriction;
 	if (const auto restricted = peer->amRestricted(restriction)) {
 		const auto all = restricted.isWithEveryone();
+		const auto channel = peer->asChannel();
+		if (!all && channel) {
+			auto restrictedUntil = channel->restrictedUntil();
+			if (restrictedUntil > 0 && !ChannelData::IsRestrictedForever(restrictedUntil)) {
+				auto restrictedUntilDateTime = base::unixtime::parse(channel->restrictedUntil());
+				auto date = restrictedUntilDateTime.toString(qsl("dd.MM.yy"));
+				auto time = restrictedUntilDateTime.toString(cTimeFormat());
+
+				switch (restriction) {
+				case Flag::f_send_polls:
+					return tr::lng_restricted_send_polls_until(
+						tr::now, lt_date, date, lt_time, time);
+				case Flag::f_send_messages:
+					return tr::lng_restricted_send_message_until(
+						tr::now, lt_date, date, lt_time, time);
+				case Flag::f_send_media:
+					return tr::lng_restricted_send_media_until(
+						tr::now, lt_date, date, lt_time, time);
+				case Flag::f_send_stickers:
+					return tr::lng_restricted_send_stickers_until(
+						tr::now, lt_date, date, lt_time, time);
+				case Flag::f_send_gifs:
+					return tr::lng_restricted_send_gifs_until(
+						tr::now, lt_date, date, lt_time, time);
+				case Flag::f_send_inline:
+				case Flag::f_send_games:
+					return tr::lng_restricted_send_inline_until(
+						tr::now, lt_date, date, lt_time, time);
+				}
+				Unexpected("Restriction in Data::RestrictionErrorKey.");
+			}
+		}
 		switch (restriction) {
 		case Flag::f_send_polls:
 			return all
