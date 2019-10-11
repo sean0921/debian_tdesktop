@@ -4,29 +4,9 @@ Subject: [PATCH] Packed resources
 Bug: https://github.com/telegramdesktop/tdesktop/pull/3817
 Last-Update: Tue, 10 Sep 2019 21:37:13 +0300
 
---- a/Telegram/Resources/qrc/telegram.qrc
-+++ b/Telegram/Resources/qrc/telegram.qrc
-@@ -54,17 +54,6 @@
-     <file alias="night.tdesktop-theme">../night.tdesktop-theme</file>
-     <file alias="night-green.tdesktop-theme">../night-green.tdesktop-theme</file>
-   </qresource>
--  <qresource prefix="/sounds">
--    <file alias="msg_incoming.mp3">../sounds/msg_incoming.mp3</file>
--    <file alias="call_incoming.mp3">../sounds/call_incoming.mp3</file>
--    <file alias="call_outgoing.mp3">../sounds/call_outgoing.mp3</file>
--    <file alias="call_busy.mp3">../sounds/call_busy.mp3</file>
--    <file alias="call_connect.mp3">../sounds/call_connect.mp3</file>
--    <file alias="call_end.mp3">../sounds/call_end.mp3</file>
--  </qresource>
--  <qresource prefix="/qt-project.org">
--    <file>qmime/freedesktop.org.xml</file>
--  </qresource>
-   <qresource prefix="/misc">
-     <file alias="default_shortcuts-custom.json">../default_shortcuts-custom.json</file>
-   </qresource>
 --- a/Telegram/SourceFiles/core/file_utilities.cpp
 +++ b/Telegram/SourceFiles/core/file_utilities.cpp
-@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesk
+@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesk
  
  #include <QtWidgets/QFileDialog>
  #include <QtCore/QCoreApplication>
@@ -34,7 +14,7 @@ Last-Update: Tue, 10 Sep 2019 21:37:13 +0300
  #include <QtCore/QStandardPaths>
  #include <QtGui/QDesktopServices>
  
-@@ -397,3 +398,20 @@ bool GetDefault(
+@@ -398,3 +399,20 @@ bool GetDefault(
  
  } // namespace internal
  } // namespace FileDialog
@@ -69,15 +49,15 @@ Last-Update: Tue, 10 Sep 2019 21:37:13 +0300
 +} // namespace Resources
 --- a/Telegram/SourceFiles/core/launcher.cpp
 +++ b/Telegram/SourceFiles/core/launcher.cpp
-@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesk
- #include "platform/platform_specific.h"
+@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesk
  #include "platform/platform_info.h"
+ #include "ui/main_queue_processor.h"
  #include "core/crash_reports.h"
 +#include "core/file_utilities.h"
- #include "core/main_queue_processor.h"
  #include "core/update_checker.h"
  #include "core/sandbox.h"
-@@ -243,6 +244,7 @@ void Launcher::init() {
+ #include "base/concurrent_timer.h"
+@@ -244,6 +245,7 @@ void Launcher::init() {
  	prepareSettings();
  
  	QApplication::setApplicationName(qsl("TelegramDesktop"));
@@ -85,25 +65,25 @@ Last-Update: Tue, 10 Sep 2019 21:37:13 +0300
  
  #ifdef TDESKTOP_LAUNCHER_FILENAME
  #define TDESKTOP_LAUNCHER_FILENAME_TO_STRING_HELPER(V) #V
---- a/Telegram/gyp/Telegram.gyp
-+++ b/Telegram/gyp/Telegram.gyp
-@@ -52,6 +52,7 @@
+--- a/Telegram/gyp/telegram/telegram.gypi
++++ b/Telegram/gyp/telegram/telegram.gypi
+@@ -48,6 +48,7 @@
        ],
        'build_defines%': '',
-       'list_sources_command': 'python <(DEPTH)/list_sources.py --input <(DEPTH)/telegram_sources.txt --replace src_loc=<(src_loc)',
+       'use_common_xxhash%': 0,
 +      'use_packed_resources%': 0,
+       'list_sources_command': 'python <(DEPTH)/list_sources.py --input <(DEPTH)/telegram/sources.txt --replace src_loc=<(src_loc)',
        'pch_source': '<(src_loc)/stdafx.cpp',
        'pch_header': '<(src_loc)/stdafx.h',
-     },
-@@ -101,7 +102,6 @@
-       '/usr/include/opus',
+@@ -112,7 +113,6 @@
+       '/usr/include/libtgvoip',
      ],
      'sources': [
 -      '<@(qrc_files)',
        '<@(style_files)',
-       '<!@(<(list_sources_command) <(qt_moc_list_sources_arg))',
-       'telegram_sources.txt',
-@@ -115,6 +115,31 @@
+       '<(res_loc)/langs/cloud_lang.strings',
+       '<(res_loc)/export_html/css/style.css',
+@@ -126,6 +126,31 @@
        '<!@(<(list_sources_command) <(qt_moc_list_sources_arg) --exclude_for <(build_os))',
      ],
      'conditions': [
@@ -118,7 +98,7 @@ Last-Update: Tue, 10 Sep 2019 21:37:13 +0300
 +              '<(PRODUCT_DIR)/tresources.rcc',
 +            ],
 +            'action': [
-+              '<(qt_loc)/bin/rcc<(exe_ext)', '-binary',
++              '<(qt_bindir)/rcc<(exe_ext)', '-binary',
 +              '<@(qrc_files)',
 +              '-o', '<@(_outputs)',
 +            ],
