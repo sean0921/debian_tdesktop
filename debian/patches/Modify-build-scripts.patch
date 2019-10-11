@@ -1,9 +1,9 @@
-Description: Eliminate static linking and fixes build
+Description: Get rid of hard-coded paths, and eliminate static linking
 Author: Nicholas Guriev <guriev-ns@ya.ru>
-Last-Update: 2017-12-30
+Date: Mon, 07 Oct 2019 09:30:52 +0300
 
---- a/Telegram/Resources/qrc/telegram_linux.qrc
-+++ b/Telegram/Resources/qrc/telegram_linux.qrc
+--- a/Telegram/Resources/qrc/linux.qrc
++++ b/Telegram/Resources/qrc/linux.qrc
 @@ -1,6 +1,5 @@
  <RCC>
    <qresource prefix="/qt">
@@ -11,52 +11,37 @@ Last-Update: 2017-12-30
    </qresource>
    <qresource prefix="/fc">
      <file alias="fc-custom.conf">../fc-custom.conf</file>
---- a/Telegram/SourceFiles/base/basic_types.h
-+++ b/Telegram/SourceFiles/base/basic_types.h
-@@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesk
- */
- #pragma once
+--- a/Telegram/SourceFiles/base/build_config.h
++++ b/Telegram/SourceFiles/base/build_config.h
+@@ -47,12 +47,11 @@ https://github.com/telegramdesktop/tdesk
+ #define ARCH_CPU_X86_FAMILY 1
+ #define ARCH_CPU_X86 1
+ #define ARCH_CPU_32_BITS 1
+-#elif defined(__aarch64__)
++#elif defined _LP64 || defined _M_X64 || defined _M_ARM64 || defined _M_ALPHA
++// _LP64 is defined by GCC, others by MSVC
+ #define ARCH_CPU_64_BITS 1
+-#elif defined(_M_ARM) || defined(__arm__)
+-#define ARCH_CPU_32_BITS 1
+ #else
+-#error Please add support for your architecture in base/build_config.h
++#define ARCH_CPU_32_BITS 1
+ #endif
  
--#include "base/build_config.h"
- #include "base/ordered_set.h"
- #include "base/unique_function.h"
- #include "base/functors.h"
-@@ -48,6 +47,14 @@ using float64 = double;
- 
- using TimeId = int32;
- 
-+#if defined(__GNUC__)
-+# define TG_FORCE_INLINE inline __attribute__((always_inline))
-+#elif defined(_MSC_VER)
-+# define TG_FORCE_INLINE __forceinline
-+#else
-+# define TG_FORCE_INLINE inline
-+#endif
-+
- // Define specializations for QByteArray for Qt 5.3.2, because
- // QByteArray in Qt 5.3.2 doesn't declare "pointer" subtype.
- #if QT_VERSION < QT_VERSION_CHECK(5, 5, 0)
+ #if defined(__GNUC__)
 --- a/Telegram/SourceFiles/base/tests_main.cpp
 +++ b/Telegram/SourceFiles/base/tests_main.cpp
-@@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesk
+@@ -7,7 +7,9 @@ https://github.com/telegramdesktop/tdesk
  */
  #define CATCH_CONFIG_RUNNER
  #include "catch.hpp"
 -#include "reporters/catch_reporter_compact.hpp"
++#if __has_include("reporters/catch_reporter_compact.hpp")
++# include "reporters/catch_reporter_compact.hpp"
++#endif  // __has_include
  #include <QFile>
  
  int (*TestForkedMethod)()/* = nullptr*/;
---- a/Telegram/SourceFiles/config.h
-+++ b/Telegram/SourceFiles/config.h
-@@ -182,7 +182,7 @@ constexpr auto ApiHash = "344583e45741c4
- #endif // TDESKTOP_API_ID && TDESKTOP_API_HASH
- 
- #if Q_BYTE_ORDER == Q_BIG_ENDIAN
--#error "Only little endian is supported!"
-+#warning "Be aware, only little endian is supported!"
- #endif // Q_BYTE_ORDER == Q_BIG_ENDIAN
- 
- #if (TDESKTOP_ALPHA_VERSION != 0)
 --- a/Telegram/SourceFiles/main.cpp
 +++ b/Telegram/SourceFiles/main.cpp
 @@ -8,6 +8,9 @@ https://github.com/telegramdesktop/tdesk
@@ -69,127 +54,73 @@ Last-Update: 2017-12-30
  	const auto launcher = Core::Launcher::Create(argc, argv);
  	return launcher ? launcher->exec() : 1;
  }
---- a/Telegram/SourceFiles/rpl/details/callable.h
-+++ b/Telegram/SourceFiles/rpl/details/callable.h
-@@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesk
- */
- #pragma once
- 
--#include "base/build_config.h"
- #include <tuple>
- 
- namespace rpl {
---- a/Telegram/SourceFiles/ui/animation.h
-+++ b/Telegram/SourceFiles/ui/animation.h
-@@ -165,9 +165,10 @@ TG_FORCE_INLINE int interpolate(int a, i
- 	return qRound(a + float64(b - a) * b_ratio);
- }
- 
--#ifdef ARCH_CPU_32_BITS
-+#if !(defined _LP64 || defined _M_X64 || defined _M_ARM64 || defined _M_ALPHA)
-+// _LP64 is defined by GCC, others by MSVC
- #define SHIFTED_USE_32BIT
--#endif // ARCH_CPU_32_BITS
-+#endif
- 
- #ifdef SHIFTED_USE_32BIT
- 
 --- a/Telegram/gyp/PrecompiledHeader.cmake
 +++ b/Telegram/gyp/PrecompiledHeader.cmake
-@@ -114,7 +114,7 @@ function(add_precompiled_header _target
-       set(_compiler_FLAGS "@${_pch_c_flags_file}")
-       add_custom_command(
-         OUTPUT "${_output_c}"
--        COMMAND "${CMAKE_C_COMPILER}" ${_compiler_FLAGS} -x c-header -o "${_output_c}" -c "${_pchfile}"
-+        COMMAND "${CMAKE_C_COMPILER}" "$(C_DEFINES)" "$(C_INCLUDES)" "$(C_FLAGS)" -x c-header -o "${_output_c}" -c "${_pchfile}"
-         DEPENDS "${_pchfile}" "${_pch_c_flags_file}"
-         IMPLICIT_DEPENDS C "${_pch_header}"
-         COMMENT "Precompiling ${_name} for ${_target} (C)")
-@@ -125,7 +125,7 @@ function(add_precompiled_header _target
-       set(_compiler_FLAGS "@${_pch_cpp_flags_file}")
-       add_custom_command(
-         OUTPUT "${_output_cxx}"
--        COMMAND "${CMAKE_CXX_COMPILER}" ${_compiler_FLAGS} -x c++-header -o "${_output_cxx}" -c "${_pchfile}"
-+        COMMAND "${CMAKE_CXX_COMPILER}" "$(CXX_DEFINES)" "$(CXX_INCLUDES)" "$(CXX_FLAGS)" -x c++-header -o "${_output_cxx}" -c "${_pchfile}"
-         DEPENDS "${_pchfile}" "${_pch_cpp_flags_file}"
-         IMPLICIT_DEPENDS CXX "${_pch_header}"
-         COMMENT "Precompiling header ${_name} for ${_target} (C++)")
---- a/Telegram/gyp/Telegram.gyp
-+++ b/Telegram/gyp/Telegram.gyp
-@@ -74,9 +74,6 @@
-       'codegen.gyp:codegen_lang',
-       'codegen.gyp:codegen_numbers',
-       'codegen.gyp:codegen_style',
--      'tests/tests.gyp:tests',
--      'utils.gyp:Updater',
--      '../ThirdParty/libtgvoip/libtgvoip.gyp:libtgvoip',
-       'crl.gyp:crl',
-       'lib_base.gyp:lib_base',
-       'lib_export.gyp:lib_export',
-@@ -87,10 +84,8 @@
-     ],
+@@ -77,6 +77,8 @@ function(export_all_flags _filename _sou
+   set(_compile_file_flags "$<$<BOOL:${_compile_file_flags}>:$<JOIN:${_compile_file_flags},\n>\n>")
+   set(_compile_flags "$<$<BOOL:${_compile_flags}>:$<JOIN:${_compile_flags},\n>\n>")
+   set(_compile_options "$<$<BOOL:${_compile_options}>:$<JOIN:${_compile_options},\n>\n>")
++  get_source_file_property(_file_lang "${_source_name_for_flags}" LANGUAGE)
++  set(_compile_file_flags "${CMAKE_${_file_lang}_FLAGS}\n${_compile_file_flags}")
+   file(GENERATE OUTPUT "${_filename}" CONTENT "${_compile_definitions}${_include_directories}${_compile_file_flags}${_compile_flags}${_compile_options}\n")
+ endfunction()
  
-     'defines': [
--      'AL_LIBTYPE_STATIC',
-       'AL_ALEXT_PROTOTYPES',
-       'TGVOIP_USE_CXX11_LIB',
--      'XXH_INLINE_ALL',
-       'TDESKTOP_API_ID=<(api_id)',
-       'TDESKTOP_API_HASH=<(api_hash)',
-       '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
-@@ -99,20 +94,11 @@
-     'include_dirs': [
-       '<(src_loc)',
-       '<(SHARED_INTERMEDIATE_DIR)',
--      '<(libs_loc)/breakpad/src',
--      '<(libs_loc)/lzma/C',
--      '<(libs_loc)/zlib',
--      '<(libs_loc)/ffmpeg',
--      '<(libs_loc)/openal-soft/include',
--      '<(libs_loc)/opus/include',
--      '<(libs_loc)/range-v3/include',
--      '<(minizip_loc)',
--      '<(sp_media_key_tap_loc)',
-       '<(emoji_suggestions_loc)',
--      '<(submodules_loc)/GSL/include',
--      '<(submodules_loc)/variant/include',
--      '<(submodules_loc)/crl/src',
--      '<(submodules_loc)/xxHash',
-+      '../../debian/crl/src',
-+      '/usr/include/minizip',
-+      '/usr/include/libtgvoip',
-+      '/usr/include/opus',
-     ],
-     'sources': [
-       '<@(qrc_files)',
-@@ -159,5 +145,14 @@
-         ],
-       }],
-     ],
-+  },{
-+    # TODO: Make this target more respectful of the `notest` build profile.
-+    # There should be no tests when the default target is executed.
-+    'target_name': 'check',
-+    'type': 'none',
-+    'dependencies': [
-+      'Telegram',
-+      'tests/tests.gyp:tests',
-+    ],
-   }],
- }
---- a/Telegram/gyp/common.gypi
-+++ b/Telegram/gyp/common.gypi
-@@ -93,6 +93,7 @@
- 
-     'library%': 'static_library',
- 
-+    'triplet': '<!(dpkg-architecture -q DEB_BUILD_MULTIARCH)',
-   },
- 
-   'defines': [
+--- a/Telegram/gyp/common/linux.gypi
++++ b/Telegram/gyp/common/linux.gypi
+@@ -8,10 +8,23 @@
+   'conditions': [
+     [ 'build_linux', {
+       'variables': {
++        'variables': {
++          'cpu_type': '<!(uname -m)',
++        },
++        'cpu_type%': '<(cpu_type)',
++        'conditions': [
++          [ 'cpu_type == "x86_64"',
++            { 'disable_lto%': 0 },
++            { 'disable_lto%': 1 },
++          ],
++          [ 'cpu_type == "x86_64" or cpu_type == "aarch64"',
++            { 'bitness%': 64 },
++            { 'bitness%': 32 },
++          ],
++        ],
+         'linux_common_flags': [
+           '-pipe',
+           '-Wall',
+-          '-Werror',
+           '-W',
+           '-fPIC',
+           '-Wno-unused-variable',
+@@ -51,7 +64,7 @@
+         '<(linux_path_breakpad)/lib',
+       ],
+       'conditions': [
+-        [ '"<!(uname -m)" == "x86_64" or "<!(uname -m)" == "aarch64"', {
++        [ 'bitness == 64', {
+           'defines': [
+             'Q_OS_LINUX64',
+           ],
+@@ -69,7 +82,7 @@
+               'sources': [ '__Wrong_Official_Build_Target_<(official_build_target)_' ],
+             }],
+           ],
+-        }], [ '"<!(uname -p)" == "x86_64"', {
++        }], [ 'not disable_lto', {
+           # 32 bit version can't be linked with debug info or LTO,
+           # virtual memory exhausted :(
+           'cflags_c': [ '-g' ],
+@@ -86,7 +99,6 @@
+       ],
+       'defines': [
+         '_REENTRANT',
+-        'QT_STATICPLUGIN',
+         'QT_PLUGIN',
+       ],
+       'cflags_c': [
 --- a/Telegram/gyp/crl.gyp
 +++ b/Telegram/gyp/crl.gyp
-@@ -28,11 +28,11 @@
+@@ -27,12 +27,17 @@
        ],
      }]],
      'variables': {
@@ -200,72 +131,45 @@ Last-Update: 2017-12-30
      'include_dirs': [
 -      '../ThirdParty/crl/src',
 +      '../../debian/crl/src',
-       '../SourceFiles',
      ],
++    'direct_dependent_settings': {
++      'include_dirs': [
++        '../../debian/crl/src',
++      ]
++    },
      'sources': [
+       '<(crl_src_loc)/common/crl_common_config.h',
+       '<(crl_src_loc)/common/crl_common_list.cpp',
 --- a/Telegram/gyp/lib_base.gyp
 +++ b/Telegram/gyp/lib_base.gyp
-@@ -27,27 +27,19 @@
+@@ -23,9 +23,16 @@
+       'submodules_loc': '../ThirdParty',
        'pch_source': '<(src_loc)/base/base_pch.cpp',
        'pch_header': '<(src_loc)/base/base_pch.h',
++      'use_common_xxhash%': 0,
      },
 -    'defines': [
 -      'XXH_INLINE_ALL',
--    ],
++    'conditions': [
++      [ 'use_common_xxhash', {
++        'link_settings': {
++          'libraries': [ '-lxxhash' ],
++        },
++      }, {
++        'defines': [ 'XXH_INLINE_ALL' ],
++      }],
+     ],
      'dependencies': [
        'crl.gyp:crl',
-     ],
-     'include_dirs': [
-       '<(src_loc)',
-       '<(SHARED_INTERMEDIATE_DIR)',
--      '<(libs_loc)/range-v3/include',
--      '<(submodules_loc)/GSL/include',
--      '<(submodules_loc)/variant/include',
--      '<(submodules_loc)/crl/src',
--      '<(submodules_loc)/xxHash',
-+      '../../debian/crl/src',
-     ],
-     'sources': [
-       '<(src_loc)/base/algorithm.h',
-       '<(src_loc)/base/assertion.h',
-       '<(src_loc)/base/basic_types.h',
-       '<(src_loc)/base/binary_guard.h',
--      '<(src_loc)/base/build_config.h',
-       '<(src_loc)/base/bytes.h',
-       '<(src_loc)/base/concurrent_timer.cpp',
-       '<(src_loc)/base/concurrent_timer.h',
---- a/Telegram/gyp/lib_export.gyp
-+++ b/Telegram/gyp/lib_export.gyp
-@@ -46,10 +46,7 @@
-     'include_dirs': [
-       '<(src_loc)',
-       '<(SHARED_INTERMEDIATE_DIR)',
--      '<(libs_loc)/range-v3/include',
--      '<(submodules_loc)/GSL/include',
--      '<(submodules_loc)/variant/include',
--      '<(submodules_loc)/crl/src',
-+      '../../debian/crl/src',
-     ],
-     'sources': [
-       '<(src_loc)/export/export_api_wrap.cpp',
---- a/Telegram/gyp/lib_ffmpeg.gyp
-+++ b/Telegram/gyp/lib_ffmpeg.gyp
-@@ -36,11 +36,7 @@
-     'include_dirs': [
-       '<(src_loc)',
-       '<(SHARED_INTERMEDIATE_DIR)',
--      '<(libs_loc)/ffmpeg',
--      '<(libs_loc)/range-v3/include',
--      '<(submodules_loc)/GSL/include',
--      '<(submodules_loc)/variant/include',
--      '<(submodules_loc)/crl/src',
-+      '../../debian/crl/src',
-     ],
-     'sources': [
-       '<(src_loc)/ffmpeg/ffmpeg_utility.cpp',
 --- a/Telegram/gyp/lib_lottie.gyp
 +++ b/Telegram/gyp/lib_lottie.gyp
-@@ -29,31 +29,26 @@
+@@ -22,23 +22,18 @@
+       'submodules_loc': '../ThirdParty',
+       'rlottie_loc': '<(submodules_loc)/rlottie/inc',
+       'lz4_loc': '<(submodules_loc)/lz4/lib',
++      'use_common_rlottie%': 0,
++      'use_common_lz4%': 0,
+     },
      'dependencies': [
        'crl.gyp:crl',
        'lib_base.gyp:lib_base',
@@ -279,63 +183,48 @@ Last-Update: 2017-12-30
 -      'lib_rlottie.gyp:lib_rlottie',
        'lib_ffmpeg.gyp:lib_ffmpeg',
 -      'lib_lz4.gyp:lib_lz4',
-     ],
-+    'link_settings': {
-+      'libraries': [
-+        'lz4',
-+        'rlottie',
-+      ],
-+    },
-     'defines': [
-       'LOT_BUILD',
+-    ],
+-    'defines': [
+-      'LOT_BUILD',
      ],
      'include_dirs': [
        '<(src_loc)',
-       '<(SHARED_INTERMEDIATE_DIR)',
--      '<(libs_loc)/range-v3/include',
--      '<(libs_loc)/zlib',
--      '<(libs_loc)/ffmpeg',
--      '<(rlottie_loc)',
--      '<(lz4_loc)',
--      '<(submodules_loc)/GSL/include',
--      '<(submodules_loc)/variant/include',
--      '<(submodules_loc)/crl/src',
-+      '../../debian/crl/src',
-     ],
-     'sources': [
-       '<(src_loc)/lottie/lottie_animation.cpp',
---- a/Telegram/gyp/lib_mtproto.gyp
-+++ b/Telegram/gyp/lib_mtproto.gyp
-@@ -47,10 +47,7 @@
-     'include_dirs': [
-       '<(src_loc)',
-       '<(SHARED_INTERMEDIATE_DIR)',
--      '<(libs_loc)/range-v3/include',
--      '<(submodules_loc)/GSL/include',
--      '<(submodules_loc)/variant/include',
--      '<(submodules_loc)/crl/src',
-+      '../../debian/crl/src',
-     ],
-     'sources': [
-       '<(src_loc)/mtproto/mtp_abstract_socket.cpp',
---- a/Telegram/gyp/lib_scheme.gyp
-+++ b/Telegram/gyp/lib_scheme.gyp
-@@ -31,6 +31,10 @@
+@@ -74,6 +69,17 @@
        'include_dirs': [
          '/usr/local/macold/include/c++/v1',
        ],
-+    }], [ '"<!(dpkg-architecture -q DEB_HOST_ARCH)" == "mips64el"', {
-+      'cflags_cc': [
-+        '-mxgot',
-+      ],
++    }], [ 'use_common_rlottie', {
++      'link_settings': { 'libraries': [ 'rlottie' ] },
++    }, {
++      'dependencies': [ 'lib_rlottie.gyp:lib_rlottie' ],
++      'export_dependent_settings': [ 'lib_rlottie.gyp:lib_rlottie' ],
++      'defines': [ 'LOT_BUILD' ],
++    }], [ 'use_common_lz4', {
++      'link_settings': { 'libraries': [ 'lz4' ] },
++    }, {
++      'dependencies': [ 'lib_lz4.gyp:lib_lz4' ],
++      'export_dependent_settings': [ 'lib_lz4.gyp:lib_lz4' ],
+     }]],
+   }],
+ }
+--- a/Telegram/gyp/lib_scheme.gyp
++++ b/Telegram/gyp/lib_scheme.gyp
+@@ -30,6 +30,8 @@
+       'include_dirs': [
+         '/usr/local/macold/include/c++/v1',
+       ],
++    }], [ 'cpu_type == "mipsel"', {
++      'ld_flags': [ '-mxgot' ],
      }]],
      'include_dirs': [
        '<(src_loc)',
 --- a/Telegram/gyp/lib_storage.gyp
 +++ b/Telegram/gyp/lib_storage.gyp
-@@ -27,9 +27,6 @@
+@@ -23,10 +23,8 @@
+       'submodules_loc': '../ThirdParty',
        'pch_source': '<(src_loc)/storage/storage_pch.cpp',
        'pch_header': '<(src_loc)/storage/storage_pch.h',
++      'use_common_xxhash%': 0,
      },
 -    'defines': [
 -      'XXH_INLINE_ALL',
@@ -343,28 +232,33 @@ Last-Update: 2017-12-30
      'dependencies': [
        'crl.gyp:crl',
        'lib_base.gyp:lib_base',
-@@ -41,11 +38,7 @@
-     'include_dirs': [
-       '<(src_loc)',
-       '<(SHARED_INTERMEDIATE_DIR)',
--      '<(libs_loc)/range-v3/include',
--      '<(submodules_loc)/GSL/include',
--      '<(submodules_loc)/variant/include',
--      '<(submodules_loc)/crl/src',
--      '<(submodules_loc)/xxHash',
-+      '../../debian/crl/src',
-     ],
+@@ -88,6 +86,12 @@
+         '<(src_loc)/storage/storage_clear_legacy_win.cpp',
+         '<(src_loc)/storage/storage_file_lock_win.cpp',
+       ],
++    }], [ 'use_common_xxhash', {
++      'link_settings': {
++        'libraries': [ '-lxxhash' ],
++      },
++    }, {
++      'defines': [ 'XXH_INLINE_ALL' ],
+     }]],
+   }],
+ }
+--- a/Telegram/gyp/linux_glibc_wraps.gyp
++++ b/Telegram/gyp/linux_glibc_wraps.gyp
+@@ -14,7 +14,7 @@
      'sources': [
-       '<(src_loc)/storage/storage_clear_legacy.cpp',
---- a/Telegram/gyp/qt.gypi
-+++ b/Telegram/gyp/qt.gypi
-@@ -14,25 +14,21 @@
-               [ 'build_macold', {
-                 'qt_version%': '5.3.2',
-               }, {
--                'qt_version%': '5.6.2',
-+                'qt_version%': '<!(echo /usr/include/<(triplet)/qt5/QtCore/*/ | grep -Po "\d+\.\d+\.\d+")',
-               }]
+       '../SourceFiles/platform/linux/linux_glibc_wraps.c',
+     ],
+-    'conditions': [[ '"<!(uname -m)" == "x86_64" or "<!(uname -m)" == "aarch64"', {
++    'conditions': [[ 'bitness == 64', {
+       'sources': [
+         '../SourceFiles/platform/linux/linux_glibc_wraps_64.c',
+       ],
+--- a/Telegram/gyp/modules/qt.gypi
++++ b/Telegram/gyp/modules/qt.gypi
+@@ -19,25 +19,13 @@
              ],
            },
            'qt_libs': [
@@ -377,25 +271,27 @@ Last-Update: 2017-12-30
 -            'qtharfbuzzng',
            ],
            'qt_version%': '<(qt_version)',
-           'conditions': [
-             [ 'build_macold', {
-               'linux_path_qt%': '/usr/local/macold/Qt-<(qt_version)',
-             }, {
+-          'conditions': [
+-            [ 'build_macold', {
+-              'linux_path_qt%': '/usr/local/macold/Qt-<(qt_version)',
+-            }, {
 -              'linux_path_qt%': '/usr/local/tdesktop/Qt-<(qt_version)',
-+              'linux_path_qt%': '/usr/lib/<(triplet)/qt5',
-             }]
-           ]
+-            }]
+-          ]
          },
-@@ -72,32 +68,13 @@
-             ],
+         'qt_version%': '<(qt_version)',
+-        'qt_loc_unix': '<(linux_path_qt)',
+         'conditions': [
+           [ 'build_win', {
+             'qt_lib_prefix': '<(ld_lib_prefix)',
+@@ -73,37 +61,18 @@
            }],
            [ 'build_linux', {
--            'qt_lib_prefix': 'lib',
+             'qt_lib_prefix': 'lib',
 -            'qt_lib_debug_postfix': '.a',
 -            'qt_lib_release_postfix': '.a',
-+            'qt_lib_prefix': '',
-+            'qt_lib_debug_postfix': '',
-+            'qt_lib_release_postfix': '',
++            'qt_lib_debug_postfix': '.so',
++            'qt_lib_release_postfix': '.so',
              'qt_libs': [
 -              'qxcb',
 -              'Qt5XcbQpa',
@@ -414,7 +310,7 @@ Last-Update: 2017-12-30
 -              'fontconfig',
 -              'expat',
 -              'freetype',
--              'z',
+               'z',
 -              'xcb-shm',
 -              'xcb-xfixes',
 -              'xcb-render',
@@ -422,19 +318,55 @@ Last-Update: 2017-12-30
              ],
            }],
          ],
-@@ -127,11 +104,6 @@
+       },
+       'qt_version%': '<(qt_version)',
+-      'qt_loc_unix': '<(qt_loc_unix)',
+       'qt_version_loc': '<!(python -c "print(\'<(qt_version)\'.replace(\'.\', \'_\'))")',
+       'qt_libs_debug': [
+         '<!@(python -c "for s in \'<@(qt_libs)\'.split(\' \'): print(\'<(qt_lib_prefix)\' + s + \'<(qt_lib_debug_postfix)\')")',
+@@ -111,24 +80,33 @@
+       'qt_libs_release': [
+         '<!@(python -c "for s in \'<@(qt_libs)\'.split(\' \'): print(\'<(qt_lib_prefix)\' + s + \'<(qt_lib_release_postfix)\')")',
+       ],
++      'conditions': [
++        [ 'build_win', {
++          'qt_loc%': '<(DEPTH)/../../../Libraries/qt<(qt_version_loc)/qtbase',
++        }],
++        [ 'build_macold', {
++          'qt_loc%': '/usr/local/macold/Qt-<(qt_version)',
++        }, {
++          'qt_loc%': '/usr/local/tdesktop/Qt-<(qt_version)',
++        }]
++      ],
+     },
+     'qt_libs_debug': [ '<@(qt_libs_debug)' ],
+     'qt_libs_release': [ '<@(qt_libs_release)' ],
+     'qt_version%': '<(qt_version)',
+-    'conditions': [
+-      [ 'build_win', {
+-        'qt_loc': '<(DEPTH)/../../../Libraries/qt<(qt_version_loc)/qtbase',
+-      }, {
+-        'qt_loc': '<(qt_loc_unix)',
+-      }],
+-    ],
++
++    'qt_incdir%': '<(qt_loc)/include',
++    'qt_libdir%': '<(qt_loc)/lib',
++    'qt_bindir%': '<(qt_loc)/bin',
++    'qt_plugins%': '<(qt_loc)/plugins',
++    'qt_specs%': '<(qt_loc)/mkspecs',
+ 
+     # If you need moc sources include a line in your 'sources':
      # '<!@(python <(DEPTH)/list_sources.py [sources] <(qt_moc_list_sources_arg))'
      # where [sources] contains all your source files
      'qt_moc_list_sources_arg': '--moc-prefix SHARED_INTERMEDIATE_DIR/<(_target_name)/moc/moc_',
--
--    'linux_path_xkbcommon%': '/usr/local',
--    'linux_lib_ssl%': '/usr/local/ssl/lib/libssl.a',
--    'linux_lib_crypto%': '/usr/local/ssl/lib/libcrypto.a',
--    'linux_lib_icu%': 'libicutu.a libicui18n.a libicuuc.a libicudata.a',
-   },
  
-   'configurations': {
-@@ -180,14 +152,14 @@
+-    'linux_path_xkbcommon%': '/usr/local',
++    'linux_lib_xkbcommon%': '/usr/local/lib/libxkbcommon.a',
+     'linux_lib_ssl%': '/usr/local/ssl/lib/libssl.a',
+     'linux_lib_crypto%': '/usr/local/ssl/lib/libcrypto.a',
+     'linux_lib_icu%': 'libicutu.a libicui18n.a libicuuc.a libicudata.a',
+@@ -180,21 +158,20 @@
    },
  
    'include_dirs': [
@@ -446,147 +378,123 @@ Last-Update: 2017-12-30
 -    '<(qt_loc)/include/QtGui/<(qt_version)',
 -    '<(qt_loc)/include/QtCore/<(qt_version)/QtCore',
 -    '<(qt_loc)/include/QtGui/<(qt_version)/QtGui',
-+    '/usr/include/<(triplet)/qt5',
-+    '/usr/include/<(triplet)/qt5/QtCore',
-+    '/usr/include/<(triplet)/qt5/QtGui',
-+    '/usr/include/<(triplet)/qt5/QtDBus',
-+    '/usr/include/<(triplet)/qt5/QtCore/<(qt_version)/',
-+    '/usr/include/<(triplet)/qt5/QtGui/<(qt_version)/',
-+    '/usr/include/<(triplet)/qt5/QtCore/<(qt_version)/QtCore',
-+    '/usr/include/<(triplet)/qt5/QtGui/<(qt_version)/QtGui',
++    '<(qt_incdir)',
++    '<(qt_incdir)/QtCore',
++    '<(qt_incdir)/QtGui',
++    '<(qt_incdir)/QtDBus',
++    '<(qt_incdir)/QtCore/<(qt_version)',
++    '<(qt_incdir)/QtGui/<(qt_version)',
++    '<(qt_incdir)/QtCore/<(qt_version)/QtCore',
++    '<(qt_incdir)/QtGui/<(qt_version)/QtGui',
    ],
    'library_dirs': [
-     '<(qt_loc)/lib',
-@@ -205,24 +177,15 @@
+-    '<(qt_loc)/lib',
+-    '<(qt_loc)/plugins',
+-    '<(qt_loc)/plugins/bearer',
+-    '<(qt_loc)/plugins/platforms',
+-    '<(qt_loc)/plugins/imageformats',
++    '<(qt_libdir)',
++    '<(qt_plugins)/bearer',
++    '<(qt_plugins)/platforms',
++    '<(qt_plugins)/imageformats',
+   ],
+   'defines': [
+     'QT_WIDGETS_LIB',
+@@ -204,30 +181,21 @@
+   ],
    'conditions': [
      [ 'build_linux', {
-       'dependencies': [
+-      'dependencies': [
 -        '<(DEPTH)/linux_glibc_wraps.gyp:linux_glibc_wraps',
-       ],
+-      ],
        'library_dirs': [
-         '<(qt_loc)/plugins/platforminputcontexts',
+-        '<(qt_loc)/plugins/platforminputcontexts',
++        '<(qt_plugins)/platforminputcontexts',
        ],
        'libraries': [
 -        '<(PRODUCT_DIR)/obj.target/liblinux_glibc_wraps.a',
 -        '<(linux_path_xkbcommon)/lib/libxkbcommon.a',
++        '<(linux_lib_xkbcommon)',
          '<@(qt_libs_release)',
--        '<(linux_lib_ssl)',
--        '<(linux_lib_crypto)',
--        '<!@(python -c "for s in \'<(linux_lib_icu)\'.split(\' \'): print(s)")',
+         '<(linux_lib_ssl)',
+         '<(linux_lib_crypto)',
+         '<!@(python -c "for s in \'<(linux_lib_icu)\'.split(\' \'): print(s)")',
 -        '-lxcb',
-+        '-lcrypto',
          '-lX11',
 -        '-lX11-xcb',
 -        '-ldbus-1',
          '-ldl',
 -        '-lgthread-2.0',
          '-lglib-2.0',
-         '-lpthread',
+-        '-lpthread',
        ],
-@@ -230,7 +193,6 @@
-         '<(qt_loc)/mkspecs/linux-g++',
+       'include_dirs': [
+-        '<(qt_loc)/mkspecs/linux-g++',
++        '<(qt_specs)/linux-g++',
        ],
        'ldflags': [
--        '-static-libstdc++',
-         '-pthread',
-         '-rdynamic',
-       ],
---- a/Telegram/gyp/qt_moc.gypi
-+++ b/Telegram/gyp/qt_moc.gypi
-@@ -20,6 +20,7 @@
+         '-static-libstdc++',
+--- a/Telegram/gyp/modules/qt_moc.gypi
++++ b/Telegram/gyp/modules/qt_moc.gypi
+@@ -15,7 +15,7 @@
+       '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)/moc/moc_<(RULE_INPUT_ROOT).cpp',
+     ],
+     'action': [
+-      '<(qt_loc)/bin/moc<(exe_ext)',
++      '<(qt_bindir)/moc<(exe_ext)',
+ 
        # Silence "Note: No relevant classes found. No output generated."
        '--no-notes',
- 
-+      '<!@(echo $CPPFLAGS | grep -Po "[-]([IDU]\s*\S*|E)")',
-       '<!@(python -c "for s in \'<@(_defines)\'.split(\' \'): print(\'-D\' + s)")',
-       # '<!@(python -c "for s in \'<@(_include_dirs)\'.split(\' \'): print(\'-I\' + s)")',
-       '<(RULE_INPUT_PATH)',
---- a/Telegram/gyp/settings_linux.gypi
-+++ b/Telegram/gyp/settings_linux.gypi
-@@ -11,7 +11,6 @@
-         'linux_common_flags': [
-           '-pipe',
-           '-Wall',
--          '-Werror',
-           '-W',
-           '-fPIC',
-           '-Wno-unused-variable',
-@@ -28,7 +27,7 @@
-         ],
-       },
-       'conditions': [
--        [ '"<!(uname -m)" == "x86_64" or "<!(uname -m)" == "aarch64"', {
-+        [ '"<!(dpkg-architecture -q DEB_HOST_ARCH_BITS)" == "64"', {
-           'defines': [
-             'Q_OS_LINUX64',
-           ],
-@@ -46,24 +45,10 @@
-               'sources': [ '__Wrong_Official_Build_Target_<(official_build_target)_' ],
-             }],
-           ],
--        }], [ '"<!(uname -p)" == "x86_64"', {
--          # 32 bit version can't be linked with debug info or LTO,
--          # virtual memory exhausted :(
--          'cflags_c': [ '-g' ],
--          'cflags_cc': [ '-g' ],
--          'ldflags': [ '-g' ],
--          'configurations': {
--            'Release': {
--              'cflags_c': [ '-flto' ],
--              'cflags_cc': [ '-flto' ],
--              'ldflags': [ '-flto', '-fuse-linker-plugin' ],
--            },
--          },
-         }]
-       ],
-       'defines': [
-         '_REENTRANT',
--        'QT_STATICPLUGIN',
-         'QT_PLUGIN',
-       ],
-       'cflags_c': [
---- a/Telegram/gyp/telegram_linux.gypi
-+++ b/Telegram/gyp/telegram_linux.gypi
-@@ -43,26 +43,18 @@
-       '<(linux_path_breakpad)/lib',
+--- a/Telegram/gyp/modules/qt_rcc.gypi
++++ b/Telegram/gyp/modules/qt_rcc.gypi
+@@ -15,7 +15,7 @@
+       '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)/qrc/qrc_<(RULE_INPUT_ROOT).cpp',
      ],
+     'action': [
+-      '<(qt_loc)/bin/rcc<(exe_ext)',
++      '<(qt_bindir)/rcc<(exe_ext)',
+       '-name', '<(RULE_INPUT_ROOT)',
+       '-no-compress',
+       '<(RULE_INPUT_PATH)',
+--- a/Telegram/gyp/telegram/linux.gypi
++++ b/Telegram/gyp/telegram/linux.gypi
+@@ -10,6 +10,7 @@
+       'variables': {
+         'build_defines%': '',
+       },
++      'cpu_type%': '<!(uname -m)',
+       'not_need_gtk%': '<!(python -c "print(\'TDESKTOP_DISABLE_GTK_INTEGRATION\' in \'<(build_defines)\')")',
+       'pkgconfig_libs': [
+ # In order to work libxkbcommon must be linked statically,
+@@ -20,12 +21,6 @@
+       ],
+     },
      'libraries': [
--      'breakpad_client',
--      'composeplatforminputcontextplugin',
--      'ibusplatforminputcontextplugin',
--      'fcitxplatforminputcontextplugin',
--      'himeplatforminputcontextplugin',
--      'nimfplatforminputcontextplugin',
--      'liblzma.a',
--      'libopenal.a',
--      'libavformat.a',
--      'libavcodec.a',
--      'libswresample.a',
--      'libswscale.a',
--      'libavutil.a',
--      'libopus.a',
--      'libva-x11.a',
--      'libva-drm.a',
--      'libva.a',
--      'libvdpau.a',
--      'libdrm.a',
--      'libz.a',
-+      'lzma',
-+      'openal',
-+      'avformat',
-+      'avcodec',
-+      'swresample',
-+      'swscale',
-+      'avutil',
-+      'opus',
-+      'z',
-+      'minizip',
-+      'tgvoip',
-+      'xxhash',
+-      '-lbreakpad_client',
+-      '-lcomposeplatforminputcontextplugin',
+-      '-libusplatforminputcontextplugin',
+-      '-lfcitxplatforminputcontextplugin',
+-      '-lhimeplatforminputcontextplugin',
+-      '-lnimfplatforminputcontextplugin',
+       '-llzma',
+       '-lopenal',
+       '-lavformat',
+@@ -34,12 +29,9 @@
+       '-lswscale',
+       '-lavutil',
+       '-lopus',
+-      '-lva-x11',
+-      '-lva-drm',
+-      '-lva',
+-      '-lvdpau',
+-      '-ldrm',
+       '-lz',
++      '-ltgvoip',
++      '-lminizip',
  #      '<!(pkg-config 2> /dev/null --libs <@(pkgconfig_libs))',
      ],
      'cflags_cc': [
-@@ -70,36 +62,23 @@
+@@ -47,37 +39,23 @@
        '-Wno-maybe-uninitialized',
      ],
      'ldflags': [
@@ -594,6 +502,7 @@ Last-Update: 2017-12-30
 -      '-Wl,-wrap,secure_getenv',
 -      '-Wl,-wrap,clock_gettime',
        '-Wl,--no-as-needed,-lrt',
+-      '-Wl,-Bstatic',
      ],
      'configurations': {
        'Release': {
@@ -616,26 +525,26 @@ Last-Update: 2017-12-30
 -          '-Wl,-wrap,__divmoddi4',
 -        ],
 -      }], ['not_need_gtk!="True"', {
-+      ['not_need_gtk != "True"', {
++      ['not_need_gtk!="True"', {
          'cflags_cc': [
-           '<!(pkg-config 2> /dev/null --cflags gtk+-2.0)',
-           '<!(pkg-config 2> /dev/null --cflags glib-2.0)',
+-          '<!(pkg-config 2> /dev/null --cflags gtk+-2.0)',
+-          '<!(pkg-config 2> /dev/null --cflags glib-2.0)',
 -          '<!(pkg-config 2> /dev/null --cflags dee-1.0)',
++          '<!(pkg-config --cflags gtk+-2.0)',
++          '<!(pkg-config --cflags glib-2.0)',
          ],
        }], ['<!(pkg-config ayatana-appindicator3-0.1; echo $?) == 0', {
          'cflags_cc': [ '<!(pkg-config --cflags ayatana-appindicator3-0.1)' ],
---- a/Telegram/gyp/telegram_sources.txt
-+++ b/Telegram/gyp/telegram_sources.txt
-@@ -925,20 +925,12 @@
+--- a/Telegram/gyp/telegram/sources.txt
++++ b/Telegram/gyp/telegram/sources.txt
+@@ -859,18 +859,9 @@
  <(src_loc)/mainwindow.h
  <(src_loc)/observer_peer.cpp
  <(src_loc)/observer_peer.h
 -<(src_loc)/qt_static_plugins.cpp
  <(src_loc)/settings.cpp
  <(src_loc)/settings.h
- <(emoji_suggestions_loc)/emoji_suggestions.cpp
- <(emoji_suggestions_loc)/emoji_suggestions.h
- 
+-
 -platforms: !win
 -<(minizip_loc)/crypt.h
 -<(minizip_loc)/ioapi.c
@@ -648,30 +557,57 @@ Last-Update: 2017-12-30
  
  platforms: win
  <(res_loc)/winrc/Telegram.rc
---- a/Telegram/gyp/tests/common_test.gypi
-+++ b/Telegram/gyp/tests/common_test.gypi
-@@ -11,11 +11,7 @@
-   ],
-   'include_dirs': [
-     '<(src_loc)',
--    '<(submodules_loc)/GSL/include',
--    '<(submodules_loc)/variant/include',
--    '<(submodules_loc)/Catch/include',
--    '<(submodules_loc)/crl/src',
--    '<(libs_loc)/range-v3/include',
-+    '../../../debian/crl/src',
-   ],
-   'sources': [
-     '<(src_loc)/base/tests_main.cpp',
---- a/Telegram/gyp/tests/tests.gyp
-+++ b/Telegram/gyp/tests/tests.gyp
-@@ -133,6 +133,9 @@
-       '<(src_loc)/platform/win/windows_dlls.cpp',
-       '<(src_loc)/platform/win/windows_dlls.h',
+--- a/Telegram/gyp/telegram/telegram.gypi
++++ b/Telegram/gyp/telegram/telegram.gypi
+@@ -47,6 +47,7 @@
+         'pt-BR',
+       ],
+       'build_defines%': '',
++      'use_common_xxhash%': 0,
+       'list_sources_command': 'python <(DEPTH)/list_sources.py --input <(DEPTH)/telegram/sources.txt --replace src_loc=<(src_loc)',
+       'pch_source': '<(src_loc)/stdafx.cpp',
+       'pch_header': '<(src_loc)/stdafx.h',
+@@ -72,8 +73,6 @@
+       'codegen.gyp:codegen_numbers',
+       'codegen.gyp:codegen_style',
+       'tests/tests.gyp:tests',
+-      'utils.gyp:Updater',
+-      '../ThirdParty/libtgvoip/libtgvoip.gyp:libtgvoip',
+       'crl.gyp:crl',
+       'lib_base.gyp:lib_base',
+       'lib_export.gyp:lib_export',
+@@ -88,7 +87,6 @@
+       'AL_LIBTYPE_STATIC',
+       'AL_ALEXT_PROTOTYPES',
+       'TGVOIP_USE_CXX11_LIB',
+-      'XXH_INLINE_ALL',
+       'TDESKTOP_API_ID=<(api_id)',
+       'TDESKTOP_API_HASH=<(api_hash)',
+       '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
+@@ -111,6 +109,7 @@
+       '<(submodules_loc)/variant/include',
+       '<(submodules_loc)/crl/src',
+       '<(submodules_loc)/xxHash',
++      '/usr/include/libtgvoip',
      ],
-+    'libraries': [
-+      'xxhash',
-+    ],
-     'conditions': [[ 'not build_win', {
-       'sources!': [
-         '<(src_loc)/platform/win/windows_dlls.cpp',
+     'sources': [
+       '<@(qrc_files)',
+@@ -134,6 +133,7 @@
+         ],
+         'dependencies': [
+           'utils.gyp:Packer',
++          'utils.gyp:Updater',
+         ],
+       }], [ 'build_mac', {
+         'mac_hardened_runtime': 1,
+@@ -155,6 +155,10 @@
+         'sources': [
+           '../../Telegram/Telegram Desktop.entitlements',
+         ],
++      }], [ 'use_common_xxhash', {
++        'libraries': [ '-lxxhash' ],
++      }, {
++        'defines': [ 'XXH_INLINE_ALL' ],
+       }],
+     ],
+   }],

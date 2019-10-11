@@ -10,14 +10,13 @@
 include /usr/share/dpkg/default.mk
 OUT = obj-$(DEB_HOST_GNU_TYPE)
 
-ifeq (,$(filter noopt,$(DEB_BUILD_OPTIONS)))
+ifeq ($(filter noopt,$(DEB_BUILD_OPTIONS)),)
  BUILD_MODE = Release
- ifeq ($(DEB_HOST_ARCH_BITS), 32)
+ ifeq ($(DEB_HOST_ARCH_BITS),32)
   # Less debugging information to avoid running out of address space when
   # linking on architectures with reduced amount of memory.
   DEB_CXXFLAGS_MAINT_APPEND += -g1
  endif
- EXTRA_MACROS += RPL_CONSUMER_TYPE_ERASED_ALWAYS
 else
  BUILD_MODE = Debug
 endif
@@ -26,15 +25,36 @@ endif
 TELEGRAM_API_ID = 50322
 TELEGRAM_API_HASH = 9ff1a639196c0779c86dd661af8522ba
 
+# Deduce exact version of installed Qt by looking to its private headers.
+QT_VERSION = $(shell cd /usr/include/$(DEB_HOST_MULTIARCH)/qt5/QtCore \
+               && ls -d [0-9]*)
+
+GYP_VARIABLES += \
+	api_id=$(TELEGRAM_API_ID) \
+	api_hash=$(TELEGRAM_API_HASH) \
+	cpu_type=$(DEB_HOST_GNU_CPU) \
+	bitness=$(DEB_HOST_ARCH_BITS) \
+	disable_lto \
+	use_packed_resources \
+	use_common_lz4 \
+	use_common_rlottie \
+	use_common_xxhash \
+	qt_version=$(QT_VERSION) \
+	qt_loc=/usr/lib/$(DEB_HOST_MULTIARCH)/qt5 \
+	qt_incdir=/usr/include/$(DEB_HOST_MULTIARCH)/qt5 \
+	qt_libdir=/usr/lib/$(DEB_HOST_MULTIARCH) \
+	linux_lib_xkbcommon= \
+	linux_lib_icu= \
+	linux_lib_ssl= \
+	linux_lib_crypto=libcrypto.so
+
 GYPFLAGS += \
 	--format=cmake \
 	--depth=Telegram/gyp \
 	--generator-output=../.. \
-	-Dapi_id=$(TELEGRAM_API_ID) \
-	-Dapi_hash=$(TELEGRAM_API_HASH) \
-	-Duse_packed_resources \
 	-Goutput_dir=$(OUT) \
-	-Gconfig=$(BUILD_MODE)
+	-Gconfig=$(BUILD_MODE) \
+	$(addprefix -D,$(GYP_VARIABLES))
 
 EXTRA_MACROS += \
 	TDESKTOP_DISABLE_AUTOUPDATE \
@@ -47,14 +67,22 @@ ifneq ($(DEB_HOST_ARCH_OS),linux)
  GYPFLAGS += --no-parallel  # see bugs.debian.org/799356
 endif
 
+comma := ,
+empty :=
+space := $(empty) $(empty)
+GYPFLAGS += -Dbuild_defines=$(subst $(space),$(comma),$(EXTRA_MACROS))
+
 CPPLIBS_PACKAGES = libmapbox-variant-dev libmsgsl-dev librange-v3-dev libtgvoip-dev
 EXTRA_SUBSTVARS += \
 	cpplibs:Built-Using=$(shell dpkg-query -Wf '$${source:Package}(=$${Version}),' $(CPPLIBS_PACKAGES))
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
-export DEB_CPPFLAGS_MAINT_APPEND += $(EXTRA_MACROS:%=-D%)
-export DEB_CXXFLAGS_MAINT_APPEND += -Werror=invalid-pch
-export DEB_LDFLAGS_MAINT_APPEND
+export DEB_CPPFLAGS_MAINT_APPEND += -Werror=invalid-pch
+export DEB_CXXFLAGS_MAINT_APPEND += -Wno-deprecated-copy -Wno-redundant-move
+
+# Make debugging a little easier. https://stackoverflow.com/a/25817631/5000805
+print-%:
+	@echo $* = $($*)
 
 # A generated CMake config will be placed in the next "source" directory.
 %:
