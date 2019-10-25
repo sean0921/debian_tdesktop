@@ -1,3 +1,9 @@
+telegram-desktop (1.8.15-2) unstable; urgency=medium
+
+  * Fixed passing of -mxgot compiler flag for MIPS64.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Fri, 25 Oct 2019 12:41:00 +0300
+
 telegram-desktop (1.8.15-1) unstable; urgency=medium
 
   * New upstream release.
