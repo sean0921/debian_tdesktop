@@ -14,7 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/message_field.h"
 #include "chat_helpers/tabbed_panel.h"
 #include "chat_helpers/tabbed_selector.h"
-#include "core/event_filter.h"
+#include "base/event_filter.h"
 #include "core/file_utilities.h"
 #include "core/mime_type.h"
 #include "data/data_document.h"
@@ -29,9 +29,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "layout.h"
 #include "media/clip/media_clip_reader.h"
 #include "storage/storage_media_prepare.h"
-#include "styles/style_boxes.h"
-#include "styles/style_chat_helpers.h"
-#include "styles/style_history.h"
 #include "ui/image/image.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/widgets/checkbox.h"
@@ -42,6 +39,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "confirm_box.h"
 #include "facades.h"
 #include "app.h"
+#include "styles/style_layers.h"
+#include "styles/style_boxes.h"
+#include "styles/style_chat_helpers.h"
+#include "styles/style_history.h"
 
 #include <QtCore/QMimeData>
 
@@ -267,6 +268,8 @@ EditCaptionBox::EditCaptionBox(
 	_field->setEditLinkCallback(
 		DefaultEditLinkCallback(&_controller->session(), _field));
 
+	InitSpellchecker(&_controller->session(), _field);
+
 	auto r = object_ptr<Ui::SlideWrap<Ui::Checkbox>>(
 		this,
 		object_ptr<Ui::Checkbox>(
@@ -485,97 +488,30 @@ void EditCaptionBox::updateEditMediaButton() {
 
 void EditCaptionBox::createEditMediaButton() {
 	const auto callback = [=](FileDialog::OpenResult &&result) {
-		if (result.paths.isEmpty() && result.remoteContent.isEmpty()) {
-			return;
-		}
-
-		const auto isValidFile = [](QString mimeType) {
-			if (mimeType == qstr("image/webp")) {
-				Ui::show(
-					Box<InformBox>(tr::lng_edit_media_invalid_file(tr::now)),
-					LayerOption::KeepOther);
-				return false;
-			}
-			return true;
+		auto showBoxErrorCallback = [](tr::phrase<> t) {
+			Ui::show(Box<InformBox>(t(tr::now)), Ui::LayerOption::KeepOther);
 		};
 
-		if (!result.remoteContent.isEmpty()) {
+		auto list = Storage::PreparedList::PreparedFileFromFilesDialog(
+			std::move(result),
+			_isAlbum,
+			std::move(showBoxErrorCallback),
+			st::sendMediaPreviewSize);
 
-			auto list = Storage::PrepareMediaFromImage(
-				QImage(),
-				std::move(result.remoteContent),
-				st::sendMediaPreviewSize);
-
-			if (!isValidFile(list.files.front().mime)) {
-				return;
-			}
-
-			if (_isAlbum) {
-				const auto albumMimes = {
-					"image/jpeg",
-					"image/png",
-					"video/mp4",
-				};
-				const auto file = &list.files.front();
-				if (ranges::find(albumMimes, file->mime) == end(albumMimes)
-					|| file->type == Storage::PreparedFile::AlbumType::None) {
-					Ui::show(
-						Box<InformBox>(tr::lng_edit_media_album_error(tr::now)),
-						LayerOption::KeepOther);
-					return;
-				}
-			}
-
-			_preparedList = std::move(list);
-		} else if (!result.paths.isEmpty()) {
-			auto list = Storage::PrepareMediaList(
-				QStringList(result.paths.front()),
-				st::sendMediaPreviewSize);
-
-			// Don't rewrite _preparedList if new list is not valid for album.
-			if (_isAlbum) {
-				using Info = FileMediaInformation;
-
-				const auto media = &list.files.front().information->media;
-				const auto valid = media->match([&](const Info::Image &data) {
-					return Storage::ValidateThumbDimensions(
-						data.data.width(),
-						data.data.height())
-						&& !data.animated;
-				}, [&](Info::Video &data) {
-					data.isGifv = false;
-					return true;
-				}, [](auto &&other) {
-					return false;
-				});
-				if (!valid) {
-					Ui::show(
-						Box<InformBox>(tr::lng_edit_media_album_error(tr::now)),
-						LayerOption::KeepOther);
-					return;
-				}
-			}
-			const auto info = QFileInfo(result.paths.front());
-			if (!isValidFile(Core::MimeTypeForFile(info).name())) {
-				return;
-			}
-
-			_preparedList = std::move(list);
-		} else {
-			return;
+		if (list) {
+			_preparedList = std::move(*list);
+			updateEditPreview();
 		}
-
-		updateEditPreview();
 	};
 
 	const auto buttonCallback = [=] {
 		const auto filters = _isAlbum
-			? QStringList(qsl("Image and Video Files (*.png *.jpg *.mp4)"))
-			: QStringList(FileDialog::AllFilesFilter());
+			? FileDialog::AlbumFilesFilter()
+			: FileDialog::AllFilesFilter();
 		FileDialog::GetOpenPath(
 			this,
 			tr::lng_choose_file(tr::now),
-			filters.join(qsl(";;")),
+			filters,
 			crl::guard(this, callback));
 	};
 
@@ -687,7 +623,7 @@ bool EditCaptionBox::fileFromClipboard(not_null<const QMimeData*> data) {
 		&& _isAlbum) {
 		Ui::show(
 			Box<InformBox>(tr::lng_edit_media_album_error(tr::now)),
-			LayerOption::KeepOther);
+			Ui::LayerOption::KeepOther);
 		return false;
 	}
 
@@ -724,9 +660,9 @@ void EditCaptionBox::setupEmojiPanel() {
 
 	const auto filterCallback = [=](not_null<QEvent*> event) {
 		emojiFilterForGeometry(event);
-		return Core::EventFilter::Result::Continue;
+		return base::EventFilterResult::Continue;
 	};
-	_emojiFilter.reset(Core::InstallEventFilter(container, filterCallback));
+	_emojiFilter.reset(base::install_event_filter(container, filterCallback));
 
 	_emojiToggle.create(this, st::boxAttachEmoji);
 	_emojiToggle->installEventFilter(_emojiPanel);
@@ -753,7 +689,7 @@ void EditCaptionBox::updateBoxSize() {
 }
 
 int EditCaptionBox::errorTopSkip() const {
-	return (st::boxButtonPadding.top() / 2);
+	return (st::defaultBox.buttonPadding.top() / 2);
 }
 
 void EditCaptionBox::paintEvent(QPaintEvent *e) {

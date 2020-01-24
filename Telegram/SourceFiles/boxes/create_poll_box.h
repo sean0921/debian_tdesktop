@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/abstract_box.h"
 #include "api/api_common.h"
 #include "data/data_poll.h"
+#include "base/flags.h"
 
 struct PollData;
 
@@ -21,7 +22,7 @@ namespace Main {
 class Session;
 } // namespace Main
 
-class CreatePollBox : public BoxContent {
+class CreatePollBox : public Ui::BoxContent {
 public:
 	struct Result {
 		PollData poll;
@@ -31,6 +32,8 @@ public:
 	CreatePollBox(
 		QWidget*,
 		not_null<Main::Session*> session,
+		PollData::Flags chosen,
+		PollData::Flags disabled,
 		Api::SendType sendType);
 
 	rpl::producer<Result> submitRequests() const;
@@ -42,11 +45,22 @@ protected:
 	void prepare() override;
 
 private:
+	enum class Error {
+		Question = 0x01,
+		Options  = 0x02,
+		Correct  = 0x04,
+		Other    = 0x08,
+	};
+	friend constexpr inline bool is_flag_type(Error) { return true; }
+	using Errors = base::flags<Error>;
+
 	object_ptr<Ui::RpWidget> setupContent();
 	not_null<Ui::InputField*> setupQuestion(
 		not_null<Ui::VerticalLayout*> container);
 
 	const not_null<Main::Session*> _session;
+	const PollData::Flags _chosen = PollData::Flags();
+	const PollData::Flags _disabled = PollData::Flags();
 	const Api::SendType _sendType = Api::SendType();
 	Fn<void()> _setInnerFocus;
 	Fn<rpl::producer<bool>()> _dataIsValidValue;

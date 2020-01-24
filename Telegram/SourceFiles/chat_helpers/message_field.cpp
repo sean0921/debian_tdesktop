@@ -12,18 +12,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h" // HistoryItem::originalText
 #include "base/qthelp_regex.h"
 #include "base/qthelp_url.h"
+#include "base/event_filter.h"
 #include "boxes/abstract_box.h"
+#include "core/shortcuts.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/ui_utility.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
-#include "core/event_filter.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "window/window_session_controller.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "main/main_session.h"
+#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_history.h"
 
@@ -32,6 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QGuiApplication>
 #include <QtGui/QTextBlock>
 #include <QtGui/QClipboard>
+#include <QtWidgets/QApplication>
 
 namespace {
 
@@ -57,7 +60,7 @@ public:
 
 };
 
-class EditLinkBox : public BoxContent {
+class EditLinkBox : public Ui::BoxContent {
 public:
 	EditLinkBox(
 		QWidget*,
@@ -126,6 +129,7 @@ void EditLinkBox::prepare() {
 		getDelegate()->outerContainer(),
 		text,
 		_session);
+	InitSpellchecker(_session, text);
 
 	const auto url = content->add(
 		object_ptr<Ui::InputField>(
@@ -247,7 +251,7 @@ Fn<bool(
 			if (const auto strong = weak.data()) {
 				strong->commitMarkdownLinkEdit(selection, text, link);
 			}
-		}), LayerOption::KeepOther);
+		}), Ui::LayerOption::KeepOther);
 		return true;
 	};
 }
@@ -270,6 +274,25 @@ void InitMessageField(
 	field->setMarkdownReplacesEnabled(rpl::single(true));
 	field->setEditLinkCallback(
 		DefaultEditLinkCallback(&controller->session(), field));
+}
+
+void InitSpellchecker(
+		not_null<Main::Session*> session,
+		not_null<Ui::InputField*> field) {
+#ifndef TDESKTOP_DISABLE_SPELLCHECK
+	if (!Platform::Spellchecker::IsAvailable()) {
+		return;
+	}
+	const auto s = Ui::CreateChild<Spellchecker::SpellingHighlighter>(
+		field.get(),
+		session->settings().spellcheckerEnabledValue());
+	Spellchecker::SetPhrases({ {
+		{ &ph::lng_spellchecker_add, tr::lng_spellchecker_add() },
+		{ &ph::lng_spellchecker_remove, tr::lng_spellchecker_remove() },
+		{ &ph::lng_spellchecker_ignore, tr::lng_spellchecker_ignore() },
+	} });
+	field->setExtendedContextMenu(s->contextMenuCreated());
+#endif // TDESKTOP_DISABLE_SPELLCHECK
 }
 
 bool HasSendText(not_null<const Ui::InputField*> field) {
@@ -645,7 +668,7 @@ void MessageLinksParser::apply(
 	_list = std::move(parsed);
 }
 
-void SetupSendMenu(
+void SetupSendMenuAndShortcuts(
 		not_null<Ui::RpWidget*> button,
 		Fn<SendMenuType()> type,
 		Fn<void()> silent,
@@ -667,18 +690,60 @@ void SetupSendMenu(
 		}
 		if (schedule && now != SendMenuType::SilentOnly) {
 			(*menu)->addAction(
-				(now == SendMenuType::Scheduled
-					? tr::lng_schedule_message(tr::now)
-					: tr::lng_reminder_message(tr::now)),
+				(now == SendMenuType::Reminder
+					? tr::lng_reminder_message(tr::now)
+					: tr::lng_schedule_message(tr::now)),
 				schedule);
 		}
 		(*menu)->popup(QCursor::pos());
 		return true;
 	};
-	Core::InstallEventFilter(button, [=](not_null<QEvent*> e) {
+	base::install_event_filter(button, [=](not_null<QEvent*> e) {
 		if (e->type() == QEvent::ContextMenu && showMenu()) {
-			return Core::EventFilter::Result::Cancel;
+			return base::EventFilterResult::Cancel;
 		}
-		return Core::EventFilter::Result::Continue;
+		return base::EventFilterResult::Continue;
 	});
+
+	Shortcuts::Requests(
+	) | rpl::start_with_next([=](not_null<Shortcuts::Request*> request) {
+		using Command = Shortcuts::Command;
+
+		const auto now = type();
+		if (now == SendMenuType::Disabled
+			|| (!silent && now == SendMenuType::SilentOnly)) {
+			return;
+		}
+		(silent
+			&& (now != SendMenuType::Reminder)
+			&& request->check(Command::SendSilentMessage)
+			&& request->handle([=] {
+				silent();
+				return true;
+			}))
+		||
+		(schedule
+			&& (now != SendMenuType::SilentOnly)
+			&& request->check(Command::ScheduleMessage)
+			&& request->handle([=] {
+				schedule();
+				return true;
+			}))
+		||
+		(request->check(Command::JustSendMessage) && request->handle([=] {
+			const auto post = [&](QEvent::Type type) {
+				QApplication::postEvent(
+					button,
+					new QMouseEvent(
+						type,
+						QPointF(0, 0),
+						Qt::LeftButton,
+						Qt::LeftButton,
+						Qt::NoModifier));
+			};
+			post(QEvent::MouseButtonPress);
+			post(QEvent::MouseButtonRelease);
+			return true;
+		}));
+	}, button->lifetime());
 }

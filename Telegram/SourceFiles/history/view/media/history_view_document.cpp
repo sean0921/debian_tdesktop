@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_document.h"
 #include "data/data_media_types.h"
+#include "data/data_file_origin.h"
 #include "app.h"
 #include "styles/style_history.h"
 
@@ -28,6 +29,35 @@ namespace HistoryView {
 namespace {
 
 constexpr auto kAudioVoiceMsgUpdateView = crl::time(100);
+
+[[nodiscard]] QString CleanTagSymbols(const QString &value) {
+	auto result = QString();
+	const auto begin = value.begin(), end = value.end();
+	auto from = begin;
+	for (auto ch = begin; ch != end; ++ch) {
+		if (ch->isHighSurrogate()
+			&& (ch + 1) != end
+			&& (ch + 1)->isLowSurrogate()
+			&& QChar::surrogateToUcs4(
+				ch->unicode(),
+				(ch + 1)->unicode()) >= 0xe0000) {
+			if (ch > from) {
+				if (result.isEmpty()) {
+					result.reserve(value.size());
+				}
+				result.append(from, ch - from);
+			}
+			++ch;
+			from = ch + 1;
+		}
+	}
+	if (from == begin) {
+		return value;
+	} else if (end > from) {
+		result.append(from, end - from);
+	}
+	return result;
+}
 
 } // namespace
 
@@ -37,10 +67,10 @@ Document::Document(
 : File(parent, parent->data())
 , _data(document) {
 	const auto item = parent->data();
-	auto caption = createCaption(item);
+	auto caption = createCaption();
 
 	createComponents(!caption.isEmpty());
-	if (auto named = Get<HistoryDocumentNamed>()) {
+	if (const auto named = Get<HistoryDocumentNamed>()) {
 		fillNamedFromData(named);
 	}
 
@@ -48,7 +78,7 @@ Document::Document(
 
 	setStatusSize(FileStatusSizeReady);
 
-	if (auto captioned = Get<HistoryDocumentCaptioned>()) {
+	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		captioned->_caption = std::move(caption);
 	}
 }
@@ -103,7 +133,8 @@ void Document::createComponents(bool caption) {
 }
 
 void Document::fillNamedFromData(HistoryDocumentNamed *named) {
-	const auto nameString = named->_name = _data->composeNameString();
+	const auto nameString = named->_name = CleanTagSymbols(
+		_data->composeNameString());
 	named->_namew = st::semiboldFont->width(nameString);
 }
 
@@ -210,7 +241,9 @@ void Document::draw(Painter &p, const QRect &r, TextSelection selection, crl::ti
 
 	const auto cornerDownload = downloadInCorner();
 
-	_data->automaticLoad(_realParent->fullId(), _parent->data());
+	if (!_data->canBePlayed()) {
+		_data->automaticLoad(_realParent->fullId(), _parent->data());
+	}
 	bool loaded = _data->loaded(), displayLoading = _data->displayLoading();
 	bool selected = (selection == FullSelection);
 
@@ -827,7 +860,7 @@ void Document::refreshParentId(not_null<HistoryItem*> realParent) {
 
 void Document::parentTextUpdated() {
 	auto caption = (_parent->media() == this)
-		? createCaption(_parent->data())
+		? createCaption()
 		: Ui::Text::String();
 	if (!caption.isEmpty()) {
 		AddComponents(HistoryDocumentCaptioned::Bit());
@@ -844,6 +877,19 @@ TextWithEntities Document::getCaption() const {
 		return captioned->_caption.toTextWithEntities();
 	}
 	return TextWithEntities();
+}
+
+Ui::Text::String Document::createCaption() {
+	const auto timestampLinksDuration = _data->isSong()
+		? _data->getDuration()
+		: 0;
+	const auto timestampLinkBase = timestampLinksDuration
+		? DocumentTimestampLinkBase(_data, _realParent->fullId())
+		: QString();
+	return File::createCaption(
+		_parent->data(),
+		timestampLinksDuration,
+		timestampLinkBase);
 }
 
 } // namespace HistoryView

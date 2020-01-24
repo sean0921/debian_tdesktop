@@ -39,17 +39,17 @@ using Platform::File::internal::EscapeShell;
 namespace {
 
 bool RunShellCommand(const QByteArray &command) {
-        auto result = system(command.constData());
-        if (result) {
-                DEBUG_LOG(("App Error: command failed, code: %1, command (in utf8): %2").arg(result).arg(command.constData()));
-                return false;
-        }
-        DEBUG_LOG(("App Info: command succeeded, command (in utf8): %1").arg(command.constData()));
-        return true;
+	auto result = system(command.constData());
+	if (result) {
+		DEBUG_LOG(("App Error: command failed, code: %1, command (in utf8): %2").arg(result).arg(command.constData()));
+		return false;
+	}
+	DEBUG_LOG(("App Info: command succeeded, command (in utf8): %1").arg(command.constData()));
+	return true;
 }
 
 void FallbackFontConfig() {
-#ifndef TDESKTOP_DISABLE_DESKTOP_FILE_GENERATION
+#ifndef DESKTOP_APP_USE_PACKAGED
 	const auto custom = cWorkingDir() + "tdata/fc-custom-1.conf";
 	const auto finish = gsl::finally([&] {
 		if (QFile(custom).exists()) {
@@ -84,7 +84,7 @@ void FallbackFontConfig() {
 	}
 
 	QFile(":/fc/fc-custom.conf").copy(custom);
-#endif // TDESKTOP_DISABLE_DESKTOP_FILE_GENERATION
+#endif // !DESKTOP_APP_USE_PACKAGED
 }
 
 } // namespace
@@ -93,6 +93,13 @@ namespace Platform {
 
 void SetApplicationIcon(const QIcon &icon) {
 	QApplication::setWindowIcon(icon);
+}
+
+bool InSandbox() {
+	static const auto Sandbox = QFileInfo::exists(
+		QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation)
+		+ qsl("/flatpak-info"));
+	return Sandbox;
 }
 
 QString CurrentExecutablePath(int argc, char *argv[]) {
@@ -110,6 +117,23 @@ QString CurrentExecutablePath(int argc, char *argv[]) {
 
 	// Fallback to the first command line argument.
 	return argc ? QFile::decodeName(argv[0]) : QString();
+}
+
+QString SingleInstanceLocalServerName(const QString &hash) {
+	const auto runtimeDir = QStandardPaths::writableLocation(
+		QStandardPaths::RuntimeLocation);
+
+	if (InSandbox()) {
+		return runtimeDir
+			+ qsl("/app/")
+			+ QString::fromUtf8(qgetenv("FLATPAK_ID"))
+			+ '/' + hash;
+	} else if (QFileInfo::exists(runtimeDir)) {
+		return runtimeDir + '/' + hash + '-' + cGUIDStr();
+	} else { // non-systemd distros
+		return QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+			+ '/' + hash + '-' + cGUIDStr();
+	}
 }
 
 } // namespace Platform
@@ -229,7 +253,6 @@ void start() {
 }
 
 void finish() {
-	Notifications::Finish();
 }
 
 void RegisterCustomScheme() {
@@ -361,6 +384,7 @@ bool OpenSystemSettings(SystemSettingsType type) {
 		} else if (DesktopEnvironment::IsGnome()) {
 			add("gnome-control-center sound");
 		}
+		add("pavucontrol-qt");
 		add("pavucontrol");
 		add("alsamixergui");
 		return ranges::find_if(options, [](const QString &command) {
