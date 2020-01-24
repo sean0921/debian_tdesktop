@@ -1092,7 +1092,7 @@ QPoint ListWidget::tooltipPos() const {
 }
 
 bool ListWidget::tooltipWindowActive() const {
-	return Ui::InFocusChain(window());
+	return Ui::AppInFocus() && Ui::InFocusChain(window());
 }
 
 Context ListWidget::elementContext() {
@@ -1151,6 +1151,11 @@ bool ListWidget::elementIntersectsRange(
 }
 
 void ListWidget::elementStartStickerLoop(not_null<const Element*> view) {
+}
+
+void ListWidget::elementShowPollResults(
+	not_null<PollData*> poll,
+	FullMsgId context) {
 }
 
 void ListWidget::saveState(not_null<ListMemento*> memento) {
@@ -1386,7 +1391,7 @@ void ListWidget::paintEvent(QPaintEvent *e) {
 					} else {
 						ServiceMessagePainter::paintDate(
 							p,
-							view->dateTime(),
+							ItemDateText(view->data(), IsItemScheduledUntilOnline(view->data())),
 							dateY,
 							width);
 					}
@@ -2393,7 +2398,9 @@ void ListWidget::repaintItem(const Element *view) {
 	if (!view) {
 		return;
 	}
-	update(0, itemTop(view), width(), view->height());
+	const auto top = itemTop(view);
+	const auto range = view->verticalRepaintRange();
+	update(0, top + range.top, width(), range.height);
 }
 
 void ListWidget::repaintItem(FullMsgId itemId) {

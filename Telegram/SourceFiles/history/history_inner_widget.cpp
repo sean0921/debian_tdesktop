@@ -30,12 +30,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/inactive_press.h"
 #include "window/window_session_controller.h"
 #include "window/window_peer_menu.h"
+#include "window/window_controller.h"
 #include "boxes/confirm_box.h"
 #include "boxes/report_box.h"
 #include "boxes/sticker_set_box.h"
 #include "chat_helpers/message_field.h"
 #include "chat_helpers/stickers.h"
 #include "history/history_widget.h"
+#include "base/platform/base_platform_info.h"
 #include "base/unixtime.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -43,7 +45,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "core/application.h"
 #include "apiwrap.h"
-#include "platform/platform_info.h"
 #include "lang/lang_keys.h"
 #include "data/data_session.h"
 #include "data/data_media_types.h"
@@ -62,7 +63,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace {
 
 constexpr auto kScrollDateHideTimeout = 1000;
-constexpr auto kUnloadHeavyPartsPages = 3;
+constexpr auto kUnloadHeavyPartsPages = 1;
 
 // Helper binary search for an item in a list that is not completely
 // above the given top of the visible area or below the given bottom of the visible area
@@ -241,7 +242,8 @@ void HistoryInner::repaintItem(const Element *view) {
 	}
 	const auto top = itemTop(view);
 	if (top >= 0) {
-		update(0, top, width(), view->height());
+		const auto range = view->verticalRepaintRange();
+		update(0, top + range.top, width(), range.height);
 	}
 }
 
@@ -1568,8 +1570,16 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		const auto lnkIsVideo = document->isVideoFile();
 		const auto lnkIsVoice = document->isVoiceMessage();
 		const auto lnkIsAudio = document->isAudioFile();
-		if (document->loaded() && document->isGifv()) {
-			if (!document->session().settings().autoplayGifs()) {
+		if (document->isGifv()) {
+			const auto notAutoplayedGif = [&] {
+				return item
+					&& document->isGifv()
+					&& !Data::AutoDownload::ShouldAutoPlay(
+						document->session().settings().autoDownload(),
+						item->history()->peer,
+						document);
+			}();
+			if (notAutoplayedGif) {
 				_menu->addAction(tr::lng_context_open_gif(tr::now), [=] {
 					openContextGif(itemId);
 				});
@@ -1711,8 +1721,8 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				}
 				if (const auto media = item->media()) {
 					if (const auto poll = media->poll()) {
-						if (!poll->closed) {
-							if (poll->voted()) {
+						if (!poll->closed()) {
+							if (poll->voted() && !poll->quiz()) {
 								_menu->addAction(tr::lng_polls_retract(tr::now), [=] {
 									session().api().sendPollVotes(itemId, {});
 								});
@@ -2408,6 +2418,12 @@ bool HistoryInner::elementIntersectsRange(
 void HistoryInner::elementStartStickerLoop(
 		not_null<const Element*> view) {
 	_animatedStickersPlayed.emplace(view->data());
+}
+
+void HistoryInner::elementShowPollResults(
+		not_null<PollData*> poll,
+		FullMsgId context) {
+	_controller->showPollResults(poll, context);
 }
 
 auto HistoryInner::getSelectionState() const
@@ -3199,7 +3215,7 @@ QPoint HistoryInner::tooltipPos() const {
 }
 
 bool HistoryInner::tooltipWindowActive() const {
-	return Ui::InFocusChain(window());
+	return Ui::AppInFocus() && Ui::InFocusChain(window());
 }
 
 void HistoryInner::onParentGeometryChanged() {
@@ -3268,6 +3284,13 @@ not_null<HistoryView::ElementDelegate*> HistoryInner::ElementDelegate() {
 				not_null<const Element*> view) override {
 			if (Instance) {
 				Instance->elementStartStickerLoop(view);
+			}
+		}
+		void elementShowPollResults(
+				not_null<PollData*> poll,
+				FullMsgId context) override {
+			if (Instance) {
+				Instance->elementShowPollResults(poll, context);
 			}
 		}
 

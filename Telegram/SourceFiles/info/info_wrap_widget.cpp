@@ -217,7 +217,7 @@ Dialogs::RowDescriptor WrapWidget::activeChat() const {
 		return Dialogs::RowDescriptor(peer->owner().history(peer), FullMsgId());
 	//} else if (const auto feed = key().feed()) { // #feed
 	//	return Dialogs::RowDescriptor(feed, FullMsgId());
-	} else if (key().settingsSelf()) {
+	} else if (key().settingsSelf() || key().poll()) {
 		return Dialogs::RowDescriptor();
 	}
 	Unexpected("Owner in WrapWidget::activeChat().");
@@ -1043,7 +1043,7 @@ object_ptr<Ui::RpWidget> WrapWidget::createTopBarSurrogate(
 		});
 		result->setGeometry(_topBar->geometry());
 		result->show();
-		return std::move(result);
+		return result;
 	}
 	return nullptr;
 }

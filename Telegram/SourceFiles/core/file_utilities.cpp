@@ -160,53 +160,6 @@ QString DefaultDownloadPath() {
 		+ '/';
 }
 
-QString NameFromUserString(QString name) {
-	static const auto Bad = { '/', '\\', '<', '>', ':', '"', '|', '?', '*' };
-	for (auto &ch : name) {
-		if (ch < 32 || ranges::find(Bad, ch.unicode()) != end(Bad)) {
-			ch = '_';
-		}
-	}
-	if (name.isEmpty() || name.endsWith(' ') || name.endsWith('.')) {
-		name.append('_');
-	}
-#ifdef Q_OS_WIN
-	static const auto BadNames = {
-		qstr("CON"),
-		qstr("PRN"),
-		qstr("AUX"),
-		qstr("NUL"),
-		qstr("COM1"),
-		qstr("COM2"),
-		qstr("COM3"),
-		qstr("COM4"),
-		qstr("COM5"),
-		qstr("COM6"),
-		qstr("COM7"),
-		qstr("COM8"),
-		qstr("COM9"),
-		qstr("LPT1"),
-		qstr("LPT2"),
-		qstr("LPT3"),
-		qstr("LPT4"),
-		qstr("LPT5"),
-		qstr("LPT6"),
-		qstr("LPT7"),
-		qstr("LPT8"),
-		qstr("LPT9")
-	};
-	for (const auto bad : BadNames) {
-		if (name.startsWith(bad, Qt::CaseInsensitive)) {
-			if (name.size() == bad.size() || name[bad.size()] == '.') {
-				name = '_' + name;
-				break;
-			}
-		}
-	}
-#endif // Q_OS_WIN
-	return name;
-}
-
 namespace internal {
 
 void UnsafeOpenEmailLinkDefault(const QString &email) {
@@ -342,6 +295,10 @@ QString AllFilesFilter() {
 #endif // Q_OS_WIN
 }
 
+QString AlbumFilesFilter() {
+	return qsl("Image and Video Files (*.png *.jpg *.mp4 *.jpeg)");
+}
+
 namespace internal {
 
 void InitLastPathDefault() {
@@ -360,11 +317,13 @@ bool GetDefault(
 		Platform::FileDialog::InitLastPath();
 	}
 
-    remoteContent = QByteArray();
+	remoteContent = QByteArray();
 	if (startFile.isEmpty() || startFile.at(0) != '/') {
 		startFile = cDialogLastPath() + '/' + startFile;
 	}
 	QString file;
+
+	Core::App().notifyFileDialogShown(true);
 	if (type == Type::ReadFiles) {
 		files = QFileDialog::getOpenFileNames(Core::App().getFileDialogParent(), caption, startFile, filter);
 		QString path = files.isEmpty() ? QString() : QFileInfo(files.back()).absoluteDir().absolutePath();
@@ -373,17 +332,19 @@ bool GetDefault(
 			Local::writeUserSettings();
 		}
 		return !files.isEmpty();
-    } else if (type == Type::ReadFolder) {
+	} else if (type == Type::ReadFolder) {
 		file = QFileDialog::getExistingDirectory(Core::App().getFileDialogParent(), caption, startFile);
-    } else if (type == Type::WriteFile) {
+	} else if (type == Type::WriteFile) {
 		file = QFileDialog::getSaveFileName(Core::App().getFileDialogParent(), caption, startFile, filter);
-    } else {
+	} else {
 		file = QFileDialog::getOpenFileName(Core::App().getFileDialogParent(), caption, startFile, filter);
-    }
-    if (file.isEmpty()) {
-        files = QStringList();
-        return false;
-    }
+	}
+	Core::App().notifyFileDialogShown(false);
+
+	if (file.isEmpty()) {
+		files = QStringList();
+		return false;
+	}
 	if (type != Type::ReadFolder) {
 		// Save last used directory for all queries except directory choosing.
 		auto path = QFileInfo(file).absoluteDir().absolutePath();

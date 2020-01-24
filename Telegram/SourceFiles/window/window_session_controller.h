@@ -47,9 +47,12 @@ struct FormRequest;
 class FormController;
 } // namespace Passport
 
+namespace Ui {
+class LayerWidget;
+} // namespace Ui
+
 namespace Window {
 
-class LayerWidget;
 class MainWindow;
 class SectionMemento;
 class Controller;
@@ -144,6 +147,11 @@ public:
 		Settings::Type type,
 		const SectionShow &params = SectionShow());
 	void showSettings(const SectionShow &params = SectionShow());
+
+	void showPollResults(
+		not_null<PollData*> poll,
+		FullMsgId contextId,
+		const SectionShow &params = SectionShow());
 
 	virtual ~SessionNavigation() = default;
 
@@ -244,7 +252,7 @@ public:
 	}
 
 	void showSpecialLayer(
-		object_ptr<LayerWidget> &&layer,
+		object_ptr<Ui::LayerWidget> &&layer,
 		anim::type animated = anim::type::normal);
 	void hideSpecialLayer(
 			anim::type animated = anim::type::normal) {

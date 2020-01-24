@@ -158,6 +158,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_deleted_message" = "Deleted message";
 "lng_pinned_message" = "Pinned message";
 "lng_pinned_poll" = "Pinned poll";
+"lng_pinned_quiz" = "Pinned quiz";
 "lng_pinned_unpin_sure" = "Would you like to unpin this message?";
 "lng_pinned_pin_sure" = "Would you like to pin this message?";
 "lng_pinned_pin" = "Pin";
@@ -178,8 +179,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_photo_caption" = "Caption";
 "lng_photos_comment" = "Comment";
 
+"lng_intro_qr_title" = "Scan From Mobile Telegram";
+"lng_intro_qr_step1" = "Open Telegram on your phone";
+"lng_intro_qr_step2" = "Go to Settings > Devices > Scan QR Code";
+"lng_intro_qr_step3" = "Scan this image to Log In";
+"lng_intro_qr_skip" = "Or log in using your phone number";
+
 "lng_phone_title" = "Your Phone Number";
 "lng_phone_desc" = "Please confirm your country code and\nenter your mobile phone number.";
+"lng_phone_to_qr" = "Quick log in using QR code";
 "lng_country_code" = "Country Code";
 "lng_bad_country_code" = "Invalid Country Code";
 "lng_country_ph" = "Search";
@@ -408,7 +416,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_system_integration" = "System integration";
 "lng_settings_performance" = "Performance";
 "lng_settings_enable_animations" = "Enable animations";
-"lng_settings_autoplay_gifs" = "Autoplay GIFs";
+"lng_settings_sensitive_title" = "Sensitive content";
+"lng_settings_sensitive_disable_filtering" = "Disable filtering";
+"lng_settings_sensitive_about" = "Display sensitive media in public channels on all your Telegram devices.";
+
+"lng_settings_spellchecker" = "Spell checker";
+"lng_settings_system_spellchecker" = "Use system spell checker";
 
 "lng_backgrounds_header" = "Choose your new chat background";
 "lng_theme_sure_keep" = "Keep this theme?";
@@ -1140,12 +1153,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_media_auto_in_groups" = "In groups";
 "lng_media_auto_in_channels" = "In channels";
 "lng_media_auto_title" = "Automatically download";
+"lng_media_auto_play" = "Autoplay";
 "lng_media_photo_title" = "Photos";
 "lng_media_video_title" = "Video files";
-"lng_media_audio_title" = "Voice messages";
 "lng_media_video_messages_title" = "Round video messages";
 "lng_media_file_title" = "Files";
-"lng_media_music_title" = "Music";
 "lng_media_animation_title" = "Animated GIFs";
 "lng_media_size_limit" = "Limit by size";
 "lng_media_size_up_to" = "up to {size}";
@@ -1283,6 +1295,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_scheduled_messages" = "Scheduled Messages";
 "lng_reminder_messages" = "Reminders";
+"lng_scheduled_date" = "Scheduled for {date}";
+"lng_scheduled_date_until_online" = "Scheduled until online";
+"lng_scheduled_send_until_online" = "Send when online";
 "lng_scheduled_send_now" = "Send message now?";
 "lng_scheduled_send_now_many#one" = "Send {count} message now?";
 "lng_scheduled_send_now_many#other" = "Send {count} messages now?";
@@ -1442,6 +1457,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_send_album" = "Send as an album";
 "lng_send_photo" = "Send as a photo";
 "lng_send_file" = "Send as a file";
+"lng_send_media_invalid_files" = "Sorry, no valid files found.";
 
 "lng_forward_choose" = "Choose recipient...";
 "lng_forward_cant" = "Sorry, no way to forward here :(";
@@ -1590,6 +1606,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_formatting_link_text" = "Text";
 "lng_formatting_link_url" = "URL";
 "lng_formatting_link_create" = "Create";
+
+"lng_spellchecker_add" = "Add to Dictionary";
+"lng_spellchecker_remove" = "Remove from Dictionary";
+"lng_spellchecker_ignore" = "Ignore word";
 
 "lng_full_name" = "{first_name} {last_name}";
 
@@ -1781,6 +1801,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_restricted_send_gifs_all" = "Posting GIFs isn't allowed in this group.";
 "lng_restricted_send_inline_all" = "Posting inline content isn't allowed in this group.";
 "lng_restricted_send_polls_all" = "Posting polls isn't allowed in this group.";
+
+"lng_restricted_send_public_polls" = "Sorry, public polls can't be forwarded to channels.";
 
 "lng_exceptions_list_title" = "Exceptions";
 "lng_removed_list_title" = "Removed users";
@@ -2151,10 +2173,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_launch_exe_dont_ask" = "Don't ask me again";
 
 "lng_polls_anonymous" = "Anonymous Poll";
+"lng_polls_public" = "Poll";
+"lng_polls_anonymous_quiz" = "Anonymous Quiz";
+"lng_polls_public_quiz" = "Quiz";
 "lng_polls_closed" = "Final results";
 "lng_polls_votes_count#one" = "{count} vote";
 "lng_polls_votes_count#other" = "{count} votes";
 "lng_polls_votes_none" = "No votes";
+"lng_polls_answers_count#one" = "{count} answer";
+"lng_polls_answers_count#other" = "{count} answers";
+"lng_polls_answers_none" = "No answers";
+"lng_polls_submit_votes" = "Vote";
+"lng_polls_view_results" = "View results";
 "lng_polls_retract" = "Retract vote";
 "lng_polls_stop" = "Stop poll";
 "lng_polls_stop_warning" = "If you stop this poll now, nobody will be able to vote in it anymore. This action cannot be undone.";
@@ -2168,7 +2198,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_polls_create_limit#one" = "You can add {count} more option.";
 "lng_polls_create_limit#other" = "You can add {count} more options.";
 "lng_polls_create_maximum" = "You have added the maximum number of options.";
+"lng_polls_create_settings" = "Settings";
+"lng_polls_create_hint" = "Tap to select the right option";
+"lng_polls_create_anonymous" = "Anonymous Votes";
+"lng_polls_create_multiple_choice" = "Multiple Answers";
+"lng_polls_create_quiz_mode" = "Quiz Mode";
 "lng_polls_create_button" = "Create";
+"lng_polls_choose_question" = "Please enter a question.";
+"lng_polls_choose_answers" = "Please enter at least two options.";
+"lng_polls_choose_correct" = "Please choose the correct answer.";
+
+"lng_polls_poll_results_title" = "Poll results";
+"lng_polls_quiz_results_title" = "Quiz results";
+"lng_polls_show_more#one" = "Show more ({count})";
+"lng_polls_show_more#other" = "Show more ({count})";
+"lng_polls_votes_collapse" = "Collapse";
 
 "lng_outdated_title" = "PLEASE UPDATE YOUR OPERATING SYSTEM.";
 "lng_outdated_soon" = "Otherwise, Telegram Desktop will stop updating on {date}.";
@@ -2224,6 +2268,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_mac_menu_new_group" = "New Group";
 "lng_mac_menu_new_channel" = "New Channel";
 "lng_mac_menu_show" = "Show Telegram";
+"lng_mac_menu_emoji_and_symbols" = "Emoji & Symbols";
 
 "lng_mac_touchbar_favorite_stickers" = "Favorite stickers";
 

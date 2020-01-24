@@ -12,8 +12,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "media/clip/media_clip_reader.h"
 #include "window/window_session_controller.h"
+#include "window/window_peer_menu.h"
 #include "history/history_item_components.h"
-#include "platform/platform_info.h"
+#include "base/platform/base_platform_info.h"
 #include "data/data_peer.h"
 #include "data/data_user.h"
 #include "observer_peer.h"
@@ -23,7 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "boxes/confirm_box.h"
 #include "boxes/url_auth_box.h"
-#include "window/layer_widget.h"
+#include "ui/layers/layer_widget.h"
 #include "lang/lang_keys.h"
 #include "base/observer.h"
 #include "history/history.h"
@@ -33,13 +34,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 
 namespace App {
-namespace internal {
-
-void CallDelayed(int duration, FnMut<void()> &&lambda) {
-	Core::App().callDelayed(duration, std::move(lambda));
-}
-
-} // namespace internal
 
 void sendBotCommand(PeerData *peer, UserData *bot, const QString &cmd, MsgId replyTo) {
 	if (auto m = App::main()) {
@@ -120,6 +114,19 @@ void activateBotCommand(
 				history->session().user(),
 				action);
 		}));
+	} break;
+
+	case ButtonType::RequestPoll: {
+		hideSingleUseKeyboard(msg);
+		auto chosen = PollData::Flags();
+		auto disabled = PollData::Flags();
+		if (!button->data.isEmpty()) {
+			disabled |= PollData::Flag::Quiz;
+			if (button->data[0]) {
+				chosen |= PollData::Flag::Quiz;
+			}
+		}
+		Window::PeerMenuCreatePoll(msg->history()->peer, chosen, disabled);
 	} break;
 
 	case ButtonType::SwitchInlineSame:
@@ -380,9 +387,9 @@ struct Data {
 	bool NotificationsDemoIsShown = false;
 
 	bool TryIPv6 = !Platform::IsWindows();
-	std::vector<ProxyData> ProxiesList;
-	ProxyData SelectedProxy;
-	ProxyData::Settings ProxySettings = ProxyData::Settings::System;
+	std::vector<MTP::ProxyData> ProxiesList;
+	MTP::ProxyData SelectedProxy;
+	MTP::ProxyData::Settings ProxySettings = MTP::ProxyData::Settings::System;
 	bool UseProxyForCalls = false;
 	base::Observable<void> ConnectionTypeChanged;
 
@@ -508,9 +515,9 @@ DefineVar(Global, Notify::ScreenCorner, NotificationsCorner);
 DefineVar(Global, bool, NotificationsDemoIsShown);
 
 DefineVar(Global, bool, TryIPv6);
-DefineVar(Global, std::vector<ProxyData>, ProxiesList);
-DefineVar(Global, ProxyData, SelectedProxy);
-DefineVar(Global, ProxyData::Settings, ProxySettings);
+DefineVar(Global, std::vector<MTP::ProxyData>, ProxiesList);
+DefineVar(Global, MTP::ProxyData, SelectedProxy);
+DefineVar(Global, MTP::ProxyData::Settings, ProxySettings);
 DefineVar(Global, bool, UseProxyForCalls);
 DefineRefVar(Global, base::Observable<void>, ConnectionTypeChanged);
 

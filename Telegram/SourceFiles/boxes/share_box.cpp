@@ -37,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_folder.h"
 #include "main/main_session.h"
 #include "core/application.h"
+#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_history.h"
 
@@ -206,6 +207,7 @@ void ShareBox::prepareCommentField() {
 	field->setEditLinkCallback(
 		DefaultEditLinkCallback(&_navigation->session(), field));
 
+	InitSpellchecker(&_navigation->session(), field);
 	Ui::SendPendingMoveResizeEvents(_comment);
 }
 
@@ -411,7 +413,9 @@ void ShareBox::keyPressEvent(QKeyEvent *e) {
 
 SendMenuType ShareBox::sendMenuType() const {
 	const auto selected = _inner->selected();
-	return (selected.size() == 1 && selected.front()->isSelf())
+	return ranges::all_of(selected, HistoryView::CanScheduleUntilOnline)
+		? SendMenuType::ScheduledToUser
+		: (selected.size() == 1 && selected.front()->isSelf())
 		? SendMenuType::Reminder
 		: SendMenuType::Scheduled;
 }
@@ -422,7 +426,7 @@ void ShareBox::createButtons() {
 		const auto send = addButton(tr::lng_share_confirm(), [=] {
 			submit({});
 		});
-		SetupSendMenu(
+		SetupSendMenuAndShortcuts(
 			send,
 			[=] { return sendMenuType(); },
 			[=] { submitSilent(); },
@@ -479,7 +483,7 @@ void ShareBox::submitScheduled() {
 	const auto callback = [=](Api::SendOptions options) { submit(options); };
 	Ui::show(
 		HistoryView::PrepareScheduleBox(this, sendMenuType(), callback),
-		LayerOption::KeepOther);
+		Ui::LayerOption::KeepOther);
 }
 
 void ShareBox::copyLink() {
@@ -720,7 +724,6 @@ void ShareBox::Inner::loadProfilePhotos(int yFrom) {
 	yFrom *= _columnCount;
 	yTo *= _columnCount;
 
-	_navigation->session().downloader().clearPriorities();
 	if (_filter.isEmpty()) {
 		if (!_chatsIndexed->empty()) {
 			auto i = _chatsIndexed->cfind(yFrom, _rowHeight);
