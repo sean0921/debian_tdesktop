@@ -1,4 +1,6 @@
 version=4
-opts="filenamemangle=s%(?:.*?)?v?(\d[\d.]*)\.tar\.gz%telegram-desktop-$1.tar.gz%" \
+opts="\
+        dversionmangle=s%~slim$%%, repacksuffix=~slim, \
+        filenamemangle=s%(?:.*?/)?tdesktop-(\d[\d.]*)-full\.tar\.gz%@PACKAGE@-$1.tar.gz%" \
     https://github.com/telegramdesktop/tdesktop/releases/latest \
-    (?:.*?/)?v?(\d[\d.]*)\.tar\.gz debian uupdate
+    (?:.*?/)?tdesktop-(\d[\d.]*)-full\.tar\.gz debian uupdate

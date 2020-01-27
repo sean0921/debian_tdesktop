@@ -1,6 +1,10 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Telegram Desktop
 Source: https://github.com/telegramdesktop/tdesktop
+Files-Excluded: Telegram/ThirdParty/*
+                Telegram/Patches/*.diff
+                Telegram/lib_ui/fonts/*.ttf
+Comment: Exclude unused third-party modules to reduce code size.
 
 Files: *
 Copyright: 2014-2019 John Preston <johnprestonmail@gmail.com>

@@ -1,107 +1,46 @@
 #!/usr/bin/make -f
 # -*- makefile -*-
 
-# Rules for building Debian package. Based on the following files:
-#  * docs/building-cmake.md
-#  * Telegram/gyp/refresh.sh
-#  * Telegram/Patches/gyp.diff
-# Please recheck this file if they are changed in future versions.
-
 include /usr/share/dpkg/default.mk
-OUT = obj-$(DEB_HOST_GNU_TYPE)
-
 ifeq ($(filter noopt,$(DEB_BUILD_OPTIONS)),)
- BUILD_MODE = Release
  ifeq ($(DEB_HOST_ARCH_BITS),32)
   # Less debugging information to avoid running out of address space when
   # linking on architectures with reduced amount of memory.
   DEB_CXXFLAGS_MAINT_APPEND += -g1
  endif
-else
- BUILD_MODE = Debug
 endif
 
-# Use custom id and hash for Telegram API.
-TELEGRAM_API_ID = 50322
-TELEGRAM_API_HASH = 9ff1a639196c0779c86dd661af8522ba
+EXTRA_CMAKE_VARIABLES += \
+	TDESKTOP_API_ID=50322 \
+	TDESKTOP_API_HASH=9ff1a639196c0779c86dd661af8522ba \
+	TDESKTOP_LAUNCHER_BASENAME=org.telegram.desktop \
+	TDESKTOP_FORCE_GTK_FILE_DIALOG=ON \
+	CMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
 
-# Deduce exact version of installed Qt by looking to its private headers.
-QT_VERSION = $(shell cd /usr/include/$(DEB_HOST_MULTIARCH)/qt5/QtCore \
-               && ls -d [0-9]*)
-
-GYP_VARIABLES += \
-	api_id=$(TELEGRAM_API_ID) \
-	api_hash=$(TELEGRAM_API_HASH) \
-	cpu_type=$(DEB_HOST_GNU_CPU) \
-	bitness=$(DEB_HOST_ARCH_BITS) \
-	disable_lto \
-	use_packed_resources \
-	use_common_lz4 \
-	use_common_rlottie \
-	use_common_xxhash \
-	qt_version=$(QT_VERSION) \
-	qt_loc=/usr/lib/$(DEB_HOST_MULTIARCH)/qt5 \
-	qt_incdir=/usr/include/$(DEB_HOST_MULTIARCH)/qt5 \
-	qt_libdir=/usr/lib/$(DEB_HOST_MULTIARCH) \
-	linux_lib_xkbcommon= \
-	linux_lib_icu= \
-	linux_lib_ssl= \
-	linux_lib_crypto=libcrypto.so
-
-GYPFLAGS += \
-	--format=cmake \
-	--depth=Telegram/gyp \
-	--generator-output=../.. \
-	-Goutput_dir=$(OUT) \
-	-Gconfig=$(BUILD_MODE) \
-	$(addprefix -D,$(GYP_VARIABLES))
-
-EXTRA_MACROS += \
-	TDESKTOP_DISABLE_AUTOUPDATE \
-	TDESKTOP_DISABLE_CRASH_REPORTS \
-	TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME
+ifeq ($(filter terse,$(DEB_BUILD_OPTIONS)),)
+ EXTRA_CMAKE_VARIABLES += CMAKE_AUTOGEN_VERBOSE=ON
+endif
 
 # Workarounds for non-Linux systems
 ifneq ($(DEB_HOST_ARCH_OS),linux)
  EXTRA_MACROS += Q_OS_LINUX  # brilliant bluff :)
- GYPFLAGS += --no-parallel  # see bugs.debian.org/799356
 endif
 
-comma := ,
-empty :=
-space := $(empty) $(empty)
-GYPFLAGS += -Dbuild_defines=$(subst $(space),$(comma),$(EXTRA_MACROS))
-
-CPPLIBS_PACKAGES = libmapbox-variant-dev libmsgsl-dev librange-v3-dev libtgvoip-dev
+CPPLIBS_PACKAGES = libexpected-dev libmapbox-variant-dev libmsgsl-dev librange-v3-dev libtgvoip-dev
 EXTRA_SUBSTVARS += \
 	cpplibs:Built-Using=$(shell dpkg-query -Wf '$${source:Package}(=$${Version}),' $(CPPLIBS_PACKAGES))
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
-export DEB_CPPFLAGS_MAINT_APPEND += -Werror=invalid-pch
-export DEB_CXXFLAGS_MAINT_APPEND += -Wno-deprecated-copy -Wno-redundant-move
 
 # Make debugging a little easier. https://stackoverflow.com/a/25817631/5000805
 print-%:
 	@echo $* = $($*)
 
-# A generated CMake config will be placed in the next "source" directory.
 %:
-	dh $@ --sourcedirectory=$(OUT)/$(BUILD_MODE)
+	dh $@
 
-# We use a default source directory as fallback when an user tries to clear a
-# clean tree or when the clean target is called twice in a row. In this case,
-# debhelper says that the source directory doesn't exist so we omit the
-# sourcedirectory parameter.
-override_dh_auto_clean:
-	dh_auto_clean || dh_auto_clean --sourcedirectory=$(CURDIR)
-	rm -f Telegram/gyp/tests/*.test
-
-# We append content of the d/CMakeLists.inj file into the generated
-# CMakeLists.txt instead of patching gyp utility.
 override_dh_auto_configure:
-	gyp $(GYPFLAGS) Telegram/gyp/Telegram.gyp
-	sed -i '$$r debian/CMakeLists.inj' $(OUT)/$(BUILD_MODE)/CMakeLists.txt
-	dh_auto_configure
+	dh_auto_configure -- $(EXTRA_CMAKE_VARIABLES:%=-D%)
 
 override_dh_installchangelogs:
 	dh_installchangelogs changelog.txt

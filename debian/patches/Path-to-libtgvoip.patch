@@ -1,0 +1,22 @@
+Description: Workaround for packaged libtgvoip
+ The temporary patch which hardcodes build flags for libtgvoip.
+Forwarded: not-needed
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Date: Mon, 27 Jan 2020 08:58:41 +0300
+
+--- a/Telegram/cmake/lib_tgvoip.cmake
++++ b/Telegram/cmake/lib_tgvoip.cmake
+@@ -8,11 +8,8 @@ if (TDESKTOP_USE_PACKAGED_TGVOIP)
+     add_library(lib_tgvoip INTERFACE IMPORTED GLOBAL)
+     add_library(tdesktop::lib_tgvoip ALIAS lib_tgvoip)
+ 
+-    find_package(PkgConfig REQUIRED)
+-    pkg_check_modules(TGVOIP REQUIRED tgvoip)
+-
+-    target_include_directories(lib_tgvoip INTERFACE ${TGVOIP_INCLUDE_DIRS})
+-    target_link_libraries(lib_tgvoip INTERFACE ${TGVOIP_LIBRARIES})
++    target_include_directories(lib_tgvoip INTERFACE /usr/include/libtgvoip)
++    target_link_libraries(lib_tgvoip INTERFACE tgvoip opus)
+ else()
+     add_library(lib_tgvoip STATIC)
+     init_target(lib_tgvoip)

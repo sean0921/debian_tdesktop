@@ -4,9 +4,9 @@ Bug-Samsung: https://github.com/Samsung/rlottie/pull/252
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Modified: Sat, 10 Aug 2019 11:30:57 +0300
 
---- a/Telegram/SourceFiles/lottie/lottie_animation.cpp
-+++ b/Telegram/SourceFiles/lottie/lottie_animation.cpp
-@@ -134,14 +134,7 @@ std::unique_ptr<rlottie::Animation> Crea
+--- a/Telegram/lib_lottie/lottie/lottie_animation.cpp
++++ b/Telegram/lib_lottie/lottie/lottie_animation.cpp
+@@ -136,15 +136,7 @@ std::unique_ptr<rlottie::Animation> CreateFromContent(
  	const auto string = UnpackGzip(content);
  	Assert(string.size() <= kMaxFileSize);
  
@@ -18,7 +18,8 @@ Modified: Sat, 10 Aug 2019 11:30:57 +0300
 -		(replacements
 -			? replacements->replacements
 -			: std::vector<std::pair<std::uint32_t, std::uint32_t>>()));
-+	auto result = rlottie::Animation::loadFromData(string, "");
- 	if (!result) {
- 		LOG(("Lottie Error: Parse failed."));
- 	}
+-	return result;
++	return rlottie::Animation::loadFromData(string, "");
+ }
+ 
+ } // namespace details

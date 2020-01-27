@@ -1,5 +1,6 @@
-Modify-build-scripts.patch
-Packed-resources.patch
-Use-system-wide-font.patch
 Do-not-sync-wallpaper.patch
 Ignore-emoji-pack.patch
+Extend-USE_PACKAGED.patch
+Path-to-libtgvoip.patch
+Shred-build_config.patch
+Linking-against-libatomic.patch
