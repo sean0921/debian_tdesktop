@@ -7,61 +7,22 @@ Files-Excluded: Telegram/ThirdParty/*
 Comment: Exclude unused third-party modules to reduce code size.
 
 Files: *
-Copyright: 2014-2019 John Preston <johnprestonmail@gmail.com>
+Copyright: 2014-2020 John Preston <johnprestonmail@gmail.com>
 License: GPL-3.0+ with OpenSSL exception
 
 Files: lib/xdg/telegramdesktop.appdata.xml
 Copyright: Jan Grulich <grulja@gmail.com> (github: grulja)
 License: CC0-1.0
 
-Files: Telegram/Patches/qtbase_5_6_2.diff
-Copyright: 1985, 1987, 1990, 1998 The Open Group
-           1987 Digital Equipment Corporation, Maynard, Massachusetts
-           1987, 1994, 1998 The Open Group
-           1991 Oracle and/or its affiliates
-           1993 Silicon Graphics Computer Systems, Inc.
-           2001 Ellis Whitehead <ellis@kde.org>
-           2004 Jaroslaw Staniek <js@iidea.pl>
-           2008 Dan Nicholson
-           2011-2012 CSSlayer
-           2012 Daniel Stone
-           2012 Intel Corporation
-           2013 Ran Benita
-License: GPL-2.0+ and Expat and MIT1 and MIT2 and MIT3
-
-Files: Telegram/Resources/fonts/OpenSans-Regular.ttf
-       Telegram/Resources/fonts/OpenSans-Bold.ttf
-       Telegram/Resources/fonts/OpenSans-Semibold.ttf
-Author: Steve Matteson
-Copyright: 2010-2011 Google Corporation
-License: Apache-2.0
-
-Files: Telegram/Resources/emoji_autocomplete.json
+Files: Telegram/lib_ui/emoji_suggestions/emoji_autocomplete.json
 Copyright: 2017 EmojiOne Inc.
 License: Expat
 Comment: See https://github.com/emojione/emojione/tree/master/extras/alpha-codes
 
 Files: Telegram/SourceFiles/boxes/mute_settings_box.h
        Telegram/SourceFiles/boxes/mute_settings_box.cpp
-Copyright: 2017 Nicholas Guriev <guriev-ns@ya.ru>
+Copyright: 2017 Nicholas Guriev <guriev-ns@ya.ru> (github: mymedia2)
 License: Public-domain
-
-Files: Telegram/gyp/PrecompiledHeader.cmake
-Copyright: 2009-2013 Lars Christensen <larsch@belunktum.dk>
-License: Expat
-
-Files: Telegram/ThirdParty/minizip/*
-Copyright: 1998-2010 Gilles Vollant <info@winimage.com>
-           2009-2010 Mathias Svensson <mathias@result42.com>
-           2007-2008 Even Rouault
-           1990-2000 Info-ZIP
-License: Zlib
-
-Files: Telegram/ThirdParty/SPMediaKeyTap/*
-Copyright: 2010 Spotify AB
-           2011 Joachim Bengtsson
-License: BSD-1-Clause
-Comment: Source code on GitHub - https://github.com/nevyn/SPMediaKeyTap
 
 Files: snap/*
 Author: Marco Trevisan <marco@ubuntu.com>
@@ -71,52 +32,13 @@ Comment: Contribution License Agreement is signed.
          https://github.com/telegramdesktop/tdesktop/pull/4505#event-1746102406
 
 Files: debian/*
-Copyright: 2016-2019 Nicholas Guriev <guriev-ns@ya.ru>
+Copyright: 2016-2020 Nicholas Guriev <guriev-ns@ya.ru>
 License: Public-domain
 Comment: Contributing policy - https://cla-assistant.io/telegramdesktop/tdesktop
 
-Files: debian/crl/*
-Copyright: 2014-2019 John Preston <johnprestonmail@gmail.com>
-License: GPL-3.0+ with OpenSSL exception
-Comment: Source code on GitHub - https://github.com/telegramdesktop/crl
-
-Files: debian/qt_functions.cpp
+Files: Telegram/SourceFiles/qt_functions.cpp
 Copyright: 2015 The Qt Company Ltd.
 License: LGPL-2.1-or-3 with Qt-1.1 exception
-
-License: Apache-2.0
- Licensed under the Apache License, Version 2.0 (the "License"); you may not use
- this file except in compliance with the License. You may obtain a copy of the
- License at
- .
-     http://www.apache.org/licenses/LICENSE-2.0
- .
- Unless required by applicable law or agreed to in writing, software distributed
- under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
- CONDITIONS OF ANY KIND, either express or implied. See the License for the
- specific language governing permissions and limitations under the License.
- .
- On Debian systems, the full text of the Apache License version 2 can be found
- in /usr/share/common-licenses/Apache-2.0.
-
-License: BSD-1-Clause
- Redistribution and use in source and binary forms, with or without
- modification, are permitted provided that the following conditions are met:
- .
- * Neither the name of the organization nor the names of its contributors may be
-   used to endorse or promote products derived from this software without
-   specific prior written permission.
- .
- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
- ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
- FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 License: CC0-1.0
  This work has been placed in the public domain. Full text of the license is
@@ -181,23 +103,6 @@ License: LGPL-2.1-or-3 with Qt-1.1 exception
  Furthermore, you are not required to apply this additional permission to a
  modified version of the Library.
 
-License: GPL-2.0+
- This program is free software; you can redistribute it and/or modify it under
- the terms of the GNU General Public License as published by the Free Software
- Foundation; either version 2 of the License, or (at your option) any later
- version.
- .
- This program is distributed in the hope that it will be useful, but WITHOUT ANY
- WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
- PARTICULAR PURPOSE. See the GNU General Public License for more details.
- .
- You should have received a copy of the GNU General Public License along with
- this program; if not, write to the Free Software Foundation, Inc., 51 Franklin
- St, Fifth Floor, Boston, MA 02110-1301, USA.
- .
- On Debian systems, the complete text of the GNU General Public License version
- 2 can be found in "/usr/share/common-licenses/GPL-2".
-
 License: GPL-3.0
  This program is free software: you can redistribute it and/or modify it under
  the terms of the GNU General Public License version 3 as published by the Free
@@ -238,60 +143,6 @@ License: GPL-3.0+ with OpenSSL exception
  On Debian systems, the complete text of the GNU General Public License version
  3 can be found in "/usr/share/common-licenses/GPL-3".
 
-License: MIT1
- Permission to use, copy, modify, distribute, and sell this software and its
- documentation for any purpose is hereby granted without fee, provided that the
- above copyright notice appear in all copies and that both that copyright notice
- and this permission notice appear in supporting documentation.
- .
- The above copyright notice and this permission notice shall be included in all
- copies or substantial portions of the Software.
- .
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
- OPEN GROUP BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
- WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- .
- Except as contained in this notice, the name of The Open Group shall not be
- used in advertising or otherwise to promote the sale, use or other dealings in
- this Software without prior written authorization from The Open Group.
-
-License: MIT2
- Permission to use, copy, modify, and distribute this software and its
- documentation for any purpose and without fee is hereby granted, provided that
- the above copyright notice appear in all copies and that both that copyright
- notice and this permission notice appear in supporting documentation, and that
- the name of Digital not be used in advertising or publicity pertaining to
- distribution of the software without specific, written prior permission.
- .
- DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING ALL
- IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL DIGITAL BE
- LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
- CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION
- WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
-License: MIT3
- Permission to use, copy, modify, and distribute this software and its
- documentation for any purpose and without fee is hereby granted, provided that
- the above copyright notice appear in all copies and that both that copyright
- notice and this permission notice appear in supporting documentation, and that
- the name of Silicon Graphics not be used in advertising or publicity pertaining
- to distribution of the software without specific prior written permission.
- Silicon Graphics makes no representation about the suitability of this software
- for any purpose. It is provided "as is" without any express or implied
- warranty.
- .
- SILICON GRAPHICS DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
- INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- PARTICULAR PURPOSE. IN NO EVENT SHALL SILICON GRAPHICS BE LIABLE FOR ANY
- SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING
- FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
- OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION  WITH THE USE OR
- PERFORMANCE OF THIS SOFTWARE.
-
 License: Public-domain
  I certify that:
  a) The contribution was created in whole by me or is based upon previous work
@@ -302,20 +153,3 @@ License: Public-domain
     information I submit with it, including my sign-off) is maintained
     indefinitely and may be redistributed.
  c) I am granting this work into the public domain.
-
-License: Zlib
- This software is provided 'as-is', without any express or implied warranty.  In
- no event will the authors be held liable for any damages arising from the use
- of this software.
- .
- Permission is granted to anyone to use this software for any purpose, including
- commercial applications, and to alter it and redistribute it freely, subject to
- the following restrictions:
- .
- 1. The origin of this software must not be misrepresented; you must not claim
-    that you wrote the original software. If you use this software in a product,
-    an acknowledgment in the product documentation would be appreciated but is
-    not required.
- 2. Altered source versions must be plainly marked as such, and must not be
-    misrepresented as being the original software.
- 3. This notice may not be removed or altered from any source distribution.
