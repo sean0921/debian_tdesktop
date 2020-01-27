@@ -1,6 +1,4 @@
 TODO List for for Debian package
 --------------------------------
 
- * Eliminate redundant GCC flags
- * Fix Open Sans Semibold
- * Make a button for autorestart when new version is available
+ * Activate an autorestart button just after a new version has been installed.

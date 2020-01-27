@@ -1,10 +1,13 @@
 Telegram Desktop for Debian
 ---------------------------
 
-Telegram is secure messenger from Pavel Durov. The package contains dynamically
-linked Telegram Desktop client. For this reason there are some differences from
-the original client:
- * Behaviour of text input fields. When you press Ctrl+Right_Arrow, a cursor
-   moves to start of next word instead of to end of current word.
- * Problems with bold font. Open Sans Semibold is not displayed correctly. So
-   for now, the package does not contain Open Sans font family.
+Telegram is a secure messenger from Pavel Durov. This package contains a
+dynamically linked Telegram Desktop client. There are some observable
+differences from the original binary bundle:
+ * Due to compatibility requirements with rlottie, a default pack is always used
+   for large animated emojis.
+ * For more privacy, auto-sync of wallpaper after updating is disabled. To send
+   your current wallpaper to the cloud, choose it again in the app settings.
+
+It is recommended to install the fonts-open-sans package so that Telegram
+Desktop looks like in the official screenshots.
