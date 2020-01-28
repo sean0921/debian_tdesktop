@@ -1,3 +1,17 @@
+telegram-desktop (1.9.8~slim-1) unstable; urgency=medium
+
+  * New upstream release.
+    - Repack upstream's tarball removing third-party modules.
+  * Drop the crl subproject from the debian folder.
+  * Adapt build config for pure CMake build system.
+    - Increase required version of CMake to 3.16.0, Qt to 5.10.0,
+      libranges to 0.10.0.
+    - Use GTK file chooser dialog with image previews. (Closes: #944315)
+  * Restrict supported architectures to Little Endian. (Closes: #943499)
+  * Remove old unneeded patches.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Tue, 28 Jan 2020 09:16:44 +0300
+
 telegram-desktop (1.8.15-2) unstable; urgency=medium
 
   * Fixed passing of -mxgot compiler flag for MIPS64.
