@@ -4,3 +4,4 @@ Extend-USE_PACKAGED.patch
 Path-to-libtgvoip.patch
 Shred-build_config.patch
 Linking-against-libatomic.patch
+Debug-info-for-32-bit.patch

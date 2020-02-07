@@ -1,14 +1,6 @@
 #!/usr/bin/make -f
 # -*- makefile -*-
-
 include /usr/share/dpkg/default.mk
-ifeq ($(filter noopt,$(DEB_BUILD_OPTIONS)),)
- ifeq ($(DEB_HOST_ARCH_BITS),32)
-  # Less debugging information to avoid running out of address space when
-  # linking on architectures with reduced amount of memory.
-  DEB_CXXFLAGS_MAINT_APPEND += -g1
- endif
-endif
 
 EXTRA_CMAKE_VARIABLES += \
 	TDESKTOP_API_ID=50322 \
