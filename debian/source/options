@@ -1,2 +1,0 @@
-# Ignore CRLF modifications
-extend-diff-ignore = .*\.bat$
