@@ -6,20 +6,16 @@ Modified: Sat, 10 Aug 2019 11:30:57 +0300
 
 --- a/Telegram/lib_lottie/lottie/lottie_animation.cpp
 +++ b/Telegram/lib_lottie/lottie/lottie_animation.cpp
-@@ -136,15 +136,7 @@ std::unique_ptr<rlottie::Animation> CreateFromContent(
- 	const auto string = UnpackGzip(content);
- 	Assert(string.size() <= kMaxFileSize);
- 
+@@ -146,11 +146,7 @@ std::unique_ptr<rlottie::Animation> CreateFromContent(
+ 			? replacements->replacements
+ 			: std::vector<std::pair<std::uint32_t, std::uint32_t>>()));
+ #else
 -	auto result = rlottie::Animation::loadFromData(
 -		string,
 -		std::string(),
 -		std::string(),
--		false,
--		(replacements
--			? replacements->replacements
--			: std::vector<std::pair<std::uint32_t, std::uint32_t>>()));
--	return result;
-+	return rlottie::Animation::loadFromData(string, "");
+-		false);
++	auto result = rlottie::Animation::loadFromData(string, "");
+ #endif
+ 	return result;
  }
- 
- } // namespace details

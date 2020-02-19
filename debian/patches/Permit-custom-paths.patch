@@ -1,0 +1,16 @@
+diff --git a/cmake/variables.cmake b/cmake/variables.cmake
+index 6d7d2f0b3..e5d9e680c 100644
+--- a/cmake/variables.cmake
++++ b/cmake/variables.cmake
+@@ -81,5 +81,9 @@ if (NOT APPLE OR build_osx)
+ else()
+     get_filename_component(libs_loc "../Libraries/macos" REALPATH)
+ endif()
+-get_filename_component(third_party_loc "Telegram/ThirdParty" REALPATH)
+-get_filename_component(submodules_loc "Telegram" REALPATH)
++if (NOT DEFINED third_party_loc)
++    get_filename_component(third_party_loc "Telegram/ThirdParty" REALPATH)
++endif()
++if (NOT DEFINED submodules_loc)
++    get_filename_component(submodules_loc "Telegram" REALPATH)
++endif()
