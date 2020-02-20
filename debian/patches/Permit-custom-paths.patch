@@ -1,5 +1,9 @@
-diff --git a/cmake/variables.cmake b/cmake/variables.cmake
-index 6d7d2f0b3..e5d9e680c 100644
+Description: Permit custom paths to third-party code and submodules
+ Do not redefine the third_party_loc and the submodules_loc variables if they
+ are set with command line options.
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Last-Modified: Thu, 20 Feb 2020 18:46:19 +0300
+
 --- a/cmake/variables.cmake
 +++ b/cmake/variables.cmake
 @@ -81,5 +81,9 @@ if (NOT APPLE OR build_osx)
