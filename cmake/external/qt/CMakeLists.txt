@@ -37,6 +37,7 @@ else()
         ${qt_loc}/include
         ${qt_loc}/include/QtCore
         ${qt_loc}/include/QtGui
+        ${qt_loc}/include/QtWidgets
         ${qt_loc}/include/QtCore/${qt_version}
         ${qt_loc}/include/QtGui/${qt_version}
         ${qt_loc}/include/QtCore/${qt_version}/QtCore
@@ -142,23 +143,32 @@ else()
     else()
         if (Qt5DBus_FOUND)
             set(qt_libs_dbus lib/${qt_lib_prefix}Qt5DBus)
+            set(qt_libs_dbus_plugins
+                plugins/platforminputcontexts/${qt_lib_prefix}ibusplatforminputcontextplugin
+                plugins/platforminputcontexts/${qt_lib_prefix}fcitxplatforminputcontextplugin
+                plugins/platforminputcontexts/${qt_lib_prefix}himeplatforminputcontextplugin
+                plugins/platforminputcontexts/${qt_lib_prefix}nimfplatforminputcontextplugin
+                plugins/platformthemes/${qt_lib_prefix}qxdgdesktopportal
+            )
+            set(qt_libs_dbus_bearers
+                plugins/bearer/${qt_lib_prefix}qconnmanbearer
+                plugins/bearer/${qt_lib_prefix}qnmbearer
+            )
         endif()
         set(qt_libs
             plugins/platforminputcontexts/${qt_lib_prefix}composeplatforminputcontextplugin
-            plugins/platforminputcontexts/${qt_lib_prefix}ibusplatforminputcontextplugin
-            plugins/platforminputcontexts/${qt_lib_prefix}fcitxplatforminputcontextplugin
-            plugins/platforminputcontexts/${qt_lib_prefix}himeplatforminputcontextplugin
-            plugins/platforminputcontexts/${qt_lib_prefix}nimfplatforminputcontextplugin
+            ${qt_libs_dbus_plugins}
             plugins/platforms/${qt_lib_prefix}qxcb
+            plugins/iconengines/${qt_lib_prefix}qsvgicon
             lib/${qt_lib_prefix}Qt5XcbQpa
             lib/${qt_lib_prefix}Qt5LinuxAccessibilitySupport
             lib/${qt_lib_prefix}Qt5ServiceSupport
             lib/${qt_lib_prefix}Qt5EdidSupport
-            plugins/bearer/${qt_lib_prefix}qconnmanbearer
             plugins/bearer/${qt_lib_prefix}qgenericbearer
-            plugins/bearer/${qt_lib_prefix}qnmbearer
+            ${qt_libs_dbus_bearers}
             ${common_qt_libs}
             ${qt_libs_dbus}
+            lib/${qt_lib_prefix}Qt5Svg
             lib/${qt_lib_prefix}Qt5Core
             lib/${qt_lib_prefix}qtpcre2
             lib/${qt_lib_prefix}xcb-static
@@ -206,12 +216,6 @@ else()
         endif()
         target_link_static_libraries(external_qt
         INTERFACE
-            SM
-            ICE
-            fontconfig
-            freetype
-            expat
-            z
             xcb-shm
             xcb-xfixes
             xcb-render
@@ -232,6 +236,10 @@ else()
         endif()
         target_link_libraries(external_qt
         INTERFACE
+            ICE
+            SM
+            fontconfig
+            freetype
             xcb
             X11
             X11-xcb
@@ -240,7 +248,7 @@ else()
             pthread
         )
         find_library(DBUS_LIBRARY dbus-1)
-        if (DBUS_LIBRARY)
+        if (Qt5DBus_FOUND AND DBUS_LIBRARY)
             target_link_libraries(external_qt INTERFACE dbus-1)
         endif()
     endif()

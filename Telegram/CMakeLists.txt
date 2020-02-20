@@ -20,6 +20,7 @@ add_subdirectory(lib_lottie)
 add_subdirectory(lib_qr)
 add_subdirectory(codegen)
 
+include(CheckCXXSourceCompiles)
 include(lib_ui/cmake/generate_styles.cmake)
 include(cmake/generate_lang.cmake)
 include(cmake/generate_numbers.cmake)
@@ -42,7 +43,7 @@ set(style_files
     history/history.style
     info/info.style
     intro/intro.style
-    media/view/mediaview.style
+    media/view/media_view.style
     media/player/media_player.style
     overview/overview.style
     passport/passport.style
@@ -76,6 +77,14 @@ if (DESKTOP_APP_USE_PACKAGED)
     )
 endif()
 
+if (LINUX AND NOT TDESKTOP_DISABLE_DBUS_INTEGRATION)
+    target_link_libraries(Telegram
+    PRIVATE
+        desktop-app::external_statusnotifieritem
+        desktop-app::external_dbusmenu_qt
+    )
+endif()
+
 target_link_libraries(Telegram
 PRIVATE
     tdesktop::lib_mtproto
@@ -103,6 +112,16 @@ PRIVATE
 
 if (NOT DESKTOP_APP_USE_PACKAGED)
     target_link_libraries(Telegram PRIVATE desktop-app::external_opus)
+endif()
+
+# Telegram uses long atomic types, so on some architectures libatomic is needed.
+check_cxx_source_compiles("
+#include <atomic>
+std::atomic_int64_t foo;
+int main() {return foo;}
+" HAVE_LONG_ATOMIC_WITHOUT_LIB)
+if (NOT HAVE_LONG_ATOMIC_WITHOUT_LIB)
+    target_link_libraries(Telegram PRIVATE atomic)
 endif()
 
 target_precompile_headers(Telegram PRIVATE ${src_loc}/stdafx.h)
@@ -318,6 +337,8 @@ PRIVATE
     data/data_groups.h
     data/data_location.cpp
     data/data_location.h
+    data/data_media_rotation.cpp
+    data/data_media_rotation.h
     data/data_media_types.cpp
     data/data_media_types.h
     data/data_messages.cpp
@@ -653,14 +674,16 @@ PRIVATE
     media/streaming/media_streaming_utility.h
     media/streaming/media_streaming_video_track.cpp
     media/streaming/media_streaming_video_track.h
-    media/view/media_view_playback_controls.cpp
-    media/view/media_view_playback_controls.h
-    media/view/media_view_playback_progress.cpp
-    media/view/media_view_playback_progress.h
     media/view/media_view_group_thumbs.cpp
     media/view/media_view_group_thumbs.h
     media/view/media_view_overlay_widget.cpp
     media/view/media_view_overlay_widget.h
+    media/view/media_view_pip.cpp
+    media/view/media_view_pip.h
+    media/view/media_view_playback_controls.cpp
+    media/view/media_view_playback_controls.h
+    media/view/media_view_playback_progress.cpp
+    media/view/media_view_playback_progress.h
     mtproto/config_loader.cpp
     mtproto/config_loader.h
     mtproto/connection_abstract.cpp
@@ -1048,35 +1071,13 @@ elseif (LINUX)
             find_library(X11_LIBRARY X11)
             target_link_libraries(Telegram PRIVATE ${X11_LIBRARY})
         endif()
-
-        set(appindicator_packages
-            ayatana-appindicator3-0.1
-            ayatana-appindicator-0.1
-            appindicator3-0.1
-            appindicator-0.1
-        )
-        set(appindicator_found 0)
-        foreach (package ${appindicator_packages})
-            pkg_check_modules(APPIND_${package} ${package})
-            if (APPIND_${package}_FOUND)
-                set(appindicator_found 1)
-                target_include_directories(Telegram PRIVATE "${APPIND_${package}_INCLUDE_DIRS}")
-                if (${package} MATCHES "ayatana")
-                    target_compile_definitions(Telegram PRIVATE TDESKTOP_USE_AYATANA_INDICATORS)
-                endif()
-                break()
-            endif()
-        endforeach()
-        if (NOT ${appindicator_found})
-            message(FATAL_ERROR "No libappindicator found by pkg-config.")
-        endif()
     endif()
 endif()
 
 if (build_macstore)
     set(bundle_identifier "org.telegram.desktop")
-    set(bundle_entitlements "Telegram Desktop.entitlements")
-    set(output_name "Telegram Desktop")
+    set(bundle_entitlements "Telegram Lite.entitlements")
+    set(output_name "Telegram Lite")
     set_target_properties(Telegram PROPERTIES
         XCODE_ATTRIBUTE_FRAMEWORK_SEARCH_PATHS ${libs_loc}/breakpad/src/client/mac/build/Release
     )
@@ -1120,7 +1121,7 @@ set_target_properties(Telegram PROPERTIES
 )
 set(entitlement_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/Telegram/Telegram.entitlements"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Telegram/Telegram Desktop.entitlements"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Telegram/Telegram Lite.entitlements"
 )
 target_sources(Telegram PRIVATE ${entitlement_sources})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/Telegram PREFIX Resources FILES ${entitlement_sources})
@@ -1169,7 +1170,7 @@ if ((NOT disable_autoupdate OR NOT LINUX) AND NOT build_macstore AND NOT build_w
     set_target_properties(Updater PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${output_folder})
 
     if (LINUX)
-        target_link_options(Updater INTERFACE -static-libstdc++)
+        target_link_options(Updater PRIVATE -static-libstdc++)
     endif()
 
     if (DESKTOP_APP_SPECIAL_TARGET)

@@ -1832,7 +1832,11 @@ void SendFilesBox::setupShadows(
 }
 
 void SendFilesBox::prepare() {
-	_send = addButton(tr::lng_send_button(), [=] { send({}); });
+	_send = addButton(
+		(_sendType == Api::SendType::Normal
+			? tr::lng_send_button()
+			: tr::lng_schedule_button()),
+		[=] { send({}); });
 	if (_sendType == Api::SendType::Normal) {
 		SetupSendMenuAndShortcuts(
 			_send,
@@ -2042,7 +2046,7 @@ void SendFilesBox::applyAlbumOrder() {
 
 void SendFilesBox::setupCaption() {
 	_caption->setMaxLength(Global::CaptionLengthMax());
-	_caption->setSubmitSettings(Ui::InputField::SubmitSettings::Both);
+	_caption->setSubmitSettings(_controller->session().settings().sendSubmitWay());
 	connect(_caption, &Ui::InputField::resized, [=] {
 		captionResized();
 	});
