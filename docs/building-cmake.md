@@ -14,7 +14,7 @@ You will need GCC 8 installed. To install them and all the required dependencies
 
     sudo apt-get install software-properties-common -y && \
     sudo apt-get install git libexif-dev liblzma-dev libz-dev libssl-dev \
-    libappindicator-dev libicu-dev libdee-dev libdrm-dev dh-autoreconf \
+    libgtk2.0-dev libice-dev libsm-dev libicu-dev libdrm-dev dh-autoreconf \
     autoconf automake build-essential libass-dev libfreetype6-dev \
     libgpac-dev libsdl1.2-dev libtheora-dev libtool libva-dev libvdpau-dev \
     libvorbis-dev libenchant-dev libxcb1-dev libxcb-image0-dev libxcb-shm0-dev \
@@ -57,13 +57,6 @@ Go to ***BuildPath*** and run
     git checkout 395b620
     cd ../
     git clone --branch 0.10.0 https://github.com/ericniebler/range-v3
-
-    git clone https://github.com/madler/zlib.git
-    cd zlib
-    ./configure
-    make $MAKE_THREADS_CNT
-    sudo make install
-    cd ..
 
     git clone https://github.com/xiph/opus
     cd opus
@@ -235,10 +228,11 @@ Go to ***BuildPath*** and run
 
     git clone git://code.qt.io/qt/qt5.git qt_5_12_5
     cd qt_5_12_5
-    perl init-repository --module-subset=qtbase,qtimageformats
+    perl init-repository --module-subset=qtbase,qtimageformats,qtsvg
     git checkout v5.12.5
     git submodule update qtbase
     git submodule update qtimageformats
+    git submodule update qtsvg
     cd qtbase
     git apply ../../patches/qtbase_5_12_5.diff
     cd src/plugins/platforminputcontexts

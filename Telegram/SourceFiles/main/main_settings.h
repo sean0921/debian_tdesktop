@@ -241,11 +241,27 @@ public:
 		return _variables.spellcheckerEnabled.changes();
 	}
 
+	[[nodiscard]] float64 videoPlaybackSpeed() const {
+		return _variables.videoPlaybackSpeed.current();
+	}
+	void setVideoPlaybackSpeed(float64 speed) {
+		_variables.videoPlaybackSpeed = speed;
+	}
+	[[nodiscard]] QByteArray videoPipGeometry() const {
+		return _variables.videoPipGeometry;
+	}
+	void setVideoPipGeometry(QByteArray geometry) {
+		_variables.videoPipGeometry = geometry;
+	}
+
+	[[nodiscard]] static bool ThirdColumnByDefault();
+
 private:
 	struct Variables {
 		Variables();
 
 		static constexpr auto kDefaultDialogsWidthRatio = 5. / 14;
+		static constexpr auto kDefaultBigDialogsWidthRatio = 0.275;
 		static constexpr auto kDefaultThirdColumnWidth = 0;
 
 		bool lastSeenWarningSeen = false;
@@ -260,8 +276,7 @@ private:
 		bool thirdSectionInfoEnabled = true; // per-window
 		bool smallDialogsList = false; // per-window
 		int thirdSectionExtendedBy = -1; // per-window
-		rpl::variable<float64> dialogsWidthRatio
-			= kDefaultDialogsWidthRatio; // per-window
+		rpl::variable<float64> dialogsWidthRatio; // per-window
 		rpl::variable<int> thirdColumnWidth
 			= kDefaultThirdColumnWidth; // per-window
 		Ui::InputSubmitSettings sendSubmitWay;
@@ -281,6 +296,8 @@ private:
 		bool suggestStickersByEmoji = true;
 		rpl::variable<bool> spellcheckerEnabled = true;
 		std::vector<std::pair<DocumentId, crl::time>> mediaLastPlaybackPosition;
+		rpl::variable<float64> videoPlaybackSpeed = 1.;
+		QByteArray videoPipGeometry;
 
 		static constexpr auto kDefaultSupportChatsLimitSlice
 			= 7 * 24 * 60 * 60;

@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_drafts.h"
 #include "data/data_user.h"
 #include "boxes/send_files_box.h"
+#include "base/platform/base_platform_info.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/emoji_config.h"
 #include "export/export_settings.h"
@@ -42,6 +43,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QBuffer>
 #include <QtCore/QtEndian>
 #include <QtCore/QDirIterator>
+
+#ifndef Q_OS_WIN
+#include <unistd.h>
+#endif // Q_OS_WIN
 
 extern "C" {
 #include <openssl/evp.h>
@@ -249,28 +254,28 @@ struct FileWriteDescriptor {
 		}
 
 		// detect order of read attempts and file version
-		QString toTry[2];
-		toTry[0] = ((options & FileOption::User) ? _userBasePath : _basePath) + name + '0';
+		QString toWrite[2];
+		toWrite[0] = ((options & FileOption::User) ? _userBasePath : _basePath) + name + '0';
 		if (options & FileOption::Safe) {
-			toTry[1] = ((options & FileOption::User) ? _userBasePath : _basePath) + name + '1';
-			QFileInfo toTry0(toTry[0]);
-			QFileInfo toTry1(toTry[1]);
-			if (toTry0.exists()) {
-				if (toTry1.exists()) {
-					QDateTime mod0 = toTry0.lastModified(), mod1 = toTry1.lastModified();
+			toWrite[1] = ((options & FileOption::User) ? _userBasePath : _basePath) + name + '1';
+			QFileInfo toWrite0(toWrite[0]);
+			QFileInfo toWrite1(toWrite[1]);
+			if (toWrite0.exists()) {
+				if (toWrite1.exists()) {
+					QDateTime mod0 = toWrite0.lastModified(), mod1 = toWrite1.lastModified();
 					if (mod0 > mod1) {
-						qSwap(toTry[0], toTry[1]);
+						qSwap(toWrite[0], toWrite[1]);
 					}
 				} else {
-					qSwap(toTry[0], toTry[1]);
+					qSwap(toWrite[0], toWrite[1]);
 				}
-				toDelete = toTry[1];
-			} else if (toTry1.exists()) {
-				toDelete = toTry[1];
+				toDelete = toWrite[1];
+			} else if (toWrite1.exists()) {
+				toDelete = toWrite[1];
 			}
 		}
 
-		file.setFileName(toTry[0]);
+		file.setFileName(toWrite[0]);
 		if (file.open(QIODevice::WriteOnly)) {
 			file.write(tdfMagic, tdfMagicLen);
 			qint32 version = AppVersion;
@@ -325,6 +330,10 @@ struct FileWriteDescriptor {
 		md5.feed(&version, sizeof(version));
 		md5.feed(tdfMagic, tdfMagicLen);
 		file.write((const char*)md5.result(), 0x10);
+		file.flush();
+#ifndef Q_OS_WIN
+		fsync(file.handle());
+#endif // Q_OS_WIN
 		file.close();
 
 		if (!toDelete.isEmpty()) {
@@ -2049,7 +2058,10 @@ bool _readOldMtpData(bool remove, ReadSettingsContext &context) {
 }
 
 void _writeUserSettings() {
-	if (_readingUserSettings) {
+	if (!_userWorking()) {
+		LOG(("App Error: attempt to write user settings too early!"));
+		return;
+	} else if (_readingUserSettings) {
 		LOG(("App Error: attempt to write settings while reading them!"));
 		return;
 	}
@@ -2573,6 +2585,7 @@ void finish() {
 }
 
 void InitialLoadTheme();
+bool ApplyDefaultNightMode();
 void readLangPack();
 
 void start() {
@@ -2592,7 +2605,10 @@ void start() {
 		_readOldMtpData(false, context); // needed further in _readMtpData
 		applyReadContext(std::move(context));
 
-		return writeSettings();
+		if (!ApplyDefaultNightMode()) {
+			writeSettings();
+		}
+		return;
 	}
 	LOG(("App Info: reading settings..."));
 
@@ -4370,6 +4386,20 @@ void InitialLoadTheme() {
 	} else {
 		clearTheme();
 	}
+}
+
+bool ApplyDefaultNightMode() {
+	const auto NightByDefault = Platform::IsMacStoreBuild();
+	if (!NightByDefault
+		|| Window::Theme::IsNightMode()
+		|| _themeKeyDay
+		|| _themeKeyNight
+		|| _themeKeyLegacy) {
+		return false;
+	}
+	Window::Theme::ToggleNightMode();
+	Window::Theme::KeepApplied();
+	return true;
 }
 
 Window::Theme::Saved readThemeAfterSwitch() {

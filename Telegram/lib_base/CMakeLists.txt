@@ -8,7 +8,7 @@ add_library(lib_base OBJECT)
 add_library(desktop-app::lib_base ALIAS lib_base)
 init_target(lib_base)
 
-add_library(lib_base_crash_report_writer OBJECT)
+add_library(lib_base_crash_report_writer STATIC)
 add_library(desktop-app::lib_base_crash_report_writer ALIAS lib_base_crash_report_writer)
 init_target(lib_base_crash_report_writer)
 
@@ -75,6 +75,7 @@ PRIVATE
     base/crc32hash.h
     base/concurrent_timer.cpp
     base/concurrent_timer.h
+    base/const_string.h
     base/flags.h
     base/enum_mask.h
     base/expected.h
@@ -149,7 +150,7 @@ PUBLIC
     desktop-app::external_expected
 )
 
-target_precompile_headers(lib_base_crash_report_writer PRIVATE ${src_loc}/base/base_pch.h)
+target_precompile_headers(lib_base_crash_report_writer REUSE_FROM lib_base)
 nice_target_sources(lib_base_crash_report_writer ${src_loc}
 PRIVATE
     base/crash_report_header.cpp
