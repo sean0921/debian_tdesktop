@@ -26,8 +26,8 @@ Build-Depends-Arch:
  libswscale-dev (>=7:3.2),
  libtgvoip-dev (>=2.4.4),
  libxxhash-dev,
- qtbase5-dev (>=5.10.0),
- qtbase5-private-dev (>=5.10.0),
+ qtbase5-dev (>=5.9.0),
+ qtbase5-private-dev (>=5.9.0),
  zlib1g-dev (>=1:1.2.8),
 Standards-Version: 4.4.0
 Rules-Requires-Root: no
@@ -38,7 +38,7 @@ Vcs-Browser: https://salsa.debian.org/debian/telegram-desktop
 Package: telegram-desktop
 # Only little endian is supported.
 Architecture: amd64 arm64 armel armhf hurd-i386 i386 ia64 kfreebsd-amd64 kfreebsd-i386 mips64el mipsel ppc64el riscv64 sh4 x32
-Depends: qt5-image-formats-plugins (>=5.10.0), ${misc:Depends}, ${shlibs:Depends}
+Depends: qt5-image-formats-plugins (>=5.9.0), ${misc:Depends}, ${shlibs:Depends}
 Recommends: fonts-open-sans
 Built-Using: ${cpplibs:Built-Using}
 Description: fast and secure messaging application
