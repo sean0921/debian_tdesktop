@@ -1,3 +1,16 @@
+telegram-desktop (1.9.14+ds-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Import StatusNotifierItem from lxqt-qtplugin v0.14.0.
+  * Adjust patches and build rules.
+    - No install tg.protocol file for KDE4.
+    - New build dependency: libdbusmenu-qt5-dev
+  * Exclude HP/PA and Motorola 68k from list of supported architectures.
+  * Decrease required Qt version to 5.9, this is minimal tested version.
+  * Bump Standards-Version to 4.5.0, no related changes.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Thu, 20 Feb 2020 08:45:20 +0300
+
 telegram-desktop (1.9.8~slim-1) unstable; urgency=medium
 
   * New upstream release.
