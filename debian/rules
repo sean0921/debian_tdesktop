@@ -14,9 +14,9 @@ ifeq ($(filter terse,$(DEB_BUILD_OPTIONS)),)
  EXTRA_CMAKE_VARIABLES += CMAKE_AUTOGEN_VERBOSE=ON
 endif
 
-# Workarounds for non-Linux systems
 ifneq ($(DEB_HOST_ARCH_OS),linux)
- EXTRA_MACROS += Q_OS_LINUX  # brilliant bluff :)
+ # Mimic Linux on non-Linux hosts.
+ export DEB_CPPFLAGS_MAINT_APPEND = -DQ_OS_LINUX
 endif
 
 CPPLIBS_PACKAGES = libexpected-dev libmapbox-variant-dev libmsgsl-dev librange-v3-dev libtgvoip-dev
