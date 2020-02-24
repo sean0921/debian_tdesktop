@@ -1,3 +1,14 @@
+telegram-desktop (1.9.14+ds-2) unstable; urgency=medium
+
+  [ Ilya Fedin ]
+  * Add category property for StatusNotifierItem, this fixes tray icon in
+    KDE Plasma 5 and Cinnamon. (Closes: #951810)
+
+  [ Nicholas Guriev ]
+  * Mend a hack for non-Linux systems to fix build for GNU/Hurd or FreeBSD.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Mon, 24 Feb 2020 07:54:56 +0300
+
 telegram-desktop (1.9.14+ds-1) unstable; urgency=medium
 
   * New upstream release.
