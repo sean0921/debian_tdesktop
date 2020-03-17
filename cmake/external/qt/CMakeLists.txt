@@ -141,8 +141,13 @@ else()
             cups
         )
     else()
+        set(qt_libs_dbus)
+        set(qt_libs_dbus_support)
+        set(qt_libs_dbus_plugins)
+        set(qt_libs_dbus_bearers)
         if (Qt5DBus_FOUND)
             set(qt_libs_dbus lib/${qt_lib_prefix}Qt5DBus)
+            set(qt_libs_dbus_support lib/${qt_lib_prefix}Qt5LinuxAccessibilitySupport)
             set(qt_libs_dbus_plugins
                 plugins/platforminputcontexts/${qt_lib_prefix}ibusplatforminputcontextplugin
                 plugins/platforminputcontexts/${qt_lib_prefix}fcitxplatforminputcontextplugin
@@ -158,14 +163,28 @@ else()
         set(qt_libs
             plugins/platforminputcontexts/${qt_lib_prefix}composeplatforminputcontextplugin
             ${qt_libs_dbus_plugins}
+            plugins/wayland-decoration-client/${qt_lib_prefix}bradient
+            plugins/wayland-shell-integration/${qt_lib_prefix}ivi-shell
+            plugins/wayland-shell-integration/${qt_lib_prefix}wl-shell
+            plugins/wayland-shell-integration/${qt_lib_prefix}xdg-shell-v5
+            plugins/wayland-shell-integration/${qt_lib_prefix}xdg-shell-v6
+            plugins/wayland-shell-integration/${qt_lib_prefix}xdg-shell
+            plugins/wayland-graphics-integration-client/${qt_lib_prefix}qt-plugin-wayland-egl
+            plugins/wayland-graphics-integration-client/${qt_lib_prefix}drm-egl-server
+            plugins/wayland-graphics-integration-client/${qt_lib_prefix}dmabuf-server
+            plugins/wayland-graphics-integration-client/${qt_lib_prefix}shm-emulation-server
+            plugins/platforms/${qt_lib_prefix}qwayland-egl
+            plugins/platforms/${qt_lib_prefix}qwayland-generic
             plugins/platforms/${qt_lib_prefix}qxcb
             plugins/iconengines/${qt_lib_prefix}qsvgicon
             lib/${qt_lib_prefix}Qt5XcbQpa
-            lib/${qt_lib_prefix}Qt5LinuxAccessibilitySupport
+            lib/${qt_lib_prefix}Qt5EglSupport
             lib/${qt_lib_prefix}Qt5ServiceSupport
             lib/${qt_lib_prefix}Qt5EdidSupport
+            ${qt_libs_dbus_support}
             plugins/bearer/${qt_lib_prefix}qgenericbearer
             ${qt_libs_dbus_bearers}
+            lib/${qt_lib_prefix}Qt5WaylandClient
             ${common_qt_libs}
             ${qt_libs_dbus}
             lib/${qt_lib_prefix}Qt5Svg
@@ -216,12 +235,16 @@ else()
         endif()
         target_link_static_libraries(external_qt
         INTERFACE
+            wayland-egl
+            wayland-cursor
+            wayland-client
             xcb-shm
             xcb-xfixes
             xcb-render
             xkbcommon
             xkbcommon-x11
             Xrender
+            ffi
             icutu
             icui18n
             icuuc
@@ -240,6 +263,8 @@ else()
             SM
             fontconfig
             freetype
+            EGL
+            GL
             xcb
             X11
             X11-xcb
@@ -247,9 +272,5 @@ else()
             glib-2.0
             pthread
         )
-        find_library(DBUS_LIBRARY dbus-1)
-        if (Qt5DBus_FOUND AND DBUS_LIBRARY)
-            target_link_libraries(external_qt INTERFACE dbus-1)
-        endif()
     endif()
 endif()

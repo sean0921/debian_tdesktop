@@ -5,6 +5,7 @@
 # https://github.com/desktop-app/legal/blob/master/LEGAL
 
 option(DESKTOP_APP_LOTTIE_USE_CACHE "Use caching in lottie animations." ON)
+option(DESKTOP_APP_DISABLE_DBUS_INTEGRATION "Disable all code for D-Bus integration (Linux only)." OFF)
 
 option(DESKTOP_APP_USE_GLIBC_WRAPS "Use wraps for new GLIBC features." OFF)
 if (LINUX AND NOT DESKTOP_APP_SPECIAL_TARGET STREQUAL "")
@@ -35,10 +36,21 @@ if (DESKTOP_APP_ENABLE_IPO_OPTIMIZATIONS AND CMAKE_CXX_COMPILER_ID MATCHES "Clan
     set(DESKTOP_APP_ENABLE_IPO_OPTIMIZATIONS OFF)
 endif()
 
+option(DESKTOP_APP_USE_HUNSPELL_ONLY "Disable system spellchecker and use bundled Hunspell only. (For debugging purposes)" OFF)
+option(DESKTOP_APP_USE_ENCHANT "Use Enchant instead of bundled Hunspell. (Linux only)" OFF)
+
 if (DESKTOP_APP_SPECIAL_TARGET STREQUAL ""
     OR DESKTOP_APP_SPECIAL_TARGET STREQUAL "uwp"
     OR DESKTOP_APP_SPECIAL_TARGET STREQUAL "macstore")
     set(disable_autoupdate 1)
+endif()
+
+set(add_hunspell_library 0)
+if ((WIN32
+  OR (LINUX AND NOT DESKTOP_APP_USE_ENCHANT)
+  OR DESKTOP_APP_USE_HUNSPELL_ONLY)
+  AND NOT DESKTOP_APP_DISABLE_SPELLCHECK)
+    set(add_hunspell_library 1)
 endif()
 
 set(build_osx 0)
@@ -81,5 +93,3 @@ if (NOT APPLE OR build_osx)
 else()
     get_filename_component(libs_loc "../Libraries/macos" REALPATH)
 endif()
-get_filename_component(third_party_loc "Telegram/ThirdParty" REALPATH)
-get_filename_component(submodules_loc "Telegram" REALPATH)

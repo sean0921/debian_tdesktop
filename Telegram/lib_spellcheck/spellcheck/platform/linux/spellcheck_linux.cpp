@@ -7,7 +7,6 @@
 #include <set>
 #include <QLocale>
 
-#include "spellcheck/spellcheck_utils.h"
 #include "spellcheck/platform/linux/linux_enchant.h"
 
 #include "spellcheck/platform/linux/spellcheck_linux.h"
@@ -61,6 +60,7 @@ private:
 };
 
 EnchantSpellChecker::EnchantSpellChecker() {
+	if (!enchant::loader::do_explicit_linking()) return;
 	std::set<std::string> langs;
 	_brokerHandle = std::make_unique<enchant::Broker>();
 	_brokerHandle->list_dicts([](
@@ -236,13 +236,18 @@ bool EnchantSpellChecker::isWordInDictionary(const QString &word) {
 void Init() {
 }
 
-bool IsAvailable() {
-	static auto Available = enchant::loader::do_explicit_linking();
-	return Available;
+std::vector<QString> ActiveLanguages() {
+	return EnchantSpellChecker::instance()->knownLanguages();
 }
 
-void KnownLanguages(std::vector<QString> *langCodes) {
-	*langCodes = EnchantSpellChecker::instance()->knownLanguages();
+void UpdateLanguages(std::vector<int> languages) {
+	::Spellchecker::UpdateSupportedScripts(ActiveLanguages());
+	crl::async([=] {
+		const auto result = ActiveLanguages();
+		crl::on_main([=] {
+			::Spellchecker::UpdateSupportedScripts(result);
+		});
+	});
 }
 
 bool CheckSpelling(const QString &wordToCheck) {
@@ -277,6 +282,10 @@ void CheckSpellingText(
 	*misspelledWords = ::Spellchecker::RangesFromText(
 		text,
 		::Spellchecker::CheckSkipAndSpell);
+}
+
+bool IsSystemSpellchecker() {
+	return true;
 }
 
 } // namespace Platform::Spellchecker
