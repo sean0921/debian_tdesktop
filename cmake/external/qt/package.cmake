@@ -24,10 +24,14 @@ find_package(Qt5 COMPONENTS Core Gui Widgets Network REQUIRED)
 
 if (LINUX)
     if (NOT DESKTOP_APP_USE_PACKAGED)
-        find_package(Qt5 COMPONENTS Svg REQUIRED)
+        find_package(Qt5 COMPONENTS WaylandClient Svg REQUIRED)
     endif()
 
-    find_package(Qt5 COMPONENTS DBus)
+    if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
+        find_package(Qt5 COMPONENTS DBus)
+    else()
+        find_package(Qt5 COMPONENTS DBus REQUIRED)
+    endif()
 endif()
 
 set_property(GLOBAL PROPERTY AUTOGEN_SOURCE_GROUP "(gen)")

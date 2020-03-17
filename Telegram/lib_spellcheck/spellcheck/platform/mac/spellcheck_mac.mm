@@ -7,7 +7,6 @@
 #include "spellcheck/platform/mac/spellcheck_mac.h"
 
 #include "base/platform/mac/base_utilities_mac.h"
-#include "spellcheck/spellcheck_utils.h"
 
 #import <QuartzCore/QuartzCore.h>
 
@@ -52,12 +51,8 @@ namespace Platform::Spellchecker {
 void Init() {
 }
 
-bool IsAvailable() {
-	return true;
-}
-
-void KnownLanguages(std::vector<QString> *langCodes) {
-	*langCodes = SystemLanguages();
+std::vector<QString> ActiveLanguages() {
+	return SystemLanguages();
 }
 
 bool CheckSpelling(const QString &wordToCheck) {
@@ -164,6 +159,14 @@ void IgnoreWord(const QString &word) {
 
 bool IsWordInDictionary(const QString &wordToCheck) {
 	return [SharedSpellChecker() hasLearnedWord:Q2NSString(wordToCheck)];
+}
+
+bool IsSystemSpellchecker() {
+	return true;
+}
+
+void UpdateLanguages(std::vector<int> languages) {
+	::Spellchecker::UpdateSupportedScripts(SystemLanguages());
 }
 
 } // namespace Platform::Spellchecker

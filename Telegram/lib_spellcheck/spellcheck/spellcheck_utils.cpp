@@ -20,6 +20,13 @@ struct SubtagScript {
 
 // https://chromium.googlesource.com/chromium/src/+/refs/heads/master/third_party/blink/renderer/platform/text/locale_to_script_mapping.cc
 
+std::vector<QChar::Script> SupportedScripts;
+rpl::event_stream<> SupportedScriptsEventStream;
+
+constexpr auto kFactor = 1000;
+
+constexpr auto kMaxWordSize = 99;
+
 constexpr auto kAcuteAccentChars = {
 	QChar(769),	QChar(833),	// QChar(180),
 	QChar(714),	QChar(779),	QChar(733),
@@ -191,12 +198,11 @@ constexpr SubtagScript kLocaleScriptList[] = {
 };
 
 inline auto IsAcuteAccentChar(const QChar &c) {
-	return ranges::find(kAcuteAccentChars, c) != end(kAcuteAccentChars);
+	return ranges::contains(kAcuteAccentChars, c);
 }
 
 inline auto IsSpellcheckableScripts(const QChar::Script &s) {
-	return ranges::find(kUnspellcheckableScripts, s)
-		== end(kUnspellcheckableScripts);
+	return !ranges::contains(kUnspellcheckableScripts, s);
 }
 
 } // namespace
@@ -222,42 +228,37 @@ QChar::Script WordScript(const QStringRef &word) {
 		: firstLetter->script();
 }
 
-class SystemScripts {
-	std::vector<QChar::Script> systemScripts;
-public:
-
-	SystemScripts() {
-		std::vector<QString> languages;
-		Platform::Spellchecker::KnownLanguages(&languages);
-		systemScripts = (
-			languages
-		) | ranges::views::transform(
-			LocaleToScriptCode
-		) | ranges::views::unique | ranges::views::filter(
-			IsSpellcheckableScripts
-		) | ranges::to_vector;
-		if (systemScripts.empty()) {
-			systemScripts = { QChar::Script_Common };
-		}
+bool IsWordSkippable(const QStringRef &word, bool checkSupportedScripts) {
+	if (word.size() > kMaxWordSize) {
+		return true;
 	}
-
-	bool IsWordSkippable(const QStringRef &word) const {
-		const auto wordScript = WordScript(word);
-		if (ranges::find(systemScripts, wordScript) == end(systemScripts)) {
-			return true;
-		}
-		return ranges::find_if(word, [&](QChar c) {
-			return (c.script() != wordScript)
-				&& !IsAcuteAccentChar(c)
-				&& (c.unicode() != '\'') // Patched Qt to make it a non-separator.
-				&& (c.unicode() != '_'); // This is not a word separator.
-		}) != word.end();
+	const auto wordScript = WordScript(word);
+	if (checkSupportedScripts
+		&& !ranges::contains(SupportedScripts, wordScript)) {
+		return true;
 	}
-};
+	return ranges::find_if(word, [&](QChar c) {
+		return (c.script() != wordScript)
+			&& !IsAcuteAccentChar(c)
+			&& (c.unicode() != '\'') // Patched Qt to make it a non-separator.
+			&& (c.unicode() != '_'); // This is not a word separator.
+	}) != word.end();
+}
 
-bool IsWordSkippable(const QStringRef &word) {
-	static SystemScripts systemScripts;
-	return systemScripts.IsWordSkippable(word);
+void UpdateSupportedScripts(std::vector<QString> languages) {
+	// It should be called at least once from Platform::Spellchecker::Init().
+	SupportedScripts = ranges::view::all(
+		languages
+	) | ranges::views::transform(
+		LocaleToScriptCode
+	) | ranges::views::unique | ranges::views::filter(
+		IsSpellcheckableScripts
+	) | ranges::to_vector;
+	SupportedScriptsEventStream.fire({});
+}
+
+rpl::producer<> SupportedScriptsChanged() {
+	return SupportedScriptsEventStream.events();
 }
 
 MisspelledWords RangesFromText(
@@ -307,6 +308,16 @@ MisspelledWords RangesFromText(
 bool CheckSkipAndSpell(const QString &word) {
 	return !IsWordSkippable(&word)
 		&& Platform::Spellchecker::CheckSpelling(word);
+}
+
+QLocale LocaleFromLangId(int langId) {
+	if (langId < kFactor) {
+		return QLocale(static_cast<QLocale::Language>(langId));
+	}
+	const auto l = langId / kFactor;
+	const auto lang = static_cast<QLocale::Language>(l);
+	const auto country = static_cast<QLocale::Country>(langId - l * kFactor);
+	return QLocale(lang, country);
 }
 
 } // namespace Spellchecker

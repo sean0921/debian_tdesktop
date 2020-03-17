@@ -7,17 +7,18 @@
 #pragma once
 
 #include "spellcheck/spellcheck_types.h"
+#include "spellcheck/spellcheck_utils.h"
 
 namespace Platform::Spellchecker {
 
 constexpr auto kMaxSuggestions = 5;
 
-[[nodiscard]] bool IsAvailable();
+[[nodiscard]] bool IsSystemSpellchecker();
 [[nodiscard]] bool CheckSpelling(const QString &wordToCheck);
 [[nodiscard]] bool IsWordInDictionary(const QString &wordToCheck);
 
 void Init();
-void KnownLanguages(std::vector<QString> *langCodes);
+std::vector<QString> ActiveLanguages();
 void FillSuggestionList(
 	const QString &wrongWord,
 	std::vector<QString> *optionalSuggestions);
@@ -30,11 +31,11 @@ void CheckSpellingText(
 	const QString &text,
 	MisspelledWords *misspelledWords);
 
+void UpdateLanguages(std::vector<int> languages);
+
 } // namespace Platform::Spellchecker
 
 // Platform dependent implementations.
-// TODO: We should use Hunspell for Win 7 and Linux.
-
 #ifdef Q_OS_MAC
 #include "spellcheck/platform/mac/spellcheck_mac.h"
 #elif defined Q_OS_WIN // Q_OS_MAC
