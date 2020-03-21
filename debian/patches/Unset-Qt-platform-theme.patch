@@ -6,11 +6,11 @@ Last-Updated: Sun, 09 Feb 2020 20:40:07 +0300
 
 --- a/Telegram/SourceFiles/platform/linux/specific_linux.cpp
 +++ b/Telegram/SourceFiles/platform/linux/specific_linux.cpp
-@@ -412,6 +412,7 @@ int psFixPrevious() {
- namespace Platform {
- 
- void start() {
-+	unsetenv("QT_QPA_PLATFORMTHEME");
+@@ -523,6 +523,7 @@ void start() {
+ 	LOG(("Launcher filename: %1").arg(GetLauncherFilename()));
  	FallbackFontConfig();
  
- #if !defined(TDESKTOP_DISABLE_DBUS_INTEGRATION) && defined(TDESKTOP_FORCE_GTK_FILE_DIALOG)
++	unsetenv("QT_QPA_PLATFORMTHEME");
+ 	qputenv("PULSE_PROP_application.name", AppName.utf8());
+ 	qputenv("PULSE_PROP_application.icon_name", GetIconName().toLatin1());
+ 

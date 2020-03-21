@@ -10,7 +10,7 @@ Files: *
 Copyright: 2014-2020 John Preston <johnprestonmail@gmail.com>
 License: GPL-3.0+ with OpenSSL exception
 
-Files: lib/xdg/telegramdesktop.appdata.xml
+Files: lib/xdg/telegramdesktop.appdata.xml.in
 Copyright: Jan Grulich <grulja@gmail.com> (github: grulja)
 License: CC0-1.0
 

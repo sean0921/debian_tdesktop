@@ -2,12 +2,11 @@ Source: telegram-desktop
 Section: net
 Priority: optional
 Maintainer: Nicholas Guriev <guriev-ns@ya.ru>
-Build-Depends: debhelper-compat (=12)
+Build-Depends: debhelper (>=12.8~), debhelper-compat (=12)
 Build-Depends-Arch:
  cmake (>=3.16.0),
  libavcodec-dev (>=7:3.2),
  libavformat-dev (>=7:3.2),
- libayatana-appindicator3-dev | libayatana-appindicator-dev | libappindicator3-dev | libappindicator-dev,
  libdbusmenu-qt5-dev,
  libenchant-dev | libenchant-2-dev,
  libexpected-dev,
