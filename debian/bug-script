@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+exec >&3
+
+logfile=${XDG_DATA_HOME:-~/.local/share}/TelegramDesktop/log.txt
+test -r "${logfile}" || exit 0
+
+cat <<EOF
+-- BEGIN ATTACHMENTS --
+${logfile}
+-- END ATTACHMENTS --
+EOF
