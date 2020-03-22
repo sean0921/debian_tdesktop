@@ -1,3 +1,13 @@
+telegram-desktop (1.9.21+ds-1) unstable; urgency=medium
+
+  * New upstream release.
+    - Incremental reading of messages is available.
+    - Spell-checker implementation remains the same via Enchant to make
+      it easier for extension.
+  * Add a script for reportbug that attaches user's log file.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sun, 22 Mar 2020 08:57:48 +0300
+
 telegram-desktop (1.9.14+ds-2) unstable; urgency=medium
 
   [ Ilya Fedin ]
