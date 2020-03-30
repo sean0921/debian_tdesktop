@@ -17,6 +17,8 @@ namespace internal {
 namespace {
 
 constexpr auto kSkipInvalidDataPackets = 10;
+constexpr auto kMaxInlineArea = 1280 * 720;
+constexpr auto kMaxSendingArea = 3840 * 2160; // usual 4K
 
 // See https://github.com/telegramdesktop/tdesktop/issues/7225
 constexpr auto kAlignImageBy = 64;
@@ -59,6 +61,12 @@ ReaderImplementation::ReadResult FFMpegReaderImplementation::readNextFrame() {
 	do {
 		int res = avcodec_receive_frame(_codecContext, _frame.get());
 		if (res >= 0) {
+			const auto limit = (_mode == Mode::Inspecting)
+				? kMaxSendingArea
+				: kMaxInlineArea;
+			if (_frame->width * _frame->height > limit) {
+				return ReadResult::Error;
+			}
 			processReadFrame();
 			return ReadResult::Success;
 		}

@@ -78,7 +78,8 @@ QString GetTrayIconName(int counter, bool muted) {
 	const auto iconName = GetIconName();
 	const auto panelIconName = GetPanelIconName(counter, muted);
 
-	if (QIcon::hasThemeIcon(panelIconName)) {
+	if (QIcon::hasThemeIcon(panelIconName)
+		|| qEnvironmentVariableIsSet(kForcePanelIcon.utf8())) {
 		return panelIconName;
 	} else if (QIcon::hasThemeIcon(iconName)) {
 		return iconName;
@@ -158,7 +159,7 @@ QIcon TrayIconGen(int counter, bool muted) {
 			|| iconThemeName != TrayIconThemeName
 			|| iconName != TrayIconName) {
 			if (!iconName.isEmpty()) {
-				if(systemIcon.isNull()) {
+				if (systemIcon.isNull()) {
 					systemIcon = QIcon::fromTheme(iconName);
 				}
 
@@ -290,6 +291,14 @@ std::unique_ptr<QTemporaryFile> TrayIconFile(
 
 	return ret;
 }
+
+bool UseUnityCounter() {
+	static const auto UnityCounter = QDBusInterface(
+		"com.canonical.Unity",
+		"/").isValid();
+
+	return UnityCounter;
+}
 #endif // !TDESKTOP_DISABLE_DBUS_INTEGRATION
 
 bool IsSNIAvailable() {
@@ -316,18 +325,6 @@ bool IsSNIAvailable() {
 #endif // !TDESKTOP_DISABLE_DBUS_INTEGRATION
 
 	return false;
-}
-
-bool UseUnityCounter() {
-#ifdef TDESKTOP_DISABLE_DBUS_INTEGRATION
-	static const auto UnityCounter = false;
-#else // TDESKTOP_DISABLE_DBUS_INTEGRATION
-	static const auto UnityCounter = QDBusInterface(
-		"com.canonical.Unity",
-		"/").isValid();
-#endif // !TDESKTOP_DISABLE_DBUS_INTEGRATION
-
-	return UnityCounter;
 }
 
 quint32 djbStringHash(QString string) {
@@ -437,13 +434,19 @@ void MainWindow::initHook() {
 		&QWindow::visibleChanged,
 		this,
 		&MainWindow::onVisibleChanged);
-#endif // !TDESKTOP_DISABLE_DBUS_INTEGRATION
+
+	if (AppMenuSupported()) {
+		LOG(("Using D-Bus global menu."));
+	} else {
+		LOG(("Not using D-Bus global menu."));
+	}
 
 	if (UseUnityCounter()) {
 		LOG(("Using Unity launcher counter."));
 	} else {
 		LOG(("Not using Unity launcher counter."));
 	}
+#endif // !TDESKTOP_DISABLE_DBUS_INTEGRATION
 }
 
 bool MainWindow::hasTrayIcon() const {
@@ -467,11 +470,12 @@ void MainWindow::psTrayMenuUpdated() {
 }
 
 #ifndef TDESKTOP_DISABLE_DBUS_INTEGRATION
-void MainWindow::setSNITrayIcon(int counter, bool muted, bool firstShow) {
+void MainWindow::setSNITrayIcon(int counter, bool muted) {
 	const auto iconName = GetTrayIconName(counter, muted);
 
 	if (qEnvironmentVariableIsSet(kDisableTrayCounter.utf8())
-		&& ((!iconName.isEmpty() && !InSnap())
+		&& !iconName.isEmpty()
+		&& (!InSnap()
 			|| qEnvironmentVariableIsSet(kForcePanelIcon.utf8()))) {
 		if (_sniTrayIcon->iconName() == iconName) {
 			return;
@@ -480,7 +484,8 @@ void MainWindow::setSNITrayIcon(int counter, bool muted, bool firstShow) {
 		_sniTrayIcon->setIconByName(iconName);
 		_sniTrayIcon->setToolTipIconByName(iconName);
 	} else if (IsIndicatorApplication()) {
-		if(!IsIconRegenerationNeeded(counter, muted) && !firstShow) {
+		if (!IsIconRegenerationNeeded(counter, muted)
+			&& !_sniTrayIcon->iconName().isEmpty()) {
 			return;
 		}
 
@@ -492,7 +497,8 @@ void MainWindow::setSNITrayIcon(int counter, bool muted, bool firstShow) {
 			_sniTrayIcon->setIconByName(_trayIconFile->fileName());
 		}
 	} else {
-		if(!IsIconRegenerationNeeded(counter, muted) && !firstShow) {
+		if (!IsIconRegenerationNeeded(counter, muted)
+			&& !_sniTrayIcon->iconPixmap().isEmpty()) {
 			return;
 		}
 
@@ -527,6 +533,10 @@ void MainWindow::onSNIOwnerChanged(
 		const QString &service,
 		const QString &oldOwner,
 		const QString &newOwner) {
+	if (Global::WorkMode().value() == dbiwmWindowOnly) {
+		return;
+	}
+
 	if (oldOwner.isEmpty() && !newOwner.isEmpty()) {
 		LOG(("Switching to SNI tray icon..."));
 	} else if (!oldOwner.isEmpty() && newOwner.isEmpty()) {
@@ -554,7 +564,7 @@ void MainWindow::onSNIOwnerChanged(
 
 	cSetSupportTray(trayAvailable);
 
-	if(cSupportTray()) {
+	if (cSupportTray()) {
 		psSetupTrayIcon();
 	} else {
 		LOG(("System tray is not available."));
@@ -575,7 +585,7 @@ void MainWindow::psSetupTrayIcon() {
 				this);
 
 			_sniTrayIcon->setTitle(AppName.utf16());
-			setSNITrayIcon(counter, muted, true);
+			setSNITrayIcon(counter, muted);
 
 			attachToSNITrayIcon();
 		}
