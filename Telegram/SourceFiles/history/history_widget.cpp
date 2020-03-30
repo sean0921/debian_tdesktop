@@ -39,6 +39,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
+#include "data/data_chat_filters.h"
 #include "data/data_scheduled_messages.h"
 #include "data/data_file_origin.h"
 #include "data/data_histories.h"
@@ -1453,6 +1454,9 @@ bool HistoryWidget::notify_switchInlineBotButtonReceived(const QString &query, U
 }
 
 void HistoryWidget::notify_userIsBotChanged(UserData *user) {
+	if (const auto history = session().data().history(user)) {
+		session().data().chatsFilters().refreshHistory(history);
+	}
 	if (_peer && _peer == user) {
 		_list->notifyIsBotChanged();
 		_list->updateBotInfo();
@@ -1765,6 +1769,7 @@ void HistoryWidget::showHistory(
 
 	_showAtMsgId = showAtMsgId;
 	_historyInited = false;
+	_contactStatus = nullptr;
 
 	// Unload lottie animations.
 	Auth().data().unloadHeavyViewParts(HistoryInner::ElementDelegate());
@@ -1782,8 +1787,6 @@ void HistoryWidget::showHistory(
 		}, _contactStatus->lifetime());
 		orderWidgets();
 		controller()->tabbedSelector()->setCurrentPeer(_peer);
-	} else {
-		_contactStatus = nullptr;
 	}
 	refreshTabbedPanel();
 
@@ -1812,6 +1815,7 @@ void HistoryWidget::showHistory(
 			&& (!_history->loadedAtTop() || !_migrated->loadedAtBottom())) {
 			_migrated->clear(History::ClearType::Unload);
 		}
+		_history->setFakeUnreadWhileOpened(true);
 
 		_topBar->setActiveChat(
 			_history,
