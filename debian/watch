@@ -1,4 +1,4 @@
 version=4
-opts="versionmangle=s/\+ds$//, repacksuffix=+ds" \
+opts="dversionmangle=s/\+ds$//, repacksuffix=+ds" \
     https://github.com/telegramdesktop/tdesktop/releases/latest \
     (?:.*?/)?tdesktop-(\d[\d.]*)-full\.tar\.gz debian uupdate
