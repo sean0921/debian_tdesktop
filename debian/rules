@@ -33,7 +33,7 @@ print-%:
 	dh $@
 
 override_dh_auto_configure:
-	ln -s -r debian Telegram/ThirdParty
+	ln -s -f -n -r debian Telegram/ThirdParty
 	dh_auto_configure -- $(EXTRA_CMAKE_VARIABLES:%=-D%)
 
 # Remove symbolic link for access to StatusNotifierItem module.
