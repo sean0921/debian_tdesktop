@@ -15,7 +15,7 @@ Build-Depends-Arch:
  liblzma-dev,
  libmapbox-variant-dev,
  libminizip-dev (>=1.1),
- libmsgsl-dev (>=1.0.0), libmsgsl-dev (<<2.0.0) | libmsgsl-dev (>=2.1.0),
+ libmsgsl-dev (>=3.0.0),
  libopenal-dev,
  libopus-dev (>=1.1),
  libqrcodegencpp-dev,
