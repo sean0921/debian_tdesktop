@@ -1,3 +1,13 @@
+telegram-desktop (2.1.0+ds-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Remove no longer needed Ignore-emoji-pack.patch.
+    - The latest version of rlottie is required now.
+  * Port to GSL 3.0.0.
+  * Switch to Hunspell spellchecker from Enchant.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sun, 26 Apr 2020 19:15:04 +0300
+
 telegram-desktop (2.0.1+ds-1) unstable; urgency=medium
 
   * New upstream release.
