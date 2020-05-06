@@ -2,4 +2,3 @@ Do-not-sync-wallpaper.patch
 Path-to-libtgvoip.patch
 Unset-Qt-platform-theme.patch
 Debug-info-for-32-bit.patch
-Port-to-GSL3.patch
