@@ -14,7 +14,7 @@
 #include <QtGui/QPainter>
 #include <QtCore/QDir>
 
-#if defined SUPPORT_IMAGE_GENERATION && !defined DESKTOP_APP_USE_PACKAGED
+#ifndef DESKTOP_APP_USE_PACKAGED
 Q_IMPORT_PLUGIN(QWebpPlugin)
 #ifdef Q_OS_MAC
 Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin)
@@ -23,7 +23,7 @@ Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
 #else // !Q_OS_MAC && !Q_OS_WIN
 Q_IMPORT_PLUGIN(QXcbIntegrationPlugin)
 #endif // !Q_OS_MAC && !Q_OS_WIN
-#endif // SUPPORT_IMAGE_GENERATION
+#endif // DESKTOP_APP_USE_PACKAGED
 
 namespace codegen {
 namespace emoji {
@@ -151,10 +151,8 @@ uint32 countCrc32(const void *data, std::size_t size) {
 } // namespace
 
 Generator::Generator(const Options &options) : project_(Project)
-#ifdef SUPPORT_IMAGE_GENERATION
 , writeImages_(options.writeImages)
-#endif // SUPPORT_IMAGE_GENERATION
-, data_(PrepareData())
+, data_(PrepareData(options.dataPath))
 , replaces_(PrepareReplaces(options.replacesPath)) {
 	QDir dir(options.outputPath);
 	if (!dir.mkpath(".")) {
@@ -173,22 +171,15 @@ Generator::Generator(const Options &options) : project_(Project)
 int Generator::generate() {
 	if (data_.list.empty() || replaces_.list.isEmpty()) {
 		return -1;
-	}
-
-#ifdef SUPPORT_IMAGE_GENERATION
-	if (writeImages_) {
+	} else if (!writeImages_.isEmpty()) {
 		return writeImages() ? 0 : -1;
-	}
-#endif // SUPPORT_IMAGE_GENERATION
-
-	if (!writeSource()
+	} else if (!writeSource()
 		|| !writeHeader()
 		|| !writeSuggestionsSource()
 		|| !writeSuggestionsHeader()
 		|| !common::TouchTimestamp(outputPath_)) {
 		return -1;
 	}
-
 	return 0;
 }
 
@@ -197,14 +188,130 @@ constexpr auto kEmojiRowsInFile = 16;
 constexpr auto kEmojiQuality = 99;
 constexpr auto kEmojiSize = 72;
 constexpr auto kEmojiFontSize = 72;
-constexpr auto kEmojiDelta = 67;
+constexpr auto kEmojiDelta = 67 - 4;
 constexpr auto kScaleFromLarge = true;
+constexpr auto kLargeEmojiSize = 180;
+constexpr auto kLargeEmojiFontSizeMac = 180;
+constexpr auto kLargeEmojiDeltaMac = 167 - 9;
+constexpr auto kEmojiShiftMac = 0;
+constexpr auto kLargeEmojiFontSizeAndroid = 178;
+constexpr auto kLargeEmojiDeltaAndroid = 140;
+constexpr auto kEmojiShiftAndroid = -4;
 
-#ifdef SUPPORT_IMAGE_GENERATION
+enum class ImageType {
+	Mac,
+	Android,
+	Twemoji,
+	JoyPixels,
+};
+
+[[nodiscard]] ImageType GuessImageType(QString tag) {
+	if (tag.indexOf("NotoColorEmoji") >= 0) {
+		return ImageType::Android;
+	} else if (tag.indexOf("twemoji") >= 0) {
+		return ImageType::Twemoji;
+	} else if (tag.indexOf("joypixels") >= 0) {
+		return ImageType::JoyPixels;
+	}
+	return ImageType::Mac;
+}
+
+bool PaintSingleFromFont(QPainter &p, QRect targetRect, const Emoji &data, QFont &font, ImageType type, QImage &singleImage) {
+	singleImage.fill(Qt::transparent);
+	{
+		QPainter q(&singleImage);
+		q.setPen(QColor(0, 0, 0, 255));
+		q.setFont(font);
+		const auto delta = !kScaleFromLarge
+			? kEmojiDelta
+			: (type == ImageType::Mac)
+			? kLargeEmojiDeltaMac
+			: kLargeEmojiDeltaAndroid;
+		const auto shift = (type == ImageType::Mac)
+			? kEmojiShiftMac
+			: kEmojiShiftAndroid;
+		q.drawText(2 + shift, 2 + delta, data.id);
+	}
+	auto sourceRect = computeSourceRect(singleImage);
+	if (sourceRect.isEmpty()) {
+		std::cout << "Bad emoji: " << data.id.toStdString() << std::endl;
+		return false;
+	}
+	if (kScaleFromLarge) {
+		p.drawImage(targetRect, singleImage.copy(sourceRect).scaled(kEmojiSize, kEmojiSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+	} else {
+		p.drawImage(targetRect, singleImage, sourceRect);
+	}
+	return true;
+}
+
+bool PaintSingleFromFile(QPainter &p, QRect targetRect, const Emoji &data, const QString &base, ImageType type) {
+	auto nameParts = QStringList();
+	auto namePartsFull = QStringList();
+	const auto ucsToPart = [&](uint32 ucs4) {
+		if (type == ImageType::Twemoji) {
+			return QString::number(ucs4, 16).toLower();
+		} else if (type == ImageType::JoyPixels) {
+			return QString("%1").arg(ucs4, 4, 16, QChar('0')).toLower();
+		}
+		return QString();
+	};
+	for (auto i = 0; i != data.id.size(); ++i) {
+		uint ucs4 = data.id[i].unicode();
+		if (type == ImageType::JoyPixels && ucs4 == 0x200d) {
+			continue;
+		} else if (ucs4 == kPostfix) {
+			namePartsFull.push_back(ucsToPart(ucs4));
+			continue;
+		} else if (QChar::isHighSurrogate(ucs4) && i + 1 != data.id.size()) {
+			ushort low = data.id[++i].unicode();
+			if (QChar::isLowSurrogate(low)) {
+				ucs4 = QChar::surrogateToUcs4(ucs4, low);
+			} else {
+				return false;
+			}
+		}
+		nameParts.push_back(ucsToPart(ucs4));
+		namePartsFull.push_back(ucsToPart(ucs4));
+	}
+	const auto fillEmpty = [&] {
+		const auto column = targetRect.x() / targetRect.width();
+		const auto row = targetRect.y() / targetRect.height();
+		p.fillRect(targetRect, ((column + row) % 2) ? QColor(255, 0, 0, 255) : QColor(0, 255, 0, 255));
+	};
+	const auto name = nameParts.join('-');
+	const auto nameFull = namePartsFull.join('-');
+	const auto nameAdded = name + "-fe0f";
+	const auto image = [&] {
+		if (const auto result = QImage(base + '/' + name + ".png"); !result.isNull()) {
+			return result;
+		} else if (const auto full = QImage(base + '/' + nameFull + ".png"); !full.isNull()) {
+			return full;
+		}
+		return QImage(base + '/' + nameAdded + ".png");
+	}();
+	const auto allowDownscale = (type == ImageType::JoyPixels);
+	if (image.isNull()) {
+		std::cout << "NOT FOUND: " << name.toStdString() << std::endl;
+		fillEmpty();
+		return false;
+	} else if (image.width() != image.height()
+		|| image.width() < targetRect.width()
+		|| image.height() < targetRect.height()
+		|| (!allowDownscale && image.width() != targetRect.width())) {
+		std::cout << "BAD SIZE: " << name.toStdString() << std::endl;
+		fillEmpty();
+		return false;
+	} else if (allowDownscale && image.width() > targetRect.width()) {
+		p.drawImage(targetRect, image.scaled(targetRect.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+	} else {
+		p.drawImage(targetRect, image);
+	}
+	return true;
+}
+
 QImage Generator::generateImage(int imageIndex) {
-	constexpr auto kLargeEmojiSize = 180;
-	constexpr auto kLargeEmojiFontSize = 180;
-	constexpr auto kLargeEmojiDelta = 167;
+	const auto type = GuessImageType(writeImages_);
 
 	auto emojiCount = int(data_.list.size());
 	auto columnsCount = kEmojiInRow;
@@ -214,8 +321,34 @@ QImage Generator::generateImage(int imageIndex) {
 	auto sourceSize = kScaleFromLarge ? kLargeEmojiSize : kEmojiSize;
 
 	auto font = QGuiApplication::font();
-	font.setFamily(QStringLiteral("Apple Color Emoji"));
-	font.setPixelSize(kScaleFromLarge ? kLargeEmojiFontSize : kEmojiFontSize);
+	auto base = writeImages_;
+	if (type == ImageType::Android) {
+		const auto regularId = QFontDatabase::addApplicationFont(base);
+		if (regularId < 0) {
+			std::cout << "NotoColorEmoji.ttf not loaded from: " << base.toStdString() << std::endl;
+			return QImage();
+		}
+	}
+	if (type == ImageType::Mac || type == ImageType::Android) {
+		const auto family = (type == ImageType::Mac)
+			? QStringLiteral("Apple Color Emoji")
+			: QStringLiteral("Noto Color Emoji");
+		font.setFamily(family);
+		font.setPixelSize(!kScaleFromLarge
+			? kEmojiFontSize
+			: (type == ImageType::Mac)
+			? kLargeEmojiFontSizeMac
+			: kLargeEmojiFontSizeAndroid);
+		if (QFontInfo(font).family() != family) {
+			return QImage();
+		}
+	} else if (type == ImageType::Twemoji || type == ImageType::JoyPixels) {
+		if (!QDir(base).exists()) {
+			return QImage();
+		}
+	} else {
+		return QImage();
+	}
 
 	auto singleSize = 4 + sourceSize;
 	const auto inFileShift = (imageIndex * kEmojiInRow * kEmojiRowsInFile);
@@ -227,6 +360,7 @@ QImage Generator::generateImage(int imageIndex) {
 	auto rowsCount = (inFileCount / columnsCount) + ((inFileCount % columnsCount) ? 1 : 0);
 	auto emojiImage = QImage(columnsCount * kEmojiSize, rowsCount * kEmojiSize, QImage::Format_ARGB32);
 	emojiImage.fill(Qt::transparent);
+	auto skippedCount = 0;
 	auto singleImage = QImage(singleSize, singleSize, QImage::Format_ARGB32);
 	{
 		QPainter p(&emojiImage);
@@ -236,24 +370,15 @@ QImage Generator::generateImage(int imageIndex) {
 		auto row = 0;
 		for (auto i = 0; i != inFileCount; ++i) {
 			auto &emoji = data_.list[inFileShift + i];
-			{
-				singleImage.fill(Qt::transparent);
-
-				QPainter q(&singleImage);
-				q.setPen(QColor(0, 0, 0, 255));
-				q.setFont(font);
-				const auto delta = kScaleFromLarge ? kLargeEmojiDelta : kEmojiDelta;
-				q.drawText(2, 2 + delta, emoji.id);
-			}
-			auto sourceRect = computeSourceRect(singleImage);
-			if (sourceRect.isEmpty()) {
-				return QImage();
-			}
-			auto targetRect = QRect(column * kEmojiSize, row * kEmojiSize, kEmojiSize, kEmojiSize);
-			if (kScaleFromLarge) {
-				p.drawImage(targetRect, singleImage.copy(sourceRect).scaled(kEmojiSize, kEmojiSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
-			} else {
-				p.drawImage(targetRect, singleImage, sourceRect);
+			const auto targetRect = QRect(column * kEmojiSize, row * kEmojiSize, kEmojiSize, kEmojiSize);
+			if (type == ImageType::Mac || type == ImageType::Android) {
+				if (!PaintSingleFromFont(p, targetRect, emoji, font, type, singleImage)) {
+					++skippedCount;
+				}
+			} else if (type == ImageType::Twemoji || type == ImageType::JoyPixels) {
+				if (!PaintSingleFromFile(p, targetRect, emoji, base, type)) {
+					++skippedCount;
+				}
 			}
 			++column;
 			if (column == columnsCount) {
@@ -262,15 +387,18 @@ QImage Generator::generateImage(int imageIndex) {
 			}
 		}
 	}
-	return emojiImage;
+	return (skippedCount > 0) ? QImage() : emojiImage;
 }
 
 bool Generator::writeImages() {
+	auto badCount = 0;
 	auto imageIndex = 0;
-	while (true) {
+	while (imageIndex * kEmojiInRow * kEmojiRowsInFile < data_.list.size()) {
 		auto image = generateImage(imageIndex);
 		if (image.isNull()) {
-			break;
+			++badCount;
+			++imageIndex;
+			continue;
 		}
 		auto postfix = '_' + QString::number(imageIndex + 1);
 		auto filename = spritePath_ + postfix + ".webp";
@@ -308,9 +436,8 @@ bool Generator::writeImages() {
 		}
 		++imageIndex;
 	}
-	return true;
+	return (badCount == 0);
 }
-#endif // SUPPORT_IMAGE_GENERATION
 
 bool Generator::writeSource() {
 	source_ = std::make_unique<common::CppFile>(outputPath_ + ".cpp", project_);

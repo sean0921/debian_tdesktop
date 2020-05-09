@@ -5,10 +5,42 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**.md'
+      - '!docs/building-cmake.md'
+      - 'changelog.txt'
+      - 'LEGAL'
+      - 'LICENSE'
+      - '.github/**'
+      - '!.github/workflows/linux.yml'
+      - 'snap/**'
+      - 'Telegram/build/**'
+      - 'Telegram/Patches/**'
+      - 'Telegram/Resources/uwp/**'
+      - 'Telegram/Resources/winrc/**'
+      - 'Telegram/SourceFiles/platform/win/**'
+      - 'Telegram/SourceFiles/platform/mac/**'
+      - 'Telegram/Telegram/**'
+      - 'Telegram/configure.bat'
+      - 'Telegram/Telegram.plist'
   pull_request:
     paths-ignore:
       - 'docs/**'
       - '**.md'
+      - '!docs/building-cmake.md'
+      - 'changelog.txt'
+      - 'LEGAL'
+      - 'LICENSE'
+      - '.github/**'
+      - '!.github/workflows/linux.yml'
+      - 'snap/**'
+      - 'Telegram/build/**'
+      - 'Telegram/Patches/**'
+      - 'Telegram/Resources/uwp/**'
+      - 'Telegram/Resources/winrc/**'
+      - 'Telegram/SourceFiles/platform/win/**'
+      - 'Telegram/SourceFiles/platform/mac/**'
+      - 'Telegram/Telegram/**'
+      - 'Telegram/configure.bat'
+      - 'Telegram/Telegram.plist'
 
 jobs:
 
@@ -100,14 +132,6 @@ jobs:
           mkdir -p Libraries
           cd Libraries
           echo ::set-env name=LibrariesPath::`pwd`
-
-      - name: Range-v3.
-        run: |
-          echo "Find necessary branch from doc."
-          cloneRange=$(grep -A 1 "range-v3" $REPO_NAME/$DOC_PATH | sed -n 1p)
-          cd $LibrariesPath
-          echo $cloneRange
-          eval $cloneRange
 
       - name: Patches.
         run: |
@@ -311,19 +335,6 @@ jobs:
 
           sudo cp -R ffmpeg-cache/. /
 
-      - name: PortAudio.
-        run: |
-          cd $LibrariesPath
-
-          git clone https://git.assembla.com/portaudio.git
-          cd portaudio
-          git checkout 396fe4b669
-          ./configure
-          make -j$(nproc)
-          sudo make install
-          cd ..
-          rm -rf portaudio
-
       - name: OpenAL Soft.
         run: |
           cd $LibrariesPath
@@ -408,11 +419,7 @@ jobs:
           git submodule update qtbase qtwayland qtimageformats qtsvg
           cd qtbase
           git apply ../../patches/qtbase_${QT}.diff
-          cd src/plugins/platforminputcontexts
-          git clone $GIT/desktop-app/fcitx.git
-          git clone $GIT/desktop-app/hime.git
-          git clone $GIT/desktop-app/nimf.git
-          cd ../../../..
+          cd ../
 
           ./configure -prefix "$QT_PREFIX" \
           -release \

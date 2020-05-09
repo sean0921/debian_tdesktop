@@ -48,11 +48,11 @@ namespace HistoryView {
 namespace {
 
 void ShowErrorToast(const QString &text) {
-	auto config = Ui::Toast::Config();
-	config.multiline = true;
-	config.minWidth = st::msgMinWidth;
-	config.text = { text };
-	Ui::Toast::Show(config);
+	Ui::Toast::Show(Ui::Toast::Config{
+		.text = { text },
+		.st = &st::historyErrorToast,
+		.multiline = true,
+	});
 }
 
 } // namespace
@@ -706,9 +706,10 @@ void ScheduledWidget::setInternalState(
 	restoreState(memento);
 }
 
-void ScheduledWidget::pushTabbedSelectorToThirdSection(
+bool ScheduledWidget::pushTabbedSelectorToThirdSection(
+		not_null<PeerData*> peer,
 		const Window::SectionShow &params) {
-	_composeControls->pushTabbedSelectorToThirdSection(params);
+	return _composeControls->pushTabbedSelectorToThirdSection(peer, params);
 }
 
 bool ScheduledWidget::returnTabbedSelector() {

@@ -4,14 +4,13 @@
 # For license and copyright information please follow this link:
 # https://github.com/desktop-app/legal/blob/master/LEGAL
 
-if (DESKTOP_APP_USE_PACKAGED_RLOTTIE)
+if (DESKTOP_APP_USE_PACKAGED_RLOTTIE AND NOT DESKTOP_APP_USE_PACKAGED_LAZY)
     add_library(external_rlottie INTERFACE IMPORTED GLOBAL)
     add_library(desktop-app::external_rlottie ALIAS external_rlottie)
 
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(RLOTTIE REQUIRED rlottie)
-    target_include_directories(external_rlottie INTERFACE ${RLOTTIE_INCLUDE_DIRS})
-    target_link_libraries(external_rlottie INTERFACE ${RLOTTIE_LIBRARIES})
+    pkg_check_modules(RLOTTIE REQUIRED IMPORTED_TARGET rlottie)
+    target_link_libraries(external_rlottie INTERFACE PkgConfig::RLOTTIE)
 else()
     add_library(external_rlottie OBJECT)
     add_library(desktop-app::external_rlottie ALIAS external_rlottie)
@@ -117,6 +116,13 @@ else()
         ${rlottie_loc}/src/vector/pixman
         ${rlottie_loc}/src/vector/freetype
     )
+
+    if (LINUX)
+        target_link_libraries(external_rlottie
+        PUBLIC
+            pthread
+        )
+    endif()
 
     if (WIN32)
         target_compile_options(external_rlottie
