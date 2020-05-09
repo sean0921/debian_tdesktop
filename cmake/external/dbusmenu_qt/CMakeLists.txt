@@ -4,7 +4,7 @@
 # For license and copyright information please follow this link:
 # https://github.com/desktop-app/legal/blob/master/LEGAL
 
-if (DESKTOP_APP_USE_PACKAGED)
+if (DESKTOP_APP_USE_PACKAGED AND NOT DESKTOP_APP_USE_PACKAGED_LAZY)
     add_library(external_dbusmenu_qt INTERFACE IMPORTED GLOBAL)
     add_library(desktop-app::external_dbusmenu_qt ALIAS external_dbusmenu_qt)
 
@@ -51,7 +51,8 @@ else()
     target_include_directories(external_dbusmenu_qt
     PUBLIC
         ${dbusmenu_qt_loc}
-        "${CMAKE_CURRENT_BINARY_DIR}")
+        "${CMAKE_CURRENT_BINARY_DIR}"
+    )
 
     target_link_libraries(external_dbusmenu_qt
     PUBLIC

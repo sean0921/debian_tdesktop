@@ -4,15 +4,14 @@
 # For license and copyright information please follow this link:
 # https://github.com/desktop-app/legal/blob/master/LEGAL
 
-if (DESKTOP_APP_USE_PACKAGED)
+if (DESKTOP_APP_USE_PACKAGED AND NOT DESKTOP_APP_USE_PACKAGED_LAZY)
     add_library(external_hunspell INTERFACE IMPORTED GLOBAL)
     add_library(desktop-app::external_hunspell ALIAS external_hunspell)
 
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(HUNSPELL REQUIRED hunspell)
+    pkg_check_modules(HUNSPELL REQUIRED IMPORTED_TARGET hunspell)
 
-    target_include_directories(external_hunspell INTERFACE ${HUNSPELL_INCLUDE_DIRS})
-    target_link_libraries(external_hunspell INTERFACE ${HUNSPELL_LIBRARIES})
+    target_link_libraries(external_hunspell INTERFACE PkgConfig::HUNSPELL)
 else()
     add_library(external_hunspell OBJECT)
     add_library(desktop-app::external_hunspell ALIAS external_hunspell)

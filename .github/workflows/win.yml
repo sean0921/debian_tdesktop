@@ -5,10 +5,45 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**.md'
+      - '!docs/building-msvc.md'
+      - 'changelog.txt'
+      - 'LEGAL'
+      - 'LICENSE'
+      - '.github/**'
+      - '!.github/workflows/win.yml'
+      - 'lib/xdg/**'
+      - 'snap/**'
+      - 'Telegram/build/**'
+      - 'Telegram/Patches/**'
+      - '!Telegram/Patches/build_ffmpeg_win.sh'
+      - 'Telegram/Resources/uwp/**'
+      - 'Telegram/SourceFiles/platform/linux/**'
+      - 'Telegram/SourceFiles/platform/mac/**'
+      - 'Telegram/Telegram/**'
+      - 'Telegram/configure.sh'
+      - 'Telegram/Telegram.plist'
   pull_request:
     paths-ignore:
       - 'docs/**'
       - '**.md'
+      - '!docs/building-msvc.md'
+      - 'changelog.txt'
+      - 'LEGAL'
+      - 'LICENSE'
+      - '.github/**'
+      - '!.github/workflows/win.yml'
+      - 'lib/xdg/**'
+      - 'snap/**'
+      - 'Telegram/build/**'
+      - 'Telegram/Patches/**'
+      - '!Telegram/Patches/build_ffmpeg_win.sh'
+      - 'Telegram/Resources/uwp/**'
+      - 'Telegram/SourceFiles/platform/linux/**'
+      - 'Telegram/SourceFiles/platform/mac/**'
+      - '!Telegram/Patches/breakpad.diff'
+      - 'Telegram/Telegram/**'
+      - 'Telegram/configure.sh'
+      - 'Telegram/Telegram.plist'
 
 jobs:
 
@@ -75,15 +110,6 @@ jobs:
       - name: Choco installs.
         run: |
           choco install --no-progress -y nasm yasm jom ninja
-
-      - name: Range-v3.
-        shell: bash
-        run: |
-          echo "Find necessary branch from doc."
-          cloneRange=$(grep -A 1 "range-v3" $REPO_NAME/$DOC_PATH | sed -n 1p)
-          cd $LibrariesPath
-          echo $cloneRange
-          eval $cloneRange
 
       - name: Patches.
         shell: bash

@@ -8,7 +8,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_inner_widget.h"
 
 #include <rpl/merge.h>
-#include "styles/style_history.h"
 #include "core/file_utilities.h"
 #include "core/crash_reports.h"
 #include "history/history.h"
@@ -57,6 +56,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_histories.h"
 #include "facades.h"
 #include "app.h"
+#include "styles/style_history.h"
+#include "styles/style_window.h" // st::windowMinWidth
 
 #include <QtGui/QClipboard>
 #include <QtWidgets/QApplication>
@@ -132,16 +133,16 @@ void HistoryInner::BotAbout::clickHandlerPressedChanged(
 
 HistoryInner::HistoryInner(
 	not_null<HistoryWidget*> historyWidget,
+	not_null<Ui::ScrollArea*> scroll,
 	not_null<Window::SessionController*> controller,
-	Ui::ScrollArea *scroll,
 	not_null<History*> history)
 : RpWidget(nullptr)
+, _widget(historyWidget)
+, _scroll(scroll)
 , _controller(controller)
 , _peer(history->peer)
 , _history(history)
 , _migrated(history->migrateFrom())
-, _widget(historyWidget)
-, _scroll(scroll)
 , _scrollDateCheck([this] { scrollDateCheck(); })
 , _scrollDateHideTimer([this] { scrollDateHideByTimer(); }) {
 	Instance = this;
@@ -2481,6 +2482,12 @@ void HistoryInner::elementShowPollResults(
 	_controller->showPollResults(poll, context);
 }
 
+void HistoryInner::elementShowTooltip(
+		const TextWithEntities &text,
+		Fn<void()> hiddenCallback) {
+	_widget->showInfoTooltip(text, std::move(hiddenCallback));
+}
+
 auto HistoryInner::getSelectionState() const
 -> HistoryView::TopBarWidget::SelectedState {
 	auto result = HistoryView::TopBarWidget::SelectedState {};
@@ -3346,6 +3353,13 @@ not_null<HistoryView::ElementDelegate*> HistoryInner::ElementDelegate() {
 				FullMsgId context) override {
 			if (Instance) {
 				Instance->elementShowPollResults(poll, context);
+			}
+		}
+		void elementShowTooltip(
+				const TextWithEntities &text,
+				Fn<void()> hiddenCallback) override {
+			if (Instance) {
+				Instance->elementShowTooltip(text, hiddenCallback);
 			}
 		}
 

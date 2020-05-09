@@ -478,7 +478,7 @@ void InnerWidget::updateEmptyText() {
 	options.flags |= TextParseMarkdown;
 	auto hasSearch = !_searchQuery.isEmpty();
 	auto hasFilter = (_filter.flags != 0) || !_filter.allUsers;
-	auto text = Ui::Text::Bold((hasSearch || hasFilter)
+	auto text = Ui::Text::Semibold((hasSearch || hasFilter)
 		? tr::lng_admin_log_no_results_title(tr::now)
 		: tr::lng_admin_log_no_events_title(tr::now));
 	auto description = hasSearch
@@ -488,7 +488,9 @@ void InnerWidget::updateEmptyText() {
 			TextUtilities::Clean(_searchQuery))
 		: hasFilter
 		? tr::lng_admin_log_no_results_text(tr::now)
-		: tr::lng_admin_log_no_events_text(tr::now);
+		: _channel->isMegagroup()
+		? tr::lng_admin_log_no_events_text(tr::now)
+		: tr::lng_admin_log_no_events_text_channel(tr::now);
 	text.text.append(qstr("\n\n") + description);
 	_emptyText.setMarkedText(st::defaultTextStyle, text, options);
 }
@@ -580,6 +582,11 @@ void InnerWidget::elementStartStickerLoop(not_null<const Element*> view) {
 void InnerWidget::elementShowPollResults(
 	not_null<PollData*> poll,
 	FullMsgId context) {
+}
+
+void InnerWidget::elementShowTooltip(
+	const TextWithEntities &text,
+	Fn<void()> hiddenCallback) {
 }
 
 void InnerWidget::saveState(not_null<SectionMemento*> memento) {

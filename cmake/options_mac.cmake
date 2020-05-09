@@ -14,10 +14,12 @@ else()
             MAC_USE_BREAKPAD
         )
     endif()
-    target_include_directories(common_options
-    INTERFACE
-        /usr/local/macos/include
-    )
+    if (NOT DESKTOP_APP_USE_PACKAGED)
+        target_include_directories(common_options
+        INTERFACE
+            /usr/local/macos/include
+        )
+    endif()
 endif()
 
 target_compile_options(common_options
@@ -48,8 +50,6 @@ INTERFACE
     CoreText
     CoreGraphics
     CoreMedia
-    IOSurface
-    Metal
     OpenGL
     AudioUnit
     ApplicationServices
@@ -68,3 +68,11 @@ INTERFACE
     CoreWLAN
     IOKit
 )
+
+if (NOT build_osx)
+    target_link_frameworks(common_options
+    INTERFACE
+        IOSurface
+        Metal
+    )
+endif()

@@ -21,10 +21,17 @@ if (NOT DESKTOP_APP_USE_PACKAGED)
 endif()
 
 find_package(Qt5 COMPONENTS Core Gui Widgets Network REQUIRED)
+find_package(Qt5Gui COMPONENTS QWebpPlugin REQUIRED)
 
 if (LINUX)
     if (NOT DESKTOP_APP_USE_PACKAGED)
         find_package(Qt5 COMPONENTS WaylandClient Svg REQUIRED)
+    elseif (DESKTOP_APP_USE_PACKAGED_LAZY)
+        find_package(Qt5 COMPONENTS WaylandClient REQUIRED)
+
+        if (DESKTOP_APP_USE_PACKAGED_LAZY_PLATFORMTHEMES)
+            find_package(Qt5 COMPONENTS Svg REQUIRED)
+        endif()
     endif()
 
     if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
