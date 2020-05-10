@@ -1,3 +1,13 @@
+telegram-desktop (2.1.4+ds-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Remove Port-to-GSL3.patch applied by upstream.
+  * Clarify FFmpeg dependencies to fix build on sh4.
+  * Add Checks-for-libatomic.patch that fixes build on riscv64.
+  * New Reduce-boldface.patch for packaged fonts.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sun, 10 May 2020 10:07:10 +0300
+
 telegram-desktop (2.1.0+ds-1) unstable; urgency=medium
 
   * New upstream release.
