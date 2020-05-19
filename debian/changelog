@@ -1,3 +1,13 @@
+telegram-desktop (2.1.5+ds-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Remove no longer needed Reduce-boldface.patch.
+  * Revert "Remove no longer needed Ignore-emoji-pack.patch".
+    - So far, Telegram Desktop will use on ia64 architecture the
+      rlottie::Animition::loadFromData method with old signature.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Tue, 19 May 2020 22:07:41 +0300
+
 telegram-desktop (2.1.4+ds-1) unstable; urgency=medium
 
   * New upstream release.
