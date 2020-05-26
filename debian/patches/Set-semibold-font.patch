@@ -1,0 +1,19 @@
+Description: Set semibold style for packaged fonts
+ This partially fixes appearance in KDE.
+Bug-Debian: https://bugs.debian.org/961526
+Author: Ilya Fedin <fedin-ilja2010@ya.ru>
+Acked-By: Nicholas Guriev <guriev-ns@ya.ru>
+Date: Tue, 26 May 2020 19:52:52 +0300
+
+--- a/Telegram/lib_ui/ui/style/style_core_font.cpp
++++ b/Telegram/lib_ui/ui/style/style_core_font.cpp
+@@ -322,8 +322,8 @@ FontData::FontData(int size, uint32 flags, int family, Font *other)
+ 		f.setWeight(QFont::DemiBold);
+ #else // DESKTOP_APP_USE_PACKAGED_FONTS
+ 		f.setBold(true);
+-		f.setStyleName("Semibold");
+ #endif // !DESKTOP_APP_USE_PACKAGED_FONTS
++		f.setStyleName("Semibold");
+ 	}
+ 
+ 	m = QFontMetrics(f);
