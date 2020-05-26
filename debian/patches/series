@@ -1,6 +1,6 @@
+Checks-for-libatomic.patch
+Debug-info-for-32-bit.patch
 Do-not-sync-wallpaper.patch
 Ignore-emoji-pack.patch
 Path-to-libtgvoip.patch
 Unset-Qt-platform-theme.patch
-Debug-info-for-32-bit.patch
-Checks-for-libatomic.patch
