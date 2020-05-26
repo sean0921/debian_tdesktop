@@ -1,3 +1,12 @@
+telegram-desktop (2.1.7+ds-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Add Set-semibold-font.patch (Closes: #961526)
+    - The patch partially fixes bold font in KDE. Although, boldface is still
+      unused in the input box.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Tue, 26 May 2020 20:00:13 +0300
+
 telegram-desktop (2.1.5+ds-1) unstable; urgency=medium
 
   * New upstream release.
