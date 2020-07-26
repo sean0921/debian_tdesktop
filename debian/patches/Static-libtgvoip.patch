@@ -1,0 +1,16 @@
+Description: Add linker flags for static libtgvoip
+ Only libtgvoip.a is now available in Debian.
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Date: Mon, 27 Jul 2020 07:14:35 +0300
+
+--- a/Telegram/cmake/lib_tgvoip.cmake
++++ b/Telegram/cmake/lib_tgvoip.cmake
+@@ -11,7 +11,7 @@ if (TDESKTOP_USE_PACKAGED_TGVOIP AND NOT
+     find_package(PkgConfig REQUIRED)
+     pkg_check_modules(TGVOIP REQUIRED IMPORTED_TARGET tgvoip)
+ 
+-    target_link_libraries(lib_tgvoip INTERFACE PkgConfig::TGVOIP)
++    target_link_libraries(lib_tgvoip INTERFACE PkgConfig::TGVOIP ${TGVOIP_STATIC_LDFLAGS})
+ else()
+     add_library(lib_tgvoip STATIC)
+     init_target(lib_tgvoip)

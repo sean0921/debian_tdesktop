@@ -11,10 +11,10 @@ Last-Update: Sat, 27 Jul 2019 14:38:17 +0300
 
 --- a/Telegram/SourceFiles/window/themes/window_theme.cpp
 +++ b/Telegram/SourceFiles/window/themes/window_theme.cpp
-@@ -400,11 +400,8 @@ void ChatBackground::start() {
- 	}
+@@ -556,11 +556,8 @@ void ChatBackground::start() {
+ 	initialRead();
  
- 	Core::App().activeAccount().sessionValue(
+ 	Core::App().domain().activeSessionValue(
 -	) | rpl::filter([=](Main::Session *session) {
 -		return session != _session;
 -	}) | rpl::start_with_next([=](Main::Session *session) {
@@ -22,5 +22,5 @@ Last-Update: Sat, 27 Jul 2019 14:38:17 +0300
  		_session = session;
 -		checkUploadWallPaper();
  	}, _lifetime);
- }
  
+ 	Core::App().settings().setSystemDarkMode(Platform::IsDarkMode());
