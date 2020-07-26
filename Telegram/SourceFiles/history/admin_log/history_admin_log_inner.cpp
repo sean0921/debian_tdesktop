@@ -29,6 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "layout.h"
 #include "window/window_session_controller.h"
 #include "main/main_session.h"
+#include "main/main_session_settings.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/image/image.h"
 #include "ui/text/text_utilities.h"
@@ -39,9 +40,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/peers/edit_participants_box.h"
 #include "data/data_session.h"
 #include "data/data_photo.h"
+#include "data/data_photo_media.h"
 #include "data/data_document.h"
 #include "data/data_media_types.h"
 #include "data/data_file_origin.h"
+#include "data/data_cloud_file.h"
 #include "data/data_channel.h"
 #include "data/data_user.h"
 #include "facades.h"
@@ -58,6 +61,7 @@ constexpr auto kMaxChannelAdmins = 200;
 constexpr auto kScrollDateHideTimeout = 1000;
 constexpr auto kEventsFirstPage = 20;
 constexpr auto kEventsPerPage = 50;
+constexpr auto kClearUserpicsAfter = 50;
 
 } // namespace
 
@@ -226,7 +230,7 @@ InnerWidget::InnerWidget(
 , _controller(controller)
 , _channel(channel)
 , _history(channel->owner().history(channel))
-, _api(_channel->session().api().instance())
+, _api(&_channel->session().mtp())
 , _scrollDateCheck([=] { scrollDateCheck(); })
 , _emptyText(
 		st::historyAdminLogEmptyWidth
@@ -310,6 +314,11 @@ void InnerWidget::visibleTopBottomUpdated(
 	_visibleTop = visibleTop;
 	_visibleBottom = visibleBottom;
 
+	// Unload userpics.
+	if (_userpics.size() > kClearUserpicsAfter) {
+		_userpicsCache = std::move(_userpics);
+	}
+
 	updateVisibleTopItem();
 	checkPreloadMore();
 	if (scrolledUp) {
@@ -317,7 +326,7 @@ void InnerWidget::visibleTopBottomUpdated(
 	} else {
 		scrollDateHideByTimer();
 	}
-	_controller->floatPlayerAreaUpdated().notify(true);
+	_controller->floatPlayerAreaUpdated();
 }
 
 void InnerWidget::updateVisibleTopItem() {
@@ -529,31 +538,20 @@ HistoryView::Context InnerWidget::elementContext() {
 }
 
 std::unique_ptr<HistoryView::Element> InnerWidget::elementCreate(
-		not_null<HistoryMessage*> message) {
-	return std::make_unique<HistoryView::Message>(this, message);
+		not_null<HistoryMessage*> message,
+		Element *replacing) {
+	return std::make_unique<HistoryView::Message>(this, message, replacing);
 }
 
 std::unique_ptr<HistoryView::Element> InnerWidget::elementCreate(
-		not_null<HistoryService*> message) {
-	return std::make_unique<HistoryView::Service>(this, message);
+		not_null<HistoryService*> message,
+		Element *replacing) {
+	return std::make_unique<HistoryView::Service>(this, message, replacing);
 }
 
 bool InnerWidget::elementUnderCursor(
 		not_null<const HistoryView::Element*> view) {
 	return (App::hoveredItem() == view);
-}
-
-void InnerWidget::elementAnimationAutoplayAsync(
-		not_null<const HistoryView::Element*> view) {
-	crl::on_main(this, [this, msgId = view->data()->fullId()] {
-		if (const auto item = session().data().message(msgId)) {
-			if (const auto view = viewForItem(item)) {
-				if (const auto media = view->media()) {
-					media->autoplayAnimation();
-				}
-			}
-		}
-	});
 }
 
 crl::time InnerWidget::elementHighlightTime(
@@ -587,6 +585,10 @@ void InnerWidget::elementShowPollResults(
 void InnerWidget::elementShowTooltip(
 	const TextWithEntities &text,
 	Fn<void()> hiddenCallback) {
+}
+
+bool InnerWidget::elementIsGifPaused() {
+	return _controller->isGifPausedAtLeastFor(Window::GifPauseReason::Any);
 }
 
 void InnerWidget::saveState(not_null<SectionMemento*> memento) {
@@ -812,6 +814,10 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		return;
 	}
 
+	const auto guard = gsl::finally([&] {
+		_userpicsCache.clear();
+	});
+
 	Painter p(this);
 
 	auto ms = crl::now();
@@ -854,7 +860,14 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 					const auto message = view->data()->toHistoryMessage();
 					Assert(message != nullptr);
 
-					message->from()->paintUserpicLeft(p, st::historyPhotoLeft, userpicTop, view->width(), st::msgPhotoSize);
+					const auto from = message->from();
+					from->paintUserpicLeft(
+						p,
+						_userpics[from],
+						st::historyPhotoLeft,
+						userpicTop,
+						view->width(),
+						st::msgPhotoSize);
 				}
 				return true;
 			});
@@ -1075,7 +1088,7 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 						});
 					}
 				}
-				if (!document->filepath(DocumentData::FilePathResolve::Checked).isEmpty()) {
+				if (!document->filepath(true).isEmpty()) {
 					_menu->addAction(Platform::IsMac() ? tr::lng_context_show_in_finder(tr::now) : tr::lng_context_show_in_folder(tr::now), [=] {
 						showContextInFolder(document);
 					});
@@ -1092,8 +1105,6 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	} else { // maybe cursor on some text history item?
 		const auto item = view ? view->data().get() : nullptr;
 		const auto itemId = item ? item->fullId() : FullMsgId();
-		bool canDelete = item && item->canDelete() && (item->id > 0 || !item->serviceMsg());
-		bool canForward = item && item->allowsForward();
 
 		auto msg = dynamic_cast<HistoryMessage*>(item);
 		if (isUponSelected > 0) {
@@ -1137,11 +1148,13 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	}
 }
 
-void InnerWidget::savePhotoToFile(PhotoData *photo) {
-	if (!photo || photo->isNull() || !photo->loaded()) {
+void InnerWidget::savePhotoToFile(not_null<PhotoData*> photo) {
+	const auto media = photo->activeMediaView();
+	if (photo->isNull() || !media || !media->loaded()) {
 		return;
 	}
 
+	const auto image = media->image(Data::PhotoSize::Large)->original();
 	auto filter = qsl("JPEG Image (*.jpg);;") + FileDialog::AllFilesFilter();
 	FileDialog::GetWritePath(
 		this,
@@ -1150,22 +1163,26 @@ void InnerWidget::savePhotoToFile(PhotoData *photo) {
 		filedialogDefaultName(qsl("photo"), qsl(".jpg")),
 		crl::guard(this, [=](const QString &result) {
 			if (!result.isEmpty()) {
-				photo->large()->original().save(result, "JPG");
+				image.save(result, "JPG");
 			}
 		}));
 }
 
-void InnerWidget::saveDocumentToFile(DocumentData *document) {
+void InnerWidget::saveDocumentToFile(not_null<DocumentData*> document) {
 	DocumentSaveClickHandler::Save(
 		Data::FileOrigin(),
 		document,
 		DocumentSaveClickHandler::Mode::ToNewFile);
 }
 
-void InnerWidget::copyContextImage(PhotoData *photo) {
-	if (!photo || photo->isNull() || !photo->loaded()) return;
+void InnerWidget::copyContextImage(not_null<PhotoData*> photo) {
+	const auto media = photo->activeMediaView();
+	if (photo->isNull() || !media || !media->loaded()) {
+		return;
+	}
 
-	QGuiApplication::clipboard()->setImage(photo->large()->original());
+	const auto image = media->image(Data::PhotoSize::Large)->original();
+	QGuiApplication::clipboard()->setImage(image);
 }
 
 void InnerWidget::copySelectedText() {
@@ -1181,8 +1198,7 @@ void InnerWidget::cancelContextDownload(not_null<DocumentData*> document) {
 }
 
 void InnerWidget::showContextInFolder(not_null<DocumentData*> document) {
-	const auto filepath = document->filepath(
-		DocumentData::FilePathResolve::Checked);
+	const auto filepath = document->filepath(true);
 	if (!filepath.isEmpty()) {
 		File::ShowInFolder(filepath);
 	}
@@ -1458,13 +1474,13 @@ void InnerWidget::mouseActionFinish(const QPoint &screenPos, Qt::MouseButton but
 	_mouseSelectType = TextSelectType::Letters;
 	//_widget->noSelectingScroll(); // TODO
 
-#if defined Q_OS_LINUX32 || defined Q_OS_LINUX64
+#if defined Q_OS_UNIX && !defined Q_OS_MAC
 	if (_selectedItem && _selectedText.from != _selectedText.to) {
 		TextUtilities::SetClipboardText(
 			_selectedItem->selectedText(_selectedText),
 			QClipboard::Selection);
 	}
-#endif // Q_OS_LINUX32 || Q_OS_LINUX64
+#endif // Q_OS_UNIX && !Q_OS_MAC
 }
 
 void InnerWidget::updateSelected() {
@@ -1691,7 +1707,7 @@ void InnerWidget::performDrag() {
 	//		auto mimeData = std::make_unique<QMimeData>();
 	//		mimeData->setData(forwardMimeType, "1");
 	//		if (auto document = (pressedMedia ? pressedMedia->getDocument() : nullptr)) {
-	//			auto filepath = document->filepath(DocumentData::FilePathResolve::Checked);
+	//			auto filepath = document->filepath(true);
 	//			if (!filepath.isEmpty()) {
 	//				QList<QUrl> urls;
 	//				urls.push_back(QUrl::fromLocalFile(filepath));

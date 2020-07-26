@@ -11,22 +11,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/rect_part.h"
 
 enum class ImageRoundRadius;
-class MainWindow;
-class MainWidget;
-class HistoryItem;
-class History;
+
 namespace HistoryView {
 class Element;
 } // namespace HistoryView
-
-namespace Media {
-namespace Clip {
-class Reader;
-} // namespace Clip
-} // namespace Media
-
-using HistoryItemsMap = base::flat_set<not_null<HistoryItem*>>;
-using GifItems = QHash<Media::Clip::Reader*, HistoryItem*>;
 
 enum RoundCorners : int {
 	SmallMaskCorners = 0x00, // for images
@@ -97,7 +85,6 @@ namespace App {
 	void setLaunchState(LaunchState state);
 	void restart();
 
-	constexpr auto kFileSizeLimit = 1500 * 1024 * 1024; // Load files up to 1500mb
 	constexpr auto kImageSizeLimit = 64 * 1024 * 1024; // Open images up to 64mb jpg/png/gif
 	QImage readImage(QByteArray data, QByteArray *format = nullptr, bool opaque = true, bool *animated = nullptr);
 	QImage readImage(const QString &file, QByteArray *format = nullptr, bool opaque = true, bool *animated = nullptr, QByteArray *content = 0);

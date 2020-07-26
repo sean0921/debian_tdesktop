@@ -111,14 +111,16 @@ bool MediaCanHaveCaption(const MTPMessage &message) {
 	return (mediaType == mtpc_messageMediaDocument || mediaType == mtpc_messageMediaPhoto);
 }
 
-TextWithEntities ExtractEditedText(const MTPMessage &message) {
+TextWithEntities ExtractEditedText(
+		not_null<Main::Session*> session,
+		const MTPMessage &message) {
 	if (message.type() != mtpc_message) {
 		return TextWithEntities();
 	}
 	const auto &data = message.c_message();
 	return {
 		TextUtilities::Clean(qs(data.vmessage())),
-		Api::EntitiesFromMTP(data.ventities().value_or_empty())
+		Api::EntitiesFromMTP(session, data.ventities().value_or_empty())
 	};
 }
 
@@ -241,9 +243,11 @@ TextWithEntities GenerateBannedChangeText(
 	return result;
 }
 
-auto GenerateUserString(MTPint userId) {
+auto GenerateUserString(
+		not_null<Main::Session*> session,
+		MTPint userId) {
 	// User name in "User name (@username)" format with entities.
-	auto user = Auth().data().user(userId.v);
+	auto user = session->data().user(userId.v);
 	auto name = TextWithEntities { user->name };
 	auto entityData = QString::number(user->id)
 		+ '.'
@@ -281,10 +285,10 @@ auto GenerateParticipantChangeTextInner(
 		return tr::lng_admin_log_transferred(
 			tr::now,
 			lt_user,
-			GenerateUserString(data.vuser_id()),
+			GenerateUserString(&channel->session(), data.vuser_id()),
 			Ui::Text::WithEntities);
 	}, [&](const MTPDchannelParticipantAdmin &data) {
-		auto user = GenerateUserString(data.vuser_id());
+		auto user = GenerateUserString(&channel->session(), data.vuser_id());
 		return GenerateAdminChangeText(
 			channel,
 			user,
@@ -293,7 +297,7 @@ auto GenerateParticipantChangeTextInner(
 				? &oldParticipant->c_channelParticipantAdmin().vadmin_rights()
 				: nullptr);
 	}, [&](const MTPDchannelParticipantBanned &data) {
-		auto user = GenerateUserString(data.vuser_id());
+		auto user = GenerateUserString(&channel->session(), data.vuser_id());
 		return GenerateBannedChangeText(
 			user,
 			&data.vbanned_rights(),
@@ -301,7 +305,7 @@ auto GenerateParticipantChangeTextInner(
 				? &oldParticipant->c_channelParticipantBanned().vbanned_rights()
 				: nullptr);
 	}, [&](const auto &data) {
-		auto user = GenerateUserString(data.vuser_id());
+		auto user = GenerateUserString(&channel->session(), data.vuser_id());
 		if (oldType == mtpc_channelParticipantAdmin) {
 			return GenerateAdminChangeText(
 				channel,
@@ -376,19 +380,20 @@ void GenerateItems(
 		Fn<void(OwnedItem item)> callback) {
 	Expects(history->peer->isChannel());
 
-	auto id = event.vid().v;
-	auto from = Auth().data().user(event.vuser_id().v);
-	auto channel = history->peer->asChannel();
-	auto &action = event.vaction();
-	auto date = event.vdate().v;
-	auto addPart = [&](not_null<HistoryItem*> item) {
+	const auto session = &history->session();
+	const auto id = event.vid().v;
+	const auto from = history->owner().user(event.vuser_id().v);
+	const auto channel = history->peer->asChannel();
+	const auto &action = event.vaction();
+	const auto date = event.vdate().v;
+	const auto addPart = [&](not_null<HistoryItem*> item) {
 		return callback(OwnedItem(delegate, item));
 	};
 
 	using Flag = MTPDmessage::Flag;
-	auto fromName = from->name;
-	auto fromLink = from->createOpenLink();
-	auto fromLinkText = textcmdLink(1, fromName);
+	const auto fromName = from->name;
+	const auto fromLink = from->createOpenLink();
+	const auto fromLinkText = textcmdLink(1, fromName);
 
 	auto addSimpleServiceMessage = [&](const QString &text, PhotoData *photo = nullptr) {
 		auto message = HistoryService::PreparedText { text };
@@ -467,7 +472,11 @@ void GenerateItems(
 		auto bodyClientFlags = MTPDmessage_ClientFlag::f_admin_log_entry;
 		auto bodyReplyTo = 0;
 		auto bodyViaBotId = 0;
-		auto newLink = newValue.isEmpty() ? TextWithEntities() : PrepareText(Core::App().createInternalLinkFull(newValue), QString());
+		auto newLink = newValue.isEmpty()
+			? TextWithEntities()
+			: PrepareText(
+				history->session().createInternalLinkFull(newValue),
+				QString());
 		auto body = history->makeMessage(
 			history->nextNonHistoryEntryId(),
 			bodyFlags,
@@ -479,7 +488,9 @@ void GenerateItems(
 			QString(),
 			newLink);
 		if (!oldValue.isEmpty()) {
-			auto oldLink = PrepareText(Core::App().createInternalLinkFull(oldValue), QString());
+			auto oldLink = PrepareText(
+				history->session().createInternalLinkFull(oldValue),
+				QString());
 			body->addLogEntryOriginal(id, tr::lng_admin_log_previous_link(tr::now), oldLink);
 		}
 		addPart(body);
@@ -487,7 +498,7 @@ void GenerateItems(
 
 	auto createChangePhoto = [&](const MTPDchannelAdminLogEventActionChangePhoto &action) {
 		action.vnew_photo().match([&](const MTPDphoto &data) {
-			auto photo = Auth().data().processPhoto(data);
+			auto photo = history->owner().processPhoto(data);
 			auto text = (channel->isMegagroup()
 				? tr::lng_admin_log_changed_photo_group
 				: tr::lng_admin_log_changed_photo_channel)(
@@ -542,7 +553,7 @@ void GenerateItems(
 	};
 
 	auto createEditMessage = [&](const MTPDchannelAdminLogEventActionEditMessage &action) {
-		auto newValue = ExtractEditedText(action.vnew_message());
+		auto newValue = ExtractEditedText(session, action.vnew_message());
 		auto canHaveCaption = MediaCanHaveCaption(action.vnew_message());
 		auto text = (!canHaveCaption
 			? tr::lng_admin_log_edited_message
@@ -554,7 +565,7 @@ void GenerateItems(
 				fromLinkText);
 		addSimpleServiceMessage(text);
 
-		auto oldValue = ExtractEditedText(action.vprev_message());
+		auto oldValue = ExtractEditedText(session, action.vprev_message());
 		auto detachExistingItem = false;
 		auto body = history->createItem(
 			PrepareLogMessage(

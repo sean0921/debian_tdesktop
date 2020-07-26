@@ -50,6 +50,7 @@ constexpr auto kPreloadedScreensCount = 4;
 constexpr auto kPreloadIfLessThanScreens = 2;
 constexpr auto kPreloadedScreensCountFull
 	= kPreloadedScreensCount + 1 + kPreloadedScreensCount;
+constexpr auto kClearUserpicsAfter = 50;
 
 } // namespace
 
@@ -284,6 +285,12 @@ ListWidget::ListWidget(
 			}
 		}
 	}, lifetime());
+
+	session().downloaderTaskFinished(
+	) | rpl::start_with_next([=] {
+		update();
+	}, lifetime());
+
 	session().data().itemRemoved(
 	) | rpl::start_with_next(
 		[this](auto item) { itemRemoved(item); },
@@ -302,6 +309,10 @@ ListWidget::ListWidget(
 
 Main::Session &ListWidget::session() const {
 	return _controller->session();
+}
+
+not_null<Window::SessionController*> ListWidget::controller() const {
+	return _controller;
 }
 
 not_null<ListDelegate*> ListWidget::delegate() const {
@@ -353,7 +364,7 @@ std::optional<int> ListWidget::scrollTopForPosition(
 	}
 	const auto index = findNearestItem(position);
 	const auto view = _items[index];
-	return scrollTopForView(_items[index]);
+	return scrollTopForView(view);
 }
 
 std::optional<int> ListWidget::scrollTopForView(
@@ -583,6 +594,11 @@ void ListWidget::visibleTopBottomUpdated(
 	_visibleTop = visibleTop;
 	_visibleBottom = visibleBottom;
 
+	// Unload userpics.
+	if (_userpics.size() > kClearUserpicsAfter) {
+		_userpicsCache = std::move(_userpics);
+	}
+
 	if (initializing) {
 		checkUnreadBarCreation();
 	}
@@ -592,7 +608,7 @@ void ListWidget::visibleTopBottomUpdated(
 	} else {
 		scrollDateHideByTimer();
 	}
-	_controller->floatPlayerAreaUpdated().notify(true);
+	_controller->floatPlayerAreaUpdated();
 	_applyUpdatedScrollState.call();
 }
 
@@ -1101,29 +1117,20 @@ Context ListWidget::elementContext() {
 }
 
 std::unique_ptr<Element> ListWidget::elementCreate(
-		not_null<HistoryMessage*> message) {
-	return std::make_unique<Message>(this, message);
+		not_null<HistoryMessage*> message,
+		Element *replacing) {
+	return std::make_unique<Message>(this, message, replacing);
 }
 
 std::unique_ptr<Element> ListWidget::elementCreate(
-		not_null<HistoryService*> message) {
-	return std::make_unique<Service>(this, message);
+		not_null<HistoryService*> message,
+		Element *replacing) {
+	return std::make_unique<Service>(this, message, replacing);
 }
 
 bool ListWidget::elementUnderCursor(
 		not_null<const HistoryView::Element*> view) {
 	return (_overElement == view);
-}
-
-void ListWidget::elementAnimationAutoplayAsync(
-		not_null<const Element*> view) {
-	crl::on_main(this, [this, msgId = view->data()->fullId()]{
-		if (const auto view = viewForItem(msgId)) {
-			if (const auto media = view->media()) {
-				media->autoplayAnimation();
-			}
-		}
-	});
 }
 
 crl::time ListWidget::elementHighlightTime(
@@ -1162,6 +1169,10 @@ void ListWidget::elementShowPollResults(
 void ListWidget::elementShowTooltip(
 	const TextWithEntities &text,
 	Fn<void()> hiddenCallback) {
+}
+
+bool ListWidget::elementIsGifPaused() {
+	return _controller->isGifPausedAtLeastFor(Window::GifPauseReason::Any);
 }
 
 void ListWidget::saveState(not_null<ListMemento*> memento) {
@@ -1305,6 +1316,10 @@ void ListWidget::paintEvent(QPaintEvent *e) {
 		return;
 	}
 
+	const auto guard = gsl::finally([&] {
+		_userpicsCache.clear();
+	});
+
 	Painter p(this);
 
 	auto ms = crl::now();
@@ -1346,6 +1361,7 @@ void ListWidget::paintEvent(QPaintEvent *e) {
 				if (const auto from = message->displayFrom()) {
 					from->paintUserpicLeft(
 						p,
+						_userpics[from],
 						st::historyPhotoLeft,
 						userpicTop,
 						view->width(),
@@ -1738,11 +1754,9 @@ void ListWidget::updateDragSelection() {
 	}
 	const auto fromView = selectingUp ? overView : pressView;
 	const auto tillView = selectingUp ? pressView : overView;
-	updateDragSelection(
-		selectingUp ? overView : pressView,
-		selectingUp ? _overState : _pressState,
-		selectingUp ? pressView : overView,
-		selectingUp ? _pressState : _overState);
+	const auto fromState = selectingUp ? _overState : _pressState;
+	const auto tillState = selectingUp ? _pressState : _overState;
+	updateDragSelection(fromView, fromState, tillView, tillState);
 }
 
 void ListWidget::updateDragSelection(
@@ -2072,7 +2086,7 @@ void ListWidget::mouseActionFinish(
 	_mouseSelectType = TextSelectType::Letters;
 	//_widget->noSelectingScroll(); // #TODO select scroll
 
-#if defined Q_OS_LINUX32 || defined Q_OS_LINUX64
+#if defined Q_OS_UNIX && !defined Q_OS_MAC
 	if (_selectedTextItem
 		&& _selectedTextRange.from != _selectedTextRange.to) {
 		if (const auto view = viewForItem(_selectedTextItem)) {
@@ -2081,7 +2095,7 @@ void ListWidget::mouseActionFinish(
 				QClipboard::Selection);
 }
 	}
-#endif // Q_OS_LINUX32 || Q_OS_LINUX64
+#endif // Q_OS_UNIX && !Q_OS_MAC
 }
 
 void ListWidget::mouseActionUpdate() {
@@ -2162,7 +2176,7 @@ void ListWidget::mouseActionUpdate() {
 					dateWidth += st::msgServicePadding.left() + st::msgServicePadding.right();
 					auto dateLeft = st::msgServiceMargin.left();
 					auto maxwidth = view->width();
-					if (Adaptive::ChatWide()) {
+					if (Core::App().settings().chatWide()) {
 						maxwidth = qMin(maxwidth, int32(st::msgMaxWidth + 2 * st::msgPhotoSkip + 2 * st::msgMargin.left()));
 					}
 					auto widthForDate = maxwidth - st::msgServiceMargin.left() - st::msgServiceMargin.left();
@@ -2375,8 +2389,7 @@ std::unique_ptr<QMimeData> ListWidget::prepareDrag() {
 		result->setData(qsl("application/x-td-forward"), "1");
 		if (const auto media = pressedView->media()) {
 			if (const auto document = media->getDocument()) {
-				const auto filepath = document->filepath(
-					DocumentData::FilePathResolve::Checked);
+				const auto filepath = document->filepath(true);
 				if (!filepath.isEmpty()) {
 					QList<QUrl> urls;
 					urls.push_back(QUrl::fromLocalFile(filepath));
@@ -2541,6 +2554,14 @@ QPoint ListWidget::mapPointToItem(
 		return QPoint();
 	}
 	return point - QPoint(0, itemTop(view));
+}
+
+rpl::producer<FullMsgId> ListWidget::editMessageRequested() const {
+	return _requestedToEditMessage.events();
+}
+
+void ListWidget::editMessageRequestNotify(FullMsgId item) {
+	_requestedToEditMessage.fire(std::move(item));
 }
 
 ListWidget::~ListWidget() = default;

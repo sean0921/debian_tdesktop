@@ -13,11 +13,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "apiwrap.h"
 #include "mtproto/mtp_instance.h"
+#include "mtproto/mtproto_config.h"
 #include "mtproto/mtproto_auth_key.h"
 #include "base/openssl_help.h"
-#include "facades.h"
 
 mtpFileLoader::mtpFileLoader(
+	not_null<Main::Session*> session,
 	const StorageFileLocation &location,
 	Data::FileOrigin origin,
 	LocationType type,
@@ -28,6 +29,7 @@ mtpFileLoader::mtpFileLoader(
 	bool autoLoading,
 	uint8 cacheTag)
 : FileLoader(
+	session,
 	to,
 	size,
 	type,
@@ -35,16 +37,18 @@ mtpFileLoader::mtpFileLoader(
 	fromCloud,
 	autoLoading,
 	cacheTag)
-, DownloadMtprotoTask(&session().downloader(), location, origin) {
+, DownloadMtprotoTask(&session->downloader(), location, origin) {
 }
 
 mtpFileLoader::mtpFileLoader(
+	not_null<Main::Session*> session,
 	const WebFileLocation &location,
 	int32 size,
 	LoadFromCloudSetting fromCloud,
 	bool autoLoading,
 	uint8 cacheTag)
 : FileLoader(
+	session,
 	QString(),
 	size,
 	UnknownFileLocation,
@@ -53,18 +57,20 @@ mtpFileLoader::mtpFileLoader(
 	autoLoading,
 	cacheTag)
 , DownloadMtprotoTask(
-	&session().downloader(),
-	Global::WebFileDcId(),
+	&session->downloader(),
+	session->serverConfig().webFileDcId,
 	{ location }) {
 }
 
 mtpFileLoader::mtpFileLoader(
+	not_null<Main::Session*> session,
 	const GeoPointLocation &location,
 	int32 size,
 	LoadFromCloudSetting fromCloud,
 	bool autoLoading,
 	uint8 cacheTag)
 : FileLoader(
+	session,
 	QString(),
 	size,
 	UnknownFileLocation,
@@ -73,9 +79,15 @@ mtpFileLoader::mtpFileLoader(
 	autoLoading,
 	cacheTag)
 , DownloadMtprotoTask(
-	&session().downloader(),
-	Global::WebFileDcId(),
+	&session->downloader(),
+	session->serverConfig().webFileDcId,
 	{ location }) {
+}
+
+mtpFileLoader::~mtpFileLoader() {
+	if (!_finished) {
+		cancel();
+	}
 }
 
 Data::FileOrigin mtpFileLoader::fileOrigin() const {
@@ -109,7 +121,6 @@ bool mtpFileLoader::feedPart(int offset, const QByteArray &bytes) {
 	if (buffer.empty() || (buffer.size() % 1024)) { // bad next offset
 		_lastComplete = true;
 	}
-	const auto weak = QPointer<mtpFileLoader>(this);
 	const auto finished = !haveSentRequests()
 		&& (_lastComplete || (_size && _nextRequestOffset >= _size));
 	if (finished) {
@@ -117,8 +128,7 @@ bool mtpFileLoader::feedPart(int offset, const QByteArray &bytes) {
 		if (!finalizeResult()) {
 			return false;
 		}
-	}
-	if (weak) {
+	} else {
 		notifyAboutProgress();
 	}
 	return true;

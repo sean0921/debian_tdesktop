@@ -344,6 +344,9 @@ public:
 	void clear() {
 		impl().clear();
 	}
+	void reserve(size_type size) {
+		impl().reserve(size);
+	}
 
 	iterator begin() {
 		return impl().begin();
@@ -442,6 +445,23 @@ public:
 		const auto result = (range.second - range.first);
 		impl().erase(range.first, range.second);
 		return result;
+	}
+	bool remove(const Key &key, const Type &value) {
+		if (empty()
+			|| compare()(key, front().first)
+			|| compare()(back().first, key)) {
+			return false;
+		}
+		const auto e = impl().end();
+		for (auto where = getLowerBound(key);
+			(where != e) && !compare()(key, where->first);
+			++where) {
+			if (where->second == value) {
+				impl().erase(where);
+				return true;
+			}
+		}
+		return false;
 	}
 
 	iterator erase(const_iterator where) {
@@ -673,6 +693,7 @@ public:
 	using parent::size;
 	using parent::empty;
 	using parent::clear;
+	using parent::reserve;
 	using parent::begin;
 	using parent::end;
 	using parent::cbegin;

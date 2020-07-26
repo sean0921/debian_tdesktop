@@ -18,15 +18,22 @@ class ScrollArea;
 class BoxContent;
 } // namespace Ui
 
+namespace Main {
+class Session;
+} // namespace Main
+
 namespace Export {
 namespace View {
 
-constexpr auto kSizeValueCount = 80;
+constexpr auto kSizeValueCount = 90;
 int SizeLimitByIndex(int index);
 
 class SettingsWidget : public Ui::RpWidget {
 public:
-	SettingsWidget(QWidget *parent, Settings data);
+	SettingsWidget(
+		QWidget *parent,
+		not_null<Main::Session*> session,
+		Settings data);
 
 	rpl::producer<Settings> value() const;
 	rpl::producer<Settings> changes() const;
@@ -77,9 +84,12 @@ private:
 	void addSizeSlider(not_null<Ui::VerticalLayout*> container);
 	void addLocationLabel(
 		not_null<Ui::VerticalLayout*> container);
+	void addFormatAndLocationLabel(
+		not_null<Ui::VerticalLayout*> container);
 	void addLimitsLabel(
 		not_null<Ui::VerticalLayout*> container);
 	void chooseFolder();
+	void chooseFormat();
 	void refreshButtons(
 		not_null<Ui::RpWidget*> container,
 		bool canStart);
@@ -95,6 +105,7 @@ private:
 	template <typename Callback>
 	void changeData(Callback &&callback);
 
+	const not_null<Main::Session*> _session;
 	PeerId _singlePeerId = 0;
 	Fn<void(object_ptr<Ui::BoxContent>)> _showBoxCallback;
 

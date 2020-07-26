@@ -17,6 +17,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_cloud_themes.h" // Data::CloudTheme.
 #include "media/view/media_view_playback_controls.h"
 
+namespace Data {
+class PhotoMedia;
+class DocumentMedia;
+} // namespace Data
+
 namespace Ui {
 class PopupMenu;
 class LinkButton;
@@ -28,10 +33,6 @@ namespace Theme {
 struct Preview;
 } // namespace Theme
 } // namespace Window
-
-namespace Notify {
-struct PeerUpdate;
-} // namespace Notify
 
 namespace Media {
 namespace Player {
@@ -70,6 +71,12 @@ class OverlayWidget final
 public:
 	OverlayWidget();
 
+	enum class TouchBarItemType {
+		Photo,
+		Video,
+		None,
+	};
+
 	void showPhoto(not_null<PhotoData*> photo, HistoryItem *context);
 	void showPhoto(not_null<PhotoData*> photo, not_null<PeerData*> context);
 	void showDocument(
@@ -95,7 +102,7 @@ public:
 
 	void notifyFileDialogShown(bool shown);
 
-	void clearData();
+	void clearSession();
 
 	~OverlayWidget();
 
@@ -168,6 +175,8 @@ private:
 
 	void setVisibleHook(bool visible) override;
 
+	void setSession(not_null<Main::Session*> session);
+
 	void playbackControlsPlay() override;
 	void playbackControlsPause() override;
 	void playbackControlsSeekProgress(crl::time position) override;
@@ -188,6 +197,9 @@ private:
 	void playbackResumeOnCall();
 	void playbackPauseMusic();
 	void switchToPip();
+
+	void assignMediaPointer(DocumentData *document);
+	void assignMediaPointer(not_null<PhotoData*> photo);
 
 	void updateOver(QPoint mpos);
 	void moveToScreen(bool force = false);
@@ -231,7 +243,8 @@ private:
 	bool validCollage() const;
 	void validateCollage();
 
-	Data::FileOrigin fileOrigin() const;
+	[[nodiscard]] Data::FileOrigin fileOrigin() const;
+	[[nodiscard]] Data::FileOrigin fileOrigin(const Entity& entity) const;
 
 	void refreshFromLabel(HistoryItem *item);
 	void refreshCaption(HistoryItem *item);
@@ -270,7 +283,7 @@ private:
 	void refreshClipControllerGeometry();
 	void refreshCaptionGeometry();
 
-	[[nodiscard]] bool initStreaming(bool continueStreaming = false);
+	bool initStreaming(bool continueStreaming = false);
 	void startStreamingPlayer();
 	void initStreamingThumbnail();
 	void streamingReady(Streaming::Information &&info);
@@ -283,7 +296,7 @@ private:
 	void updateThemePreviewGeometry();
 
 	void documentUpdated(DocumentData *doc);
-	void changingMsgId(not_null<HistoryItem*> row, MsgId newId);
+	void changingMsgId(not_null<HistoryItem*> row, MsgId oldId);
 
 	[[nodiscard]] int contentRotation() const;
 	[[nodiscard]] QRect contentRect() const;
@@ -333,7 +346,7 @@ private:
 	void applyVideoSize();
 	[[nodiscard]] bool videoShown() const;
 	[[nodiscard]] QSize videoSize() const;
-	[[nodiscard]] bool videoIsGifv() const;
+	[[nodiscard]] bool videoIsGifOrUserpic() const;
 	[[nodiscard]] QImage videoFrame() const;
 	[[nodiscard]] QImage videoFrameForDirectPaint() const;
 	[[nodiscard]] QImage transformVideoFrame(QImage frame) const;
@@ -343,11 +356,18 @@ private:
 	void paintTransformedVideoFrame(Painter &p);
 	void paintTransformedStaticContent(Painter &p);
 	void clearStreaming(bool savePosition = true);
+	bool canInitStreaming() const;
 
 	QBrush _transparentBrush;
 
+	Main::Session *_session = nullptr;
+	rpl::lifetime _sessionLifetime;
 	PhotoData *_photo = nullptr;
-	DocumentData *_doc = nullptr;
+	DocumentData *_document = nullptr;
+	std::shared_ptr<Data::PhotoMedia> _photoMedia;
+	std::shared_ptr<Data::DocumentMedia> _documentMedia;
+	base::flat_set<std::shared_ptr<Data::PhotoMedia>> _preloadPhotos;
+	base::flat_set<std::shared_ptr<Data::DocumentMedia>> _preloadDocuments;
 	int _rotation = 0;
 	std::unique_ptr<SharedMedia> _sharedMedia;
 	std::optional<SharedMediaWithLastSlice> _sharedMediaData;
@@ -364,6 +384,7 @@ private:
 	bool _leftNavVisible = false;
 	bool _rightNavVisible = false;
 	bool _saveVisible = false;
+	bool _rotateVisible = false;
 	bool _headerHasLink = false;
 	QString _dateText;
 	QString _headerText;
@@ -482,6 +503,10 @@ private:
 
 	base::flat_map<OverState, crl::time> _animations;
 	base::flat_map<OverState, anim::value> _animationOpacities;
+
+	rpl::event_stream<Media::Player::TrackState> _touchbarTrackState;
+	rpl::event_stream<TouchBarItemType> _touchbarDisplay;
+	rpl::event_stream<bool> _touchbarFullscreenToggled;
 
 	int _verticalWheelDelta = 0;
 

@@ -7,15 +7,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/send_files_box.h"
 
+#include "platform/platform_specific.h"
 #include "lang/lang_keys.h"
 #include "storage/localstorage.h"
 #include "storage/storage_media_prepare.h"
 #include "mainwidget.h"
+#include "main/main_session.h"
+#include "mtproto/mtproto_config.h"
 #include "chat_helpers/message_field.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "chat_helpers/tabbed_panel.h"
 #include "chat_helpers/tabbed_selector.h"
 #include "confirm_box.h"
+#include "history/history_drag_area.h"
 #include "history/view/history_view_schedule_box.h"
 #include "core/file_utilities.h"
 #include "core/mime_type.h"
@@ -34,8 +38,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/clip/media_clip_reader.h"
 #include "api/api_common.h"
 #include "window/window_session_controller.h"
+#include "core/application.h"
+#include "core/core_settings.h"
 #include "layout.h"
-#include "facades.h"
+#include "facades.h" // App::LambdaDelayed.
 #include "app.h"
 #include "styles/style_history.h"
 #include "styles/style_layers.h"
@@ -57,10 +63,7 @@ enum class ButtonType {
 };
 
 inline bool CanAddUrls(const QList<QUrl> &urls) {
-	return !urls.isEmpty() && ranges::find_if(
-		urls,
-		[](const QUrl &url) { return !url.isLocalFile(); }
-	) == urls.end();
+	return !urls.isEmpty() && ranges::all_of(urls, &QUrl::isLocalFile);
 }
 
 inline bool IsFirstAlbumItem(const Storage::PreparedList &list) {
@@ -331,7 +334,7 @@ AlbumThumb::AlbumThumb(
 		- st::sendMediaFileThumbSize
 		// Right buttons.
 		- st::sendBoxAlbumGroupButtonFile.width * 2
-		- st::sendBoxAlbumGroupEditInternalSkip
+		- st::sendBoxAlbumGroupEditInternalSkip * 2
 		- st::sendBoxAlbumGroupSkipRight;
 	const auto filepath = file.path;
 	if (filepath.isEmpty()) {
@@ -888,7 +891,6 @@ void SingleMediaPreview::prepareAnimatedPreview(
 		_gifPreview = Media::Clip::MakeReader(
 			animatedPreviewPath,
 			std::move(callback));
-		if (_gifPreview) _gifPreview->setAutoplay();
 	}
 }
 
@@ -1832,11 +1834,7 @@ void SendFilesBox::setupShadows(
 }
 
 void SendFilesBox::prepare() {
-	_send = addButton(
-		(_sendType == Api::SendType::Normal
-			? tr::lng_send_button()
-			: tr::lng_schedule_button()),
-		[=] { send({}); });
+	_send = addButton(tr::lng_send_button(), [=] { send({}); });
 	if (_sendType == Api::SendType::Normal) {
 		SetupSendMenuAndShortcuts(
 			_send,
@@ -1854,14 +1852,47 @@ void SendFilesBox::prepare() {
 		}
 	}, lifetime());
 
-	const auto title = tr::lng_stickers_featured_add(tr::now) + qsl("...");
 	_addFileToAlbum = addLeftButton(
-		rpl::single(title),
+		tr::lng_stickers_featured_add(),
 		App::LambdaDelayed(st::historyAttach.ripple.hideDuration, this, [=] {
 			openDialogToAddFileToAlbum();
 		}));
 
 	updateLeftButtonVisibility();
+	setupDragArea();
+}
+
+void SendFilesBox::setupDragArea() {
+	// Avoid both drag areas appearing at one time.
+	auto computeState = [=](const QMimeData *data) {
+		const auto state = Storage::ComputeMimeDataState(data);
+		return (state == Storage::MimeDataState::PhotoFiles)
+			? Storage::MimeDataState::Image
+			: (state == Storage::MimeDataState::Files)
+			// Temporary enable drag'n'drop only for images. TODO.
+			? Storage::MimeDataState::None
+			: state;
+	};
+	const auto areas = DragArea::SetupDragAreaToContainer(
+		this,
+		[=](not_null<const QMimeData*> d) { return canAddFiles(d); },
+		[=](bool f) { _caption->setAcceptDrops(f); },
+		[=] { updateControlsGeometry(); },
+		std::move(computeState));
+
+	const auto droppedCallback = [=](bool compress) {
+		return [=](const QMimeData *data) {
+			addFiles(data);
+			Window::ActivateWindow(_controller);
+		};
+	};
+	areas.document->setDroppedCallback(droppedCallback(false));
+	areas.photo->setDroppedCallback(droppedCallback(true));
+	_albumChanged.events(
+	) | rpl::start_with_next([=] {
+		areas.document->raise();
+		areas.photo->raise();
+	}, lifetime());
 }
 
 void SendFilesBox::updateLeftButtonVisibility() {
@@ -1879,6 +1910,7 @@ void SendFilesBox::refreshAllAfterAlbumChanges() {
 	preparePreview();
 	captionResized();
 	updateLeftButtonVisibility();
+	_albumChanged.fire({});
 }
 
 void SendFilesBox::openDialogToAddFileToAlbum() {
@@ -1915,7 +1947,7 @@ void SendFilesBox::initSendWay() {
 				? SendFilesWay::Album
 				: SendFilesWay::Photos;
 		}
-		const auto way = _controller->session().settings().sendFilesWay();
+		const auto way = Core::App().settings().sendFilesWay();
 		if (way == SendFilesWay::Files) {
 			return way;
 		} else if (way == SendFilesWay::Album) {
@@ -2046,8 +2078,10 @@ void SendFilesBox::applyAlbumOrder() {
 }
 
 void SendFilesBox::setupCaption() {
-	_caption->setMaxLength(Global::CaptionLengthMax());
-	_caption->setSubmitSettings(_controller->session().settings().sendSubmitWay());
+	_caption->setMaxLength(
+		_controller->session().serverConfig().captionLengthMax);
+	_caption->setSubmitSettings(
+		Core::App().settings().sendSubmitWay());
 	connect(_caption, &Ui::InputField::resized, [=] {
 		captionResized();
 	});
@@ -2071,16 +2105,16 @@ void SendFilesBox::setupCaption() {
 	});
 	_caption->setInstantReplaces(Ui::InstantReplaces::Default());
 	_caption->setInstantReplacesEnabled(
-		_controller->session().settings().replaceEmojiValue());
+		Core::App().settings().replaceEmojiValue());
 	_caption->setMarkdownReplacesEnabled(rpl::single(true));
 	_caption->setEditLinkCallback(
-		DefaultEditLinkCallback(&_controller->session(), _caption));
+		DefaultEditLinkCallback(_controller, _caption));
 	Ui::Emoji::SuggestionsController::Init(
 		getDelegate()->outerContainer(),
 		_caption,
 		&_controller->session());
 
-	InitSpellchecker(&_controller->session(), _caption);
+	InitSpellchecker(_controller, _caption);
 
 	updateCaptionPlaceholder();
 	setupEmojiPanel();
@@ -2174,7 +2208,10 @@ bool SendFilesBox::addFiles(not_null<const QMimeData*> data) {
 		if (result.error == Storage::PreparedList::Error::None) {
 			return result;
 		} else if (data->hasImage()) {
-			auto image = qvariant_cast<QImage>(data->imageData());
+			auto image = Platform::GetImageFromClipboard();
+			if (image.isNull()) {
+				image = qvariant_cast<QImage>(data->imageData());
+			}
 			if (!image.isNull()) {
 				return Storage::PrepareMediaFromImage(
 					std::move(image),
@@ -2341,7 +2378,7 @@ void SendFilesBox::send(
 	const auto way = _sendWay ? _sendWay->value() : Way::Files;
 
 	if (_compressConfirm == CompressConfirm::Auto) {
-		const auto oldWay = _controller->session().settings().sendFilesWay();
+		const auto oldWay = Core::App().settings().sendFilesWay();
 		if (way != oldWay) {
 			// Check if the user _could_ use the old value, but didn't.
 			if ((oldWay == Way::Album && _sendAlbum)
@@ -2349,8 +2386,8 @@ void SendFilesBox::send(
 				|| (oldWay == Way::Files && _sendFiles)
 				|| (way == Way::Files && (_sendAlbum || _sendPhotos))) {
 				// And in that case save it to settings.
-				_controller->session().settings().setSendFilesWay(way);
-				_controller->session().saveSettingsDelayed();
+				Core::App().settings().setSendFilesWay(way);
+				Core::App().saveSettingsDelayed();
 			}
 		}
 	}

@@ -436,12 +436,14 @@ void WebLoadManager::sendUpdate(int id, Update &&data) {
 }
 
 webFileLoader::webFileLoader(
+	not_null<Main::Session*> session,
 	const QString &url,
 	const QString &to,
 	LoadFromCloudSetting fromCloud,
 	bool autoLoading,
 	uint8 cacheTag)
 : FileLoader(
+	session,
 	QString(),
 	0,
 	UnknownFileLocation,
@@ -453,7 +455,9 @@ webFileLoader::webFileLoader(
 }
 
 webFileLoader::~webFileLoader() {
-	cancelRequest();
+	if (!_finished) {
+		cancel();
+	}
 }
 
 QString webFileLoader::url() const {
@@ -493,9 +497,7 @@ void webFileLoader::loadProgress(qint64 ready, qint64 total) {
 void webFileLoader::loadFinished(const QByteArray &data) {
 	cancelRequest();
 	if (writeResultPart(0, bytes::make_span(data))) {
-		if (finalizeResult()) {
-			notifyAboutProgress();
-		}
+		finalizeResult();
 	}
 }
 

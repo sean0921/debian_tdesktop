@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localimageloader.h"
 
 #include "api/api_text_entities.h"
+#include "api/api_sending.h"
 #include "data/data_document.h"
 #include "data/data_session.h"
 #include "core/file_utilities.h"
@@ -15,7 +16,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/unixtime.h"
 #include "media/audio/media_audio.h"
 #include "media/clip/media_clip_reader.h"
+#include "mtproto/facade.h"
 #include "lottie/lottie_animation.h"
+#include "history/history.h"
 #include "history/history_item.h"
 #include "boxes/send_files_box.h"
 #include "boxes/confirm_box.h"
@@ -128,6 +131,7 @@ MTPInputSingleMedia PrepareAlbumItemMedia(
 	auto caption = item->originalText();
 	TextUtilities::Trim(caption);
 	auto sentEntities = Api::EntitiesToMTP(
+		&item->history()->session(),
 		caption.entities,
 		Api::ConvertOption::SkipLocal);
 	const auto flags = !sentEntities.v.isEmpty()
@@ -183,7 +187,7 @@ SendMediaReady::SendMediaReady(
 	}
 }
 
-SendMediaReady PreparePeerPhoto(PeerId peerId, QImage &&image) {
+SendMediaReady PreparePeerPhoto(MTP::DcId dcId, PeerId peerId, QImage &&image) {
 	PreparedPhotoThumbs photoThumbs;
 	QVector<MTPPhotoSize> photoSizes;
 
@@ -218,7 +222,8 @@ SendMediaReady PreparePeerPhoto(PeerId peerId, QImage &&image) {
 		MTP_bytes(),
 		MTP_int(base::unixtime::now()),
 		MTP_vector<MTPPhotoSize>(photoSizes),
-		MTP_int(MTP::maindc()));
+		MTPVector<MTPVideoSize>(),
+		MTP_int(dcId));
 
 	QString file, filename;
 	int32 filesize = 0;
@@ -425,7 +430,7 @@ void SendingAlbum::removeItem(not_null<HistoryItem*> item) {
 	if (moveCaption) {
 		const auto caption = item->originalText();
 		const auto firstId = items.front().msgId;
-		if (const auto first = Auth().data().message(firstId)) {
+		if (const auto first = item->history()->owner().message(firstId)) {
 			// We don't need to finishEdition() here, because the whole
 			// album will be rebuilt after one item was removed from it.
 			first->setText(caption);
@@ -473,6 +478,7 @@ void FileLoadResult::setThumbData(const QByteArray &thumbdata) {
 
 
 FileLoadTask::FileLoadTask(
+	not_null<Main::Session*> session,
 	const QString &filepath,
 	const QByteArray &content,
 	std::unique_ptr<FileMediaInformation> information,
@@ -482,6 +488,8 @@ FileLoadTask::FileLoadTask(
 	std::shared_ptr<SendingAlbum> album,
 	MsgId msgIdToEdit)
 : _id(rand_value<uint64>())
+, _session(session)
+, _dcId(session->mainDcId())
 , _to(to)
 , _album(std::move(album))
 , _filepath(filepath)
@@ -490,16 +498,20 @@ FileLoadTask::FileLoadTask(
 , _type(type)
 , _caption(caption)
 , _msgIdToEdit(msgIdToEdit) {
-	Expects(_msgIdToEdit == 0 || IsServerMsgId(_msgIdToEdit));
+	Expects(to.options.scheduled
+		|| (_msgIdToEdit == 0 || IsServerMsgId(_msgIdToEdit)));
 }
 
 FileLoadTask::FileLoadTask(
+	not_null<Main::Session*> session,
 	const QByteArray &voice,
 	int32 duration,
 	const VoiceWaveform &waveform,
 	const FileLoadTo &to,
 	const TextWithTags &caption)
 : _id(rand_value<uint64>())
+, _session(session)
+, _dcId(session->mainDcId())
 , _to(to)
 , _content(voice)
 , _duration(duration)
@@ -766,7 +778,7 @@ void FileLoadTask::process() {
 	}
 	_result->filesize = (int32)qMin(filesize, qint64(INT_MAX));
 
-	if (!filesize || filesize > App::kFileSizeLimit) {
+	if (!filesize || filesize > kFileSizeLimit) {
 		return;
 	}
 
@@ -832,11 +844,9 @@ void FileLoadTask::process() {
 
 		if (ValidateThumbDimensions(w, h)) {
 			isSticker = Core::IsMimeSticker(filemime)
-				&& (w > 0)
-				&& (h > 0)
-				&& (w <= StickerMaxSize)
-				&& (h <= StickerMaxSize)
-				&& (filesize < Storage::kMaxStickerInMemory);
+				&& (filesize < Storage::kMaxStickerBytesSize)
+				&& (Core::IsMimeStickerAnimated(filemime)
+					|| GoodStickerDimensions(w, h));
 			if (isSticker) {
 				attributes.push_back(MTP_documentAttributeSticker(
 					MTP_flags(0),
@@ -853,10 +863,6 @@ void FileLoadTask::process() {
 			} else if (isAnimation) {
 				attributes.push_back(MTP_documentAttributeAnimated());
 			} else if (_type != SendMediaType::File) {
-				auto thumb = (w > 100 || h > 100) ? fullimage.scaled(100, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation) : fullimage;
-				photoThumbs.emplace('s', thumb);
-				photoSizes.push_back(MTP_photoSize(MTP_string("s"), MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)), MTP_int(thumb.width()), MTP_int(thumb.height()), MTP_int(0)));
-
 				auto medium = (w > 320 || h > 320) ? fullimage.scaled(320, 320, Qt::KeepAspectRatio, Qt::SmoothTransformation) : fullimage;
 				photoThumbs.emplace('m', medium);
 				photoSizes.push_back(MTP_photoSize(MTP_string("m"), MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)), MTP_int(medium.width()), MTP_int(medium.height()), MTP_int(0)));
@@ -877,7 +883,8 @@ void FileLoadTask::process() {
 					MTP_bytes(),
 					MTP_int(base::unixtime::now()),
 					MTP_vector<MTPPhotoSize>(photoSizes),
-					MTP_int(MTP::maindc()));
+					MTPVector<MTPVideoSize>(),
+					MTP_int(_dcId));
 
 				if (filesize < 0) {
 					filesize = _result->filesize = filedata.size();
@@ -909,7 +916,8 @@ void FileLoadTask::process() {
 			MTP_string(filemime),
 			MTP_int(filesize),
 			MTP_vector<MTPPhotoSize>(1, thumbnail.mtpSize),
-			MTP_int(MTP::maindc()),
+			MTPVector<MTPVideoSize>(),
+			MTP_int(_dcId),
 			MTP_vector<MTPDocumentAttribute>(attributes));
 	} else if (_type != SendMediaType::Photo) {
 		document = MTP_document(
@@ -921,7 +929,8 @@ void FileLoadTask::process() {
 			MTP_string(filemime),
 			MTP_int(filesize),
 			MTP_vector<MTPPhotoSize>(1, thumbnail.mtpSize),
-			MTP_int(MTP::maindc()),
+			MTPVector<MTPVideoSize>(),
+			MTP_int(_dcId),
 			MTP_vector<MTPDocumentAttribute>(attributes));
 		_type = SendMediaType::File;
 	}
@@ -954,19 +963,19 @@ void FileLoadTask::finish() {
 				tr::lng_send_image_empty(tr::now, lt_name, _filepath)),
 			Ui::LayerOption::KeepOther);
 		removeFromAlbum();
-	} else if (_result->filesize > App::kFileSizeLimit) {
+	} else if (_result->filesize > kFileSizeLimit) {
 		Ui::show(
 			Box<InformBox>(
 				tr::lng_send_image_too_large(tr::now, lt_name, _filepath)),
 			Ui::LayerOption::KeepOther);
 		removeFromAlbum();
-	} else if (App::main()) {
+	} else if (const auto session = _session.get()) {
 		const auto fullId = _msgIdToEdit
 			? std::make_optional(FullMsgId(
 				peerToChannel(_to.peer),
 				_msgIdToEdit))
 			: std::nullopt;
-		App::main()->onSendFileConfirm(_result, fullId);
+		Api::SendConfirmedFile(session, _result, fullId);
 	}
 }
 

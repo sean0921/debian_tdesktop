@@ -264,7 +264,7 @@ ProgressWidget::ProgressWidget(
 
 rpl::producer<> ProgressWidget::cancelClicks() const {
 	return _cancel
-		? (_cancel->clicks() | rpl::map([] { return rpl::empty_value(); }))
+		? (_cancel->clicks() | rpl::to_empty)
 		: (rpl::never<>() | rpl::type_erased());
 }
 
@@ -288,6 +288,7 @@ void ProgressWidget::updateState(Content &&content) {
 		showDone();
 	}
 
+	const auto wasCount = _rows.size();
 	auto index = 0;
 	for (auto &row : content.rows) {
 		if (index < _rows.size()) {
@@ -297,11 +298,15 @@ void ProgressWidget::updateState(Content &&content) {
 				index,
 				object_ptr<Row>(this, std::move(row)),
 				st::exportProgressRowPadding));
+			_rows.back()->show();
 		}
 		++index;
 	}
 	for (const auto count = _rows.size(); index != count; ++index) {
 		_rows[index]->updateData(Content::Row());
+	}
+	if (_rows.size() != wasCount) {
+		_body->resizeToWidth(width());
 	}
 }
 
@@ -321,9 +326,8 @@ void ProgressWidget::showDone() {
 		_done->setFullWidth(desired);
 	}
 	_done->clicks(
-	) | rpl::map([] {
-		return rpl::empty_value();
-	}) | rpl::start_to_stream(_doneClicks, _done->lifetime());
+	) | rpl::to_empty
+	| rpl::start_to_stream(_doneClicks, _done->lifetime());
 	setupBottomButton(_done.get());
 }
 

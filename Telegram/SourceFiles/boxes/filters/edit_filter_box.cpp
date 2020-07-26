@@ -19,6 +19,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat_filters.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
+#include "core/application.h"
+#include "core/core_settings.h"
 #include "settings/settings_common.h"
 #include "base/event_filter.h"
 #include "lang/lang_keys.h"
@@ -78,6 +80,7 @@ private:
 	};
 	struct PeerButton {
 		not_null<History*> history;
+		std::shared_ptr<Data::CloudImageView> userpic;
 		Button button;
 	};
 
@@ -184,9 +187,10 @@ void FilterChatsPreview::updateData(
 		}
 	}
 	for (const auto history : peers) {
-		_removePeer.push_back({
-			history,
-			makeButton([=] { removePeer(history); }) });
+		_removePeer.push_back(PeerButton{
+			.history = history,
+			.button = makeButton([=] { removePeer(history); })
+		});
 	}
 	refresh();
 }
@@ -203,7 +207,7 @@ int FilterChatsPreview::resizeGetHeight(int newWidth) {
 	for (const auto &[flag, button] : _removeFlag) {
 		moveNextButton(button.get());
 	}
-	for (const auto &[history, button] : _removePeer) {
+	for (const auto &[history, userpic, button] : _removePeer) {
 		moveNextButton(button.get());
 	}
 	return top;
@@ -235,7 +239,7 @@ void FilterChatsPreview::paintEvent(QPaintEvent *e) {
 			FilterChatsTypeName(flag));
 		top += st.height;
 	}
-	for (const auto &[history, button] : _removePeer) {
+	for (auto &[history, userpic, button] : _removePeer) {
 		const auto savedMessages = history->peer->isSelf();
 		if (savedMessages) {
 			Ui::EmptyUserpic::PaintSavedMessages(
@@ -253,6 +257,7 @@ void FilterChatsPreview::paintEvent(QPaintEvent *e) {
 		} else {
 			history->peer->paintUserpicLeft(
 				p,
+				userpic,
 				iconLeft,
 				top + iconTop,
 				width(),
@@ -497,7 +502,7 @@ void EditFilterBox(
 	name->setMaxLength(kMaxFilterTitleLength);
 	name->setInstantReplaces(Ui::InstantReplaces::Default());
 	name->setInstantReplacesEnabled(
-		window->session().settings().replaceEmojiValue());
+		Core::App().settings().replaceEmojiValue());
 	Ui::Emoji::SuggestionsController::Init(
 		box->getDelegate()->outerContainer(),
 		name,

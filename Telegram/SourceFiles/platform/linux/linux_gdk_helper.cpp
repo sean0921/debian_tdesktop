@@ -57,25 +57,29 @@ using f_gdk_x11_window_get_xid = Window(*)(GdkWindow *window);
 f_gdk_x11_window_get_xid gdk_x11_window_get_xid = nullptr;
 
 bool GdkHelperLoadGtk2(QLibrary &lib) {
-	if (!Libs::load(lib, "gdk_x11_drawable_get_xdisplay", gdk_x11_drawable_get_xdisplay)) return false;
-	if (!Libs::load(lib, "gdk_x11_drawable_get_xid", gdk_x11_drawable_get_xid)) return false;
+#if defined DESKTOP_APP_USE_PACKAGED && !defined DESKTOP_APP_USE_PACKAGED_LAZY
+	return false;
+#else // DESKTOP_APP_USE_PACKAGED && !DESKTOP_APP_USE_PACKAGED_LAZY
+	if (!LOAD_SYMBOL(lib, "gdk_x11_drawable_get_xdisplay", gdk_x11_drawable_get_xdisplay)) return false;
+	if (!LOAD_SYMBOL(lib, "gdk_x11_drawable_get_xid", gdk_x11_drawable_get_xid)) return false;
 	return true;
+#endif // !DESKTOP_APP_USE_PACKAGED || DESKTOP_APP_USE_PACKAGED_LAZY
 }
 
 bool GdkHelperLoadGtk3(QLibrary &lib) {
-	if (!Libs::load(lib, "gdk_x11_window_get_type", gdk_x11_window_get_type)) return false;
-	if (!Libs::load(lib, "gdk_window_get_display", gdk_window_get_display)) return false;
-	if (!Libs::load(lib, "gdk_x11_display_get_xdisplay", gdk_x11_display_get_xdisplay)) return false;
-	if (!Libs::load(lib, "gdk_x11_window_get_xid", gdk_x11_window_get_xid)) return false;
+	if (!LOAD_SYMBOL(lib, "gdk_x11_window_get_type", gdk_x11_window_get_type)) return false;
+	if (!LOAD_SYMBOL(lib, "gdk_window_get_display", gdk_window_get_display)) return false;
+	if (!LOAD_SYMBOL(lib, "gdk_x11_display_get_xdisplay", gdk_x11_display_get_xdisplay)) return false;
+	if (!LOAD_SYMBOL(lib, "gdk_x11_window_get_xid", gdk_x11_window_get_xid)) return false;
 	return true;
 }
 
 void GdkHelperLoad(QLibrary &lib) {
 	gdk_helper_loaded = GtkLoaded::GtkNone;
-	if (GdkHelperLoadGtk2(lib)) {
-		gdk_helper_loaded = GtkLoaded::Gtk2;
-	} else if (GdkHelperLoadGtk3(lib)) {
+	if (GdkHelperLoadGtk3(lib)) {
 		gdk_helper_loaded = GtkLoaded::Gtk3;
+	} else if (GdkHelperLoadGtk2(lib)) {
+		gdk_helper_loaded = GtkLoaded::Gtk2;
 	}
 }
 

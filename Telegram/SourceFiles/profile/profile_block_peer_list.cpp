@@ -10,24 +10,34 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/ripple_animation.h"
 #include "ui/text_options.h"
 #include "data/data_peer.h"
+#include "data/data_cloud_file.h"
 #include "main/main_session.h"
 #include "styles/style_profile.h"
 #include "styles/style_widgets.h"
 
 namespace Profile {
 
-PeerListWidget::Item::Item(PeerData *peer) : peer(peer) {
+PeerListWidget::Item::Item(not_null<PeerData*> peer) : peer(peer) {
 }
 
 PeerListWidget::Item::~Item() = default;
 
-PeerListWidget::PeerListWidget(QWidget *parent, PeerData *peer, const QString &title, const style::PeerListItem &st, const QString &removeText)
+PeerListWidget::PeerListWidget(
+	QWidget *parent,
+	PeerData *peer,
+	const QString &title,
+	const style::PeerListItem &st,
+	const QString &removeText)
 : BlockWidget(parent, peer, title)
 , _st(st)
 , _removeText(removeText)
 , _removeWidth(st::normalFont->width(_removeText)) {
 	setMouseTracking(true);
-	subscribe(Auth().downloaderTaskFinished(), [this] { update(); });
+
+	peer->session().downloaderTaskFinished(
+	) | rpl::start_with_next([=] {
+		update();
+	}, lifetime());
 }
 
 int PeerListWidget::resizeGetHeight(int newWidth) {
@@ -84,7 +94,7 @@ void PeerListWidget::paintItem(Painter &p, int x, int y, Item *item, bool select
 	}
 	int skip = _st.photoPosition.x();
 
-	item->peer->paintUserpicLeft(p, x + _st.photoPosition.x(), y + _st.photoPosition.y(), width(), _st.photoSize);
+	item->peer->paintUserpicLeft(p, item->userpic, x + _st.photoPosition.x(), y + _st.photoPosition.y(), width(), _st.photoSize);
 
 	if (item->name.isEmpty()) {
 		item->name.setText(

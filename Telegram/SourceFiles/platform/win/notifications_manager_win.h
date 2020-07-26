@@ -13,19 +13,19 @@ namespace Platform {
 namespace Notifications {
 
 #ifndef __MINGW32__
+
 class Manager : public Window::Notifications::NativeManager {
 public:
 	Manager(Window::Notifications::System *system);
+	~Manager();
 
 	bool init();
-
-	void clearNotification(PeerId peerId, MsgId msgId);
-
-	~Manager();
+	void clearNotification(NotificationId id);
 
 protected:
 	void doShowNativeNotification(
 		not_null<PeerData*> peer,
+		std::shared_ptr<Data::CloudImageView> &userpicView,
 		MsgId msgId,
 		const QString &title,
 		const QString &subtitle,
@@ -34,8 +34,9 @@ protected:
 		bool hideReplyButton) override;
 	void doClearAllFast() override;
 	void doClearFromHistory(not_null<History*> history) override;
-	void onBeforeNotificationActivated(PeerId peerId, MsgId msgId) override;
-	void onAfterNotificationActivated(PeerId peerId, MsgId msgId) override;
+	void doClearFromSession(not_null<Main::Session*> session) override;
+	void onBeforeNotificationActivated(NotificationId id) override;
+	void onAfterNotificationActivated(NotificationId id) override;
 
 private:
 	class Private;

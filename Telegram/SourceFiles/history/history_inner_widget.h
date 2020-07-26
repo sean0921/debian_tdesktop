@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Data {
 struct Group;
+class CloudImageView;
 } // namespace Data
 
 namespace HistoryView {
@@ -82,12 +83,15 @@ public:
 		int from,
 		int till) const;
 	void elementStartStickerLoop(not_null<const Element*> view);
+	[[nodiscard]] crl::time elementHighlightTime(
+		not_null<const Element*> view);
 	void elementShowPollResults(
 		not_null<PollData*> poll,
 		FullMsgId context);
 	void elementShowTooltip(
 		const TextWithEntities &text,
 		Fn<void()> hiddenCallback);
+	bool elementIsGifPaused();
 
 	void updateBotInfo(bool recount = true);
 
@@ -109,10 +113,6 @@ public:
 
 	void notifyIsBotChanged();
 	void notifyMigrateUpdated();
-
-	// When inline keyboard has moved because of the edition of its item we want
-	// to move scroll position so that mouse points to the same button row.
-	int moveScrollFollowingInlineKeyboard(const HistoryItem *item, int oldKeyboardTop, int newKeyboardTop);
 
 	// Ui::AbstractTooltipShower interface.
 	QString tooltipText() const override;
@@ -239,7 +239,6 @@ private:
 
 	void itemRemoved(not_null<const HistoryItem*> item);
 	void viewRemoved(not_null<const Element*> view);
-	void refreshView(not_null<HistoryItem*> item);
 
 	void touchResetSpeed();
 	void touchUpdateSpeed();
@@ -345,6 +344,9 @@ private:
 	SelectedItems _selected;
 
 	base::flat_set<not_null<const HistoryItem*>> _animatedStickersPlayed;
+	base::flat_map<
+		not_null<PeerData*>,
+		std::shared_ptr<Data::CloudImageView>> _userpics, _userpicsCache;
 
 	MouseAction _mouseAction = MouseAction::None;
 	TextSelectType _mouseSelectType = TextSelectType::Letters;

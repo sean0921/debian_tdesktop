@@ -25,13 +25,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_info.h"
 #include "styles/style_calls.h"
 
+#include <QtGui/QWindow>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QDesktopWidget>
 
 namespace Ui {
 
 SeparatePanel::SeparatePanel()
-: _close(this, st::separatePanelClose)
+: RpWidget(Core::App().getModalParent())
+, _close(this, st::separatePanelClose)
 , _back(this, object_ptr<Ui::IconButton>(this, st::separatePanelBack))
 , _body(this) {
 	setMouseTracking(true);
@@ -92,15 +94,13 @@ void SeparatePanel::updateTitlePosition() {
 
 rpl::producer<> SeparatePanel::backRequests() const {
 	return rpl::merge(
-		_back->entity()->clicks(
-		) | rpl::map([] { return rpl::empty_value(); }),
+		_back->entity()->clicks() | rpl::to_empty,
 		_synteticBackRequests.events());
 }
 
 rpl::producer<> SeparatePanel::closeRequests() const {
 	return rpl::merge(
-		_close->clicks(
-		) | rpl::map([] { return rpl::empty_value(); }),
+		_close->clicks() | rpl::to_empty,
 		_userCloseRequests.events());
 }
 
@@ -359,18 +359,25 @@ void SeparatePanel::initGeometry(QSize size) {
 			st::lineWidth);
 	setAttribute(Qt::WA_OpaquePaintEvent, !_useTransparency);
 	const auto screen = QApplication::desktop()->screenGeometry(center);
-	const auto rect = QRect(QPoint(), size);
-	setGeometry(
-		rect.translated(center - rect.center()).marginsAdded(_padding));
+	const auto rect = [&] {
+		const QRect initRect(QPoint(), size);
+		return initRect.translated(center - initRect.center()).marginsAdded(_padding);
+	}();
+	setGeometry(rect);
+	setMinimumSize(rect.size());
+	setMaximumSize(rect.size());
 	updateControlsGeometry();
 }
 
 void SeparatePanel::updateGeometry(QSize size) {
-	setGeometry(
+	const auto rect = QRect(
 		x(),
 		y(),
 		_padding.left() + size.width() + _padding.right(),
 		_padding.top() + size.height() + _padding.bottom());
+	setGeometry(rect);
+	setMinimumSize(rect.size());
+	setMaximumSize(rect.size());
 	updateControlsGeometry();
 	update();
 }
@@ -547,9 +554,22 @@ void SeparatePanel::mousePressEvent(QMouseEvent *e) {
 		st::separatePanelTitleHeight);
 	if (e->button() == Qt::LeftButton) {
 		if (dragArea.contains(e->pos())) {
-			_dragging = true;
-			_dragStartMousePosition = e->globalPos();
-			_dragStartMyPosition = QPoint(x(), y());
+			const auto dragViaSystem = [&] {
+				if (::Platform::StartSystemMove(windowHandle())) {
+					return true;
+				}
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0) || defined DESKTOP_APP_QT_PATCHED
+				if (windowHandle()->startSystemMove()) {
+					return true;
+				}
+#endif // Qt >= 5.15 || DESKTOP_APP_QT_PATCHED
+				return false;
+			}();
+			if (!dragViaSystem) {
+				_dragging = true;
+				_dragStartMousePosition = e->globalPos();
+				_dragStartMyPosition = QPoint(x(), y());
+			}
 		} else if (!rect().contains(e->pos()) && _hideOnDeactivate) {
 			LOG(("Export Info: Panel Hide On Click."));
 			hideGetDuration();
@@ -569,7 +589,7 @@ void SeparatePanel::mouseMoveEvent(QMouseEvent *e) {
 }
 
 void SeparatePanel::mouseReleaseEvent(QMouseEvent *e) {
-	if (e->button() == Qt::LeftButton) {
+	if (e->button() == Qt::LeftButton && _dragging) {
 		_dragging = false;
 	}
 }

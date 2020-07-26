@@ -128,13 +128,16 @@ public:
 	// For edit media in history_message.
 	virtual void returnSavedMedia() {};
 	void savePreviousMedia() {
-		_savedMedia = _media->clone(this);
+		_savedLocalEditMediaData = {
+			originalText(),
+			_media->clone(this),
+		};
 	}
 	[[nodiscard]] bool isEditingMedia() const {
-		return _savedMedia != nullptr;
+		return _savedLocalEditMediaData.media != nullptr;
 	}
 	void clearSavedMedia() {
-		_savedMedia = nullptr;
+		_savedLocalEditMediaData = {};
 	}
 
 	// Zero result means this message is not self-destructing right now.
@@ -326,10 +329,13 @@ public:
 	[[nodiscard]] PeerData *displayFrom() const;
 
 	[[nodiscard]] virtual std::unique_ptr<HistoryView::Element> createView(
-		not_null<HistoryView::ElementDelegate*> delegate) = 0;
+		not_null<HistoryView::ElementDelegate*> delegate,
+		HistoryView::Element *replacing = nullptr) = 0;
 
 	void updateDate(TimeId newDate);
 	[[nodiscard]] bool canUpdateDate() const;
+
+	[[nodiscard]] bool canBeEditedFromHistory() const;
 
 	virtual ~HistoryItem();
 
@@ -363,7 +369,12 @@ protected:
 	int _textWidth = -1;
 	int _textHeight = 0;
 
-	std::unique_ptr<Data::Media> _savedMedia;
+	struct SavedMediaData {
+		TextWithEntities text;
+		std::unique_ptr<Data::Media> media;
+	};
+
+	SavedMediaData _savedLocalEditMediaData;
 	std::unique_ptr<Data::Media> _media;
 
 private:

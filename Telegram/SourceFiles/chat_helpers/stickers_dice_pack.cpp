@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "data/data_session.h"
 #include "data/data_document.h"
+#include "ui/image/image_location_factory.h"
 #include "storage/localimageloader.h"
 #include "base/unixtime.h"
 #include "apiwrap.h"
@@ -18,11 +19,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QFileInfo>
 
 namespace Stickers {
-namespace {
-
-constexpr auto kZeroDiceDocumentId = 0xa3b83c9f84fa9e83ULL;
-
-} // namespace
 
 DicePack::DicePack(not_null<Main::Session*> session, const QString &emoji)
 : _session(session)
@@ -101,6 +97,7 @@ void DicePack::tryGenerateLocalZero() {
 		return;
 	}
 	auto task = FileLoadTask(
+		_session,
 		path,
 		QByteArray(),
 		nullptr,
@@ -112,7 +109,7 @@ void DicePack::tryGenerateLocalZero() {
 	Assert(result != nullptr);
 	const auto document = _session->data().processDocument(
 		result->document,
-		std::move(result->thumb));
+		Images::FromImageInMemory(result->thumb, "PNG"));
 	document->setLocation(FileLocation(path));
 
 	_map.emplace(0, document);

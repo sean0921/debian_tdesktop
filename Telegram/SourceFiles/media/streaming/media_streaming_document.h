@@ -18,12 +18,17 @@ namespace Media {
 namespace Streaming {
 
 class Instance;
+class Loader;
 
 class Document {
 public:
 	Document(
 		not_null<DocumentData*> document,
 		std::shared_ptr<Reader> reader);
+	Document(
+		not_null<PhotoData*> photo,
+		std::shared_ptr<Reader> reader);
+	explicit Document(std::unique_ptr<Loader> loader);
 
 	void play(const PlaybackOptions &options);
 	void saveFrameToCover();
@@ -31,13 +36,17 @@ public:
 	[[nodiscard]] Player &player();
 	[[nodiscard]] const Player &player() const;
 	[[nodiscard]] const Information &info() const;
-	[[nodiscard]] not_null<DocumentData*> data() const;
 
 	[[nodiscard]] bool waitingShown() const;
 	[[nodiscard]] float64 waitingOpacity() const;
 	[[nodiscard]] Ui::RadialState waitingState() const;
 
 private:
+	Document(
+		std::shared_ptr<Reader> reader,
+		DocumentData *document,
+		PhotoData *photo);
+
 	friend class Instance;
 
 	void registerInstance(not_null<Instance*> instance);
@@ -54,6 +63,8 @@ private:
 
 	void validateGoodThumbnail();
 
+	DocumentData *_document = nullptr;
+	PhotoData *_photo = nullptr;
 	Player _player;
 	Information _info;
 
@@ -62,8 +73,6 @@ private:
 	Ui::Animations::Simple _fading;
 	base::Timer _timer;
 	base::flat_set<not_null<Instance*>> _instances;
-
-	not_null<DocumentData*> _document;
 
 };
 

@@ -133,6 +133,10 @@ HistoryItem *ScheduledMessages::lookupItem(PeerId peer, MsgId msg) const {
 	return (*j).get();
 }
 
+HistoryItem *ScheduledMessages::lookupItem(FullMsgId itemId) const {
+	return lookupItem(peerFromChannel(itemId.channel), itemId.msg);
+}
+
 int ScheduledMessages::count(not_null<History*> history) const {
 	const auto i = _data.find(history);
 	return (i != end(_data)) ? i->second.items.size() : 0;
@@ -152,7 +156,7 @@ void ScheduledMessages::sendNowSimpleMessage(
 	// we know for sure that a message can't have fields such as the author,
 	// views count, etc.
 
-	const auto &history = local->history();
+	const auto history = local->history();
 	auto flags = NewMessageFlags(history->peer)
 		| MTPDmessage::Flag::f_entities
 		| MTPDmessage::Flag::f_from_id
@@ -175,7 +179,9 @@ void ScheduledMessages::sendNowSimpleMessage(
 			MTP_string(local->originalText().text),
 			MTP_messageMediaEmpty(),
 			MTPReplyMarkup(),
-			Api::EntitiesToMTP(local->originalText().entities),
+			Api::EntitiesToMTP(
+				&history->session(),
+				local->originalText().entities),
 			MTP_int(1),
 			MTPint(),
 			MTP_string(),
@@ -234,7 +240,7 @@ void ScheduledMessages::checkEntitiesAndUpdate(const MTPDmessage &data) {
 	Assert(existing->date() == kScheduledUntilOnlineTimestamp);
 	existing->updateSentContent({
 		qs(data.vmessage()),
-		Api::EntitiesFromMTP(data.ventities().value_or_empty())
+		Api::EntitiesFromMTP(_session, data.ventities().value_or_empty())
 	}, data.vmedia());
 	existing->updateReplyMarkup(data.vreply_markup());
 	existing->updateForwardedInfo(data.vfwd_from());
@@ -314,9 +320,7 @@ rpl::producer<> ScheduledMessages::updates(not_null<History*> history) {
 	return _updates.events(
 	) | rpl::filter([=](not_null<History*> value) {
 		return (value == history);
-	}) | rpl::map([] {
-		return rpl::empty_value();
-	});
+	}) | rpl::to_empty;
 }
 
 Data::MessagesSlice ScheduledMessages::list(not_null<History*> history) {
@@ -408,9 +412,17 @@ HistoryItem *ScheduledMessages::append(
 	if (i != end(list.itemById)) {
 		const auto existing = i->second;
 		message.match([&](const MTPDmessage &data) {
+			// Scheduled messages never have an edit date,
+			// so if we receive a flag about it,
+			// probably this message was edited.
+			if (data.is_edit_hide()) {
+				existing->applyEdition(data);
+			}
 			existing->updateSentContent({
 				qs(data.vmessage()),
-				Api::EntitiesFromMTP(data.ventities().value_or_empty())
+				Api::EntitiesFromMTP(
+					_session,
+					data.ventities().value_or_empty())
 			}, data.vmedia());
 			existing->updateReplyMarkup(data.vreply_markup());
 			existing->updateForwardedInfo(data.vfwd_from());
@@ -513,6 +525,21 @@ int32 ScheduledMessages::countListHash(const List &list) const {
 		HashUpdate(hash, item->date());
 	}
 	return HashFinalize(hash);
+}
+
+HistoryItem *ScheduledMessages::lastSentMessage(not_null<History*> history) {
+	const auto i = _data.find(history);
+	if (i == end(_data)) {
+		return nullptr;
+	}
+	auto &list = i->second;
+
+	sort(list);
+	const auto items = ranges::view::reverse(list.items);
+	const auto it = ranges::find_if(
+		items,
+		&HistoryItem::canBeEditedFromHistory);
+	return (it == end(items)) ? nullptr : (*it).get();
 }
 
 } // namespace Data

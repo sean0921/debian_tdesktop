@@ -16,8 +16,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/sender.h"
 #include "data/data_session.h"
 #include "data/data_file_origin.h"
+#include "data/data_document.h"
+#include "data/data_document_media.h"
 #include "boxes/background_preview_box.h"
 #include "boxes/confirm_box.h"
+#include "window/window_session_controller.h"
 #include "app.h"
 #include "styles/style_overview.h"
 #include "styles/style_layers.h"
@@ -53,28 +56,33 @@ QImage TakeMiddleSample(QImage original, QSize size) {
 
 } // namespace
 
-class BackgroundBox::Inner : public Ui::RpWidget, private base::Subscriber {
+class BackgroundBox::Inner final
+	: public Ui::RpWidget
+	, private base::Subscriber {
 public:
 	Inner(
 		QWidget *parent,
 		not_null<Main::Session*> session);
+	~Inner();
 
 	rpl::producer<Data::WallPaper> chooseEvents() const;
 	rpl::producer<Data::WallPaper> removeRequests() const;
 
 	void removePaper(const Data::WallPaper &data);
 
-	~Inner();
-
-protected:
+private:
 	void paintEvent(QPaintEvent *e) override;
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
 
-private:
+	void visibleTopBottomUpdated(
+		int visibleTop,
+		int visibleBottom) override;
+
 	struct Paper {
 		Data::WallPaper data;
+		mutable std::shared_ptr<Data::DocumentMedia> dataMedia;
 		mutable QPixmap thumbnail;
 	};
 	struct Selected {
@@ -124,8 +132,10 @@ private:
 
 };
 
-BackgroundBox::BackgroundBox(QWidget*, not_null<Main::Session*> session)
-: _session(session) {
+BackgroundBox::BackgroundBox(
+	QWidget*,
+	not_null<Window::SessionController*> controller)
+: _controller(controller) {
 }
 
 void BackgroundBox::prepare() {
@@ -136,13 +146,13 @@ void BackgroundBox::prepare() {
 	setDimensions(st::boxWideWidth, st::boxMaxListHeight);
 
 	_inner = setInnerWidget(
-		object_ptr<Inner>(this, _session),
+		object_ptr<Inner>(this, &_controller->session()),
 		st::backgroundScroll);
 
 	_inner->chooseEvents(
 	) | rpl::start_with_next([=](const Data::WallPaper &paper) {
 		Ui::show(
-			Box<BackgroundPreviewBox>(_session, paper),
+			Box<BackgroundPreviewBox>(_controller, paper),
 			Ui::LayerOption::KeepOther);
 	}, _inner->lifetime());
 
@@ -154,7 +164,7 @@ void BackgroundBox::prepare() {
 
 void BackgroundBox::removePaper(const Data::WallPaper &paper) {
 	const auto box = std::make_shared<QPointer<Ui::BoxContent>>();
-	const auto session = _session;
+	const auto session = &_controller->session();
 	const auto remove = [=, weak = Ui::MakeWeak(this)]{
 		if (*box) {
 			(*box)->closeBox();
@@ -164,7 +174,7 @@ void BackgroundBox::removePaper(const Data::WallPaper &paper) {
 		}
 		session->data().removeWallpaper(paper);
 		session->api().request(MTPaccount_SaveWallPaper(
-			paper.mtpInput(),
+			paper.mtpInput(session),
 			MTP_bool(true),
 			paper.mtpSettings()
 		)).send();
@@ -183,7 +193,7 @@ BackgroundBox::Inner::Inner(
 	not_null<Main::Session*> session)
 : RpWidget(parent)
 , _session(session)
-, _api(_session->api().instance())
+, _api(&_session->mtp())
 , _check(std::make_unique<Ui::RoundCheckbox>(st::overviewCheck, [=] { update(); })) {
 	_check->setChecked(true, anim::type::instant);
 	if (_session->data().wallpapers().empty()) {
@@ -193,7 +203,10 @@ BackgroundBox::Inner::Inner(
 	}
 	requestPapers();
 
-	subscribe(_session->downloaderTaskFinished(), [=] { update(); });
+	_session->downloaderTaskFinished(
+	) | rpl::start_with_next([=] {
+		update();
+	}, lifetime());
 	using Update = Window::Theme::BackgroundUpdate;
 	subscribe(Window::Theme::Background(), [=](const Update &update) {
 		if (update.paletteChanged()) {
@@ -252,11 +265,19 @@ void BackgroundBox::Inner::resizeToContentAndPreload() {
 	const auto rows = (count / kBackgroundsInRow)
 		+ (count % kBackgroundsInRow ? 1 : 0);
 
-	resize(st::boxWideWidth, rows * (st::backgroundSize.height() + st::backgroundPadding) + st::backgroundPadding);
+	resize(
+		st::boxWideWidth,
+		(rows * (st::backgroundSize.height() + st::backgroundPadding)
+			+ st::backgroundPadding));
 
 	const auto preload = kBackgroundsInRow * 3;
 	for (const auto &paper : _papers | ranges::view::take(preload)) {
-		paper.data.loadThumbnail();
+		if (!paper.data.localThumbnail() && !paper.dataMedia) {
+			if (const auto document = paper.data.document()) {
+				paper.dataMedia = document->createMediaView();
+				paper.dataMedia->thumbnailWanted(paper.data.fileOrigin());
+			}
+		}
 	}
 	update();
 }
@@ -292,15 +313,24 @@ void BackgroundBox::Inner::paintEvent(QPaintEvent *e) {
 
 void BackgroundBox::Inner::validatePaperThumbnail(
 		const Paper &paper) const {
-	Expects(paper.data.thumbnail() != nullptr);
-
-	const auto thumbnail = paper.data.thumbnail();
 	if (!paper.thumbnail.isNull()) {
 		return;
-	} else if (!thumbnail->loaded()) {
-		thumbnail->load(paper.data.fileOrigin());
-		return;
 	}
+	const auto localThumbnail = paper.data.localThumbnail();
+	if (!localThumbnail) {
+		if (const auto document = paper.data.document()) {
+			if (!paper.dataMedia) {
+				paper.dataMedia = document->createMediaView();
+				paper.dataMedia->thumbnailWanted(paper.data.fileOrigin());
+			}
+		}
+		if (!paper.dataMedia || !paper.dataMedia->thumbnail()) {
+			return;
+		}
+	}
+	const auto thumbnail = localThumbnail
+		? localThumbnail
+		: paper.dataMedia->thumbnail();
 	auto original = thumbnail->original();
 	if (paper.data.isPattern()) {
 		const auto color = *paper.data.backgroundColor();
@@ -428,11 +458,34 @@ void BackgroundBox::Inner::mouseReleaseEvent(QMouseEvent *e) {
 			if (base::get_if<DeleteSelected>(&_over)) {
 				_backgroundRemove.fire_copy(_papers[index].data);
 			} else if (base::get_if<Selected>(&_over)) {
-				_backgroundChosen.fire_copy(_papers[index].data);
+				auto &paper = _papers[index];
+				if (!paper.dataMedia) {
+					if (const auto document = paper.data.document()) {
+						// Keep it alive while it is on the screen.
+						paper.dataMedia = document->createMediaView();
+					}
+				}
+				_backgroundChosen.fire_copy(paper.data);
 			}
 		}
 	} else if (!_over.has_value()) {
 		setCursor(style::cur_default);
+	}
+}
+
+void BackgroundBox::Inner::visibleTopBottomUpdated(
+		int visibleTop,
+		int visibleBottom) {
+	for (auto i = 0, count = int(_papers.size()); i != count; ++i) {
+		const auto row = (i / kBackgroundsInRow);
+		const auto height = st::backgroundSize.height();
+		const auto skip = st::backgroundPadding;
+		const auto top = skip + row * (height + skip);
+		const auto bottom = top + height;
+		if ((bottom <= visibleTop || top >= visibleBottom)
+			&& !_papers[i].thumbnail.isNull()) {
+			_papers[i].dataMedia = nullptr;
+		}
 	}
 }
 

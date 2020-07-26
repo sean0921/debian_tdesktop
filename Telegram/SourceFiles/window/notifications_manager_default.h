@@ -16,6 +16,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtCore/QTimer>
 
+namespace Data {
+class CloudImageView;
+} // namespace Data
+
 namespace Ui {
 class IconButton;
 class RoundButton;
@@ -34,18 +38,17 @@ class HideAllButton;
 class Manager;
 std::unique_ptr<Manager> Create(System *system);
 
-class Manager : public Notifications::Manager, private base::Subscriber {
+class Manager final : public Notifications::Manager, private base::Subscriber {
 public:
 	Manager(System *system);
+	~Manager();
 
 	template <typename Method>
 	void enumerateNotifications(Method method) {
-		for_const (auto &notification, _notifications) {
+		for (const auto &notification : _notifications) {
 			method(notification);
 		}
 	}
-
-	~Manager();
 
 private:
 	friend class internal::Notification;
@@ -53,8 +56,12 @@ private:
 	friend class internal::Widget;
 	using Notification = internal::Notification;
 	using HideAllButton = internal::HideAllButton;
+	struct SessionSubscription {
+		rpl::lifetime subscription;
+		rpl::lifetime lifetime;
+	};
 
-	QPixmap hiddenUserpicPlaceholder() const;
+	[[nodiscard]] QPixmap hiddenUserpicPlaceholder() const;
 
 	void doUpdateAll() override;
 	void doShowNotification(
@@ -63,6 +70,7 @@ private:
 	void doClearAll() override;
 	void doClearAllFast() override;
 	void doClearFromHistory(not_null<History*> history) override;
+	void doClearFromSession(not_null<Main::Session*> session) override;
 	void doClearFromItem(not_null<HistoryItem*> item) override;
 
 	void showNextFromQueue();
@@ -82,7 +90,12 @@ private:
 
 	bool hasReplyingNotification() const;
 
+	void subscribeToSession(not_null<Main::Session*> session);
+
 	std::vector<std::unique_ptr<Notification>> _notifications;
+	base::flat_map<
+		not_null<Main::Session*>,
+		SessionSubscription> _subscriptions;
 
 	std::unique_ptr<HideAllButton> _hideAll;
 
@@ -143,7 +156,7 @@ protected:
 	virtual void updateGeometry(int x, int y, int width, int height);
 
 protected:
-	not_null<Manager*> manager() const {
+	[[nodiscard]] not_null<Manager*> manager() const {
 		return _manager;
 	}
 
@@ -177,7 +190,7 @@ protected:
 
 };
 
-class Notification : public Widget {
+class Notification final : public Widget {
 public:
 	Notification(
 		not_null<Manager*> manager,
@@ -203,10 +216,14 @@ public:
 	bool isReplying() const {
 		return _replyArea && !isUnlinked();
 	}
+	[[nodiscard]] History *maybeHistory() const {
+		return _history;
+	}
 
 	// Called only by Manager.
 	bool unlinkItem(HistoryItem *del);
 	bool unlinkHistory(History *history = nullptr);
+	bool unlinkSession(not_null<Main::Session*> session);
 	bool checkLastInput(bool hasReplyingNotifications);
 
 protected:
@@ -232,6 +249,10 @@ private:
 	void updateGeometry(int x, int y, int width, int height) override;
 	void actionsOpacityCallback();
 
+	[[nodiscard]] Notifications::Manager::NotificationId myId() const;
+
+	const not_null<PeerData*> _peer;
+
 	QPixmap _cache;
 
 	bool _hideReplyButton = false;
@@ -242,7 +263,7 @@ private:
 	crl::time _started;
 
 	History *_history = nullptr;
-	PeerData *_peer = nullptr;
+	std::shared_ptr<Data::CloudImageView> _userpicView;
 	QString _author;
 	HistoryItem *_item = nullptr;
 	int _forwardedCount = 0;

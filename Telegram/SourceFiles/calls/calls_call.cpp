@@ -15,25 +15,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/calls_instance.h"
 #include "base/openssl_help.h"
 #include "mtproto/mtproto_dh_utils.h"
+#include "mtproto/mtproto_config.h"
+#include "core/application.h"
+#include "core/core_settings.h"
 #include "media/audio/media_audio_track.h"
 #include "base/platform/base_platform_info.h"
 #include "calls/calls_panel.h"
+#include "calls/calls_controller.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
 #include "facades.h"
-
-#ifdef slots
-#undef slots
-#define NEED_TO_RESTORE_SLOTS
-#endif // slots
-
-#include <VoIPController.h>
-#include <VoIPServerConfig.h>
-
-#ifdef NEED_TO_RESTORE_SLOTS
-#define slots Q_SLOTS
-#undef NEED_TO_RESTORE_SLOTS
-#endif // NEED_TO_RESTORE_SLOTS
 
 namespace Calls {
 namespace {
@@ -43,25 +34,25 @@ constexpr auto kHangupTimeoutMs = 5000;
 constexpr auto kSha256Size = 32;
 
 void AppendEndpoint(
-		std::vector<tgvoip::Endpoint> &list,
+		std::vector<TgVoipEndpoint> &list,
 		const MTPPhoneConnection &connection) {
 	connection.match([&](const MTPDphoneConnection &data) {
 		if (data.vpeer_tag().v.length() != 16) {
 			return;
 		}
-		const auto ipv4 = tgvoip::IPv4Address(std::string(
-			data.vip().v.constData(),
-			data.vip().v.size()));
-		const auto ipv6 = tgvoip::IPv6Address(std::string(
-			data.vipv6().v.constData(),
-			data.vipv6().v.size()));
-		list.emplace_back(
-			(int64_t)data.vid().v,
-			(uint16_t)data.vport().v,
-			ipv4,
-			ipv6,
-			tgvoip::Endpoint::Type::UDP_RELAY,
-			(unsigned char*)data.vpeer_tag().v.data());
+		auto endpoint = TgVoipEndpoint{
+			.endpointId = (int64_t)data.vid().v,
+			.host = TgVoipEdpointHost{
+				.ipv4 = data.vip().v.toStdString(),
+				.ipv6 = data.vipv6().v.toStdString() },
+			.port = (uint16_t)data.vport().v,
+			.type = TgVoipEndpointType::UdpRelay
+		};
+		const auto tag = data.vpeer_tag().v;
+		if (tag.size() >= 16) {
+			memcpy(endpoint.peerTag, tag.data(), 16);
+		}
+		list.push_back(std::move(endpoint));
 	});
 }
 
@@ -80,47 +71,25 @@ uint64 ComputeFingerprint(bytes::const_span authKey) {
 		| (gsl::to_integer<uint64>(hash[12]));
 }
 
-} // namespace
-
-void Call::ControllerPointer::create() {
-	Expects(_data == nullptr);
-
-	_data = std::make_unique<tgvoip::VoIPController>();
+[[nodiscard]] std::vector<std::string> CollectVersions() {
+	return { TgVoip::getVersion() };
 }
 
-void Call::ControllerPointer::reset() {
-	if (const auto controller = base::take(_data)) {
-		controller->Stop();
+[[nodiscard]] QVector<MTPstring> WrapVersions(
+		const std::vector<std::string> &data) {
+	auto result = QVector<MTPstring>();
+	result.reserve(data.size());
+	for (const auto &version : data) {
+		result.push_back(MTP_string(version));
 	}
+	return result;
 }
 
-bool Call::ControllerPointer::empty() const {
-	return (_data == nullptr);
+[[nodiscard]] QVector<MTPstring> CollectVersionsForApi() {
+	return WrapVersions(CollectVersions());
 }
 
-bool Call::ControllerPointer::operator==(std::nullptr_t) const {
-	return empty();
-}
-
-Call::ControllerPointer::operator bool() const {
-	return !empty();
-}
-
-tgvoip::VoIPController *Call::ControllerPointer::operator->() const {
-	Expects(!empty());
-
-	return _data.get();
-}
-
-tgvoip::VoIPController &Call::ControllerPointer::operator*() const {
-	Expects(!empty());
-
-	return *_data;
-}
-
-Call::ControllerPointer::~ControllerPointer() {
-	reset();
-}
+} // namespace
 
 Call::Delegate::~Delegate() = default;
 
@@ -130,7 +99,7 @@ Call::Call(
 	Type type)
 : _delegate(delegate)
 , _user(user)
-, _api(_user->session().api().instance())
+, _api(&_user->session().mtp())
 , _type(type) {
 	_discardByTimeoutTimer.setCallback([this] { hangup(); });
 
@@ -162,7 +131,8 @@ bool Call::isIncomingWaiting() const {
 	if (type() != Call::Type::Incoming) {
 		return false;
 	}
-	return (_state == State::Starting) || (_state == State::WaitingIncoming);
+	return (state() == State::Starting)
+		|| (state() == State::WaitingIncoming);
 }
 
 void Call::start(bytes::const_span random) {
@@ -173,13 +143,14 @@ void Call::start(bytes::const_span random) {
 	Assert(!_dhConfig.p.empty());
 
 	generateModExpFirst(random);
-	if (_state == State::Starting || _state == State::Requesting) {
+	const auto state = _state.current();
+	if (state == State::Starting || state == State::Requesting) {
 		if (_type == Type::Outgoing) {
 			startOutgoing();
 		} else {
 			startIncoming();
 		}
-	} else if (_state == State::ExchangingKeys
+	} else if (state == State::ExchangingKeys
 		&& _answerAfterDhConfigReceived) {
 		answer();
 	}
@@ -187,7 +158,7 @@ void Call::start(bytes::const_span random) {
 
 void Call::startOutgoing() {
 	Expects(_type == Type::Outgoing);
-	Expects(_state == State::Requesting);
+	Expects(_state.current() == State::Requesting);
 	Expects(_gaHash.size() == kSha256Size);
 
 	_api.request(MTPphone_RequestCall(
@@ -199,8 +170,8 @@ void Call::startOutgoing() {
 			MTP_flags(MTPDphoneCallProtocol::Flag::f_udp_p2p
 				| MTPDphoneCallProtocol::Flag::f_udp_reflector),
 			MTP_int(kMinLayer),
-			MTP_int(tgvoip::VoIPController::GetConnectionMaxLayer()),
-			MTP_vector(1, MTP_string("2.4.4")))
+			MTP_int(TgVoip::getConnectionMaxLayer()),
+			MTP_vector(CollectVersionsForApi()))
 	)).done([=](const MTPphone_PhoneCall &result) {
 		Expects(result.type() == mtpc_phone_phoneCall);
 
@@ -227,7 +198,8 @@ void Call::startOutgoing() {
 			return;
 		}
 
-		_discardByTimeoutTimer.callOnce(Global::CallReceiveTimeoutMs());
+		const auto &config = _user->session().serverConfig();
+		_discardByTimeoutTimer.callOnce(config.callReceiveTimeoutMs);
 		handleUpdate(phoneCall);
 	}).fail([this](const RPCError &error) {
 		handleRequestError(error);
@@ -236,12 +208,12 @@ void Call::startOutgoing() {
 
 void Call::startIncoming() {
 	Expects(_type == Type::Incoming);
-	Expects(_state == State::Starting);
+	Expects(_state.current() == State::Starting);
 
 	_api.request(MTPphone_ReceivedCall(
 		MTP_inputPhoneCall(MTP_long(_id), MTP_long(_accessHash))
 	)).done([=](const MTPBool &result) {
-		if (_state == State::Starting) {
+		if (_state.current() == State::Starting) {
 			setState(State::WaitingIncoming);
 		}
 	}).fail([=](const RPCError &error) {
@@ -258,8 +230,9 @@ void Call::answer() {
 void Call::actuallyAnswer() {
 	Expects(_type == Type::Incoming);
 
-	if (_state != State::Starting && _state != State::WaitingIncoming) {
-		if (_state != State::ExchangingKeys
+	const auto state = _state.current();
+	if (state != State::Starting && state != State::WaitingIncoming) {
+		if (state != State::ExchangingKeys
 			|| !_answerAfterDhConfigReceived) {
 			return;
 		}
@@ -278,8 +251,8 @@ void Call::actuallyAnswer() {
 			MTP_flags(MTPDphoneCallProtocol::Flag::f_udp_p2p
 				| MTPDphoneCallProtocol::Flag::f_udp_reflector),
 			MTP_int(kMinLayer),
-			MTP_int(tgvoip::VoIPController::GetConnectionMaxLayer()),
-			MTP_vector(1, MTP_string("2.4.4")))
+			MTP_int(TgVoip::getConnectionMaxLayer()),
+			MTP_vector(CollectVersionsForApi()))
 	)).done([=](const MTPphone_PhoneCall &result) {
 		Expects(result.type() == mtpc_phone_phoneCall);
 		auto &call = result.c_phone_phoneCall();
@@ -300,7 +273,7 @@ void Call::actuallyAnswer() {
 void Call::setMute(bool mute) {
 	_mute = mute;
 	if (_controller) {
-		_controller->SetMicMute(_mute);
+		_controller->setMuteMicrophone(_mute);
 	}
 	_muteChanged.notify(_mute);
 }
@@ -310,10 +283,11 @@ crl::time Call::getDurationMs() const {
 }
 
 void Call::hangup() {
-	if (_state == State::Busy) {
+	const auto state = _state.current();
+	if (state == State::Busy) {
 		_delegate->callFinished(this);
 	} else {
-		auto missed = (_state == State::Ringing || (_state == State::Waiting && _type == Type::Outgoing));
+		auto missed = (state == State::Ringing || (state == State::Waiting && _type == Type::Outgoing));
 		auto declined = isIncomingWaiting();
 		auto reason = missed ? MTP_phoneCallDiscardReasonMissed() :
 			declined ? MTP_phoneCallDiscardReasonBusy() : MTP_phoneCallDiscardReasonHangup();
@@ -322,7 +296,7 @@ void Call::hangup() {
 }
 
 void Call::redial() {
-	if (_state != State::Busy) {
+	if (_state.current() != State::Busy) {
 		return;
 	}
 	Assert(_controller == nullptr);
@@ -334,13 +308,12 @@ void Call::redial() {
 }
 
 QString Call::getDebugLog() const {
-	const auto debug = _controller->GetDebugString();
-	return QString::fromUtf8(debug.data(), debug.size());
+	return QString::fromStdString(_controller->getDebugInfo());
 }
 
 void Call::startWaitingTrack() {
 	_waitingTrack = Media::Audio::Current().createTrack();
-	auto trackFileName = _user->session().settings().getSoundPath(
+	auto trackFileName = Core::App().settings().getSoundPath(
 		(_type == Type::Outgoing)
 		? qsl("call_outgoing")
 		: qsl("call_incoming"));
@@ -415,9 +388,10 @@ bool Call::handleUpdate(const MTPPhoneCall &call) {
 			return false;
 		}
 		if (_type == Type::Outgoing
-			&& _state == State::Waiting
+			&& _state.current() == State::Waiting
 			&& data.vreceive_date().value_or_empty() != 0) {
-			_discardByTimeoutTimer.callOnce(Global::CallRingTimeoutMs());
+			const auto &config = _user->session().serverConfig();
+			_discardByTimeoutTimer.callOnce(config.callRingTimeoutMs);
 			setState(State::Ringing);
 			startWaitingTrack();
 		}
@@ -429,7 +403,7 @@ bool Call::handleUpdate(const MTPPhoneCall &call) {
 			return false;
 		}
 		if (_type == Type::Incoming
-			&& _state == State::ExchangingKeys
+			&& _state.current() == State::ExchangingKeys
 			&& !_controller) {
 			startConfirmedCall(data);
 		}
@@ -441,14 +415,16 @@ bool Call::handleUpdate(const MTPPhoneCall &call) {
 			return false;
 		}
 		if (data.is_need_debug()) {
-			auto debugLog = _controller ? _controller->GetDebugLog() : std::string();
+			auto debugLog = _controller
+				? _controller->getDebugInfo()
+				: std::string();
 			if (!debugLog.empty()) {
-				MTP::send(
-					MTPphone_SaveCallDebug(
-						MTP_inputPhoneCall(
-							MTP_long(_id),
-							MTP_long(_accessHash)),
-						MTP_dataJSON(MTP_string(debugLog))));
+				user()->session().api().request(MTPphone_SaveCallDebug(
+					MTP_inputPhoneCall(
+						MTP_long(_id),
+						MTP_long(_accessHash)),
+					MTP_dataJSON(MTP_string(debugLog))
+				)).send();
 			}
 		}
 		if (data.is_need_rating() && _id && _accessHash) {
@@ -460,7 +436,8 @@ bool Call::handleUpdate(const MTPPhoneCall &call) {
 		}
 		if (reason && reason->type() == mtpc_phoneCallDiscardReasonBusy) {
 			setState(State::Busy);
-		} else if (_type == Type::Outgoing || _state == State::HangingUp) {
+		} else if (_type == Type::Outgoing
+			|| _state.current() == State::HangingUp) {
 			setState(State::Ended);
 		} else {
 			setState(State::EndedByOtherDevice);
@@ -488,7 +465,7 @@ bool Call::handleUpdate(const MTPPhoneCall &call) {
 void Call::confirmAcceptedCall(const MTPDphoneCallAccepted &call) {
 	Expects(_type == Type::Outgoing);
 
-	if (_state == State::ExchangingKeys
+	if (_state.current() == State::ExchangingKeys
 		|| _controller) {
 		LOG(("Call Warning: Unexpected confirmAcceptedCall."));
 		return;
@@ -517,8 +494,8 @@ void Call::confirmAcceptedCall(const MTPDphoneCallAccepted &call) {
 			MTP_flags(MTPDphoneCallProtocol::Flag::f_udp_p2p
 				| MTPDphoneCallProtocol::Flag::f_udp_reflector),
 			MTP_int(kMinLayer),
-			MTP_int(tgvoip::VoIPController::GetConnectionMaxLayer()),
-			MTP_vector(1, MTP_string("2.4.4")))
+			MTP_int(TgVoip::getConnectionMaxLayer()),
+			MTP_vector(CollectVersionsForApi()))
 	)).done([this](const MTPphone_PhoneCall &result) {
 		Expects(result.type() == mtpc_phone_phoneCall);
 
@@ -566,126 +543,125 @@ void Call::createAndStartController(const MTPDphoneCall &call) {
 		return;
 	}
 
-	tgvoip::VoIPController::Config config;
-	config.dataSaving = tgvoip::DATA_SAVING_NEVER;
+	const auto &protocol = call.vprotocol().c_phoneCallProtocol();
+	const auto &serverConfig = _user->session().serverConfig();
+
+	TgVoipConfig config;
+	config.dataSaving = TgVoipDataSaving::Never;
 	config.enableAEC = !Platform::IsMac10_7OrGreater();
 	config.enableNS = true;
 	config.enableAGC = true;
 	config.enableVolumeControl = true;
-	config.initTimeout = Global::CallConnectTimeoutMs() / 1000;
-	config.recvTimeout = Global::CallPacketTimeoutMs() / 1000;
+	config.initializationTimeout = serverConfig.callConnectTimeoutMs / 1000.;
+	config.receiveTimeout = serverConfig.callPacketTimeoutMs / 1000.;
+	config.enableP2P = call.is_p2p_allowed();
+	config.maxApiLayer = protocol.vmax_layer().v;
 	if (Logs::DebugEnabled()) {
 		auto callLogFolder = cWorkingDir() + qsl("DebugLogs");
 		auto callLogPath = callLogFolder + qsl("/last_call_log.txt");
 		auto callLogNative = QDir::toNativeSeparators(callLogPath);
 #ifdef Q_OS_WIN
-		config.logFilePath = callLogNative.toStdWString();
+		config.logPath = callLogNative.toStdWString();
 #else // Q_OS_WIN
 		const auto callLogUtf = QFile::encodeName(callLogNative);
-		config.logFilePath.resize(callLogUtf.size());
-		ranges::copy(callLogUtf, config.logFilePath.begin());
+		config.logPath.resize(callLogUtf.size());
+		ranges::copy(callLogUtf, config.logPath.begin());
 #endif // Q_OS_WIN
 		QFile(callLogPath).remove();
 		QDir().mkpath(callLogFolder);
 	}
 
-	const auto &protocol = call.vprotocol().c_phoneCallProtocol();
-	auto endpoints = std::vector<tgvoip::Endpoint>();
+	auto endpoints = std::vector<TgVoipEndpoint>();
 	for (const auto &connection : call.vconnections().v) {
 		AppendEndpoint(endpoints, connection);
 	}
 
-	auto callbacks = tgvoip::VoIPController::Callbacks();
-	callbacks.connectionStateChanged = [](
-			tgvoip::VoIPController *controller,
-			int state) {
-		const auto call = static_cast<Call*>(controller->implData);
-		call->handleControllerStateChange(controller, state);
-	};
-	callbacks.signalBarCountChanged = [](
-			tgvoip::VoIPController *controller,
-			int count) {
-		const auto call = static_cast<Call*>(controller->implData);
-		call->handleControllerBarCountChange(controller, count);
-	};
-
-	_controller.create();
-	if (_mute) {
-		_controller->SetMicMute(_mute);
-	}
-	_controller->implData = static_cast<void*>(this);
-	_controller->SetRemoteEndpoints(
-		endpoints,
-		call.is_p2p_allowed(),
-		protocol.vmax_layer().v);
-	_controller->SetConfig(config);
-	_controller->SetCurrentAudioOutput(Global::CallOutputDeviceID().toStdString());
-	_controller->SetCurrentAudioInput(Global::CallInputDeviceID().toStdString());
-	_controller->SetOutputVolume(Global::CallOutputVolume()/100.0f);
-	_controller->SetInputVolume(Global::CallInputVolume()/100.0f);
-#ifdef Q_OS_MAC
-	_controller->SetAudioOutputDuckingEnabled(Global::CallAudioDuckingEnabled());
-#endif
-	_controller->SetEncryptionKey(reinterpret_cast<char*>(_authKey.data()), (_type == Type::Outgoing));
-	_controller->SetCallbacks(callbacks);
+	auto proxy = TgVoipProxy();
 	if (Global::UseProxyForCalls()
 		&& (Global::ProxySettings() == MTP::ProxyData::Settings::Enabled)) {
-		const auto &proxy = Global::SelectedProxy();
-		if (proxy.supportsCalls()) {
-			Assert(proxy.type == MTP::ProxyData::Type::Socks5);
-			_controller->SetProxy(
-				tgvoip::PROXY_SOCKS5,
-				proxy.host.toStdString(),
-				proxy.port,
-				proxy.user.toStdString(),
-				proxy.password.toStdString());
+		const auto &selected = Global::SelectedProxy();
+		if (selected.supportsCalls()) {
+			Assert(selected.type == MTP::ProxyData::Type::Socks5);
+			proxy.host = selected.host.toStdString();
+			proxy.port = selected.port;
+			proxy.login = selected.user.toStdString();
+			proxy.password = selected.password.toStdString();
 		}
 	}
-	_controller->Start();
-	_controller->Connect();
+
+	auto encryptionKey = TgVoipEncryptionKey();
+	encryptionKey.isOutgoing = (_type == Type::Outgoing);
+	encryptionKey.value = ranges::view::all(
+		_authKey
+	) | ranges::view::transform([](bytes::type byte) {
+		return static_cast<uint8_t>(byte);
+	}) | ranges::to_vector;
+
+	_controller = MakeController(
+		"2.4.4",
+		config,
+		TgVoipPersistentState(),
+		endpoints,
+		proxy.host.empty() ? nullptr : &proxy,
+		TgVoipNetworkType::Unknown,
+		encryptionKey);
+
+	const auto raw = _controller.get();
+	raw->setOnStateUpdated([=](TgVoipState state) {
+		handleControllerStateChange(raw, state);
+	});
+	raw->setOnSignalBarsUpdated([=](int count) {
+		handleControllerBarCountChange(count);
+	});
+	if (_mute) {
+		raw->setMuteMicrophone(_mute);
+	}
+	const auto &settings = Core::App().settings();
+	raw->setAudioOutputDevice(
+		settings.callOutputDeviceID().toStdString());
+	raw->setAudioInputDevice(
+		settings.callInputDeviceID().toStdString());
+	raw->setOutputVolume(settings.callOutputVolume() / 100.0f);
+	raw->setInputVolume(settings.callInputVolume() / 100.0f);
+	raw->setAudioOutputDuckingEnabled(settings.callAudioDuckingEnabled());
 }
 
 void Call::handleControllerStateChange(
-		tgvoip::VoIPController *controller,
-		int state) {
+		not_null<Controller*> controller,
+		TgVoipState state) {
 	// NB! Can be called from an arbitrary thread!
 	// This can be called from ~VoIPController()!
-	// Expects(controller == _controller.get());
-	Expects(controller->implData == static_cast<void*>(this));
 
 	switch (state) {
-	case tgvoip::STATE_WAIT_INIT: {
+	case TgVoipState::WaitInit: {
 		DEBUG_LOG(("Call Info: State changed to WaitingInit."));
 		setStateQueued(State::WaitingInit);
 	} break;
 
-	case tgvoip::STATE_WAIT_INIT_ACK: {
+	case TgVoipState::WaitInitAck: {
 		DEBUG_LOG(("Call Info: State changed to WaitingInitAck."));
 		setStateQueued(State::WaitingInitAck);
 	} break;
 
-	case tgvoip::STATE_ESTABLISHED: {
+	case TgVoipState::Established: {
 		DEBUG_LOG(("Call Info: State changed to Established."));
 		setStateQueued(State::Established);
 	} break;
 
-	case tgvoip::STATE_FAILED: {
-		auto error = controller->GetLastError();
+	case TgVoipState::Failed: {
+		auto error = QString::fromStdString(controller->getLastError());
 		LOG(("Call Info: State changed to Failed, error: %1.").arg(error));
 		setFailedQueued(error);
 	} break;
 
-	default: LOG(("Call Error: Unexpected state in handleStateChange: %1").arg(state));
+	default: LOG(("Call Error: Unexpected state in handleStateChange: %1"
+		).arg(int(state)));
 	}
 }
 
-void Call::handleControllerBarCountChange(
-		tgvoip::VoIPController *controller,
-		int count) {
+void Call::handleControllerBarCountChange(int count) {
 	// NB! Can be called from an arbitrary thread!
 	// This can be called from ~VoIPController()!
-	// Expects(controller == _controller.get());
-	Expects(controller->implData == static_cast<void*>(this));
 
 	crl::on_main(this, [=] {
 		setSignalBarCount(count);
@@ -739,34 +715,33 @@ bool Call::checkCallFields(const MTPDphoneCallAccepted &call) {
 }
 
 void Call::setState(State state) {
-	if (_state == State::Failed) {
+	if (_state.current() == State::Failed) {
 		return;
 	}
-	if (_state == State::FailedHangingUp && state != State::Failed) {
+	if (_state.current() == State::FailedHangingUp && state != State::Failed) {
 		return;
 	}
-	if (_state != state) {
+	if (_state.current() != state) {
 		_state = state;
-		_stateChanged.notify(state, true);
 
 		if (true
-			&& _state != State::Starting
-			&& _state != State::Requesting
-			&& _state != State::Waiting
-			&& _state != State::WaitingIncoming
-			&& _state != State::Ringing) {
+			&& state != State::Starting
+			&& state != State::Requesting
+			&& state != State::Waiting
+			&& state != State::WaitingIncoming
+			&& state != State::Ringing) {
 			_waitingTrack.reset();
 		}
 		if (false
-			|| _state == State::Ended
-			|| _state == State::EndedByOtherDevice
-			|| _state == State::Failed
-			|| _state == State::Busy) {
+			|| state == State::Ended
+			|| state == State::EndedByOtherDevice
+			|| state == State::Failed
+			|| state == State::Busy) {
 			// Destroy controller before destroying Call Panel,
 			// so that the panel hide animation is smooth.
 			destroyController();
 		}
-		switch (_state) {
+		switch (state) {
 		case State::Established:
 			_startTime = crl::now();
 			break;
@@ -790,32 +765,30 @@ void Call::setState(State state) {
 	}
 }
 
-void Call::setCurrentAudioDevice(bool input, std::string deviceID){
+void Call::setCurrentAudioDevice(bool input, std::string deviceID) {
 	if (_controller) {
 		if (input) {
-			_controller->SetCurrentAudioInput(deviceID);
+			_controller->setAudioInputDevice(deviceID);
 		} else {
-			_controller->SetCurrentAudioOutput(deviceID);
+			_controller->setAudioOutputDevice(deviceID);
 		}
 	}
 }
 
-void Call::setAudioVolume(bool input, float level){
+void Call::setAudioVolume(bool input, float level) {
 	if (_controller) {
-		if(input) {
-			_controller->SetInputVolume(level);
+		if (input) {
+			_controller->setInputVolume(level);
 		} else {
-			_controller->SetOutputVolume(level);
+			_controller->setOutputVolume(level);
 		}
 	}
 }
 
-void Call::setAudioDuckingEnabled(bool enabled){
-#ifdef Q_OS_MAC
+void Call::setAudioDuckingEnabled(bool enabled) {
 	if (_controller) {
-		_controller->SetAudioOutputDuckingEnabled(enabled);
+		_controller->setAudioOutputDuckingEnabled(enabled);
 	}
-#endif
 }
 
 void Call::finish(FinishType type, const MTPPhoneCallDiscardReason &reason) {
@@ -825,16 +798,17 @@ void Call::finish(FinishType type, const MTPPhoneCallDiscardReason &reason) {
 
 	auto finalState = (type == FinishType::Ended) ? State::Ended : State::Failed;
 	auto hangupState = (type == FinishType::Ended) ? State::HangingUp : State::FailedHangingUp;
-	if (_state == State::Requesting) {
+	const auto state = _state.current();
+	if (state == State::Requesting) {
 		_finishByTimeoutTimer.call(kHangupTimeoutMs, [this, finalState] { setState(finalState); });
 		_finishAfterRequestingCall = type;
 		return;
 	}
-	if (_state == State::HangingUp
-		|| _state == State::FailedHangingUp
-		|| _state == State::EndedByOtherDevice
-		|| _state == State::Ended
-		|| _state == State::Failed) {
+	if (state == State::HangingUp
+		|| state == State::FailedHangingUp
+		|| state == State::EndedByOtherDevice
+		|| state == State::Ended
+		|| state == State::Failed) {
 		return;
 	}
 	if (!_id) {
@@ -844,7 +818,7 @@ void Call::finish(FinishType type, const MTPPhoneCallDiscardReason &reason) {
 
 	setState(hangupState);
 	auto duration = getDurationMs() / 1000;
-	auto connectionId = _controller ? _controller->GetPreferredRelayID() : 0;
+	auto connectionId = _controller ? _controller->getPreferredRelayId() : 0;
 	_finishByTimeoutTimer.call(kHangupTimeoutMs, [this, finalState] { setState(finalState); });
 	_api.request(MTPphone_DiscardCall(
 		MTP_flags(0),
@@ -870,7 +844,7 @@ void Call::setStateQueued(State state) {
 	});
 }
 
-void Call::setFailedQueued(int error) {
+void Call::setFailedQueued(const QString &error) {
 	crl::on_main(this, [=] {
 		handleControllerError(error);
 	});
@@ -887,13 +861,13 @@ void Call::handleRequestError(const RPCError &error) {
 	finish(FinishType::Failed);
 }
 
-void Call::handleControllerError(int error) {
-	if (error == tgvoip::ERROR_INCOMPATIBLE) {
+void Call::handleControllerError(const QString &error) {
+	if (error == u"ERROR_INCOMPATIBLE"_q) {
 		Ui::show(Box<InformBox>(
 			Lang::Hard::CallErrorIncompatible().replace(
 				"{user}",
 				_user->name)));
-	} else if (error == tgvoip::ERROR_AUDIO_IO) {
+	} else if (error == u"ERROR_AUDIO_IO"_q) {
 		Ui::show(Box<InformBox>(tr::lng_call_error_audio_io(tr::now)));
 	}
 	finish(FinishType::Failed);
@@ -912,8 +886,8 @@ Call::~Call() {
 	destroyController();
 }
 
-void UpdateConfig(const std::string& data) {
-	tgvoip::ServerConfig::GetSharedInstance()->Update(data);
+void UpdateConfig(const std::string &data) {
+	TgVoip::setGlobalServerConfig(data);
 }
 
 } // namespace Calls

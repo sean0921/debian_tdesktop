@@ -61,68 +61,71 @@ void UiIntegration::startFontsEnd() {
 }
 
 std::shared_ptr<ClickHandler> UiIntegration::createLinkHandler(
-		EntityType type,
-		const QString &text,
-		const QString &data,
-		const TextParseOptions &options) {
-	switch (type) {
+		const EntityLinkData &data,
+		const std::any &context) {
+	const auto my = std::any_cast<Context>(&context);
+	switch (data.type) {
 	case EntityType::Url:
-		return (!data.isEmpty() && UrlClickHandler::IsSuspicious(data))
-			? std::make_shared<HiddenUrlClickHandler>(data)
-			: nullptr;
+		return (!data.data.isEmpty()
+			&& UrlClickHandler::IsSuspicious(data.data))
+			? std::make_shared<HiddenUrlClickHandler>(data.data)
+			: Integration::createLinkHandler(data, context);
 
 	case EntityType::CustomUrl:
-		return !data.isEmpty()
-			? std::make_shared<HiddenUrlClickHandler>(data)
-			: nullptr;
+		return !data.data.isEmpty()
+			? std::make_shared<HiddenUrlClickHandler>(data.data)
+			: Integration::createLinkHandler(data, context);
 
 	case EntityType::BotCommand:
-		return std::make_shared<BotCommandClickHandler>(data);
+		return std::make_shared<BotCommandClickHandler>(data.data);
 
 	case EntityType::Hashtag:
-		if (options.flags & TextTwitterMentions) {
+		if (my && my->type == HashtagMentionType::Twitter) {
 			return std::make_shared<UrlClickHandler>(
 				(qsl("https://twitter.com/hashtag/")
-					+ data.mid(1)
+					+ data.data.mid(1)
 					+ qsl("?src=hash")),
 				true);
-		} else if (options.flags & TextInstagramMentions) {
+		} else if (my && my->type == HashtagMentionType::Instagram) {
 			return std::make_shared<UrlClickHandler>(
 				(qsl("https://instagram.com/explore/tags/")
-					+ data.mid(1)
+					+ data.data.mid(1)
 					+ '/'),
 				true);
 		}
-		return std::make_shared<HashtagClickHandler>(data);
+		return std::make_shared<HashtagClickHandler>(data.data);
 
 	case EntityType::Cashtag:
-		return std::make_shared<CashtagClickHandler>(data);
+		return std::make_shared<CashtagClickHandler>(data.data);
 
 	case EntityType::Mention:
-		if (options.flags & TextTwitterMentions) {
+		if (my && my->type == HashtagMentionType::Twitter) {
 			return std::make_shared<UrlClickHandler>(
-				qsl("https://twitter.com/") + data.mid(1),
+				qsl("https://twitter.com/") + data.data.mid(1),
 				true);
-		} else if (options.flags & TextInstagramMentions) {
+		} else if (my && my->type == HashtagMentionType::Instagram) {
 			return std::make_shared<UrlClickHandler>(
-				qsl("https://instagram.com/") + data.mid(1) + '/',
+				qsl("https://instagram.com/") + data.data.mid(1) + '/',
 				true);
 		}
-		return std::make_shared<MentionClickHandler>(data);
+		return std::make_shared<MentionClickHandler>(data.data);
 
 	case EntityType::MentionName: {
-		auto fields = TextUtilities::MentionNameDataToFields(data);
-		if (fields.userId) {
+		auto fields = TextUtilities::MentionNameDataToFields(data.data);
+		if (!my || !my->session) {
+			LOG(("Mention name without a session: %1").arg(data.data));
+		} else if (fields.userId) {
 			return std::make_shared<MentionNameClickHandler>(
-				text,
+				my->session,
+				data.text,
 				fields.userId,
 				fields.accessHash);
 		} else {
-			LOG(("Bad mention name: %1").arg(data));
+			LOG(("Bad mention name: %1").arg(data.data));
 		}
 	} break;
 	}
-	return nullptr;
+	return Integration::createLinkHandler(data, context);
 }
 
 bool UiIntegration::handleUrlClick(
@@ -150,17 +153,13 @@ bool UiIntegration::handleUrlClick(
 }
 
 rpl::producer<> UiIntegration::forcePopupMenuHideRequests() {
-	return rpl::merge(
-		Core::App().passcodeLockChanges(),
-		Core::App().termsLockChanges()
-	) | rpl::map([] { return rpl::empty_value(); });
+	return Core::App().passcodeLockChanges() | rpl::to_empty;
 }
 
 QString UiIntegration::convertTagToMimeTag(const QString &tagId) {
 	if (TextUtilities::IsMentionLink(tagId)) {
-		const auto &account = Core::App().activeAccount();
-		if (account.sessionExists()) {
-			return tagId + ':' + QString::number(account.session().userId());
+		if (const auto session = Core::App().activeAccount().maybeSession()) {
+			return tagId + ':' + QString::number(session->userId());
 		}
 	}
 	return tagId;

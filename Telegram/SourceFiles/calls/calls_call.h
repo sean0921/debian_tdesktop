@@ -19,11 +19,11 @@ class Track;
 } // namespace Audio
 } // namespace Media
 
-namespace tgvoip {
-class VoIPController;
-} // namespace tgvoip
+enum class TgVoipState;
 
 namespace Calls {
+
+class Controller;
 
 struct DhConfig {
 	int32 version = 0;
@@ -60,13 +60,13 @@ public:
 	};
 	Call(not_null<Delegate*> delegate, not_null<UserData*> user, Type type);
 
-	Type type() const {
+	[[nodiscard]] Type type() const {
 		return _type;
 	}
-	not_null<UserData*> user() const {
+	[[nodiscard]] not_null<UserData*> user() const {
 		return _user;
 	}
-	bool isIncomingWaiting() const;
+	[[nodiscard]] bool isIncomingWaiting() const;
 
 	void start(bytes::const_span random);
 	bool handleUpdate(const MTPPhoneCall &call);
@@ -89,10 +89,10 @@ public:
 		Busy,
 	};
 	State state() const {
-		return _state;
+		return _state.current();
 	}
-	base::Observable<State> &stateChanged() {
-		return _stateChanged;
+	rpl::producer<State> stateValue() const {
+		return _state.value();
 	}
 
 	static constexpr auto kSignalBarStarting = -1;
@@ -126,33 +126,20 @@ public:
 	void setAudioVolume(bool input, float level);
 	void setAudioDuckingEnabled(bool enabled);
 
+	[[nodiscard]] rpl::lifetime &lifetime() {
+		return _lifetime;
+	}
+
 	~Call();
 
 private:
-	class ControllerPointer {
-	public:
-		void create();
-		void reset();
-		bool empty() const;
-
-		bool operator==(std::nullptr_t) const;
-		explicit operator bool() const;
-		tgvoip::VoIPController *operator->() const;
-		tgvoip::VoIPController &operator*() const;
-
-		~ControllerPointer();
-
-	private:
-		std::unique_ptr<tgvoip::VoIPController> _data;
-
-	};
 	enum class FinishType {
 		None,
 		Ended,
 		Failed,
 	};
 	void handleRequestError(const RPCError &error);
-	void handleControllerError(int error);
+	void handleControllerError(const QString &error);
 	void finish(FinishType type, const MTPPhoneCallDiscardReason &reason = MTP_phoneCallDiscardReasonDisconnect());
 	void startOutgoing();
 	void startIncoming();
@@ -160,11 +147,9 @@ private:
 
 	void generateModExpFirst(bytes::const_span randomSeed);
 	void handleControllerStateChange(
-		tgvoip::VoIPController *controller,
-		int state);
-	void handleControllerBarCountChange(
-		tgvoip::VoIPController *controller,
-		int count);
+		not_null<Controller*> controller,
+		TgVoipState state);
+	void handleControllerBarCountChange(int count);
 	void createAndStartController(const MTPDphoneCall &call);
 
 	template <typename T>
@@ -177,7 +162,7 @@ private:
 	void startConfirmedCall(const MTPDphoneCall &call);
 	void setState(State state);
 	void setStateQueued(State state);
-	void setFailedQueued(int error);
+	void setFailedQueued(const QString &error);
 	void setSignalBarCount(int count);
 	void destroyController();
 
@@ -185,10 +170,9 @@ private:
 	not_null<UserData*> _user;
 	MTP::Sender _api;
 	Type _type = Type::Outgoing;
-	State _state = State::Starting;
+	rpl::variable<State> _state = State::Starting;
 	FinishType _finishAfterRequestingCall = FinishType::None;
 	bool _answerAfterDhConfigReceived = false;
-	base::Observable<State> _stateChanged;
 	int _signalBarCount = kSignalBarStarting;
 	base::Observable<int> _signalBarCountChanged;
 	crl::time _startTime = 0;
@@ -210,12 +194,14 @@ private:
 	uint64 _accessHash = 0;
 	uint64 _keyFingerprint = 0;
 
-	ControllerPointer _controller;
+	std::unique_ptr<Controller> _controller;
 
 	std::unique_ptr<Media::Audio::Track> _waitingTrack;
 
+	rpl::lifetime _lifetime;
+
 };
 
-void UpdateConfig(const std::string& data);
+void UpdateConfig(const std::string &data);
 
 } // namespace Calls
