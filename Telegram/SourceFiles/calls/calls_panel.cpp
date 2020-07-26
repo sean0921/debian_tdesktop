@@ -11,6 +11,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "data/data_file_origin.h"
+#include "data/data_photo_media.h"
+#include "data/data_cloud_file.h"
+#include "data/data_changes.h"
 #include "calls/calls_emoji_fingerprint.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
@@ -26,7 +29,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
 #include "apiwrap.h"
-#include "observer_peer.h"
 #include "platform/platform_specific.h"
 #include "window/main_window.h"
 #include "layout.h"
@@ -299,7 +301,8 @@ QImage Panel::Button::prepareRippleMask() const {
 }
 
 Panel::Panel(not_null<Call*> call)
-: _call(call)
+: RpWidget(Core::App().getModalParent())
+, _call(call)
 , _user(call->user())
 , _answerHangupRedial(this, st::callAnswer, &st::callHangup)
 , _decline(this, object_ptr<Button>(this, st::callHangup))
@@ -312,11 +315,13 @@ Panel::Panel(not_null<Call*> call)
 	_cancel->setDuration(st::callPanelDuration);
 
 	setMouseTracking(true);
-	setWindowIcon(Window::CreateIcon(&_user->account()));
+	setWindowIcon(Window::CreateIcon(&_user->session()));
 	initControls();
 	initLayout();
 	showAndActivate();
 }
+
+Panel::~Panel() = default;
 
 void Panel::showAndActivate() {
 	toggleOpacityAnimation(true);
@@ -356,13 +361,7 @@ void Panel::initControls() {
 	subscribe(_call->muteChanged(), [this](bool mute) {
 		_mute->setIconOverride(mute ? &st::callUnmuteIcon : nullptr);
 	});
-	subscribe(Notify::PeerUpdated(), Notify::PeerUpdatedHandler(Notify::PeerUpdate::Flag::NameChanged, [this](const Notify::PeerUpdate &update) {
-		if (!_call || update.peer != _call->user()) {
-			return;
-		}
-		_name->setText(_call->user()->name);
-		updateControlsGeometry();
-	}));
+
 	_updateDurationTimer.setCallback([this] {
 		if (_call) {
 			updateStatusText(_call->state());
@@ -406,11 +405,11 @@ void Panel::initControls() {
 void Panel::reinitControls() {
 	Expects(_call != nullptr);
 
-	unsubscribe(base::take(_stateChangedSubscription));
-	_stateChangedSubscription = subscribe(
-		_call->stateChanged(),
-		[=](State state) { stateChanged(state); });
-	stateChanged(_call->state());
+	_stateLifetime.destroy();
+	_call->stateValue(
+	) | rpl::start_with_next([=](State state) {
+		stateChanged(state);
+	}, _stateLifetime);
 
 	_signalBars.create(
 		this,
@@ -418,7 +417,7 @@ void Panel::reinitControls() {
 		st::callPanelSignalBars,
 		[=] { rtlupdate(signalBarsRect()); });
 
-	_name->setText(_call->user()->name);
+	_name->setText(_user->name);
 	updateStatusText(_call->state());
 }
 
@@ -430,16 +429,27 @@ void Panel::initLayout() {
 
 	initGeometry();
 
-	Notify::PeerUpdateValue(
-		_user,
-		Notify::PeerUpdate::Flag::PhotoChanged
-	) | rpl::start_with_next(
-		[this] { processUserPhoto(); },
-		lifetime());
+	using UpdateFlag = Data::PeerUpdate::Flag;
+	_user->session().changes().peerUpdates(
+		UpdateFlag::Name | UpdateFlag::Photo
+	) | rpl::filter([=](const Data::PeerUpdate &update) {
+		// _user may change for the same Panel.
+		return (_call != nullptr) && (update.peer == _user);
+	}) | rpl::start_with_next([=](const Data::PeerUpdate &update) {
+		if (update.flags & UpdateFlag::Name) {
+			_name->setText(_call->user()->name);
+			updateControlsGeometry();
+		}
+		if (update.flags & UpdateFlag::Photo) {
+			processUserPhoto();
+		}
+	}, lifetime());
+	processUserPhoto();
 
-	subscribe(_user->session().downloaderTaskFinished(), [=] {
+	_user->session().downloaderTaskFinished(
+	) | rpl::start_with_next([=] {
 		refreshUserPhoto();
-	});
+	}, lifetime());
 	createDefaultCacheImage();
 
 	Ui::Platform::InitOnTopPanel(this);
@@ -486,6 +496,7 @@ void Panel::finishAnimating() {
 
 void Panel::showControls() {
 	Expects(_call != nullptr);
+
 	showChildren();
 	_decline->setVisible(_decline->toggled());
 	_cancel->setVisible(_cancel->toggled());
@@ -507,43 +518,39 @@ void Panel::hideAndDestroy() {
 }
 
 void Panel::processUserPhoto() {
-	if (!_user->userpicLoaded()) {
-		_user->loadUserpic();
-	}
+	_userpic = _user->createUserpicView();
+	_user->loadUserpic();
 	const auto photo = _user->userpicPhotoId()
 		? _user->owner().photo(_user->userpicPhotoId()).get()
 		: nullptr;
 	if (isGoodUserPhoto(photo)) {
-		photo->large()->load(_user->userpicPhotoOrigin());
-	} else if (_user->userpicPhotoUnknown() || (photo && !photo->date)) {
-		_user->session().api().requestFullPeer(_user);
+		_photo = photo->createMediaView();
+		_photo->wanted(Data::PhotoSize::Large, _user->userpicPhotoOrigin());
+	} else {
+		_photo = nullptr;
+		if (_user->userpicPhotoUnknown() || (photo && !photo->date)) {
+			_user->session().api().requestFullPeer(_user);
+		}
 	}
 	refreshUserPhoto();
 }
 
 void Panel::refreshUserPhoto() {
-	const auto photo = _user->userpicPhotoId()
-		? _user->owner().photo(_user->userpicPhotoId()).get()
-		: nullptr;
-	const auto isNewPhoto = [&](not_null<PhotoData*> photo) {
-		return photo->large()->loaded()
-			&& (photo->id != _userPhotoId || !_userPhotoFull);
-	};
-	if (isGoodUserPhoto(photo) && isNewPhoto(photo)) {
-		_userPhotoId = photo->id;
+	const auto isNewBigPhoto = [&] {
+		return _photo
+			&& _photo->loaded()
+			&& (_photo->owner()->id != _userPhotoId || !_userPhotoFull);
+	}();
+	if (isNewBigPhoto) {
+		_userPhotoId = _photo->owner()->id;
 		_userPhotoFull = true;
-		createUserpicCache(
-			photo->isNull() ? nullptr : photo->large().get(),
-			_user->userpicPhotoOrigin());
+		createUserpicCache(_photo->image(Data::PhotoSize::Large));
 	} else if (_userPhoto.isNull()) {
-		const auto userpic = _user->currentUserpic();
-		createUserpicCache(
-			userpic ? userpic.get() : nullptr,
-			_user->userpicOrigin());
+		createUserpicCache(_userpic ? _userpic->image() : nullptr);
 	}
 }
 
-void Panel::createUserpicCache(Image *image, Data::FileOrigin origin) {
+void Panel::createUserpicCache(Image *image) {
 	auto size = st::callWidth * cIntRetinaFactor();
 	auto options = _useTransparency ? (Images::Option::RoundedLarge | Images::Option::RoundedTopLeft | Images::Option::RoundedTopRight | Images::Option::Smooth) : Images::Option::None;
 	if (image) {
@@ -557,7 +564,6 @@ void Panel::createUserpicCache(Image *image, Data::FileOrigin origin) {
 			width = size;
 		}
 		_userPhoto = image->pixNoCache(
-			origin,
 			width,
 			height,
 			options,
@@ -595,14 +601,18 @@ bool Panel::isGoodUserPhoto(PhotoData *photo) {
 }
 
 void Panel::initGeometry() {
-	auto center = Core::App().getPointForCallPanelCenter();
+	const auto center = Core::App().getPointForCallPanelCenter();
 	_useTransparency = Ui::Platform::TranslucentWindowsSupported(center);
 	setAttribute(Qt::WA_OpaquePaintEvent, !_useTransparency);
 	_padding = _useTransparency ? st::callShadow.extend : style::margins(st::lineWidth, st::lineWidth, st::lineWidth, st::lineWidth);
 	_contentTop = _padding.top() + st::callWidth;
-	auto screen = QApplication::desktop()->screenGeometry(center);
-	auto rect = QRect(0, 0, st::callWidth, st::callHeight);
-	setGeometry(rect.translated(center - rect.center()).marginsAdded(_padding));
+	const auto rect = [&] {
+		const QRect initRect(0, 0, st::callWidth, st::callHeight);
+		return initRect.translated(center - initRect.center()).marginsAdded(_padding);
+	}();
+	setGeometry(rect);
+	setMinimumSize(rect.size());
+	setMaximumSize(rect.size());
 	createBottomImage();
 	updateControlsGeometry();
 }

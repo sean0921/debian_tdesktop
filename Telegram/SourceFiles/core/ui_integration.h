@@ -9,10 +9,24 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/integration.h"
 
+namespace Main {
+class Session;
+} // namespace Main
+
 namespace Core {
 
 class UiIntegration : public Ui::Integration {
 public:
+	enum class HashtagMentionType : uchar {
+		Telegram,
+		Twitter,
+		Instagram,
+	};
+	struct Context {
+		Main::Session *session = nullptr;
+		HashtagMentionType type = HashtagMentionType::Telegram;
+	};
+
 	void postponeCall(FnMut<void()> &&callable) override;
 	void registerLeaveSubscription(not_null<QWidget*> widget) override;
 	void unregisterLeaveSubscription(not_null<QWidget*> widget) override;
@@ -27,10 +41,8 @@ public:
 	void startFontsEnd() override;
 
 	std::shared_ptr<ClickHandler> createLinkHandler(
-		EntityType type,
-		const QString &text,
-		const QString &data,
-		const TextParseOptions &options) override;
+		const EntityLinkData &data,
+		const std::any &context) override;
 	bool handleUrlClick(
 		const QString &url,
 		const QVariant &context) override;

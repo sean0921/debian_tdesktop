@@ -26,13 +26,14 @@ You will require **api_id** and **api_hash** to access the Telegram API servers.
 * Download **Python 2.7** installer from [https://www.python.org/downloads/](https://www.python.org/downloads/) and install to ***BuildPath*\\ThirdParty\\Python27**
 * Download **CMake** installer from [https://cmake.org/download/](https://cmake.org/download/) and install to ***BuildPath*\\ThirdParty\\cmake**
 * Download **Ninja** executable from [https://github.com/ninja-build/ninja/releases/download/v1.7.2/ninja-win.zip](https://github.com/ninja-build/ninja/releases/download/v1.7.2/ninja-win.zip) and unpack to ***BuildPath*\\ThirdParty\\Ninja**
+* Download **Git** installer from [https://git-scm.com/download/win](https://git-scm.com/download/win) and install it.
 
 Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** and run
 
     cd ThirdParty
     git clone https://github.com/desktop-app/patches.git
     cd patches
-    git checkout b08b497
+    git checkout 7df6fdd
     cd ../
     git clone https://chromium.googlesource.com/external/gyp
     cd gyp
@@ -64,7 +65,7 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
 
     git clone https://github.com/desktop-app/patches.git
     cd patches
-    git checkout b08b497
+    git checkout 7df6fdd
     cd ..
 
     git clone https://github.com/desktop-app/lzma.git
@@ -76,7 +77,7 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
     git clone https://github.com/openssl/openssl.git openssl_1_1_1
     cd openssl_1_1_1
     git checkout OpenSSL_1_1_1-stable
-    perl Configure no-shared debug-VC-WIN32
+    perl Configure no-shared no-tests debug-VC-WIN32
     nmake
     mkdir out32.dbg
     move libcrypto.lib out32.dbg
@@ -153,7 +154,7 @@ Open **x86 Native Tools Command Prompt for VS 2019.bat**, go to ***BuildPath*** 
     git checkout v5.12.8
     git submodule update qtbase qtimageformats
     cd qtbase
-    git apply ../../patches/qtbase_5_12_8.diff
+    for /r %i in (..\..\patches\qtbase_5_12_8\*) do git apply %i
     cd ..
 
     configure -prefix "%LibrariesPath%\Qt-5.12.8" -debug-and-release -force-debug-info -opensource -confirm-license -static -static-runtime -I "%LibrariesPath%\openssl_1_1_1\include" -no-opengl -openssl-linked OPENSSL_LIBS_DEBUG="%LibrariesPath%\openssl_1_1_1\out32.dbg\libssl.lib %LibrariesPath%\openssl_1_1_1\out32.dbg\libcrypto.lib Ws2_32.lib Gdi32.lib Advapi32.lib Crypt32.lib User32.lib" OPENSSL_LIBS_RELEASE="%LibrariesPath%\openssl_1_1_1\out32\libssl.lib %LibrariesPath%\openssl_1_1_1\out32\libcrypto.lib Ws2_32.lib Gdi32.lib Advapi32.lib Crypt32.lib User32.lib" -mp -nomake examples -nomake tests -platform win32-msvc
@@ -176,7 +177,7 @@ Go to ***BuildPath*\\tdesktop\\Telegram** and run (using [your **api_id** and **
 
 For better debugging you may want to install Qt Visual Studio Tools:
 
-* Open **Tools** -> **Extensions and Updates...**
+* Open **Extensions** -> **Manage Extensions**
 * Go to **Online** tab
 * Search for **Qt**
 * Install **Qt Visual Studio Tools** extension

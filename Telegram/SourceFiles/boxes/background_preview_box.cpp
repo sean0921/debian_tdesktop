@@ -22,9 +22,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "data/data_document.h"
+#include "data/data_document_media.h"
+#include "data/data_file_origin.h"
 #include "base/unixtime.h"
 #include "boxes/confirm_box.h"
 #include "boxes/background_preview_box.h"
+#include "window/window_session_controller.h"
 #include "app.h"
 #include "styles/style_history.h"
 #include "styles/style_layers.h"
@@ -268,14 +271,14 @@ bool ServiceCheck::checkRippleStartPosition(QPoint position) const {
 	if (slug.isEmpty() || slug.size() > kMaxWallPaperSlugLength) {
 		return false;
 	}
-	return ranges::find_if(slug, [](QChar ch) {
+	return ranges::none_of(slug, [](QChar ch) {
 		return (ch != '.')
 			&& (ch != '_')
 			&& (ch != '-')
 			&& (ch < '0' || ch > '9')
 			&& (ch < 'a' || ch > 'z')
 			&& (ch < 'A' || ch > 'Z');
-	}) == slug.end();
+	});
 }
 
 AdminLog::OwnedItem GenerateTextItem(
@@ -345,7 +348,6 @@ QImage ColorizePattern(QImage image, QColor color) {
 	const auto height = image.height();
 	const auto pattern = anim::shifted(color);
 
-	const auto resultBytesPerPixel = (image.depth() >> 3);
 	constexpr auto resultIntsPerPixel = 1;
 	const auto resultIntsPerLine = (image.bytesPerLine() >> 2);
 	const auto resultIntsAdded = resultIntsPerLine - width * resultIntsPerPixel;
@@ -394,24 +396,32 @@ QImage PrepareScaledFromFull(
 
 BackgroundPreviewBox::BackgroundPreviewBox(
 	QWidget*,
-	not_null<Main::Session*> session,
+	not_null<Window::SessionController*> controller,
 	const Data::WallPaper &paper)
-: _session(session)
+: SimpleElementDelegate(controller)
+, _controller(controller)
 , _text1(GenerateTextItem(
 	delegate(),
-	_session->data().history(
+	_controller->session().data().history(
 		peerFromUser(PeerData::kServiceNotificationsId)),
 	tr::lng_background_text1(tr::now),
 	false))
 , _text2(GenerateTextItem(
 	delegate(),
-	_session->data().history(
+	_controller->session().data().history(
 		peerFromUser(PeerData::kServiceNotificationsId)),
 	tr::lng_background_text2(tr::now),
 	true))
 , _paper(paper)
+, _media(_paper.document() ? _paper.document()->createMediaView() : nullptr)
 , _radial([=](crl::time now) { radialAnimationCallback(now); }) {
-	subscribe(_session->downloaderTaskFinished(), [=] { update(); });
+	if (_media) {
+		_media->thumbnailWanted(_paper.fileOrigin());
+	}
+	_controller->session().downloaderTaskFinished(
+	) | rpl::start_with_next([=] {
+		update();
+	}, lifetime());
 }
 
 not_null<HistoryView::ElementDelegate*> BackgroundPreviewBox::delegate() {
@@ -428,12 +438,14 @@ void BackgroundPreviewBox::prepare() {
 	}
 	updateServiceBg(_paper.backgroundColor());
 
-	_paper.loadThumbnail();
 	_paper.loadDocument();
-	if (_paper.document() && _paper.document()->loading()) {
-		_radial.start(_paper.document()->progress());
+	const auto document = _paper.document();
+	if (document && document->loading()) {
+		_radial.start(_media->progress());
 	}
-	if (_paper.thumbnail() && !_paper.isPattern()) {
+	if (!_paper.isPattern()
+		&& (_paper.localThumbnail()
+			|| (document && document->hasThumbnail()))) {
 		createBlurCheckbox();
 	}
 	setScaledFromThumb();
@@ -492,10 +504,10 @@ void BackgroundPreviewBox::createBlurCheckbox() {
 void BackgroundPreviewBox::apply() {
 	const auto install = (_paper.id() != Window::Theme::Background()->id())
 		&& Data::IsCloudWallPaper(_paper);
-	App::main()->setChatBackground(_paper, std::move(_full));
+	_controller->content()->setChatBackground(_paper, std::move(_full));
 	if (install) {
-		_session->api().request(MTPaccount_InstallWallPaper(
-			_paper.mtpInput(),
+		_controller->session().api().request(MTPaccount_InstallWallPaper(
+			_paper.mtpInput(&_controller->session()),
 			_paper.mtpSettings()
 		)).send();
 	}
@@ -503,7 +515,8 @@ void BackgroundPreviewBox::apply() {
 }
 
 void BackgroundPreviewBox::share() {
-	QGuiApplication::clipboard()->setText(_paper.shareUrl());
+	QGuiApplication::clipboard()->setText(
+		_paper.shareUrl(&_controller->session()));
 	Ui::Toast::Show(tr::lng_background_link_copied(tr::now));
 }
 
@@ -634,7 +647,7 @@ void BackgroundPreviewBox::radialAnimationCallback(crl::time now) {
 	const auto document = _paper.document();
 	const auto wasAnimating = _radial.animating();
 	const auto updated = _radial.update(
-		document->progress(),
+		_media->progress(),
 		!document->loading(),
 		now);
 	if ((wasAnimating || _radial.animating())
@@ -645,8 +658,13 @@ void BackgroundPreviewBox::radialAnimationCallback(crl::time now) {
 }
 
 bool BackgroundPreviewBox::setScaledFromThumb() {
-	const auto thumbnail = _paper.thumbnail();
-	if (!thumbnail || !thumbnail->loaded()) {
+	const auto localThumbnail = _paper.localThumbnail();
+	const auto thumbnail = localThumbnail
+		? localThumbnail
+		: _media
+		? _media->thumbnail()
+		: nullptr;
+	if (!thumbnail) {
 		return false;
 	} else if (_paper.isPattern() && _paper.document() != nullptr) {
 		return false;
@@ -710,7 +728,7 @@ void BackgroundPreviewBox::checkLoadedDocument() {
 	const auto document = _paper.document();
 	if (!_full.isNull()
 		|| !document
-		|| !document->loaded(DocumentData::FilePathResolve::Checked)
+		|| !_media->loaded(true)
 		|| _generating) {
 		return;
 	}
@@ -725,7 +743,6 @@ void BackgroundPreviewBox::checkLoadedDocument() {
 			guard = _generating.make_guard()
 		]() mutable {
 			auto scaled = PrepareScaledFromFull(image, patternBackground);
-			const auto ms = crl::now();
 			auto blurred = patternBackground
 				? QImage()
 				: PrepareScaledNonPattern(
@@ -744,18 +761,18 @@ void BackgroundPreviewBox::checkLoadedDocument() {
 		});
 	};
 	_generating = Data::ReadImageAsync(
-		document,
+		_media.get(),
 		Window::Theme::ProcessBackgroundImage,
 		generateCallback);
 }
 
 bool BackgroundPreviewBox::Start(
-		not_null<Main::Session*> session,
+		not_null<Window::SessionController*> controller,
 		const QString &slug,
 		const QMap<QString, QString> &params) {
 	if (const auto paper = Data::WallPaper::FromColorSlug(slug)) {
 		Ui::show(Box<BackgroundPreviewBox>(
-			session,
+			controller,
 			paper->withUrlParams(params)));
 		return true;
 	}
@@ -763,11 +780,12 @@ bool BackgroundPreviewBox::Start(
 		Ui::show(Box<InformBox>(tr::lng_background_bad_link(tr::now)));
 		return false;
 	}
-	session->api().requestWallPaper(slug, [=](const Data::WallPaper &result) {
+	controller->session().api().requestWallPaper(slug, crl::guard(controller, [=](
+			const Data::WallPaper &result) {
 		Ui::show(Box<BackgroundPreviewBox>(
-			session,
+			controller,
 			result.withUrlParams(params)));
-	}, [](const RPCError &error) {
+	}), [](const RPCError &error) {
 		Ui::show(Box<InformBox>(tr::lng_background_bad_link(tr::now)));
 	});
 	return true;

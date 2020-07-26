@@ -37,8 +37,6 @@ enum {
 	AudioVoiceMsgMaxLength = 100 * 60, // 100 minutes
 	AudioVoiceMsgChannels = 2, // stereo
 
-	StickerMaxSize = 2048, // 2048x2048 is a max image size for sticker
-
 	PreloadHeightsCount = 3, // when 3 screens to scroll left make a preload request
 
 	SearchPeopleLimit = 5,
@@ -64,56 +62,6 @@ inline const char *cGUIDStr() {
 #endif // OS_MAC_STORE
 
 	return gGuidStr;
-}
-
-struct BuiltInDc {
-	int id;
-	const char *ip;
-	int port;
-};
-
-static const BuiltInDc _builtInDcs[] = {
-	{ 1, "149.154.175.50", 443 },
-	{ 2, "149.154.167.51", 443 },
-	{ 3, "149.154.175.100", 443 },
-	{ 4, "149.154.167.91", 443 },
-	{ 5, "149.154.171.5", 443 }
-};
-
-static const BuiltInDc _builtInDcsIPv6[] = {
-	{ 1, "2001:0b28:f23d:f001:0000:0000:0000:000a", 443 },
-	{ 2, "2001:067c:04e8:f002:0000:0000:0000:000a", 443 },
-	{ 3, "2001:0b28:f23d:f003:0000:0000:0000:000a", 443 },
-	{ 4, "2001:067c:04e8:f004:0000:0000:0000:000a", 443 },
-	{ 5, "2001:0b28:f23f:f005:0000:0000:0000:000a", 443 }
-};
-
-static const BuiltInDc _builtInTestDcs[] = {
-	{ 1, "149.154.175.10", 443 },
-	{ 2, "149.154.167.40", 443 },
-	{ 3, "149.154.175.117", 443 }
-};
-
-static const BuiltInDc _builtInTestDcsIPv6[] = {
-	{ 1, "2001:0b28:f23d:f001:0000:0000:0000:000e", 443 },
-	{ 2, "2001:067c:04e8:f002:0000:0000:0000:000e", 443 },
-	{ 3, "2001:0b28:f23d:f003:0000:0000:0000:000e", 443 }
-};
-
-inline const BuiltInDc *builtInDcs() {
-	return cTestMode() ? _builtInTestDcs : _builtInDcs;
-}
-
-inline int builtInDcsCount() {
-	return (cTestMode() ? sizeof(_builtInTestDcs) : sizeof(_builtInDcs)) / sizeof(BuiltInDc);
-}
-
-inline const BuiltInDc *builtInDcsIPv6() {
-	return cTestMode() ? _builtInTestDcsIPv6 : _builtInDcsIPv6;
-}
-
-inline int builtInDcsCountIPv6() {
-	return (cTestMode() ? sizeof(_builtInTestDcsIPv6) : sizeof(_builtInDcsIPv6)) / sizeof(BuiltInDc);
 }
 
 static const char *UpdatesPublicKey = "\
@@ -178,11 +126,6 @@ extern QString gKeyFile;
 inline const QString &cDataFile() {
 	if (!gKeyFile.isEmpty()) return gKeyFile;
 	static const QString res(qsl("data"));
-	return res;
-}
-
-inline const QString &cTempDir() {
-	static const QString res = cWorkingDir() + qsl("tdata/tdld/");
 	return res;
 }
 

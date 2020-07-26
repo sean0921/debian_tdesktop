@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/fade_wrap.h"
+#include "ui/layers/generic_box.h"
 #include "ui/text/text_utilities.h"
 #include "platform/platform_specific.h"
 #include "core/file_utilities.h"
@@ -35,7 +36,9 @@ namespace {
 
 constexpr auto kMegabyte = 1024 * 1024;
 
-PeerId ReadPeerId(const MTPInputPeer &data) {
+[[nodiscard]] PeerId ReadPeerId(
+		not_null<Main::Session*> session,
+		const MTPInputPeer &data) {
 	return data.match([](const MTPDinputPeerUser &data) {
 		return peerFromUser(data.vuser_id().v);
 	}, [](const MTPDinputPeerUserFromMessage &data) {
@@ -46,11 +49,34 @@ PeerId ReadPeerId(const MTPInputPeer &data) {
 		return peerFromChannel(data.vchannel_id().v);
 	}, [](const MTPDinputPeerChannelFromMessage &data) {
 		return peerFromChannel(data.vchannel_id().v);
-	}, [](const MTPDinputPeerSelf &data) {
-		return Auth().userPeerId();
+	}, [&](const MTPDinputPeerSelf &data) {
+		return session->userPeerId();
 	}, [](const MTPDinputPeerEmpty &data) {
 		return PeerId(0);
 	});
+}
+
+void ChooseFormatBox(
+		not_null<Ui::GenericBox*> box,
+		Output::Format format,
+		Fn<void(Output::Format)> done) {
+	using Format = Output::Format;
+	const auto group = std::make_shared<Ui::RadioenumGroup<Format>>(format);
+	const auto addFormatOption = [&](QString label, Format format) {
+		const auto radio = box->addRow(
+			object_ptr<Ui::Radioenum<Format>>(
+				box,
+				group,
+				format,
+				label,
+				st::defaultBoxCheckbox),
+			st::exportSettingPadding);
+	};
+	box->setTitle(tr::lng_export_option_choose_format());
+	addFormatOption(tr::lng_export_option_html(tr::now), Format::Html);
+	addFormatOption(tr::lng_export_option_json(tr::now), Format::Json);
+	box->addButton(tr::lng_settings_save(), [=] { done(group->value()); });
+	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 }
 
 } // namespace
@@ -62,31 +88,32 @@ int SizeLimitByIndex(int index) {
 	const auto megabytes = [&] {
 		if (index <= 10) {
 			return index;
-		}
-		else if (index <= 30) {
+		} else if (index <= 30) {
 			return 10 + (index - 10) * 2;
-		}
-		else if (index <= 40) {
+		} else if (index <= 40) {
 			return 50 + (index - 30) * 5;
-		}
-		else if (index <= 60) {
+		} else if (index <= 60) {
 			return 100 + (index - 40) * 10;
-		}
-		else if (index <= 70) {
+		} else if (index <= 70) {
 			return 300 + (index - 60) * 20;
-		}
-		else {
-			return 500 + (index - 70) * 100;
+		} else if (index <= 80) {
+			return 500 + (index - 70) * 50;
+		} else {
+			return 1000 + (index - 80) * 100;
 		}
 	}();
 	return megabytes * kMegabyte;
 }
 
-SettingsWidget::SettingsWidget(QWidget *parent, Settings data)
+SettingsWidget::SettingsWidget(
+	QWidget *parent,
+	not_null<Main::Session*> session,
+	Settings data)
 : RpWidget(parent)
-, _singlePeerId(ReadPeerId(data.singlePeer))
+, _session(session)
+, _singlePeerId(ReadPeerId(session, data.singlePeer))
 , _internal_data(std::move(data)) {
-	ResolveSettings(_internal_data);
+	ResolveSettings(session, _internal_data);
 	setupContent();
 }
 
@@ -221,7 +248,7 @@ void SettingsWidget::setupOtherOptions(
 void SettingsWidget::setupPathAndFormat(
 		not_null<Ui::VerticalLayout*> container) {
 	if (_singlePeerId != 0) {
-		addLocationLabel(container);
+		addFormatAndLocationLabel(container);
 		addLimitsLabel(container);
 		return;
 	}
@@ -254,9 +281,9 @@ void SettingsWidget::addLocationLabel(
 	auto pathLink = value() | rpl::map([](const Settings &data) {
 		return data.path;
 	}) | rpl::distinct_until_changed(
-	) | rpl::map([](const QString &path) {
-		const auto text = IsDefaultPath(path)
-			? QString("Downloads/Telegram Desktop")
+	) | rpl::map([=](const QString &path) {
+		const auto text = IsDefaultPath(_session, path)
+			? u"Downloads/"_q + File::DefaultDownloadPathFolder(_session)
 			: path;
 		return Ui::Text::Link(
 			QDir::toNativeSeparators(text),
@@ -273,6 +300,72 @@ void SettingsWidget::addLocationLabel(
 		st::exportLocationPadding);
 	label->setClickHandlerFilter([=](auto&&...) {
 		chooseFolder();
+		return false;
+	});
+#endif // OS_MAC_STORE
+}
+
+void SettingsWidget::chooseFormat() {
+	const auto shared = std::make_shared<QPointer<Ui::GenericBox>>();
+	const auto callback = [=](Format format) {
+		changeData([&](Settings &data) {
+			data.format = format;
+		});
+		if (const auto weak = shared->data()) {
+			weak->closeBox();
+		}
+	};
+	auto box = Box(
+		ChooseFormatBox,
+		readData().format,
+		callback);
+	*shared = Ui::MakeWeak(box.data());
+	_showBoxCallback(std::move(box));
+}
+
+void SettingsWidget::addFormatAndLocationLabel(
+		not_null<Ui::VerticalLayout*> container) {
+#ifndef OS_MAC_STORE
+	auto pathLink = value() | rpl::map([](const Settings &data) {
+		return data.path;
+	}) | rpl::distinct_until_changed(
+	) | rpl::map([=](const QString &path) {
+		const auto text = IsDefaultPath(_session, path)
+			? u"Downloads/"_q + File::DefaultDownloadPathFolder(_session)
+			: path;
+		return Ui::Text::Link(
+			QDir::toNativeSeparators(text),
+			u"internal:edit_export_path"_q);
+	});
+	auto formatLink = value() | rpl::map([](const Settings &data) {
+		return data.format;
+	}) | rpl::distinct_until_changed(
+	) | rpl::map([](Format format) {
+		const auto text = (format == Format::Html) ? "HTML" : "JSON";
+		return Ui::Text::Link(text, u"internal:edit_format"_q);
+	});
+	const auto label = container->add(
+		object_ptr<Ui::FlatLabel>(
+			container,
+			tr::lng_export_option_format_location(
+				lt_format,
+				std::move(formatLink),
+				lt_path,
+				std::move(pathLink),
+				Ui::Text::WithEntities),
+			st::exportLocationLabel),
+		st::exportLocationPadding);
+	label->setClickHandlerFilter([=](
+		const ClickHandlerPtr &handler,
+		Qt::MouseButton) {
+		const auto url = handler->dragText();
+		if (url == qstr("internal:edit_export_path")) {
+			chooseFolder();
+		} else if (url == qstr("internal:edit_format")) {
+			chooseFormat();
+		} else {
+			Unexpected("Click handler URL in export limits edit.");
+		}
 		return false;
 	});
 #endif // OS_MAC_STORE
@@ -351,7 +444,6 @@ void SettingsWidget::addLimitsLabel(
 		}
 		return false;
 	});
-
 }
 
 void SettingsWidget::editDateLimit(
@@ -647,10 +739,7 @@ void SettingsWidget::refreshButtons(
 		: nullptr;
 	if (start) {
 		start->show();
-		_startClicks = start->clicks(
-		) | rpl::map([] {
-			return rpl::empty_value();
-		});
+		_startClicks = start->clicks() | rpl::to_empty;
 
 		container->sizeValue(
 		) | rpl::start_with_next([=](QSize size) {
@@ -665,10 +754,7 @@ void SettingsWidget::refreshButtons(
 		tr::lng_cancel(),
 		st::defaultBoxButton);
 	cancel->show();
-	_cancelClicks = cancel->clicks(
-	) | rpl::map([] {
-		return rpl::empty_value();
-	});
+	_cancelClicks = cancel->clicks() | rpl::to_empty;
 
 	rpl::combine(
 		container->sizeValue(),
@@ -685,7 +771,7 @@ void SettingsWidget::chooseFolder() {
 	const auto callback = [=](QString &&result) {
 		changeData([&](Settings &data) {
 			data.path = std::move(result);
-			data.forceSubPath = IsDefaultPath(data.path);
+			data.forceSubPath = IsDefaultPath(_session, data.path);
 		});
 	};
 	FileDialog::GetFolder(

@@ -16,7 +16,7 @@ namespace Streaming {
 namespace {
 
 // This is the maximum file size in Telegram API.
-constexpr auto kMaxFileSize = 3000 * 512 * 1024;
+constexpr auto kMaxFileSize = 4000 * 512 * 1024;
 
 int ValidateLocalSize(int64 size) {
 	return (size > 0 && size <= kMaxFileSize) ? int(size) : 0;
@@ -34,8 +34,8 @@ LoaderLocal::LoaderLocal(std::unique_ptr<QIODevice> device)
 	}
 }
 
-std::optional<Storage::Cache::Key> LoaderLocal::baseCacheKey() const {
-	return std::nullopt;
+Storage::Cache::Key LoaderLocal::baseCacheKey() const {
+	return {};
 }
 
 int LoaderLocal::size() const {

@@ -32,6 +32,7 @@ else()
     target_include_directories(external_fcitx5_qt5
     PRIVATE
         ${fcitx5_qt5_src}
+        ${fcitx5_qt_loc}/common
     )
 
     target_compile_definitions(external_fcitx5_qt5
@@ -40,6 +41,7 @@ else()
         FCITX_PLUGIN_DATA_FILE_PATH="${CMAKE_CURRENT_BINARY_DIR}/fcitx5.json"
     )
 
+    add_subdirectory(fcitx5_qt5_dbusaddons)
     target_link_libraries(external_fcitx5_qt5
     PRIVATE
         desktop-app::external_fcitx5_qt5_dbusaddons

@@ -19,7 +19,7 @@ namespace Streaming {
 namespace {
 
 constexpr auto kBufferFor = 3 * crl::time(1000);
-constexpr auto kLoadInAdvanceForRemote = 64 * crl::time(1000);
+constexpr auto kLoadInAdvanceForRemote = 32 * crl::time(1000);
 constexpr auto kLoadInAdvanceForLocal = 5 * crl::time(1000);
 constexpr auto kMsFrequency = 1000; // 1000 ms per second.
 
@@ -79,10 +79,8 @@ void SaveValidStartInformation(Information &to, Information &&from) {
 
 } // namespace
 
-Player::Player(
-	not_null<Data::Session*> owner,
-	std::shared_ptr<Reader> reader)
-: _file(std::make_unique<File>(owner, std::move(reader)))
+Player::Player(std::shared_ptr<Reader> reader)
+: _file(std::make_unique<File>(std::move(reader)))
 , _remoteLoader(_file->isRemoteLoader())
 , _renderFrameTimer([=] { checkNextFrameRender(); }) {
 }

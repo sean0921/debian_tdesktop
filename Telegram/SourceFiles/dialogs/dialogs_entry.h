@@ -18,6 +18,7 @@ class Session;
 namespace Data {
 class Session;
 class Folder;
+class CloudImageView;
 } // namespace Data
 
 namespace Dialogs {
@@ -89,7 +90,11 @@ inline UnreadState operator-(const UnreadState &a, const UnreadState &b) {
 
 class Entry {
 public:
-	Entry(not_null<Data::Session*> owner, const Key &key);
+	enum class Type {
+		History,
+		Folder,
+	};
+	Entry(not_null<Data::Session*> owner, Type type);
 	Entry(const Entry &other) = delete;
 	Entry &operator=(const Entry &other) = delete;
 	virtual ~Entry() = default;
@@ -97,12 +102,17 @@ public:
 	[[nodiscard]] Data::Session &owner() const;
 	[[nodiscard]] Main::Session &session() const;
 
+	History *asHistory();
+	Data::Folder *asFolder();
+
 	PositionChange adjustByPosInChatList(
 		FilterId filterId,
 		not_null<MainList*> list);
 	[[nodiscard]] bool inChatList(FilterId filterId = 0) const {
 		return _chatListLinks.contains(filterId);
 	}
+	RowsByLetter *chatListLinks(FilterId filterId);
+	const RowsByLetter *chatListLinks(FilterId filterId) const;
 	[[nodiscard]] int posInChatList(FilterId filterId) const;
 	not_null<Row*> addToChatList(
 		FilterId filterId,
@@ -115,7 +125,7 @@ public:
 		FilterId filterId,
 		QChar letter,
 		not_null<Row*> row);
-	void updateChatListEntry() const;
+	void updateChatListEntry();
 	[[nodiscard]] bool isPinnedDialog(FilterId filterId) const {
 		return lookupPinnedIndex(filterId) != 0;
 	}
@@ -158,16 +168,18 @@ public:
 	virtual void loadUserpic() = 0;
 	virtual void paintUserpic(
 		Painter &p,
+		std::shared_ptr<Data::CloudImageView> &view,
 		int x,
 		int y,
 		int size) const = 0;
 	void paintUserpicLeft(
 			Painter &p,
+			std::shared_ptr<Data::CloudImageView> &view,
 			int x,
 			int y,
 			int w,
 			int size) const {
-		paintUserpic(p, rtl() ? (w - x - size) : x, y, size);
+		paintUserpic(p, view, rtl() ? (w - x - size) : x, y, size);
 	}
 
 	TimeId chatListTimeId() const {
@@ -199,19 +211,17 @@ private:
 	[[nodiscard]] uint64 computeSortPosition(FilterId filterId) const;
 
 	void setChatListExistence(bool exists);
-	RowsByLetter *chatListLinks(FilterId filterId);
-	const RowsByLetter *chatListLinks(FilterId filterId) const;
 	not_null<Row*> mainChatListLink(FilterId filterId) const;
 	Row *maybeMainChatListLink(FilterId filterId) const;
 
-	not_null<Data::Session*> _owner;
-	Dialogs::Key _key;
+	const not_null<Data::Session*> _owner;
 	base::flat_map<FilterId, RowsByLetter> _chatListLinks;
 	uint64 _sortKeyInChatList = 0;
 	uint64 _sortKeyByDate = 0;
 	base::flat_map<FilterId, int> _pinnedIndex;
 	TimeId _timeId = 0;
 	bool _isTopPromoted = false;
+	const bool _isFolder = false;
 
 };
 

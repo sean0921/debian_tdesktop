@@ -7,11 +7,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include <rpl/event_stream.h>
 #include "ui/rp_widget.h"
 #include "ui/empty_userpic.h"
 #include "boxes/abstract_box.h"
 #include "mtproto/sender.h"
+#include "data/data_cloud_file.h"
 #include "base/timer.h"
 
 namespace style {
@@ -33,10 +33,6 @@ class FlatLabel;
 struct ScrollToRequest;
 class PopupMenu;
 } // namespace Ui
-
-namespace Notify {
-struct PeerUpdate;
-} // namespace Notify
 
 using PaintRoundImageCallback = Fn<void(
 	Painter &p,
@@ -84,6 +80,8 @@ public:
 	[[nodiscard]] PeerListRowId id() const {
 		return _id;
 	}
+
+	[[nodiscard]] std::shared_ptr<Data::CloudImageView> ensureUserpicView();
 
 	[[nodiscard]] virtual QString generateName();
 	[[nodiscard]] virtual QString generateShortName();
@@ -223,6 +221,7 @@ private:
 
 	PeerListRowId _id = 0;
 	PeerData *_peer = nullptr;
+	mutable std::shared_ptr<Data::CloudImageView> _userpic;
 	std::unique_ptr<Ui::RippleAnimation> _ripple;
 	std::unique_ptr<Ui::RoundImageCheckbox> _checkbox;
 	Ui::Text::String _name;
@@ -548,7 +547,7 @@ protected:
 private:
 	void refreshIndices();
 	void removeRowAtIndex(std::vector<std::unique_ptr<PeerListRow>> &from, int index);
-	void handleNameChanged(const Notify::PeerUpdate &update);
+	void handleNameChanged(not_null<PeerData*> peer);
 
 	void invalidatePixmapsCache();
 

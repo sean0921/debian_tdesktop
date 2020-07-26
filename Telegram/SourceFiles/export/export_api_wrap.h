@@ -35,7 +35,7 @@ struct Settings;
 
 class ApiWrap {
 public:
-	explicit ApiWrap(Fn<void(FnMut<void()>)> runner);
+	ApiWrap(QPointer<MTP::Instance> weak, Fn<void(FnMut<void()>)> runner);
 
 	rpl::producer<RPCError> errors() const;
 	rpl::producer<Output::Result> ioErrors() const;
@@ -126,6 +126,8 @@ private:
 	void appendDialogsSlice(Data::DialogsInfo &&info);
 	void finishDialogsList();
 	void requestSinglePeerDialog();
+	mtpRequestId requestSinglePeerMigrated(const Data::DialogInfo &info);
+	void appendSinglePeerDialogs(Data::DialogsInfo &&info);
 
 	void requestLeftChannelsIfNeeded();
 	void requestLeftChannelsList(

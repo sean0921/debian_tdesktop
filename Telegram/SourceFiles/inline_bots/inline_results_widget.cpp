@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "data/data_session.h"
 #include "data/data_file_origin.h"
+#include "data/data_changes.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
 #include "ui/effects/ripple_animation.h"
@@ -24,13 +25,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
-#include "apiwrap.h"
 #include "mainwidget.h"
 #include "main/main_session.h"
 #include "window/window_session_controller.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/labels.h"
-#include "observer_peer.h"
 #include "history/view/history_view_cursor_state.h"
 #include "facades.h"
 #include "app.h"
@@ -50,7 +49,7 @@ constexpr auto kInlineBotRequestDelay = 400;
 Inner::Inner(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller)
-: TWidget(parent)
+: RpWidget(parent)
 , _controller(controller)
 , _updateInlineItems([=] { updateInlineItems(); })
 , _previewTimer([=] { showPreview(); }) {
@@ -59,23 +58,28 @@ Inner::Inner(
 	setMouseTracking(true);
 	setAttribute(Qt::WA_OpaquePaintEvent);
 
-	subscribe(Auth().downloaderTaskFinished(), [this] {
+	_controller->session().downloaderTaskFinished(
+	) | rpl::start_with_next([=] {
 		update();
-	});
+	}, lifetime());
+
 	subscribe(controller->gifPauseLevelChanged(), [this] {
 		if (!_controller->isGifPausedAtLeastFor(Window::GifPauseReason::InlineResults)) {
 			update();
 		}
 	});
-	subscribe(Notify::PeerUpdated(), Notify::PeerUpdatedHandler(Notify::PeerUpdate::Flag::RightsChanged, [this](const Notify::PeerUpdate &update) {
-		if (update.peer == _inlineQueryPeer) {
-			auto isRestricted = (_restrictedLabel != nullptr);
-			if (isRestricted != isRestrictedView()) {
-				auto h = countHeight();
-				if (h != height()) resize(width(), h);
-			}
+
+	_controller->session().changes().peerUpdates(
+		Data::PeerUpdate::Flag::Rights
+	) | rpl::filter([=](const Data::PeerUpdate &update) {
+		return (update.peer.get() == _inlineQueryPeer);
+	}) | rpl::start_with_next([=] {
+		auto isRestricted = (_restrictedLabel != nullptr);
+		if (isRestricted != isRestrictedView()) {
+			auto h = countHeight();
+			if (h != height()) resize(width(), h);
 		}
-	}));
+	}, lifetime());
 }
 
 void Inner::visibleTopBottomUpdated(
@@ -292,24 +296,14 @@ void Inner::clearSelection() {
 	update();
 }
 
-void Inner::hideFinish(bool completely) {
-	if (completely) {
-		const auto unload = [](const auto &item) {
-			if (const auto document = item->getDocument()) {
-				document->unload();
-			}
-			if (const auto photo = item->getPhoto()) {
-				photo->unload();
-			}
-			if (const auto result = item->getResult()) {
-				result->unload();
-			}
-			item->unloadAnimation();
-		};
-		clearInlineRows(false);
-		for (const auto &[result, layout] : _inlineLayouts) {
-			unload(layout);
-		}
+void Inner::hideFinished() {
+	clearHeavyData();
+}
+
+void Inner::clearHeavyData() {
+	clearInlineRows(false);
+	for (const auto &[result, layout] : _inlineLayouts) {
+		layout->unloadHeavyPart();
 	}
 }
 
@@ -723,11 +717,9 @@ void Inner::showPreview() {
 		auto layout = _rows.at(row).items.at(col);
 		if (const auto w = App::wnd()) {
 			if (const auto previewDocument = layout->getPreviewDocument()) {
-				w->showMediaPreview(Data::FileOrigin(), previewDocument);
-				_previewShown = true;
+				_previewShown = w->showMediaPreview(Data::FileOrigin(), previewDocument);
 			} else if (const auto previewPhoto = layout->getPreviewPhoto()) {
-				w->showMediaPreview(Data::FileOrigin(), previewPhoto);
-				_previewShown = true;
+				_previewShown = w->showMediaPreview(Data::FileOrigin(), previewPhoto);
 			}
 		}
 	}
@@ -756,7 +748,7 @@ Widget::Widget(
 	not_null<Window::SessionController*> controller)
 : RpWidget(parent)
 , _controller(controller)
-, _api(_controller->session().api().instance())
+, _api(&_controller->session().mtp())
 , _contentMaxHeight(st::emojiPanMaxHeight)
 , _contentHeight(_contentMaxHeight)
 , _scroll(this, st::inlineBotsScroll) {
@@ -966,7 +958,7 @@ void Widget::hideFinished() {
 	_controller->disableGifPauseReason(
 		Window::GifPauseReason::InlineResults);
 
-	_inner->hideFinish(true);
+	_inner->hideFinished();
 	_a_show.stop();
 	_showAnimation.reset();
 	_cache = QPixmap();
@@ -1031,38 +1023,41 @@ bool Widget::overlaps(const QRect &globalRect) const {
 }
 
 void Widget::inlineBotChanged() {
-	if (!_inlineBot) return;
+	if (!_inlineBot) {
+		return;
+	}
 
 	if (!isHidden() && !_hiding) {
 		hideAnimated();
 	}
 
-	if (_inlineRequestId) MTP::cancel(_inlineRequestId);
-	_inlineRequestId = 0;
+	_api.request(base::take(_inlineRequestId)).cancel();
 	_inlineQuery = _inlineNextQuery = _inlineNextOffset = QString();
 	_inlineBot = nullptr;
 	_inlineCache.clear();
 	_inner->inlineBotChanged();
 	_inner->hideInlineRowsPanel();
 
-	Notify::inlineBotRequesting(false);
+	_requesting.fire(false);
 }
 
 void Widget::inlineResultsDone(const MTPmessages_BotResults &result) {
 	_inlineRequestId = 0;
-	Notify::inlineBotRequesting(false);
+	_requesting.fire(false);
 
 	auto it = _inlineCache.find(_inlineQuery);
 	auto adding = (it != _inlineCache.cend());
 	if (result.type() == mtpc_messages_botResults) {
 		auto &d = result.c_messages_botResults();
-		Auth().data().processUsers(d.vusers());
+		_controller->session().data().processUsers(d.vusers());
 
 		auto &v = d.vresults().v;
 		auto queryId = d.vquery_id().v;
 
 		if (it == _inlineCache.cend()) {
-			it = _inlineCache.emplace(_inlineQuery, std::make_unique<internal::CacheEntry>()).first;
+			it = _inlineCache.emplace(
+				_inlineQuery,
+				std::make_unique<internal::CacheEntry>()).first;
 		}
 		auto entry = it->second.get();
 		entry->nextOffset = qs(d.vnext_offset().value_or_empty());
@@ -1077,8 +1072,12 @@ void Widget::inlineResultsDone(const MTPmessages_BotResults &result) {
 			entry->results.reserve(entry->results.size() + count);
 		}
 		auto added = 0;
-		for_const (const auto &res, v) {
-			if (auto result = InlineBots::Result::create(queryId, res)) {
+		for (const auto &res : v) {
+			auto result = InlineBots::Result::Create(
+				&_controller->session(),
+				queryId,
+				res);
+			if (result) {
 				++added;
 				entry->results.push_back(std::move(result));
 			}
@@ -1108,9 +1107,9 @@ void Widget::queryInlineBot(UserData *bot, PeerData *peer, QString query) {
 
 	if (_inlineQuery != query || force) {
 		if (_inlineRequestId) {
-			MTP::cancel(_inlineRequestId);
+			_api.request(_inlineRequestId).cancel();
 			_inlineRequestId = 0;
-			Notify::inlineBotRequesting(false);
+			_requesting.fire(false);
 		}
 		if (_inlineCache.find(query) != _inlineCache.cend()) {
 			_inlineRequestTimer.stop();
@@ -1135,7 +1134,7 @@ void Widget::onInlineRequest() {
 			return;
 		}
 	}
-	Notify::inlineBotRequesting(true);
+	_requesting.fire(true);
 	_inlineRequestId = _api.request(MTPmessages_GetInlineBotResults(
 		MTP_flags(0),
 		_inlineBot->inputUser,
@@ -1147,7 +1146,7 @@ void Widget::onInlineRequest() {
 		inlineResultsDone(result);
 	}).fail([=](const RPCError &error) {
 		// show error?
-		Notify::inlineBotRequesting(false);
+		_requesting.fire(false);
 		_inlineRequestId = 0;
 	}).handleAllErrors().send();
 }

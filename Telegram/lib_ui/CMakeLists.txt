@@ -90,6 +90,8 @@ PRIVATE
     ui/style/style_core.h
     ui/style/style_core_color.cpp
     ui/style/style_core_color.h
+    ui/style/style_core_custom_font.cpp
+    ui/style/style_core_custom_font.h
     ui/style/style_core_direction.cpp
     ui/style/style_core_direction.h
     ui/style/style_core_font.cpp
@@ -100,6 +102,7 @@ PRIVATE
     ui/style/style_core_scale.h
     ui/style/style_core_types.cpp
     ui/style/style_core_types.h
+    ui/text/qtextitemint.cpp
     ui/text/text.cpp
     ui/text/text.h
     ui/text/text_block.cpp

@@ -16,14 +16,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_sticker.h"
 #include "history/view/media/history_view_large_emoji.h"
 #include "history/history.h"
+#include "core/application.h"
+#include "core/core_settings.h"
 #include "main/main_session.h"
 #include "chat_helpers/stickers_emoji_pack.h"
+#include "window/window_session_controller.h"
 #include "data/data_session.h"
 #include "data/data_groups.h"
 #include "data/data_media_types.h"
 #include "lang/lang_keys.h"
 #include "layout.h"
-#include "facades.h"
 #include "app.h"
 #include "styles/style_history.h"
 
@@ -54,24 +56,26 @@ bool IsAttachedToPreviousInSavedMessages(
 
 } // namespace
 
-
-std::unique_ptr<HistoryView::Element> SimpleElementDelegate::elementCreate(
-		not_null<HistoryMessage*> message) {
-	return std::make_unique<HistoryView::Message>(this, message);
+SimpleElementDelegate::SimpleElementDelegate(
+	not_null<Window::SessionController*> controller)
+: _controller(controller) {
 }
 
 std::unique_ptr<HistoryView::Element> SimpleElementDelegate::elementCreate(
-		not_null<HistoryService*> message) {
-	return std::make_unique<HistoryView::Service>(this, message);
+		not_null<HistoryMessage*> message,
+		Element *replacing) {
+	return std::make_unique<HistoryView::Message>(this, message, replacing);
+}
+
+std::unique_ptr<HistoryView::Element> SimpleElementDelegate::elementCreate(
+		not_null<HistoryService*> message,
+		Element *replacing) {
+	return std::make_unique<HistoryView::Service>(this, message, replacing);
 }
 
 bool SimpleElementDelegate::elementUnderCursor(
 		not_null<const Element*> view) {
 	return false;
-}
-
-void SimpleElementDelegate::elementAnimationAutoplayAsync(
-	not_null<const Element*> element) {
 }
 
 crl::time SimpleElementDelegate::elementHighlightTime(
@@ -102,6 +106,10 @@ void SimpleElementDelegate::elementShowPollResults(
 void SimpleElementDelegate::elementShowTooltip(
 	const TextWithEntities &text,
 	Fn<void()> hiddenCallback) {
+}
+
+bool SimpleElementDelegate::elementIsGifPaused() {
+	return _controller->isGifPausedAtLeastFor(Window::GifPauseReason::Any);
 }
 
 TextSelection UnshiftItemSelection(
@@ -165,7 +173,7 @@ void UnreadBar::paint(Painter &p, int y, int w) const {
 
 	int left = st::msgServiceMargin.left();
 	int maxwidth = w;
-	if (Adaptive::ChatWide()) {
+	if (Core::App().settings().chatWide()) {
 		maxwidth = qMin(
 			maxwidth,
 			st::msgMaxWidth
@@ -203,14 +211,15 @@ void DateBadge::paint(Painter &p, int y, int w) const {
 
 Element::Element(
 	not_null<ElementDelegate*> delegate,
-	not_null<HistoryItem*> data)
+	not_null<HistoryItem*> data,
+	Element *replacing)
 : _delegate(delegate)
 , _data(data)
 , _isScheduledUntilOnline(IsItemScheduledUntilOnline(data))
 , _dateTime(_isScheduledUntilOnline ? QDateTime() : ItemDateTime(data))
 , _context(delegate->elementContext()) {
 	history()->owner().registerItemView(this);
-	refreshMedia();
+	refreshMedia(replacing);
 	if (_context == Context::History) {
 		history()->setHasPendingResizedItems();
 	}
@@ -338,7 +347,7 @@ bool Element::isHidden() const {
 	return isHiddenByGroup();
 }
 
-void Element::refreshMedia() {
+void Element::refreshMedia(Element *replacing) {
 	_flags &= ~Flag::HiddenByGroup;
 
 	const auto item = data();
@@ -361,9 +370,9 @@ void Element::refreshMedia() {
 	}
 	const auto session = &history()->session();
 	if (const auto media = _data->media()) {
-		_media = media->createView(this);
+		_media = media->createView(this, replacing);
 	} else if (_data->isIsolatedEmoji()
-		&& session->settings().largeEmoji()) {
+		&& Core::App().settings().largeEmoji()) {
 		const auto emoji = _data->isolatedEmoji();
 		const auto emojiStickers = &session->emojiStickersPack();
 		if (const auto sticker = emojiStickers->stickerForEmoji(emoji)) {
@@ -372,6 +381,7 @@ void Element::refreshMedia() {
 				std::make_unique<Sticker>(
 					this,
 					sticker.document,
+					replacing,
 					sticker.replacements));
 		} else {
 			_media = std::make_unique<UnwrappedMedia>(
@@ -606,7 +616,14 @@ auto Element::verticalRepaintRange() const -> VerticalRepaintRange {
 	};
 }
 
+void Element::checkHeavyPart() {
+	if (!_media || !_media->hasHeavyPart()) {
+		history()->owner().unregisterHeavyViewPart(this);
+	}
+}
+
 void Element::unloadHeavyPart() {
+	history()->owner().unregisterHeavyViewPart(this);
 	if (_media) {
 		_media->unloadHeavyPart();
 	}
@@ -738,6 +755,8 @@ void Element::clickHandlerPressedChanged(
 }
 
 Element::~Element() {
+	// Delete media while owner still exists.
+	base::take(_media);
 	if (_data->mainView() == this) {
 		_data->clearMainView();
 	}

@@ -13,17 +13,83 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "core/application.h"
-#include "storage/localstorage.h"
+#include "storage/storage_account.h"
+#include "storage/file_download_mtproto.h"
+#include "storage/file_download_web.h"
 #include "platform/platform_file_utilities.h"
 #include "main/main_session.h"
 #include "apiwrap.h"
 #include "core/crash_reports.h"
 #include "base/bytes.h"
 #include "base/openssl_help.h"
-#include "facades.h"
 #include "app.h"
 
+namespace {
+
+class FromMemoryLoader final : public FileLoader {
+public:
+	FromMemoryLoader(
+		not_null<Main::Session*> session,
+		const QByteArray &data,
+		const QString &toFile,
+		int32 size,
+		LocationType locationType,
+		LoadToCacheSetting toCache,
+		LoadFromCloudSetting fromCloud,
+		bool autoLoading,
+		uint8 cacheTag);
+
+private:
+	Storage::Cache::Key cacheKey() const override;
+	std::optional<MediaKey> fileLocationKey() const override;
+	void cancelHook() override;
+	void startLoading() override;
+
+	QByteArray _data;
+
+};
+
+FromMemoryLoader::FromMemoryLoader(
+	not_null<Main::Session*> session,
+	const QByteArray &data,
+	const QString &toFile,
+	int32 size,
+	LocationType locationType,
+	LoadToCacheSetting toCache,
+	LoadFromCloudSetting fromCloud,
+	bool autoLoading,
+	uint8 cacheTag
+) : FileLoader(
+	session,
+	toFile,
+	size,
+	locationType,
+	toCache,
+	fromCloud,
+	autoLoading,
+	cacheTag)
+, _data(data) {
+}
+
+Storage::Cache::Key FromMemoryLoader::cacheKey() const {
+	return {};
+}
+
+std::optional<MediaKey> FromMemoryLoader::fileLocationKey() const {
+	return std::nullopt;
+}
+
+void FromMemoryLoader::cancelHook() {
+}
+
+void FromMemoryLoader::startLoading() {
+	finishWithBytes(_data);
+}
+
+} // namespace
+
 FileLoader::FileLoader(
+	not_null<Main::Session*> session,
 	const QString &toFile,
 	int32 size,
 	LocationType locationType,
@@ -31,7 +97,7 @@ FileLoader::FileLoader(
 	LoadFromCloudSetting fromCloud,
 	bool autoLoading,
 	uint8 cacheTag)
-: _session(&Auth())
+: _session(session)
 , _autoLoading(autoLoading)
 , _cacheTag(cacheTag)
 , _filename(toFile)
@@ -43,7 +109,9 @@ FileLoader::FileLoader(
 	Expects(!_filename.isEmpty() || (_size <= Storage::kMaxFileInMemory));
 }
 
-FileLoader::~FileLoader() = default;
+FileLoader::~FileLoader() {
+	Expects(_finished);
+}
 
 Main::Session &FileLoader::session() const {
 	return *_session;
@@ -72,7 +140,9 @@ void FileLoader::finishWithBytes(const QByteArray &data) {
 		Platform::File::PostprocessDownloaded(
 			QFileInfo(_file).absoluteFilePath());
 	}
-	Auth().downloaderTaskFinished().notify();
+	const auto session = _session;
+	_updates.fire_done();
+	session->notifyDownloaderTaskFinished();
 }
 
 QByteArray FileLoader::imageFormat(const QSize &shrinkBox) const {
@@ -130,7 +200,7 @@ void FileLoader::permitLoadFromCloud() {
 }
 
 void FileLoader::notifyAboutProgress() {
-	emit progress(this);
+	_updates.fire({});
 }
 
 void FileLoader::localLoaded(
@@ -148,7 +218,6 @@ void FileLoader::localLoaded(
 		_imageData = imageData;
 	}
 	finishWithBytes(result.data);
-	notifyAboutProgress();
 }
 
 void FileLoader::start() {
@@ -186,7 +255,7 @@ void FileLoader::loadLocal(const Storage::Cache::Key &key) {
 				std::move(image));
 		});
 	};
-	session().data().cache().get(key, [=, callback = std::move(done)](
+	_session->data().cache().get(key, [=, callback = std::move(done)](
 			QByteArray &&value) mutable {
 		if (readImage) {
 			crl::async([
@@ -218,14 +287,14 @@ bool FileLoader::tryLoadLocal() {
 		return true;
 	}
 
-	const auto weak = QPointer<FileLoader>(this);
 	if (_toCache == LoadToCacheAsWell) {
-		loadLocal(cacheKey());
-		emit progress(this);
+		const auto key = cacheKey();
+		if (key.low || key.high) {
+			loadLocal(key);
+			notifyAboutProgress();
+		}
 	}
-	if (!weak) {
-		return false;
-	} else if (_localStatus != LocalStatus::NotTried) {
+	if (_localStatus != LocalStatus::NotTried) {
 		return _finished;
 	} else if (_localLoading) {
 		_localStatus = LocalStatus::Loading;
@@ -253,11 +322,11 @@ void FileLoader::cancel(bool fail) {
 	}
 	_data = QByteArray();
 
-	const auto weak = QPointer<FileLoader>(this);
+	const auto weak = base::make_weak(this);
 	if (fail) {
-		emit failed(this, started);
+		_updates.fire_error_copy(started);
 	} else {
-		emit progress(this);
+		_updates.fire_done();
 	}
 	if (weak) {
 		_filename = QString();
@@ -356,18 +425,88 @@ bool FileLoader::finalizeResult() {
 	if (_localStatus == LocalStatus::NotFound) {
 		if (const auto key = fileLocationKey()) {
 			if (!_filename.isEmpty()) {
-				Local::writeFileLocation(*key, FileLocation(_filename));
+				_session->local().writeFileLocation(
+					*key,
+					FileLocation(_filename));
 			}
 		}
+		const auto key = cacheKey();
 		if ((_toCache == LoadToCacheAsWell)
-			&& (_data.size() <= Storage::kMaxFileInMemory)) {
-			session().data().cache().put(
+			&& (_data.size() <= Storage::kMaxFileInMemory)
+			&& (key.low || key.high)) {
+			_session->data().cache().put(
 				cacheKey(),
 				Storage::Cache::Database::TaggedValue(
 					base::duplicate(_data),
 					_cacheTag));
 		}
 	}
-	Auth().downloaderTaskFinished().notify();
+	_session->notifyDownloaderTaskFinished();
+	_updates.fire_done();
 	return true;
+}
+
+std::unique_ptr<FileLoader> CreateFileLoader(
+		not_null<Main::Session*> session,
+		const DownloadLocation &location,
+		Data::FileOrigin origin,
+		const QString &toFile,
+		int size,
+		LocationType locationType,
+		LoadToCacheSetting toCache,
+		LoadFromCloudSetting fromCloud,
+		bool autoLoading,
+		uint8 cacheTag) {
+	auto result = std::unique_ptr<FileLoader>();
+	location.data.match([&](const StorageFileLocation &data) {
+		result = std::make_unique<mtpFileLoader>(
+			session,
+			data,
+			origin,
+			locationType,
+			toFile,
+			size,
+			toCache,
+			fromCloud,
+			autoLoading,
+			cacheTag);
+	}, [&](const WebFileLocation &data) {
+		result = std::make_unique<mtpFileLoader>(
+			session,
+			data,
+			size,
+			fromCloud,
+			autoLoading,
+			cacheTag);
+	}, [&](const GeoPointLocation &data) {
+		result = std::make_unique<mtpFileLoader>(
+			session,
+			data,
+			size,
+			fromCloud,
+			autoLoading,
+			cacheTag);
+	}, [&](const PlainUrlLocation &data) {
+		result = std::make_unique<webFileLoader>(
+			session,
+			data.url,
+			toFile,
+			fromCloud,
+			autoLoading,
+			cacheTag);
+	}, [&](const InMemoryLocation &data) {
+		result = std::make_unique<FromMemoryLoader>(
+			session,
+			data.bytes,
+			toFile,
+			size,
+			locationType,
+			toCache,
+			LoadFromCloudOrLocal,
+			autoLoading,
+			cacheTag);
+	});
+
+	Ensures(result != nullptr);
+	return result;
 }

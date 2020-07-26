@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "export/output/export_output_abstract.h"
 #include "export/output/export_output_result.h"
 #include "export/output/export_output_stats.h"
+#include "mtproto/mtp_instance.h"
 
 namespace Export {
 namespace {
@@ -24,7 +25,6 @@ Settings NormalizeSettings(const Settings &settings) {
 		return base::duplicate(settings);
 	}
 	auto result = base::duplicate(settings);
-	result.format = Output::Format::Html;
 	result.types = result.fullChats = Settings::Type::AnyChatsMask;
 	return result;
 }
@@ -35,6 +35,7 @@ class ControllerObject {
 public:
 	ControllerObject(
 		crl::weak_on_queue<ControllerObject> weak,
+		QPointer<MTP::Instance> mtproto,
 		const MTPInputPeer &peer);
 
 	rpl::producer<State> state() const;
@@ -132,8 +133,9 @@ private:
 
 ControllerObject::ControllerObject(
 	crl::weak_on_queue<ControllerObject> weak,
+	QPointer<MTP::Instance> mtproto,
 	const MTPInputPeer &peer)
-: _api(weak.runner())
+: _api(mtproto, weak.runner())
 , _state(PasswordCheckState{}) {
 	_api.errors(
 	) | rpl::start_with_next([=](RPCError &&error) {
@@ -352,7 +354,9 @@ void ControllerObject::initialized(const ApiWrap::StartInfo &info) {
 void ControllerObject::collectDialogsList() {
 	setState(stateDialogsList(0));
 	_api.requestDialogsList([=](int count) {
-		setState(stateDialogsList(count));
+		if (count > 0) {
+			setState(stateDialogsList(count - 1));
+		}
 		return true;
 	}, [=](Data::DialogsInfo &&result) {
 		_dialogsInfo = std::move(result);
@@ -585,7 +589,10 @@ void ControllerObject::setFinishedState() {
 		_stats.bytesCount() });
 }
 
-Controller::Controller(const MTPInputPeer &peer) : _wrapped(peer) {
+Controller::Controller(
+	QPointer<MTP::Instance> mtproto,
+	const MTPInputPeer &peer)
+: _wrapped(std::move(mtproto), peer) {
 }
 
 rpl::producer<State> Controller::state() const {

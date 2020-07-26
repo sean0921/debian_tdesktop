@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/unread_badge.h"
 #include "lang/lang_keys.h"
 #include "support/support_helper.h"
+#include "main/main_session.h"
 #include "history/history_item_components.h"
 #include "history/history_item.h"
 #include "history/history.h"
@@ -230,7 +231,7 @@ void paintRow(
 		crl::time ms,
 		PaintItemCallback &&paintItemCallback,
 		PaintCounterCallback &&paintCounterCallback) {
-	const auto supportMode = Auth().supportMode();
+	const auto supportMode = entry->session().supportMode();
 	if (supportMode) {
 		draft = nullptr;
 	}
@@ -273,6 +274,7 @@ void paintRow(
 	} else {
 		entry->paintUserpicLeft(
 			p,
+			row->userpicView(),
 			st::dialogsPadding.x(),
 			st::dialogsPadding.y(),
 			fullWidth,
@@ -338,7 +340,7 @@ void paintRow(
 		history->cloudDraftTextCache.drawElided(p, nameleft, texttop, availableWidth, 1);
 	} else if (draft
 		|| (supportMode
-			&& Auth().supportHelper().isOccupiedBySomeone(history))) {
+			&& entry->session().supportHelper().isOccupiedBySomeone(history))) {
 		if (!promoted) {
 			PaintRowDate(p, date, rectForName, active, selected);
 		}
@@ -586,13 +588,8 @@ void paintUnreadBadge(Painter &p, const QRect &rect, const UnreadBadgeStyle &st)
 }
 
 UnreadBadgeStyle::UnreadBadgeStyle()
-: align(style::al_right)
-, active(false)
-, selected(false)
-, muted(false)
-, size(st::dialogsUnreadHeight)
+: size(st::dialogsUnreadHeight)
 , padding(st::dialogsUnreadPadding)
-, sizeId(UnreadBadgeInDialogs)
 , font(st::dialogsUnreadFont) {
 }
 
@@ -946,6 +943,7 @@ void PaintCollapsedRow(
 	} else {
 		folder->paintUserpicLeft(
 			p,
+			row.userpicView(),
 			(fullWidth - st::dialogsUnreadHeight) / 2,
 			unreadTop,
 			fullWidth,

@@ -25,7 +25,7 @@ class LinkButton;
 class RoundButton;
 class FlatLabel;
 class RippleAnimation;
-} // namesapce Ui
+} // namespace Ui
 
 namespace Window {
 class SessionController;
@@ -52,7 +52,7 @@ struct CacheEntry {
 };
 
 class Inner
-	: public TWidget
+	: public Ui::RpWidget
 	, public Ui::AbstractTooltipShower
 	, public Context
 	, private base::Subscriber {
@@ -61,7 +61,7 @@ class Inner
 public:
 	Inner(QWidget *parent, not_null<Window::SessionController*> controller);
 
-	void hideFinish(bool completely);
+	void hideFinished();
 
 	void clearSelection();
 
@@ -121,6 +121,7 @@ private:
 	void updateSelected();
 	void checkRestrictedPeer();
 	bool isRestrictedView();
+	void clearHeavyData();
 
 	void paintInlineItems(Painter &p, const QRect &r);
 
@@ -198,6 +199,10 @@ public:
 		_inner->setResultSelectedCallback(std::move(callback));
 	}
 
+	[[nodiscard]] rpl::producer<bool> requesting() const {
+		return _requesting.events();
+	}
+
 	~Widget();
 
 protected:
@@ -245,7 +250,7 @@ private:
 	bool refreshInlineRows(int *added = nullptr);
 	void inlineResultsDone(const MTPmessages_BotResults &result);
 
-	not_null<Window::SessionController*> _controller;
+	const not_null<Window::SessionController*> _controller;
 	MTP::Sender _api;
 
 	int _contentMaxHeight = 0;
@@ -274,6 +279,8 @@ private:
 	PeerData *_inlineQueryPeer = nullptr;
 	QString _inlineQuery, _inlineNextQuery, _inlineNextOffset;
 	mtpRequestId _inlineRequestId = 0;
+
+	rpl::event_stream<bool> _requesting;
 
 };
 

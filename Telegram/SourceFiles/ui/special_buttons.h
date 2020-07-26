@@ -15,15 +15,26 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class PeerData;
 
-namespace Ui {
-class InfiniteRadialAnimation;
-} // namespace Ui
+namespace Data {
+class CloudImageView;
+} // namespace Data
 
 namespace Window {
 class SessionController;
 } // namespace Window
 
+namespace Media {
+namespace Streaming {
+class Instance;
+struct Update;
+enum class Error;
+struct Information;
+} // namespace Streaming
+} // namespace Media
+
 namespace Ui {
+
+class InfiniteRadialAnimation;
 
 class HistoryDownButton : public RippleButton {
 public:
@@ -209,7 +220,15 @@ private:
 	void updateCursorInChangeOverlay(QPoint localPos);
 	void setCursorInChangeOverlay(bool inOverlay);
 	void updateCursor();
+	void updateVideo();
 	bool showSavedMessages() const;
+	void checkStreamedIsStarted();
+	bool createStreamingObjects(not_null<PhotoData*> photo);
+	void clearStreaming();
+	void handleStreamingUpdate(Media::Streaming::Update &&update);
+	void handleStreamingError(Media::Streaming::Error &&error);
+	void streamingReady(Media::Streaming::Information &&info);
+	void paintUserpicFrame(Painter &p, QPoint photoPosition);
 
 	void grabOldUserpic();
 	void setClickHandlerByRole();
@@ -220,6 +239,7 @@ private:
 	const style::UserpicButton &_st;
 	Window::SessionController *_controller = nullptr;
 	PeerData *_peer = nullptr;
+	std::shared_ptr<Data::CloudImageView> _userpicView;
 	QString _cropTitle;
 	Role _role = Role::ChangePhoto;
 	bool _notShownYet = true;
@@ -230,6 +250,8 @@ private:
 	InMemoryKey _userpicUniqueKey;
 	Ui::Animations::Simple _a_appearance;
 	QImage _result;
+	std::unique_ptr<Media::Streaming::Instance> _streamed;
+	PhotoData *_streamedPhoto = nullptr;
 
 	bool _showSavedMessagesOnSelf = false;
 	bool _canOpenPhoto = false;

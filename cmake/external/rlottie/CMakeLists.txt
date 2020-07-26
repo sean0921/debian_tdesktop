@@ -8,11 +8,16 @@ if (DESKTOP_APP_USE_PACKAGED_RLOTTIE AND NOT DESKTOP_APP_USE_PACKAGED_LAZY)
     add_library(external_rlottie INTERFACE IMPORTED GLOBAL)
     add_library(desktop-app::external_rlottie ALIAS external_rlottie)
 
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(RLOTTIE REQUIRED IMPORTED_TARGET rlottie)
-    target_link_libraries(external_rlottie INTERFACE PkgConfig::RLOTTIE)
+    find_package(rlottie)
+    if (rlottie_FOUND)
+        target_link_libraries(external_rlottie INTERFACE rlottie::rlottie)
+    else()
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(RLOTTIE REQUIRED IMPORTED_TARGET rlottie)
+        target_link_libraries(external_rlottie INTERFACE PkgConfig::RLOTTIE)
+    endif()
 else()
-    add_library(external_rlottie OBJECT)
+    add_library(external_rlottie STATIC)
     add_library(desktop-app::external_rlottie ALIAS external_rlottie)
     init_target(external_rlottie "(external)")
 
@@ -119,7 +124,7 @@ else()
 
     if (LINUX)
         target_link_libraries(external_rlottie
-        PUBLIC
+        PRIVATE
             pthread
         )
     endif()

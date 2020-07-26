@@ -9,14 +9,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <array>
 
-namespace Images {
-class Source;
-} // namespace Images
-
 namespace Data {
 namespace AutoDownload {
 
-constexpr auto kMaxBytesLimit = 3000 * 512 * 1024;
+constexpr auto kMaxBytesLimit = 4000 * 512 * 1024;
 
 enum class Source {
 	User    = 0x00,
@@ -118,12 +114,16 @@ private:
 [[nodiscard]] bool Should(
 	const Full &data,
 	not_null<PeerData*> peer,
-	not_null<Images::Source*> image);
+	not_null<PhotoData*> photo);
 
 [[nodiscard]] bool ShouldAutoPlay(
 	const Full &data,
 	not_null<PeerData*> peer,
 	not_null<DocumentData*> document);
+[[nodiscard]] bool ShouldAutoPlay(
+	const Full &data,
+	not_null<PeerData*> peer,
+	not_null<PhotoData*> photo);
 
 [[nodiscard]] Full WithDisabledAutoPlay(const Full &data);
 

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "window/window_controls_layout.h"
+
 namespace Platform {
 
 void start();
@@ -28,6 +30,8 @@ enum class SystemSettingsType {
 
 void SetWatchingMediaKeys(bool watching);
 void SetApplicationIcon(const QIcon &icon);
+QString CurrentExecutablePath(int argc, char *argv[]);
+QString SingleInstanceLocalServerName(const QString &hash);
 void RegisterCustomScheme(bool force = false);
 PermissionStatus GetPermissionStatus(PermissionType type);
 void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCallback);
@@ -39,7 +43,18 @@ bool OpenSystemSettings(SystemSettingsType type);
 	return LastUserInputTime().has_value();
 }
 
+[[nodiscard]] std::optional<bool> IsDarkMode();
+[[nodiscard]] inline bool IsDarkModeSupported() {
+	return IsDarkMode().has_value();
+}
+
 void IgnoreApplicationActivationRightNow();
+bool AutostartSupported();
+bool TrayIconSupported();
+QImage GetImageFromClipboard();
+bool StartSystemMove(QWindow *window);
+bool StartSystemResize(QWindow *window, Qt::Edges edges);
+Window::ControlsLayout WindowControlsLayout();
 
 namespace ThirdParty {
 
@@ -51,8 +66,8 @@ void finish();
 
 #ifdef Q_OS_MAC
 #include "platform/mac/specific_mac.h"
-#elif defined Q_OS_LINUX // Q_OS_MAC
+#elif defined Q_OS_UNIX // Q_OS_MAC
 #include "platform/linux/specific_linux.h"
-#elif defined Q_OS_WIN // Q_OS_MAC || Q_OS_LINUX
+#elif defined Q_OS_WIN // Q_OS_MAC || Q_OS_UNIX
 #include "platform/win/specific_win.h"
-#endif // Q_OS_MAC || Q_OS_LINUX || Q_OS_WIN
+#endif // Q_OS_MAC || Q_OS_UNIX || Q_OS_WIN

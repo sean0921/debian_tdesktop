@@ -39,7 +39,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "apiwrap.h"
 #include "numbers.h"
-#include "observer_peer.h"
 #include "main/main_session.h"
 #include "styles/style_boxes.h"
 #include "styles/style_overview.h"
@@ -74,8 +73,6 @@ QVector<CornersPixmaps> corners;
 using CornersMap = QMap<uint32, CornersPixmaps>;
 CornersMap cornersMap;
 QImage cornersMaskLarge[4], cornersMaskSmall[4];
-
-int32 serviceImageCacheSize = 0;
 
 } // namespace
 
@@ -207,16 +204,16 @@ namespace App {
 			if (update.paletteChanged()) {
 				createPaletteCorners();
 
-				if (App::main()) {
-					App::main()->updateScrollColors();
+				if (const auto m = App::main()) { // multi good
+					m->updateScrollColors();
 				}
 				HistoryView::serviceColorsUpdated();
 			} else if (update.type == Update::Type::New) {
 				prepareCorners(StickerCorners, st::dateRadius, st::msgServiceBg);
 				prepareCorners(StickerSelectedCorners, st::dateRadius, st::msgServiceBgSelected);
 
-				if (App::main()) {
-					App::main()->updateScrollColors();
+				if (const auto m = App::main()) { // multi good
+					m->updateScrollColors();
 				}
 				HistoryView::serviceColorsUpdated();
 			}
@@ -227,8 +224,6 @@ namespace App {
 		clearCorners();
 
 		Data::clearGlobalStructures();
-
-		Images::ClearAll();
 	}
 
 	void hoveredItem(HistoryView::Element *item) {
@@ -322,6 +317,9 @@ namespace App {
 	}
 
 	QImage readImage(QByteArray data, QByteArray *format, bool opaque, bool *animated) {
+		if (data.isEmpty()) {
+			return QImage();
+		}
 		QByteArray tmpFormat;
 		QImage result;
 		QBuffer buffer(&data);

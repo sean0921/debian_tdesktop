@@ -88,6 +88,7 @@ jobs:
           echo $MIN_MAC >> CACHE_KEY.txt
           echo $PREFIX >> CACHE_KEY.txt
           echo $MANUAL_CACHING >> CACHE_KEY.txt
+          echo "$GITHUB_WORKSPACE" >> CACHE_KEY.txt
           if [ "$AUTO_CACHING" == "1" ]; then
             thisFile=$REPO_NAME/.github/workflows/mac.yml
             echo `md5 -q $thisFile` >> CACHE_KEY.txt
@@ -132,7 +133,7 @@ jobs:
 
       - name: OpenSSL cache.
         id: cache-openssl
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: ${{ env.LibrariesPath }}/openssl_${{ env.OPENSSL_VER }}
           key: ${{ runner.OS }}-${{ env.OPENSSL_VER }}-${{ env.CACHE_KEY }}
@@ -146,6 +147,7 @@ jobs:
           git checkout OpenSSL_"$OPENSSL_VER"-stable
           ./Configure \
           --prefix=$PREFIX \
+          no-tests \
           darwin64-x86_64-cc \
           -static \
           $MIN_MAC
@@ -162,7 +164,7 @@ jobs:
 
       - name: Opus cache.
         id: cache-opus
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: ${{ env.LibrariesPath }}/opus
           key: ${{ runner.OS }}-opus-${{ env.CACHE_KEY }}
@@ -184,7 +186,7 @@ jobs:
 
       - name: Libiconv cache.
         id: cache-libiconv
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: ${{ env.LibrariesPath }}/${{ env.LIBICONV_VER }}
           key: ${{ runner.OS }}-${{ env.LIBICONV_VER }}-${{ env.CACHE_KEY }}
@@ -205,7 +207,7 @@ jobs:
 
       - name: FFmpeg cache.
         id: cache-ffmpeg
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: ${{ env.LibrariesPath }}/ffmpeg-cache
           key: ${{ runner.OS }}-ffmpeg-${{ env.CACHE_KEY }}
@@ -361,7 +363,7 @@ jobs:
 
       - name: Crashpad cache.
         id: cache-crashpad
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: ${{ env.LibrariesPath }}/crashpad
           key: ${{ runner.OS }}-crashpad-${{ env.CACHE_KEY }}-${{ hashFiles('**/crashpad.diff') }}-${{ hashFiles('**/mini_chromium.diff') }}
@@ -400,10 +402,10 @@ jobs:
 
       - name: Qt 5.12.8 cache.
         id: cache-qt
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: ${{ env.LibrariesPath }}/qt-cache
-          key: ${{ runner.OS }}-qt-${{ env.CACHE_KEY }}-${{ hashFiles('**/qtbase_5_12_8.diff') }}
+          key: ${{ runner.OS }}-qt-${{ env.CACHE_KEY }}-${{ hashFiles('**/qtbase_5_12_8/*') }}
       - name: Use cached Qt 5.12.8.
         if: steps.cache-qt.outputs.cache-hit == 'true'
         run: |
@@ -423,7 +425,7 @@ jobs:
           git submodule update qtbase
           git submodule update qtimageformats
           cd qtbase
-          git apply ../../patches/qtbase_$QT.diff
+          find ../../patches/qtbase_$QT -type f -print0 | sort -z | xargs -0 git apply
           cd ..
 
           ./configure \
