@@ -1,3 +1,19 @@
+telegram-desktop (2.2.0+ds-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Remove no longer needed patches:
+     - Checks-for-libatomic.patch, now libatmoic is linked unconditionally.
+     - Debug-info-for-32-bit.patch, no forced -g0 for packaged build.
+     - Unset-Qt-platform-theme.patch, incorporated info upstream source code.
+  * Modified remained patches:
+     - Path-to-libtgvoip.patch has been renamed to Static-libtgvoip.patch to
+       reflect changes for new libtgvoip.
+     - Do-not-sync-wallpaper.patch has been just refreshed against new source.
+  * Import QtWaylandClient private headers from the qtwayland-opensource-src
+    package of version 5.14.2-2.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Tue, 28 Jul 2020 09:27:12 +0300
+
 telegram-desktop (2.1.7+ds-2) unstable; urgency=medium
 
   * Rewrite Set-semibold-font.patch to fix lacking boldface
