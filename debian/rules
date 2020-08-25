@@ -5,7 +5,6 @@ include /usr/share/dpkg/default.mk
 EXTRA_CMAKE_VARIABLES += \
 	TDESKTOP_API_ID=50322 \
 	TDESKTOP_API_HASH=9ff1a639196c0779c86dd661af8522ba \
-	TDESKTOP_FORCE_GTK_FILE_DIALOG=ON \
 	DESKTOP_APP_USE_PACKAGED_QRCODE=ON \
 	DESKTOP_APP_QTWAYLANDCLIENT_PRIVATE_HEADERS=$(CURDIR)/debian/qtwayland \
 	CMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
@@ -14,13 +13,12 @@ ifeq ($(filter terse,$(DEB_BUILD_OPTIONS)),)
  EXTRA_CMAKE_VARIABLES += CMAKE_AUTOGEN_VERBOSE=ON
 endif
 
-ifneq ($(DEB_HOST_ARCH_OS),linux)
- # Mimic Linux on non-Linux hosts.
- export DEB_CPPFLAGS_MAINT_APPEND = -DQ_OS_LINUX
-endif
 ifeq ($(DEB_HOST_ARCH_BITS),32)
- # Less debug info to fit small address space.
- export DEB_CXXFLAGS_MAINT_APPEND = -g1
+ # Less debug info by default to fit small address space.
+ ifneq ($(filter -g,$(CXXFLAGS)),)
+  export DEB_CXXFLAGS_MAINT_STRIP = -g
+  export DEB_CXXFLAGS_MAINT_PREPEND = -g1
+ endif
 endif
 
 CPPLIBS_PACKAGES = libexpected-dev libmapbox-variant-dev libmsgsl-dev librange-v3-dev libtgvoip-dev
