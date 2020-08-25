@@ -20,7 +20,7 @@ Build-Depends-Arch:
  libopenal-dev,
  libopus-dev (>=1.1),
  libqrcodegencpp-dev,
- libqt5waylandclient5-dev,
+ libqt5waylandclient5-dev [linux-any],
  librange-v3-dev (>=0.10.0),
  librlottie-dev,
  libssl-dev (>=1.0.1),

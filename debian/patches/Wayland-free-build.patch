@@ -1,0 +1,98 @@
+Description: Do not require Wayland headers
+ Allow one to build Telegram Desktop without Wayland support if the
+ Qt5WaylandClient plugin or the wayland-client package are unavailable.
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Forwarded: https://github.com/telegramdesktop/tdesktop/pull/8351
+Last-Update: Thu, 30 Jul 2020 18:27:51 +0300
+
+--- a/Telegram/CMakeLists.txt
++++ b/Telegram/CMakeLists.txt
+@@ -127,7 +127,7 @@ PRIVATE
+ 
+ if (LINUX AND DESKTOP_APP_USE_PACKAGED AND Qt5WaylandClient_VERSION VERSION_LESS 5.13.0)
+     find_package(PkgConfig REQUIRED)
+-    pkg_check_modules(WAYLAND_CLIENT REQUIRED wayland-client)
++    pkg_check_modules(WAYLAND_CLIENT wayland-client)
+ 
+     target_include_directories(Telegram
+     PRIVATE
+--- a/Telegram/SourceFiles/platform/linux/specific_linux.cpp
++++ b/Telegram/SourceFiles/platform/linux/specific_linux.cpp
+@@ -27,9 +27,11 @@ https://github.com/telegramdesktop/tdesk
+ #include <QtGui/QWindow>
+ #include <qpa/qplatformnativeinterface.h>
+ 
++#ifdef QT_WAYLANDCLIENT_LIB
+ #include <private/qwaylanddisplay_p.h>
+ #include <private/qwaylandwindow_p.h>
+ #include <private/qwaylandshellsurface_p.h>
++#endif // QT_WAYLANDCLIENT_LIB
+ 
+ #ifndef TDESKTOP_DISABLE_DBUS_INTEGRATION
+ #include <QtDBus/QDBusInterface>
+@@ -42,9 +44,11 @@ https://github.com/telegramdesktop/tdesk
+ #include <xcb/xcb.h>
+ #include <xcb/screensaver.h>
+ 
+-#if QT_VERSION < QT_VERSION_CHECK(5, 13, 0) && !defined DESKTOP_APP_QT_PATCHED
++#if QT_VERSION < QT_VERSION_CHECK(5, 13, 0) \
++	&& !defined(DESKTOP_APP_QT_PATCHED) \
++	&& __has_include(<wayland-client.h>)
+ #include <wayland-client.h>
+-#endif // Qt < 5.13 && !DESKTOP_APP_QT_PATCHED
++#endif // Qt < 5.13 && !DESKTOP_APP_QT_PATCHED && __has_include()
+ 
+ #include <sys/stat.h>
+ #include <sys/types.h>
+@@ -57,7 +61,10 @@ https://github.com/telegramdesktop/tdesk
+ 
+ using namespace Platform;
+ using Platform::File::internal::EscapeShell;
++
++#ifdef QT_WAYLANDCLIENT_LIB
+ using QtWaylandClient::QWaylandWindow;
++#endif // QT_WAYLANDCLIENT_LIB
+ 
+ namespace Platform {
+ namespace {
+@@ -554,6 +561,7 @@ bool StartXCBMoveResize(QWindow *window,
+ }
+ 
+ bool StartWaylandMove(QWindow *window) {
++#ifdef QT_WAYLANDCLIENT_LIB
+ 	if (const auto waylandWindow = static_cast<QWaylandWindow*>(window->handle())) {
+ 		if (const auto seat = waylandWindow->display()->lastInputDevice()) {
+ 			if (const auto shellSurface = waylandWindow->shellSurface()) {
+@@ -561,11 +569,13 @@ bool StartWaylandMove(QWindow *window) {
+ 			}
+ 		}
+ 	}
++#endif // QT_WAYLANDCLIENT_LIB
+ 
+ 	return false;
+ }
+ 
+ bool StartWaylandResize(QWindow *window, Qt::Edges edges) {
++#ifdef QT_WAYLANDCLIENT_LIB
+ 	if (const auto waylandWindow = static_cast<QWaylandWindow*>(window->handle())) {
+ 		if (const auto seat = waylandWindow->display()->lastInputDevice()) {
+ 			if (const auto shellSurface = waylandWindow->shellSurface()) {
+@@ -581,6 +591,7 @@ bool StartWaylandResize(QWindow *window,
+ 			}
+ 		}
+ 	}
++#endif // QT_WAYLANDCLIENT_LIB
+ 
+ 	return false;
+ }
+--- a/cmake/external/qt/package.cmake
++++ b/cmake/external/qt/package.cmake
+@@ -24,7 +24,7 @@ find_package(Qt5 COMPONENTS Core Gui Wid
+ find_package(Qt5Gui COMPONENTS QWebpPlugin REQUIRED)
+ 
+ if (LINUX)
+-    find_package(Qt5 COMPONENTS WaylandClient REQUIRED)
++    find_package(Qt5 COMPONENTS WaylandClient)
+     find_package(Qt5 OPTIONAL_COMPONENTS XkbCommonSupport QUIET)
+ 
+     if (NOT DESKTOP_APP_USE_PACKAGED)

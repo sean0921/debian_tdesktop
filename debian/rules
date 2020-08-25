@@ -13,6 +13,10 @@ ifeq ($(filter terse,$(DEB_BUILD_OPTIONS)),)
  EXTRA_CMAKE_VARIABLES += CMAKE_AUTOGEN_VERBOSE=ON
 endif
 
+ifneq ($(DEB_HOST_ARCH_OS),linux)
+ # Make sure Qt WaylandClient plugin is not in use.
+ export DEB_CPPFLAGS_MAINT_APPEND = -UQT_WAYLANDCLIENT_LIB
+endif
 ifeq ($(DEB_HOST_ARCH_BITS),32)
  # Less debug info by default to fit small address space.
  ifneq ($(filter -g,$(CXXFLAGS)),)
