@@ -1,7 +1,9 @@
 Description: Add linker flags for static libtgvoip
- Only libtgvoip.a is now available in Debian.
+ Only libtgvoip.a is now available in Debian, while the libtgvoip-dev package
+ still supplies the tgvoip.pc file for shared variant.
+Forwarded: not-needed
 Author: Nicholas Guriev <guriev-ns@ya.ru>
-Date: Mon, 27 Jul 2020 07:14:35 +0300
+Last-Update: Tue, 25 Aug 2020 23:14:30 +0300
 
 --- a/Telegram/cmake/lib_tgvoip.cmake
 +++ b/Telegram/cmake/lib_tgvoip.cmake

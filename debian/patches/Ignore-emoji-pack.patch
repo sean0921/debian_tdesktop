@@ -1,8 +1,13 @@
 Description: Ignore emoji pack in super-large emoji rendering
  It is necessary to build against the unpatched rlottie lib.
+ .
+ Although latest versions of the library already support theme overriding, we
+ have to patch the rlottie call here due to a stale version still available on
+ IA-64 platform.
 Bug-Samsung: https://github.com/Samsung/rlottie/pull/252
+Forwarded: not-needed
 Author: Nicholas Guriev <guriev-ns@ya.ru>
-Modified: Sat, 10 Aug 2019 11:30:57 +0300
+Last-Update: Tue, 25 Aug 2020 23:14:30 +0300
 
 --- a/Telegram/lib_lottie/lottie/lottie_animation.cpp
 +++ b/Telegram/lib_lottie/lottie/lottie_animation.cpp
