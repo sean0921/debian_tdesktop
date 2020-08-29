@@ -1,17 +1,18 @@
 .\"                                      Hey, EMACS: -*- nroff -*-
-.\"                                      Hey, vim: ft=nroff
 .\" (C) Copyright 2017 Nicholas Guriev <guriev-ns@ya.ru>
 
-.TH TELEGRAM-DESKTOP 1 "2017-06-07"
+.TH TELEGRAM-DESKTOP 1 "2020-08-29"
 
 .SH NAME
-\fBtelegram\-desktop\fR \- official telegram messaging application
+\fBtelegram\-desktop\fR \- fast and secure messaging application
 
 .SH SYNOPSIS
 .SY telegram-desktop
+.OP \-autostart
 .OP \-startintray
-.OP \-many
 .OP \-debug
+.OP \-scale INT
+.OP \-workdir PATH
 .OP \-\- URI
 .YS
 
@@ -20,29 +21,59 @@ This manual page documents how to run \fBTelegram Desktop\fR, official Telegram
 client.
 
 .SH OPTIONS
-The program understands various parameters, some of them are described in the
-present document.
+Although the program is primarily a GUI application, it understands various
+command line arguments, some of them are described in the present document.
+.TP
+.B \-autostart
+Apply automatic start. It works if only auto-starting is allowed in settings and
+the app is not locked by a passcode. Telegram will start minimized in the system
+tray if the corresponding checkbox has been set.
 .TP
 .B \-startintray
 Do not show the main window, just start in the system tray. Useful for automatic
-launching.
-.TP
-.B \-many
-Allow multiple instances of the client at the same time.
+unconditional launching.
 .TP
 .B \-debug
-Run in debug mode immediately. See logs in
-\fB~/\.local/share/TelegramDesktop/DebugLogs\fR.
+Run in debug mode immediately. See full logs in working directory or in standard
+location at \fB~/\.local/share/TelegramDesktop/DebugLogs\fR.
+.TP
+.B \-scale INT
+Set initial interface scale factor. Possible values are measured in percents
+from 75 up to 300 inclusive.
+.TP
+.B \-workdir PATH
+Change current working directory to specified path before start. All Telegram
+data will be stored encrypted in this folder. You can pass this option to
+partition different app instances that run simultaneously.
 .TP
 .I URI
 Specify Telegram URI. It is used for automatically opening chats by
 .B t.me
 site.
+.LP
+There are also some other hidden options not intended for direct use.
 
 .SH ENVIRONMENT
 .TP
+.B TDESKTOP_DISABLE_TRAY_COUNTER
+If set to anything Telegram Desktop will not render message or chat counter over
+its icon in the system tray.
+.TP
+.B TDESKTOP_FORCE_PANEL_ICON
+If set to anything Telegram Desktop will use for the tray icon
+\fBtelegram-panel\fR, \fBtelegram-attention-panel\fR, or
+\fBtelegram-mute-panel\fR icons from the system theme.
+This does not work along with the tray counter mentioned above.
+.TP
+.B TDESKTOP_USE_PORTAL
+Set this to something to make Telegram Desktop always use XDG Desktop portals to
+open file dialogs. By default the portal is used if available on KDE.
+.TP
+.B XDG_DATA_HOME
+Used to automatically determine working directory unless set by hand.
+.TP
 .B HOME
-User home directory where it stores downloaded files and configuration.
+User home directory where the app stores downloaded files and configuration.
 
 .SH SEE ALSO
 .UR https://github.com/telegramdesktop/tdesktop/wiki
