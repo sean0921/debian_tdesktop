@@ -1,3 +1,15 @@
+telegram-desktop (2.2.0+ds-2) unstable; urgency=medium
+
+  * Fix build against updated mapbox-variant 1.2.0.
+  * Build without Wayland integration on non-Linux.
+  * Minor housekeeping in package build rules.
+  * Refresh package documentation.
+    - Update patch headers to reflect present situation.
+    - Update man page telegram-desktop(1).
+    - Add d/README.source.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Tue, 01 Sep 2020 19:13:39 +0300
+
 telegram-desktop (2.2.0+ds-1) unstable; urgency=medium
 
   * New upstream release.
