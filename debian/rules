@@ -10,7 +10,13 @@ EXTRA_CMAKE_VARIABLES += \
 	CMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
 
 ifeq ($(filter terse,$(DEB_BUILD_OPTIONS)),)
+ # Print entire arguments of moc invocation.
  EXTRA_CMAKE_VARIABLES += CMAKE_AUTOGEN_VERBOSE=ON
+endif
+
+ifeq ($(filter noopt,$(DEB_BUILD_OPTIONS)),)
+ # Hide warnings useless for final build.
+ export DEB_CXXFLAGS_MAINT_APPEND = -Wno-deprecated-declarations
 endif
 
 ifneq ($(DEB_HOST_ARCH_OS),linux)
