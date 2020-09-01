@@ -1,4 +1,5 @@
 Do-not-sync-wallpaper.patch
 Ignore-emoji-pack.patch
+Replace-mapbox-variant.patch
 Static-libtgvoip.patch
 Wayland-free-build.patch
