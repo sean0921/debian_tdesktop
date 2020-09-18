@@ -1,9 +1,9 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
-** This file is part of the config.tests of the Qt Toolkit.
+** This file is part of the plugins of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -37,39 +37,32 @@
 **
 ****************************************************************************/
 
-#ifndef QWAYLANDSHMWINDOW_H
-#define QWAYLANDSHMWINDOW_H
+#ifndef QWAYLANDVULKANWINDOW_P_H
+#define QWAYLANDVULKANWINDOW_P_H
 
-//
-//  W A R N I N G
-//  -------------
-//
-// This file is not part of the Qt API.  It exists purely as an
-// implementation detail.  This header file may change from version to
-// version without notice, or even be removed.
-//
-// We mean it.
-//
-
-#include <QtWaylandClient/private/qwaylandwindow_p.h>
-#include <QtGui/QRegion>
+#include "qwaylandwindow_p.h"
+#include "qwaylandvulkaninstance_p.h"
 
 QT_BEGIN_NAMESPACE
 
 namespace QtWaylandClient {
 
-class Q_WAYLAND_CLIENT_EXPORT QWaylandShmWindow : public QWaylandWindow
+class QWaylandVulkanWindow : public QWaylandWindow
 {
 public:
-    QWaylandShmWindow(QWindow *window, QWaylandDisplay *display);
-    ~QWaylandShmWindow() override;
+    explicit QWaylandVulkanWindow(QWindow *window, QWaylandDisplay *display);
+    ~QWaylandVulkanWindow() override;
 
     WindowType windowType() const override;
-    QSurfaceFormat format() const override { return QSurfaceFormat(); }
+
+    VkSurfaceKHR *surface();
+
+private:
+    VkSurfaceKHR m_surface = VK_NULL_HANDLE;
 };
 
-}
+} // namespace QtWaylandClient
 
 QT_END_NAMESPACE
 
-#endif // QWAYLANDSHMWINDOW_H
+#endif // QWAYLANDVULKANWINDOW_P_H

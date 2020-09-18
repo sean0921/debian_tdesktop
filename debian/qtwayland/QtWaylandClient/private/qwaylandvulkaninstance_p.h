@@ -1,9 +1,9 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
-** This file is part of the config.tests of the Qt Toolkit.
+** This file is part of plugins of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -37,39 +37,44 @@
 **
 ****************************************************************************/
 
-#ifndef QWAYLANDSHMWINDOW_H
-#define QWAYLANDSHMWINDOW_H
+#ifndef QWAYLANDVULKANINSTANCE_P_H
+#define QWAYLANDVULKANINSTANCE_P_H
 
-//
-//  W A R N I N G
-//  -------------
-//
-// This file is not part of the Qt API.  It exists purely as an
-// implementation detail.  This header file may change from version to
-// version without notice, or even be removed.
-//
-// We mean it.
-//
+#if defined(VULKAN_H_) && !defined(VK_USE_PLATFORM_WAYLAND_KHR)
+#error "vulkan.h included without Wayland WSI"
+#endif
 
-#include <QtWaylandClient/private/qwaylandwindow_p.h>
-#include <QtGui/QRegion>
+#define VK_USE_PLATFORM_WAYLAND_KHR
+
+#include <QtVulkanSupport/private/qbasicvulkanplatforminstance_p.h>
+#include <QLibrary>
 
 QT_BEGIN_NAMESPACE
 
 namespace QtWaylandClient {
 
-class Q_WAYLAND_CLIENT_EXPORT QWaylandShmWindow : public QWaylandWindow
+class QWaylandWindow;
+
+class QWaylandVulkanInstance : public QBasicPlatformVulkanInstance
 {
 public:
-    QWaylandShmWindow(QWindow *window, QWaylandDisplay *display);
-    ~QWaylandShmWindow() override;
+    explicit QWaylandVulkanInstance(QVulkanInstance *instance);
+    ~QWaylandVulkanInstance() override;
 
-    WindowType windowType() const override;
-    QSurfaceFormat format() const override { return QSurfaceFormat(); }
+    void createOrAdoptInstance() override;
+    bool supportsPresent(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, QWindow *window) override;
+    void presentAboutToBeQueued(QWindow *window) override;
+
+    VkSurfaceKHR createSurface(QWaylandWindow *window);
+
+private:
+    QVulkanInstance *m_instance = nullptr;
+    PFN_vkGetPhysicalDeviceWaylandPresentationSupportKHR m_getPhysDevPresSupport = nullptr;
+    PFN_vkCreateWaylandSurfaceKHR m_createSurface = nullptr;
 };
 
-}
+} // namespace QtWaylandClient
 
 QT_END_NAMESPACE
 
-#endif // QWAYLANDSHMWINDOW_H
+#endif // QWAYLANDVULKANINSTANCE_P_H

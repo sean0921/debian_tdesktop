@@ -99,6 +99,11 @@ extern const struct wl_interface zxdg_output_manager_v1_interface;
  *
  * This typically corresponds to a monitor that displays part of the
  * compositor space.
+ *
+ * For objects version 3 onwards, after all xdg_output properties have been
+ * sent (when the object is created and when properties are updated), a
+ * wl_output.done event is sent. This allows changes to the output
+ * properties to be seen as atomic, even if they happen via multiple events.
  * @section page_iface_zxdg_output_v1_api API
  * See @ref iface_zxdg_output_v1.
  */
@@ -109,6 +114,11 @@ extern const struct wl_interface zxdg_output_manager_v1_interface;
  *
  * This typically corresponds to a monitor that displays part of the
  * compositor space.
+ *
+ * For objects version 3 onwards, after all xdg_output properties have been
+ * sent (when the object is created and when properties are updated), a
+ * wl_output.done event is sent. This allows changes to the output
+ * properties to be seen as atomic, even if they happen via multiple events.
  */
 extern const struct wl_interface zxdg_output_v1_interface;
 
@@ -255,6 +265,10 @@ struct zxdg_output_v1_listener {
 	 *
 	 * This allows changes to the xdg_output properties to be seen as
 	 * atomic, even if they happen via multiple events.
+	 *
+	 * For objects version 3 onwards, this event is deprecated.
+	 * Compositors are not required to send it anymore and must send
+	 * wl_output.done instead.
 	 */
 	void (*done)(void *data,
 		     struct zxdg_output_v1 *zxdg_output_v1);
@@ -299,10 +313,13 @@ struct zxdg_output_v1_listener {
 	 * 'Virtual X11 output via :1'.
 	 *
 	 * The description event is sent after creating an xdg_output (see
-	 * xdg_output_manager.get_xdg_output). This event is only sent once
+	 * xdg_output_manager.get_xdg_output) and whenever the description
+	 * changes. The description is optional, and may not be sent at
+	 * all.
+	 *
+	 * For objects of version 2 and lower, this event is only sent once
 	 * per xdg_output, and the description does not change over the
-	 * lifetime of the wl_output global. The description is optional,
-	 * and may not be sent at all.
+	 * lifetime of the wl_output global.
 	 * @param description output description
 	 * @since 2
 	 */

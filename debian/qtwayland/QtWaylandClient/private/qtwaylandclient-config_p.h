@@ -1,4 +1,5 @@
 #define QT_FEATURE_wayland_client 1
+#define QT_FEATURE_egl_extension_platform_wayland 1
 #define QT_FEATURE_wayland_brcm -1
 #define QT_FEATURE_wayland_client_fullscreen_shell_v1 1
 #define QT_FEATURE_wayland_client_ivi_shell 1

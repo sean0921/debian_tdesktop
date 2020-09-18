@@ -58,7 +58,7 @@ Copyright: 2016,2019 The Qt Company Ltd.
            2016 Robin Burchell <robin.burchell@viroteck.net>
 License: Qt-Commercial or LGPL-3.0 or GPL-2-or-GPL-3
 Comment: Copied unmodified from build tree of the qtwayland-opensource-src
-         package of version 5.14.2-2, that is already in Debian main archive.
+         package of version 5.15.1-1, that is already in Debian main archive.
 
 License: CC0-1.0
  This work has been placed in the public domain. Full text of the license is
