@@ -1,0 +1,112 @@
+Description: Internal setting for hide popups overlapping other controls
+ Create an empty "nopopupdropdown" file in the "tdata" directory to activate
+ the changes: `touch ~/.local/share/TelegramDesktop/tdata/nopopupdropdown`.
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Forwarded: https://github.com/telegramdesktop/tdesktop/pull/8009
+Last-Update: Sat, 19 Sep 2020 08:13:17 +0300
+
+--- a/Telegram/SourceFiles/chat_helpers/tabbed_panel.cpp
++++ b/Telegram/SourceFiles/chat_helpers/tabbed_panel.cpp
+@@ -232,7 +232,9 @@ void TabbedPanel::leaveEventHook(QEvent
+ }
+ 
+ void TabbedPanel::otherEnter() {
+-	showAnimated();
++	if (cPopupDropdown()) {
++		showAnimated();
++	}
+ }
+ 
+ void TabbedPanel::otherLeave() {
+--- a/Telegram/SourceFiles/core/application.cpp
++++ b/Telegram/SourceFiles/core/application.cpp
+@@ -206,6 +206,7 @@ void Application::run() {
+ 	}
+ 
+ 	Core::App().settings().setWindowControlsLayout(Platform::WindowControlsLayout());
++	cSetPopupDropdown(!QFileInfo(cWorkingDir() + u"tdata/nopopupdropdown"_q).isFile());
+ 
+ 	_translator = std::make_unique<Lang::Translator>();
+ 	QCoreApplication::instance()->installTranslator(_translator.get());
+--- a/Telegram/SourceFiles/history/history_widget.cpp
++++ b/Telegram/SourceFiles/history/history_widget.cpp
+@@ -796,7 +796,11 @@ void HistoryWidget::initTabbedSelector()
+ 	refreshTabbedPanel();
+ 
+ 	_tabbedSelectorToggle->addClickHandler([=] {
+-		toggleTabbedSelectorMode();
++		if (!cPopupDropdown() && _tabbedPanel && _tabbedPanel->isHidden()) {
++			_tabbedPanel->showAnimated();
++		} else {
++			toggleTabbedSelectorMode();
++		}
+ 	});
+ 
+ 	const auto selector = controller()->tabbedSelector();
+--- a/Telegram/SourceFiles/history/view/history_view_compose_controls.cpp
++++ b/Telegram/SourceFiles/history/view/history_view_compose_controls.cpp
+@@ -663,7 +663,11 @@ void ComposeControls::initTabbedSelector
+ 	}
+ 
+ 	_tabbedSelectorToggle->addClickHandler([=] {
+-		toggleTabbedSelectorMode();
++		if (!cPopupDropdown() && _tabbedPanel && _tabbedPanel->isHidden()) {
++			_tabbedPanel->showAnimated();
++		} else {
++			toggleTabbedSelectorMode();
++		}
+ 	});
+ 
+ 	const auto selector = _window->tabbedSelector();
+--- a/Telegram/SourceFiles/media/view/media_view_overlay_widget.cpp
++++ b/Telegram/SourceFiles/media/view/media_view_overlay_widget.cpp
+@@ -1232,7 +1232,7 @@ void OverlayWidget::dropdownHidden() {
+ 	_ignoringDropdown = true;
+ 	_lastMouseMovePos = mapFromGlobal(QCursor::pos());
+ 	updateOver(_lastMouseMovePos);
+-	_ignoringDropdown = false;
++	_ignoringDropdown = !cPopupDropdown();
+ 	if (!_controlsHideTimer.isActive()) {
+ 		onHideControls(true);
+ 	}
+@@ -1980,6 +1980,7 @@ void OverlayWidget::clearControlsState()
+ 	if (!_animationOpacities.empty()) {
+ 		_animationOpacities.clear();
+ 	}
++	_ignoringDropdown = !cPopupDropdown();
+ }
+ 
+ void OverlayWidget::showPhoto(
+--- a/Telegram/SourceFiles/settings.cpp
++++ b/Telegram/SourceFiles/settings.cpp
+@@ -75,6 +75,7 @@ float64 gRetinaFactor = 1.;
+ int32 gIntRetinaFactor = 1;
+ 
+ int gOtherOnline = 0;
++bool gPopupDropdown = true;
+ 
+ int32 gAutoDownloadPhoto = 0; // all auto download
+ int32 gAutoDownloadAudio = 0;
+--- a/Telegram/SourceFiles/settings.h
++++ b/Telegram/SourceFiles/settings.h
+@@ -129,6 +129,7 @@ DeclareSetting(QStringList, SendPaths);
+ DeclareSetting(QString, StartUrl);
+ 
+ DeclareSetting(int, OtherOnline);
++DeclareSetting(bool, PopupDropdown);
+ 
+ inline void cChangeTimeFormat(const QString &newFormat) {
+ 	if (!newFormat.isEmpty()) cSetTimeFormat(newFormat);
+--- a/Telegram/SourceFiles/ui/filter_icon_panel.cpp
++++ b/Telegram/SourceFiles/ui/filter_icon_panel.cpp
+@@ -282,7 +282,9 @@ void FilterIconPanel::leaveEventHook(QEv
+ }
+ 
+ void FilterIconPanel::otherEnter() {
+-	showAnimated();
++	if (cPopupDropdown()) {
++		showAnimated();
++	}
+ }
+ 
+ void FilterIconPanel::otherLeave() {
