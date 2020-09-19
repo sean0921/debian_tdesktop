@@ -1,0 +1,128 @@
+Description: Dynamically load packed resources from separate file
+ This reduces amount of main memory required for linking stage.
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Forwarded: https://github.com/telegramdesktop/tdesktop/pull/8667
+Last-Update: Thu, 01 Oct 2020 08:59:43 +0300
+
+--- a/Telegram/CMakeLists.txt
++++ b/Telegram/CMakeLists.txt
+@@ -65,7 +65,20 @@ generate_styles(Telegram ${src_loc} "${s
+ generate_lang(Telegram ${res_loc}/langs/lang.strings)
+ generate_numbers(Telegram ${res_loc}/numbers.txt)
+ 
+-set_target_properties(Telegram PROPERTIES AUTOMOC ON AUTORCC ON)
++set_target_properties(Telegram PROPERTIES AUTOMOC ON)
++if (TDESKTOP_RESOURCES STREQUAL "Bundled")
++    set_target_properties(Telegram PROPERTIES AUTORCC ON)
++elseif (TDESKTOP_RESOURCES STREQUAL "Packed")
++    set(qrc_files "$<FILTER:$<TARGET_PROPERTY:Telegram,SOURCES>,INCLUDE,\\.qrc$>")
++    target_compile_definitions(Telegram PRIVATE TDESKTOP_USE_PACKED_RESOURCES)
++    target_sources(Telegram PRIVATE "${CMAKE_BINARY_DIR}/tresources.rcc")
++    add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/tresources.rcc"
++        DEPENDS "${qrc_files}"  # FIXME: incomplete dependencies list, missing qrc content
++        COMMAND rcc --binary -o "${CMAKE_BINARY_DIR}/tresources.rcc" "${qrc_files}"
++        COMMAND_EXPAND_LISTS VERBATIM
++    )
++    set_target_properties(Telegram PROPERTIES RESOURCE "${CMAKE_BINARY_DIR}/tresources.rcc")
++endif()
+ 
+ if (LINUX)
+     target_link_libraries(Telegram
+@@ -1343,7 +1356,11 @@ endif()
+ if (LINUX AND DESKTOP_APP_USE_PACKAGED)
+     include(GNUInstallDirs)
+     configure_file("../lib/xdg/telegramdesktop.appdata.xml.in" "${CMAKE_CURRENT_BINARY_DIR}/telegramdesktop.appdata.xml" @ONLY)
+-    install(TARGETS Telegram RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" BUNDLE DESTINATION "${CMAKE_INSTALL_BINDIR}")
++    install(TARGETS Telegram
++        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
++        BUNDLE DESTINATION "${CMAKE_INSTALL_BINDIR}"
++        RESOURCE DESTINATION "${CMAKE_INSTALL_DATADIR}/TelegramDesktop"
++    )
+     install(FILES "Resources/art/icon16.png" DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/16x16/apps" RENAME "telegram.png")
+     install(FILES "Resources/art/icon32.png" DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/32x32/apps" RENAME "telegram.png")
+     install(FILES "Resources/art/icon48.png" DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/48x48/apps" RENAME "telegram.png")
+--- a/Telegram/Resources/qrc/telegram/telegram.qrc
++++ b/Telegram/Resources/qrc/telegram/telegram.qrc
+@@ -53,9 +53,6 @@
+     <file alias="night.tdesktop-theme">../../night.tdesktop-theme</file>
+     <file alias="night-green.tdesktop-theme">../../night-green.tdesktop-theme</file>
+   </qresource>
+-  <qresource prefix="/qt-project.org">
+-    <file>../qmime/freedesktop.org.xml</file>
+-  </qresource>
+   <qresource prefix="/misc">
+     <file alias="default_shortcuts-custom.json">../../default_shortcuts-custom.json</file>
+     <file alias="telegramdesktop.desktop">../../../../lib/xdg/telegramdesktop.desktop</file>
+--- a/Telegram/SourceFiles/core/file_utilities.cpp
++++ b/Telegram/SourceFiles/core/file_utilities.cpp
+@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesk
+ 
+ #include <QtWidgets/QFileDialog>
+ #include <QtCore/QCoreApplication>
++#include <QtCore/QResource>
+ #include <QtCore/QStandardPaths>
+ #include <QtGui/QDesktopServices>
+ 
+@@ -376,3 +377,20 @@ bool GetDefault(
+ 
+ } // namespace internal
+ } // namespace FileDialog
++
++void Resources::LoadAllData() {
++#ifdef TDESKTOP_USE_PACKED_RESOURCES
++	// Load resources packed into a separated file
++	QStringList paths;
++#ifdef _DEBUG
++	paths += cExeDir();
++#endif
++	paths += QStandardPaths::standardLocations(QStandardPaths::AppDataLocation);
++	for (QString directory : paths) {
++		if (QResource::registerResource(directory + u"/tresources.rcc"_q)) {
++			return;  // found
++		}
++	}
++	qFatal("Packed resources not found");
++#endif
++}
+--- a/Telegram/SourceFiles/core/file_utilities.h
++++ b/Telegram/SourceFiles/core/file_utilities.h
+@@ -114,3 +114,9 @@ bool GetDefault(
+ 
+ } // namespace internal
+ } // namespace FileDialog
++
++namespace Resources {
++
++void LoadAllData();
++
++} // namespace Resources
+--- a/Telegram/SourceFiles/core/launcher.cpp
++++ b/Telegram/SourceFiles/core/launcher.cpp
+@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesk
+ #include "ui/ui_utility.h"
+ #include "core/crash_reports.h"
+ #include "core/update_checker.h"
++#include "core/file_utilities.h"
+ #include "core/sandbox.h"
+ #include "base/concurrent_timer.h"
+ 
+@@ -296,6 +297,7 @@ void Launcher::init() {
+ 	});
+ 
+ 	QApplication::setApplicationName(qsl("TelegramDesktop"));
++	Resources::LoadAllData();  // should be called after setting an application name
+ 
+ #if defined Q_OS_UNIX && !defined Q_OS_MAC && QT_VERSION >= QT_VERSION_CHECK(5, 7, 0)
+ 	QApplication::setDesktopFileName(Platform::GetLauncherFilename());
+--- a/Telegram/cmake/telegram_options.cmake
++++ b/Telegram/cmake/telegram_options.cmake
+@@ -15,6 +15,9 @@ set(TDESKTOP_API_ID "0" CACHE STRING "Pr
+ set(TDESKTOP_API_HASH "" CACHE STRING "Provide 'api_hash' for the Telegram API access.")
+ set(TDESKTOP_LAUNCHER_BASENAME "" CACHE STRING "Desktop file base name (Linux only).")
+ 
++set(TDESKTOP_RESOURCES "Bundled" CACHE STRING "Determines how to import resource files.")
++set_property(CACHE TDESKTOP_RESOURCES PROPERTY STRINGS "Bundled;Packed")
++
+ if (TDESKTOP_API_TEST)
+     set(TDESKTOP_API_ID 17349)
+     set(TDESKTOP_API_HASH 344583e45741c457fe1862106095a5eb)
