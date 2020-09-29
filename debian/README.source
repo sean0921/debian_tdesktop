@@ -20,13 +20,9 @@ bundled copy here.
 There is Qt WaylandClient plugin here, its private headers has been copied
 unmodified from build tree of the _qtwayland-opensource-src_ source package.
 If you need to update it, you likely need to update it in case of backporting or
-a new Qt release, do the following commands (given in simplified form).
-
-    apt-get source qtwayland-opensource-src
-    debian/rules -C qtwayland-opensource-src-* build dh_auto_install
-    rsync -r --delete \
-        qtwayland-opensource-src-*/debian/tmp/usr/include/*/qt5/QtWaylandClient/*/QtWaylandClient \
-        telegram-desktop-*/debian/qtwayland
+a new Qt release, execute update-qtwayland target from the debian/rules script.
+It will download and configure the package, and then it will install necessary
+private headers.
 
 After that, please do not forget to refresh source version number in the
 debian/copyright file. A [request][3] to expose the private headers has been
