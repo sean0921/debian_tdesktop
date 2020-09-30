@@ -1,3 +1,13 @@
+telegram-desktop (2.2.0+ds-3) unstable; urgency=medium
+
+  * Add private headers from qtwayland-opensource-src of version 5.15.1-1.
+  * New patches:
+    - Packed-resources.patch puts app resources into a separate .rcc file.
+    - No-random-popups.patch introduces an internal flag to deactivate some
+      menus that popup suddenly.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Wed, 30 Sep 2020 08:40:37 +0300
+
 telegram-desktop (2.2.0+ds-2) unstable; urgency=medium
 
   * Fix build against updated mapbox-variant 1.2.0.
