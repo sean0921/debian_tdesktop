@@ -31,6 +31,7 @@ Build-Depends-Arch:
  libxxhash-dev,
  qtbase5-dev (>=5.12.0),
  qtbase5-private-dev (>=5.14.2),
+ qtwayland5-private-dev,
  zlib1g-dev (>=1:1.2.8),
 Standards-Version: 4.5.0
 Rules-Requires-Root: no

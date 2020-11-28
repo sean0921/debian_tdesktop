@@ -19,10 +19,7 @@ ifeq ($(filter noopt,$(DEB_BUILD_OPTIONS)),)
  export DEB_CXXFLAGS_MAINT_APPEND = -Wno-deprecated-declarations
 endif
 
-ifeq ($(DEB_HOST_ARCH_OS),linux)
- QTWAYLAND_VERSION := $(shell dpkg-query -Wf '$${source:Upstream-Version}' libqt5waylandclient5-dev)
- EXTRA_CMAKE_VARIABLES += DESKTOP_APP_QTWAYLANDCLIENT_PRIVATE_HEADERS=$(CURDIR)/debian/qtwayland/$(QTWAYLAND_VERSION)
-else
+ifneq ($(DEB_HOST_ARCH_OS),linux)
  # Make sure Qt WaylandClient plugin is not in use.
  export DEB_CPPFLAGS_MAINT_APPEND = -UQT_WAYLANDCLIENT_LIB
 endif
@@ -65,16 +62,3 @@ override_dh_dwz:
 
 override_dh_gencontrol:
 	dh_gencontrol -- $(EXTRA_SUBSTVARS:%="-V%")
-
-QTW_SRC = ../qtwayland-opensource-src-$(QTWAYLAND_VERSION)
-QTW_DIR = $(CURDIR)/debian/qtwayland
-JOBS_PARAM = $(or $(filter -j%,$(MAKEFLAGS)),-j$(shell nproc || echo 1))
-update-qtwayland:
-	test x$(QTWAYLAND_VERSION) != x  # check installed Qt version for deleting correct directory
-	test -d $(QTW_SRC) || ( cd .. && apt-get source qtwayland-opensource-src )
-	cd $(QTW_SRC) && qmake QT_TOOL.qtwaylandscanner.binary=/usr/lib/qt5/bin/qtwaylandscanner
-	make -C $(QTW_SRC) $(JOBS_PARAM) qmake_all
-	make -C $(QTW_SRC)/src/client $(JOBS_PARAM) install_private_headers INSTALL_ROOT=$(QTW_DIR)/tmp
-	rm -rf $(QTW_DIR)/$(QTWAYLAND_VERSION)
-	mv $(QTW_DIR)/tmp/usr/include/*/qt5/QtWaylandClient/*/ $(QTW_DIR)/
-	rm -r $(QTW_DIR)/tmp
