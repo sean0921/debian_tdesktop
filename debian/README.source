@@ -1,12 +1,7 @@
 Notes about telegram-desktop source package
 -------------------------------------------
 
-This short document describes how to update the _telegram-desktop_ package and
-how to build it against various suites. Besides upstream tarball the package
-contains bundled StatusNotifierItem and QtWayland plugins under debian/
-directory.
-
-The first one is a patched copy of source from the _lxqt-qtplugin_ package. All
+There is a patched copy of the _lxqt-qtplugin_ package in debian/ folder. All
 internal changes can be seen in the commit [e15e78c][1]. If you choose to
 refresh the source, please make sure you correctly apply these fixes. Although,
 they are likely would be present in the latest update, since the modifications
@@ -16,16 +11,3 @@ bundled copy here.
 
  [1]: https://salsa.debian.org/debian/telegram-desktop/commit/e15e78c26c4076814888bea32e8a3f5b5a4a8f5f
  [2]: https://bugs.debian.org/951833
-
-There is Qt WaylandClient plugin here, its private headers has been copied
-unmodified from build tree of the _qtwayland-opensource-src_ source package.
-If you need to update it, you likely need to update it in case of backporting or
-a new Qt release, execute update-qtwayland target from the debian/rules script.
-It will download and configure the package, and then it will install necessary
-private headers.
-
-After that, please do not forget to refresh source version number in the
-debian/copyright file. A [request][3] to expose the private headers has been
-already filed, but it would hardly be done.
-
- [3]: https://bugs.debian.org/894472

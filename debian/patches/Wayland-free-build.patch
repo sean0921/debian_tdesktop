@@ -7,7 +7,7 @@ Last-Update: Thu, 30 Jul 2020 18:27:51 +0300
 
 --- a/Telegram/CMakeLists.txt
 +++ b/Telegram/CMakeLists.txt
-@@ -127,7 +127,7 @@ PRIVATE
+@@ -140,7 +140,7 @@ PRIVATE
  
  if (LINUX AND DESKTOP_APP_USE_PACKAGED AND Qt5WaylandClient_VERSION VERSION_LESS 5.13.0)
      find_package(PkgConfig REQUIRED)
