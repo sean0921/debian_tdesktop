@@ -1,0 +1,48 @@
+Description: Don't check return value of sws_scale
+  Mitigage FFmpeg bug in assembler code.
+Origin: https://github.com/desktop-app/lib_lottie/commit/b666e438be285b2781d93ac64138ab32ab4a85e0
+Bug-Alpine: https://gitlab.alpinelinux.org/alpine/aports/-/issues/11722
+Bug-Debian: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=973528
+Author: Ilya Fedin <fedin-ilja2010@ya.ru>
+Date: Mon, 31 Aug 2020 11:26:25 +0400
+Acked-By: Nicholas Guriev <guriev-ns@ya.ru>
+Last-Update: Wed, 16 Dec 2020 17:44:17 +0300
+
+--- a/Telegram/lib_lottie/lottie/lottie_cache.cpp
++++ b/Telegram/lib_lottie/lottie/lottie_cache.cpp
+@@ -138,7 +138,7 @@ void DecodeYUV2RGB(
+ 	uint8_t *dst[AV_NUM_DATA_POINTERS] = { to.bits(), nullptr };
+ 	int dstLineSize[AV_NUM_DATA_POINTERS] = { to.bytesPerLine(), 0 };
+ 
+-	const auto lines = sws_scale(
++	sws_scale(
+ 		context.get(),
+ 		src,
+ 		srcLineSize,
+@@ -146,8 +146,6 @@ void DecodeYUV2RGB(
+ 		to.height(),
+ 		dst,
+ 		dstLineSize);
+-
+-	Ensures(lines == to.height());
+ }
+ 
+ void DecodeAlpha(QImage &to, const EncodedStorage &from) {
+@@ -215,7 +213,7 @@ void EncodeRGB2YUV(
+ 		0
+ 	};
+ 
+-	const auto lines = sws_scale(
++	sws_scale(
+ 		context.get(),
+ 		src,
+ 		srcLineSize,
+@@ -223,8 +221,6 @@ void EncodeRGB2YUV(
+ 		from.height(),
+ 		dst,
+ 		dstLineSize);
+-
+-	Ensures(lines == from.height());
+ }
+ 
+ void EncodeAlpha(EncodedStorage &to, const QImage &from) {
