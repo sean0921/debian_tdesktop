@@ -6,8 +6,14 @@ EXTRA_CMAKE_VARIABLES += \
 	TDESKTOP_API_ID=50322 \
 	TDESKTOP_API_HASH=9ff1a639196c0779c86dd661af8522ba \
 	TDESKTOP_RESOURCES=Packed \
-	DESKTOP_APP_USE_PACKAGED_QRCODE=ON \
 	CMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
+
+# Built against package rlottie is currently broken due to incorrect order of
+# macro definitions. We try to fix the issue here.
+DEB_CPPFLAGS_MAINT_APPEND += -DDESKTOP_APP_USE_PACKAGED_RLOTTIE
+
+# Reveal any errors with pre-compiled headers.
+DEB_CPPFLAGS_MAINT_APPEND += -Werror=invalid-pch
 
 ifeq ($(filter terse,$(DEB_BUILD_OPTIONS)),)
  # Print entire arguments of moc invocation.
@@ -16,12 +22,14 @@ endif
 
 ifeq ($(filter noopt,$(DEB_BUILD_OPTIONS)),)
  # Hide warnings useless for final build.
- export DEB_CXXFLAGS_MAINT_APPEND = -Wno-deprecated-declarations
+ DEB_CXXFLAGS_MAINT_APPEND += -Wno-deprecated-declarations
 endif
 
 ifneq ($(DEB_HOST_ARCH_OS),linux)
- # Make sure Qt WaylandClient plugin is not in use.
- export DEB_CPPFLAGS_MAINT_APPEND = -UQT_WAYLANDCLIENT_LIB
+ # Wayland is not ready on GNU/Hurd or Debian/kFreeBSD.
+ # Make sure KWayland library and Qt WaylandClient plugin are not in use.
+ EXTRA_CMAKE_VARIABLES += DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION=ON
+ DEB_CPPFLAGS_MAINT_APPEND += -UQT_WAYLANDCLIENT_LIB
 endif
 
 ifeq ($(DEB_HOST_ARCH_BITS),32)
@@ -32,11 +40,12 @@ ifeq ($(DEB_HOST_ARCH_BITS),32)
  endif
 endif
 
-CPPLIBS_PACKAGES = libexpected-dev libmapbox-variant-dev libmsgsl-dev librange-v3-dev libtgvoip-dev
+CPPLIBS_PACKAGES = libexpected-dev libmsgsl-dev librange-v3-dev libtgowt-dev libtgvoip-dev
 EXTRA_SUBSTVARS += \
 	cpplibs:Built-Using=$(shell dpkg-query -Wf '$${source:Package}(=$${Version}),' $(CPPLIBS_PACKAGES))
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_CPPFLAGS_MAINT_APPEND DEB_CXXFLAGS_MAINT_APPEND
 
 # Make debugging a little easier. https://stackoverflow.com/a/25817631/5000805
 print-%:
@@ -49,7 +58,7 @@ override_dh_auto_configure:
 	ln -s -f -n -r debian Telegram/ThirdParty
 	dh_auto_configure -- $(EXTRA_CMAKE_VARIABLES:%=-D%)
 
-# Remove symbolic link for access to StatusNotifierItem module.
+# Remove symbolic link for access to StatusNotifierItem and tgcalls modules.
 execute_after_dh_auto_clean:
 	rm -f Telegram/ThirdParty
 
