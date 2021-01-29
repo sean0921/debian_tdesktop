@@ -1,9 +1,4 @@
-Check-xcb-screensaver-extension.patch
 Do-not-sync-wallpaper.patch
 Ignore-emoji-pack.patch
 No-random-popups.patch
 Packed-resources.patch
-Replace-mapbox-variant.patch
-Skip-check-result-of-sws_scale.patch
-Static-libtgvoip.patch
-Wayland-free-build.patch
