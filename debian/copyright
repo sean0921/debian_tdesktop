@@ -1,5 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Telegram Desktop
+Upstream-Contact: John Preston <johnprestonmail@gmail.com>
 Source: https://github.com/telegramdesktop/tdesktop
 Files-Excluded: Telegram/ThirdParty/*
                 Telegram/Patches/*.diff
@@ -7,7 +8,7 @@ Files-Excluded: Telegram/ThirdParty/*
 Comment: Exclude unused third-party modules to reduce code size.
 
 Files: *
-Copyright: 2014-2020 John Preston <johnprestonmail@gmail.com>
+Copyright: 2014-2021 The Telegram Desktop Authors.
 License: GPL-3.0+ with OpenSSL exception
 
 Files: lib/xdg/telegramdesktop.appdata.xml.in
@@ -42,6 +43,10 @@ Files: debian/*
 Copyright: 2016-2020 Nicholas Guriev <guriev-ns@ya.ru>
 License: Public-domain
 Comment: Contributing policy - https://cla-assistant.io/telegramdesktop/tdesktop
+
+Files: debian/tgcalls/*
+Copyright: 2020 The Telegram Calls Library Authors
+License: LGPL-3.0
 
 Files: debian/statusnotifieritem/*
 Source: https://github.com/lxqt/lxqt-qtplugin
@@ -113,6 +118,15 @@ License: LGPL-2.1+ with Spelling-Providers exception
  .
  On Debian systems, the complete text of the GNU Lesser General Public License
  version 2.1 can be found in /usr/share/common-licenses/LGPL-2.1 file.
+
+License: LGPL-3.0
+ This code is published under the terms of the GNU Lesser General Public
+ License version 3. Full license text can be found here:
+   https://github.com/TelegramMessenger/tgcalls/blob/master/LICENSE
+ .
+ On Debian systems, the complete text of the GNU Lesser General Public License
+ version 3 can be found in the following file:
+   /usr/share/common-licenses/LGPL-3
 
 License: GPL-3.0
  This program is free software: you can redistribute it and/or modify it under
