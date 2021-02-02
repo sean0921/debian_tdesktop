@@ -21,13 +21,8 @@ void DefaultPreviewWindowFramePaint(QImage &preview, const style::palette &palet
 
 namespace Platform {
 
-inline bool AllowNativeWindowFrameToggle() {
-	return true;
-}
-
-inline object_ptr<Window::TitleWidget> CreateTitleWidget(QWidget *parent) {
-	return object_ptr<Window::TitleWidgetQt>(parent);
-}
+bool AllowNativeWindowFrameToggle();
+object_ptr<Window::TitleWidget> CreateTitleWidget(QWidget *parent);
 
 inline bool NativeTitleRequiresShadow() {
 	return false;

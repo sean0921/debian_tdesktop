@@ -19,11 +19,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/layers/generic_box.h"
 #include "ui/toast/toast.h"
 #include "ui/text/text_utilities.h"
-#include "ui/text_options.h"
+#include "ui/text/text_options.h"
+#include "ui/boxes/calendar_box.h"
 #include "ui/special_buttons.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "settings/settings_privacy_security.h"
-#include "boxes/calendar_box.h"
 #include "boxes/confirm_box.h"
 #include "boxes/passcode_box.h"
 #include "boxes/peers/edit_peer_permissions_box.h"
@@ -34,6 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "core/core_cloud_password.h"
 #include "base/unixtime.h"
+#include "base/qt_adapters.h"
 #include "apiwrap.h"
 #include "main/main_session.h"
 #include "styles/style_layers.h"
@@ -46,70 +47,6 @@ constexpr auto kMaxRestrictDelayDays = 366;
 constexpr auto kSecondsInDay = 24 * 60 * 60;
 constexpr auto kSecondsInWeek = 7 * kSecondsInDay;
 constexpr auto kAdminRoleLimit = 16;
-
-enum class PasswordErrorType {
-	None,
-	NoPassword,
-	Later,
-};
-
-void SetCloudPassword(not_null<Ui::GenericBox*> box, not_null<UserData*> user) {
-	user->session().api().passwordState(
-	) | rpl::start_with_next([=] {
-		using namespace Settings;
-		const auto weak = Ui::MakeWeak(box);
-		if (CheckEditCloudPassword(&user->session())) {
-			box->getDelegate()->show(
-				EditCloudPasswordBox(&user->session()));
-		} else {
-			box->getDelegate()->show(CloudPasswordAppOutdatedBox());
-		}
-		if (weak) {
-			weak->closeBox();
-		}
-	}, box->lifetime());
-}
-
-void TransferPasswordError(
-		not_null<Ui::GenericBox*> box,
-		not_null<UserData*> user,
-		PasswordErrorType error) {
-	box->setTitle(tr::lng_rights_transfer_check());
-	box->setWidth(st::transferCheckWidth);
-
-	auto text = tr::lng_rights_transfer_check_about(
-		tr::now,
-		lt_user,
-		Ui::Text::Bold(user->shortName()),
-		Ui::Text::WithEntities
-	).append('\n').append('\n').append(
-		tr::lng_rights_transfer_check_password(
-			tr::now,
-			Ui::Text::RichLangValue)
-	).append('\n').append('\n').append(
-		tr::lng_rights_transfer_check_session(
-			tr::now,
-			Ui::Text::RichLangValue)
-	);
-	if (error == PasswordErrorType::Later) {
-		text.append('\n').append('\n').append(
-			tr::lng_rights_transfer_check_later(
-				tr::now,
-				Ui::Text::RichLangValue));
-	}
-	box->addRow(object_ptr<Ui::FlatLabel>(
-		box,
-		rpl::single(text),
-		st::boxLabel));
-	if (error == PasswordErrorType::Later) {
-		box->addButton(tr::lng_box_ok(), [=] { box->closeBox(); });
-	} else {
-		box->addButton(tr::lng_rights_transfer_set_password(), [=] {
-			SetCloudPassword(box, user);
-		});
-		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
-	}
-}
 
 } // namespace
 
@@ -279,7 +216,8 @@ MTPChatAdminRights EditAdminBox::Defaults(not_null<PeerData*> peer) {
 			| Flag::f_delete_messages
 			| Flag::f_ban_users
 			| Flag::f_invite_users
-			| Flag::f_pin_messages)
+			| Flag::f_pin_messages
+			| Flag::f_manage_call)
 		: (Flag::f_change_info
 			| Flag::f_post_messages
 			| Flag::f_edit_messages
@@ -318,7 +256,7 @@ void EditAdminBox::prepare() {
 
 	const auto disabledMessages = [&] {
 		auto result = std::map<Flags, QString>();
-		if (!canSave() || (amCreator() && user()->isSelf())) {
+		if (!canSave()) {
 			result.emplace(
 				~Flags(0),
 				tr::lng_rights_about_admin_cant_edit(tr::now));
@@ -327,7 +265,11 @@ void EditAdminBox::prepare() {
 				disabledByDefaults,
 				tr::lng_rights_permission_for_all(tr::now));
 			if (const auto channel = peer()->asChannel()) {
-				if (!channel->amCreator()) {
+				if (amCreator() && user()->isSelf()) {
+					result.emplace(
+						~Flag::f_anonymous,
+						tr::lng_rights_permission_cant_edit(tr::now));
+				} else if (!channel->amCreator()) {
 					result.emplace(
 						~channel->adminRights(),
 						tr::lng_rights_permission_cant_edit(tr::now));
@@ -368,7 +310,7 @@ void EditAdminBox::prepare() {
 	}, lifetime());
 
 	if (canTransferOwnership()) {
-		const auto allFlags = FullAdminRights(isGroup);
+		const auto allFlags = AdminRightsForOwnershipTransfer(isGroup);
 		setupTransferButton(
 			isGroup
 		)->toggleOn(rpl::duplicate(
@@ -520,22 +462,17 @@ void EditAdminBox::transferOwnership() {
 }
 
 bool EditAdminBox::handleTransferPasswordError(const RPCError &error) {
-	const auto type = [&] {
-		const auto &type = error.type();
-		if (type == qstr("PASSWORD_MISSING")) {
-			return PasswordErrorType::NoPassword;
-		} else if (type.startsWith(qstr("PASSWORD_TOO_FRESH_"))
-			|| type.startsWith(qstr("SESSION_TOO_FRESH_"))) {
-			return PasswordErrorType::Later;
-		}
-		return PasswordErrorType::None;
-	}();
-	if (type == PasswordErrorType::None) {
-		return false;
+	const auto session = &user()->session();
+	auto about = tr::lng_rights_transfer_check_about(
+		tr::now,
+		lt_user,
+		Ui::Text::Bold(user()->shortName()),
+		Ui::Text::WithEntities);
+	if (auto box = PrePasswordErrorBox(error, session, std::move(about))) {
+		getDelegate()->show(std::move(box));
+		return true;
 	}
-
-	getDelegate()->show(Box(TransferPasswordError, user(), type));
-	return true;
+	return false;
 }
 
 void EditAdminBox::transferOwnershipChecked() {
@@ -639,7 +576,9 @@ void EditAdminBox::sendTransferRequestFrom(
 
 void EditAdminBox::refreshAboutAddAdminsText(bool canAddAdmins) {
 	_aboutAddAdmins->setText([&] {
-		if (!canSave() || (amCreator() && user()->isSelf())) {
+		if (amCreator() && user()->isSelf()) {
+			return QString();
+		} else if (!canSave()) {
 			return tr::lng_rights_about_admin_cant_edit(tr::now);
 		} else if (canAddAdmins) {
 			return tr::lng_rights_about_add_admins_yes(tr::now);
@@ -752,12 +691,12 @@ void EditRestrictedBox::showRestrictUntil() {
 		: base::unixtime::parse(getRealUntilValue()).date();
 	auto month = highlighted;
 	_restrictUntilBox = Ui::show(
-		Box<CalendarBox>(
+		Box<Ui::CalendarBox>(
 			month,
 			highlighted,
 			[this](const QDate &date) {
 				setRestrictUntil(
-					static_cast<int>(QDateTime(date).toTime_t()));
+					static_cast<int>(base::QDateToDateTime(date).toTime_t()));
 			}),
 		Ui::LayerOption::KeepOther);
 	_restrictUntilBox->setMaxDate(

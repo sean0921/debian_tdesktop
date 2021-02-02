@@ -29,7 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 #include <QtCore/QMimeData>
 #include <QtCore/QStack>
@@ -150,13 +150,26 @@ void EditLinkBox::prepare() {
 		session);
 	InitSpellchecker(_controller, text);
 
-	const auto url = content->add(
-		object_ptr<Ui::InputField>(
+	const auto placeholder = content->add(
+		object_ptr<Ui::RpWidget>(content),
+		st::markdownLinkFieldPadding);
+	placeholder->setAttribute(Qt::WA_TransparentForMouseEvents);
+	const auto url = Ui::AttachParentChild(
+		content,
+		object_ptr<Ui::MaskedInputField>(
 			content,
 			st::defaultInputField,
 			tr::lng_formatting_link_url(),
-			_startLink.trimmed()),
-		st::markdownLinkFieldPadding);
+			_startLink.trimmed()));
+	url->heightValue(
+	) | rpl::start_with_next([placeholder](int height) {
+		placeholder->resize(placeholder->width(), height);
+	}, placeholder->lifetime());
+	placeholder->widthValue(
+	) | rpl::start_with_next([=](int width) {
+		url->resize(width, url->height());
+	}, placeholder->lifetime());
+	url->move(placeholder->pos());
 
 	const auto submit = [=] {
 		const auto linkText = text->getLastText();
@@ -178,7 +191,7 @@ void EditLinkBox::prepare() {
 	connect(text, &Ui::InputField::submitted, [=] {
 		url->setFocusFast();
 	});
-	connect(url, &Ui::InputField::submitted, [=] {
+	connect(url, &Ui::MaskedInputField::submitted, [=] {
 		if (text->getLastText().isEmpty()) {
 			text->setFocusFast();
 		} else {
@@ -198,7 +211,11 @@ void EditLinkBox::prepare() {
 	setDimensions(st::boxWidth, content->height());
 
 	_setInnerFocus = [=] {
-		(_startText.isEmpty() ? text : url)->setFocusFast();
+		if (_startText.isEmpty()) {
+			text->setFocusFast();
+		} else {
+			url->setFocusFast();
+		}
 	};
 }
 
@@ -484,6 +501,11 @@ MessageLinksParser::MessageLinksParser(not_null<Ui::InputField*> field)
 	_field->installEventFilter(this);
 }
 
+void MessageLinksParser::parseNow() {
+	_timer.cancel();
+	parse();
+}
+
 bool MessageLinksParser::eventFilter(QObject *object, QEvent *event) {
 	if (object == _field) {
 		if (event->type() == QEvent::KeyPress) {
@@ -684,84 +706,4 @@ void MessageLinksParser::apply(
 		parsed.push_back(computeLink(range).toString());
 	}
 	_list = std::move(parsed);
-}
-
-void SetupSendMenuAndShortcuts(
-		not_null<Ui::RpWidget*> button,
-		Fn<SendMenuType()> type,
-		Fn<void()> silent,
-		Fn<void()> schedule) {
-	if (!silent && !schedule) {
-		return;
-	}
-	const auto menu = std::make_shared<base::unique_qptr<Ui::PopupMenu>>();
-	const auto showMenu = [=] {
-		const auto now = type();
-		if (now == SendMenuType::Disabled
-			|| (!silent && now == SendMenuType::SilentOnly)) {
-			return false;
-		}
-
-		*menu = base::make_unique_q<Ui::PopupMenu>(button);
-		if (silent && now != SendMenuType::Reminder) {
-			(*menu)->addAction(tr::lng_send_silent_message(tr::now), silent);
-		}
-		if (schedule && now != SendMenuType::SilentOnly) {
-			(*menu)->addAction(
-				(now == SendMenuType::Reminder
-					? tr::lng_reminder_message(tr::now)
-					: tr::lng_schedule_message(tr::now)),
-				schedule);
-		}
-		(*menu)->popup(QCursor::pos());
-		return true;
-	};
-	base::install_event_filter(button, [=](not_null<QEvent*> e) {
-		if (e->type() == QEvent::ContextMenu && showMenu()) {
-			return base::EventFilterResult::Cancel;
-		}
-		return base::EventFilterResult::Continue;
-	});
-
-	Shortcuts::Requests(
-	) | rpl::start_with_next([=](not_null<Shortcuts::Request*> request) {
-		using Command = Shortcuts::Command;
-
-		const auto now = type();
-		if (now == SendMenuType::Disabled
-			|| (!silent && now == SendMenuType::SilentOnly)) {
-			return;
-		}
-		(silent
-			&& (now != SendMenuType::Reminder)
-			&& request->check(Command::SendSilentMessage)
-			&& request->handle([=] {
-				silent();
-				return true;
-			}))
-		||
-		(schedule
-			&& (now != SendMenuType::SilentOnly)
-			&& request->check(Command::ScheduleMessage)
-			&& request->handle([=] {
-				schedule();
-				return true;
-			}))
-		||
-		(request->check(Command::JustSendMessage) && request->handle([=] {
-			const auto post = [&](QEvent::Type type) {
-				QApplication::postEvent(
-					button,
-					new QMouseEvent(
-						type,
-						QPointF(0, 0),
-						Qt::LeftButton,
-						Qt::LeftButton,
-						Qt::NoModifier));
-			};
-			post(QEvent::MouseButtonPress);
-			post(QEvent::MouseButtonRelease);
-			return true;
-		}));
-	}, button->lifetime());
 }

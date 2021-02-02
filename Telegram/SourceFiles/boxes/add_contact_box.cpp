@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "mtproto/sender.h"
 #include "base/flat_set.h"
+#include "base/openssl_help.h"
 #include "boxes/confirm_box.h"
 #include "boxes/confirm_phone_box.h" // ExtractPhonePrefix.
 #include "boxes/photo_crop_box.h"
@@ -27,7 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/special_buttons.h"
 #include "ui/special_fields.h"
-#include "ui/text_options.h"
+#include "ui/text/text_options.h"
 #include "ui/unread_badge.h"
 #include "ui/ui_utility.h"
 #include "data/data_channel.h"
@@ -39,6 +40,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "apiwrap.h"
+#include "api/api_invite_links.h"
 #include "main/main_session.h"
 #include "facades.h"
 #include "styles/style_layers.h"
@@ -244,7 +246,6 @@ private:
 
 	Fn<void()> _revokeCallback;
 	mtpRequestId _revokeRequestId = 0;
-	QPointer<ConfirmBox> _weakRevokeConfirmBox;
 
 };
 
@@ -383,7 +384,7 @@ void AddContactBox::save() {
 		lastName = QString();
 	}
 	_sentName = firstName;
-	_contactId = rand_value<uint64>();
+	_contactId = openssl::RandomValue<uint64>();
 	_addRequest = _session->api().request(MTPcontacts_ImportContacts(
 		MTP_vector<MTPInputContact>(
 			1,
@@ -613,7 +614,9 @@ void GroupInfoBox::createGroup(
 }
 
 void GroupInfoBox::submit() {
-	if (_creationRequestId) return;
+	if (_creationRequestId || _creatingInviteLink) {
+		return;
+	}
 
 	auto title = TextUtilities::PrepareForSending(_title->getLastText());
 	auto description = _description
@@ -633,7 +636,7 @@ void GroupInfoBox::submit() {
 				not_null<PeerListBox*> box) {
 			auto create = [box, title, weak] {
 				if (weak) {
-					auto rows = box->peerListCollectSelectedRows();
+					auto rows = box->collectSelectedRows();
 					if (!rows.empty()) {
 						weak->createGroup(box, title, rows);
 					}
@@ -644,13 +647,16 @@ void GroupInfoBox::submit() {
 		};
 		Ui::show(
 			Box<PeerListBox>(
-				std::make_unique<AddParticipantsBoxController>(_navigation),
+				std::make_unique<AddParticipantsBoxController>(
+					&_navigation->session()),
 				std::move(initBox)),
 			Ui::LayerOption::KeepOther);
 	}
 }
 
 void GroupInfoBox::createChannel(const QString &title, const QString &description) {
+	Expects(!_creationRequestId);
+
 	const auto flags = (_type == Type::Megagroup)
 		? MTPchannels_CreateChannel::Flag::f_megagroup
 		: MTPchannels_CreateChannel::Flag::f_broadcast;
@@ -691,25 +697,7 @@ void GroupInfoBox::createChannel(const QString &title, const QString &descriptio
 						std::move(image));
 				}
 				_createdChannel = channel;
-				_creationRequestId = _api.request(MTPmessages_ExportChatInvite(
-					_createdChannel->input
-				)).done([=](const MTPExportedChatInvite &result) {
-					_creationRequestId = 0;
-					if (result.type() == mtpc_chatInviteExported) {
-						auto link = qs(result.c_chatInviteExported().vlink());
-						_createdChannel->setInviteLink(link);
-					}
-					if (_channelDone) {
-						const auto callback = _channelDone;
-						const auto argument = _createdChannel;
-						closeBox();
-						callback(argument);
-					} else {
-						Ui::show(Box<SetupChannelBox>(
-							_navigation,
-							_createdChannel));
-					}
-				}).send();
+				checkInviteLink();
 			};
 		if (!success) {
 			LOG(("API Error: channel not found in updates (GroupInfoBox::creationDone)"));
@@ -726,6 +714,32 @@ void GroupInfoBox::createChannel(const QString &title, const QString &descriptio
 			Ui::show(Box<InformBox>(tr::lng_cant_do_this(tr::now))); // TODO
 		}
 	}).send();
+}
+
+void GroupInfoBox::checkInviteLink() {
+	Expects(_createdChannel != nullptr);
+
+	if (!_createdChannel->inviteLink().isEmpty()) {
+		channelReady();
+		return;
+	}
+	_creatingInviteLink = true;
+	_createdChannel->session().api().inviteLinks().create(
+		_createdChannel,
+		crl::guard(this, [=](auto&&) { channelReady(); }));
+}
+
+void GroupInfoBox::channelReady() {
+	if (_channelDone) {
+		const auto callback = _channelDone;
+		const auto argument = _createdChannel;
+		closeBox();
+		callback(argument);
+	} else {
+		Ui::show(Box<SetupChannelBox>(
+			_navigation,
+			_createdChannel));
+	}
 }
 
 void GroupInfoBox::descriptionResized() {
@@ -829,7 +843,7 @@ void SetupChannelBox::prepare() {
 
 	_channel->session().changes().peerUpdates(
 		_channel,
-		Data::PeerUpdate::Flag::InviteLink
+		Data::PeerUpdate::Flag::InviteLinks
 	) | rpl::start_with_next([=] {
 		rtlupdate(_invitationLink);
 	}, lifetime());
@@ -938,7 +952,7 @@ void SetupChannelBox::mouseMoveEvent(QMouseEvent *e) {
 void SetupChannelBox::mousePressEvent(QMouseEvent *e) {
 	if (_linkOver) {
 		if (_channel->inviteLink().isEmpty()) {
-			_channel->session().api().exportInviteLink(_channel);
+			_channel->session().api().inviteLinks().create(_channel);
 		} else {
 			QGuiApplication::clipboard()->setText(_channel->inviteLink());
 			Ui::Toast::Show(tr::lng_create_channel_link_copied(tr::now));
@@ -1417,21 +1431,21 @@ void RevokePublicLinkBox::Inner::mouseReleaseEvent(QMouseEvent *e) {
 			lt_group,
 			pressed->name);
 		auto confirmText = tr::lng_channels_too_much_public_revoke(tr::now);
-		_weakRevokeConfirmBox = Ui::show(Box<ConfirmBox>(text, confirmText, crl::guard(this, [this, pressed]() {
+		auto callback = crl::guard(this, [=](Fn<void()> &&close) {
 			if (_revokeRequestId) return;
 			_revokeRequestId = _api.request(MTPchannels_UpdateUsername(
 				pressed->asChannel()->inputChannel,
 				MTP_string()
-			)).done([=](const MTPBool &result) {
-				const auto callback = _revokeCallback;
-				if (_weakRevokeConfirmBox) {
-					_weakRevokeConfirmBox->closeBox();
-				}
-				if (callback) {
+			)).done([=, close = std::move(close)](const MTPBool &result) {
+				close();
+				if (const auto callback = _revokeCallback) {
 					callback();
 				}
 			}).send();
-		})), Ui::LayerOption::KeepOther);
+		});
+		Ui::show(
+			Box<ConfirmBox>(text, confirmText, std::move(callback)),
+			Ui::LayerOption::KeepOther);
 	}
 }
 

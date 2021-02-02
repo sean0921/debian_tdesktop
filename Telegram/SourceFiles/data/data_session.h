@@ -31,6 +31,7 @@ namespace HistoryView {
 struct Group;
 class Element;
 class ElementDelegate;
+class SendActionPainter;
 } // namespace HistoryView
 
 namespace Main {
@@ -59,6 +60,7 @@ class Histories;
 class DocumentMedia;
 class PhotoMedia;
 class Stickers;
+class GroupCall;
 
 class Session final {
 public:
@@ -152,6 +154,26 @@ public:
 
 	void applyMaximumChatVersions(const MTPVector<MTPChat> &data);
 
+	void registerGroupCall(not_null<GroupCall*> call);
+	void unregisterGroupCall(not_null<GroupCall*> call);
+	GroupCall *groupCall(uint64 callId) const;
+
+	[[nodiscard]] auto invitedToCallUsers(uint64 callId) const
+		-> const base::flat_set<not_null<UserData*>> &;
+	void registerInvitedToCallUser(
+		uint64 callId,
+		not_null<PeerData*> peer,
+		not_null<UserData*> user);
+	void unregisterInvitedToCallUser(uint64 callId, not_null<UserData*> user);
+
+	struct InviteToCall {
+		uint64 id = 0;
+		not_null<UserData*> user;
+	};
+	[[nodiscard]] rpl::producer<InviteToCall> invitesToCalls() const {
+		return _invitesToCalls.events();
+	}
+
 	void enumerateUsers(Fn<void(not_null<UserData*>)> action) const;
 	void enumerateGroups(Fn<void(not_null<PeerData*>)> action) const;
 	void enumerateChannels(Fn<void(not_null<ChannelData*>)> action) const;
@@ -170,6 +192,7 @@ public:
 
 	void registerSendAction(
 		not_null<History*> history,
+		MsgId rootId,
 		not_null<UserData*> user,
 		const MTPSendMessageAction &action,
 		TimeId when);
@@ -229,6 +252,8 @@ public:
 	[[nodiscard]] rpl::producer<not_null<const History*>> historyUnloaded() const;
 
 	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemRemoved() const;
+	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemRemoved(
+		FullMsgId itemId) const;
 	void notifyViewRemoved(not_null<const ViewElement*> view);
 	[[nodiscard]] rpl::producer<not_null<const ViewElement*>> viewRemoved() const;
 	void notifyHistoryCleared(not_null<const History*> history);
@@ -333,6 +358,8 @@ public:
 		not_null<HistoryItem*> dependent,
 		not_null<HistoryItem*> dependency);
 
+	void destroyAllCallItems();
+
 	void registerMessageRandomId(uint64 randomId, FullMsgId itemId);
 	void unregisterMessageRandomId(uint64 randomId);
 	[[nodiscard]] FullMsgId messageIdByRandomId(uint64 randomId) const;
@@ -376,6 +403,20 @@ public:
 	[[nodiscard]] auto sendActionAnimationUpdated() const
 		-> rpl::producer<SendActionAnimationUpdate>;
 	void updateSendActionAnimation(SendActionAnimationUpdate &&update);
+	[[nodiscard]] auto speakingAnimationUpdated() const
+		-> rpl::producer<not_null<History*>>;
+	void updateSpeakingAnimation(not_null<History*> history);
+
+	using SendActionPainter = HistoryView::SendActionPainter;
+	[[nodiscard]] std::shared_ptr<SendActionPainter> repliesSendActionPainter(
+		not_null<History*> history,
+		MsgId rootId);
+	void repliesSendActionPainterRemoved(
+		not_null<History*> history,
+		MsgId rootId);
+	void repliesSendActionPaintersClear(
+		not_null<History*> history,
+		not_null<UserData*> user);
 
 	[[nodiscard]] int unreadBadge() const;
 	[[nodiscard]] bool unreadBadgeMuted() const;
@@ -399,7 +440,7 @@ public:
 		const QByteArray &fileReference,
 		TimeId date,
 		int32 dc,
-		bool hasSticker,
+		bool hasStickers,
 		const QByteArray &inlineThumbnailBytes,
 		const ImageWithLocation &small,
 		const ImageWithLocation &thumbnail,
@@ -531,6 +572,10 @@ public:
 	void unregisterContactItem(
 		UserId contactId,
 		not_null<HistoryItem*> item);
+	void registerCallItem(not_null<HistoryItem*> item);
+	void unregisterCallItem(not_null<HistoryItem*> item);
+
+	void documentMessageRemoved(not_null<DocumentData*> document);
 
 	void checkPlayingAnimations();
 
@@ -613,8 +658,6 @@ public:
 	void serviceNotification(
 		const TextWithEntities &message,
 		const MTPMessageMedia &media = MTP_messageMediaEmpty());
-	void checkNewAuthorization();
-	rpl::producer<> newAuthorizationChecks() const;
 
 	void setMimeForwardIds(MessageIdsList &&list);
 	MessageIdsList takeMimeForwardIds();
@@ -670,7 +713,7 @@ private:
 		const QByteArray &fileReference,
 		TimeId date,
 		int32 dc,
-		bool hasSticker,
+		bool hasStickers,
 		const QByteArray &inlineThumbnailBytes,
 		const ImageWithLocation &small,
 		const ImageWithLocation &thumbnail,
@@ -759,6 +802,9 @@ private:
 		TimeId date);
 
 	bool sendActionsAnimationCallback(crl::time now);
+	[[nodiscard]] SendActionPainter *lookupSendActionPainter(
+		not_null<History*> history,
+		MsgId rootId);
 
 	void setWallpapers(const QVector<MTPWallPaper> &data, int32 hash);
 
@@ -819,7 +865,9 @@ private:
 	std::vector<FullMsgId> _selfDestructItems;
 
 	// When typing in this history started.
-	base::flat_map<not_null<History*>, crl::time> _sendActions;
+	base::flat_map<
+		std::pair<not_null<History*>, MsgId>,
+		crl::time> _sendActions;
 	Ui::Animations::Basic _sendActionsAnimation;
 
 	std::unordered_map<
@@ -864,6 +912,7 @@ private:
 	std::unordered_map<
 		UserId,
 		base::flat_set<not_null<ViewElement*>>> _contactViews;
+	std::unordered_set<not_null<HistoryItem*>> _callItems;
 
 	base::flat_set<not_null<WebPageData*>> _webpagesUpdated;
 	base::flat_set<not_null<GameData*>> _gamesUpdated;
@@ -886,6 +935,10 @@ private:
 
 	base::flat_set<not_null<ViewElement*>> _heavyViewParts;
 
+	base::flat_map<uint64, not_null<GroupCall*>> _groupCalls;
+	rpl::event_stream<InviteToCall> _invitesToCalls;
+	base::flat_map<uint64, base::flat_set<not_null<UserData*>>> _invitedToCallUsers;
+
 	History *_topPromoted = nullptr;
 
 	NotifySettings _defaultUserNotifySettings;
@@ -906,9 +959,8 @@ private:
 		int>;
 	std::unique_ptr<CredentialsWithGeneration> _passportCredentials;
 
-	rpl::event_stream<> _newAuthorizationChecks;
-
 	rpl::event_stream<SendActionAnimationUpdate> _sendActionAnimationUpdate;
+	rpl::event_stream<not_null<History*>> _speakingAnimationUpdate;
 
 	std::vector<WallPaper> _wallpapers;
 	int32 _wallpapersHash = 0;
@@ -920,6 +972,11 @@ private:
 	std::unique_ptr<Streaming> _streaming;
 	std::unique_ptr<MediaRotation> _mediaRotation;
 	std::unique_ptr<Histories> _histories;
+	base::flat_map<
+		not_null<History*>,
+		base::flat_map<
+			MsgId,
+			std::weak_ptr<SendActionPainter>>> _sendActionPainters;
 	std::unique_ptr<Stickers> _stickers;
 	MsgId _nonHistoryEntryId = ServerMaxMsgId;
 

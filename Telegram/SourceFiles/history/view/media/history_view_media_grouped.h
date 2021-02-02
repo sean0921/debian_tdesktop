@@ -31,6 +31,7 @@ public:
 
 	void refreshParentId(not_null<HistoryItem*> realParent) override;
 
+	void drawHighlight(Painter &p, int top) const override;
 	void draw(
 		Painter &p,
 		const QRect &clip,
@@ -48,17 +49,16 @@ public:
 	[[nodiscard]] TextSelection adjustSelection(
 		TextSelection selection,
 		TextSelectType type) const override;
-	uint16 fullSelectionLength() const override {
-		return _caption.length();
-	}
-	bool hasTextForCopy() const override {
-		return !_caption.isEmpty();
-	}
+	uint16 fullSelectionLength() const override;
+	bool hasTextForCopy() const override;
 
 	PhotoData *getPhoto() const override;
 	DocumentData *getDocument() const override;
 
 	TextForMimeData selectedText(TextSelection selection) const override;
+
+	std::vector<BubbleSelectionInterval> getBubbleSelectionIntervals(
+		TextSelection selection) const override;
 
 	void clickHandlerActiveChanged(
 		const ClickHandlerPtr &p,
@@ -76,14 +76,19 @@ public:
 	HistoryMessageEdited *displayedEditBadge() const override;
 
 	bool skipBubbleTail() const override {
-		return isBubbleBottom() && _caption.isEmpty();
+		return (_mode == Mode::Grid)
+			&& isRoundedInBubbleBottom()
+			&& _caption.isEmpty();
 	}
 	void updateNeedBubbleState() override;
 	bool needsBubble() const override;
 	bool customInfoLayout() const override {
-		return _caption.isEmpty();
+		return _caption.isEmpty() && (_mode != Mode::Column);
 	}
 	bool allowsFastShare() const override {
+		return true;
+	}
+	bool customHighlight() const override {
 		return true;
 	}
 
@@ -95,6 +100,10 @@ public:
 	void parentTextUpdated() override;
 
 private:
+	enum class Mode : char {
+		Grid,
+		Column,
+	};
 	struct Part {
 		Part(
 			not_null<Element*> parent,
@@ -110,6 +119,8 @@ private:
 		mutable QPixmap cache;
 
 	};
+
+	[[nodiscard]] static Mode DetectMode(not_null<Data::Media*> media);
 
 	template <typename DataMediaRange>
 	bool applyGroup(const DataMediaRange &medias);
@@ -128,9 +139,11 @@ private:
 		StateRequest request) const;
 
 	[[nodiscard]] RectParts cornersFromSides(RectParts sides) const;
+	[[nodiscard]] QMargins groupedPadding() const;
 
 	Ui::Text::String _caption;
 	std::vector<Part> _parts;
+	Mode _mode = Mode::Grid;
 	bool _needBubble = false;
 
 };

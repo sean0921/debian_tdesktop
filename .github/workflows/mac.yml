@@ -57,9 +57,9 @@ jobs:
       PREFIX: "/usr/local/macos"
       MACOSX_DEPLOYMENT_TARGET: "10.12"
       XZ: "xz-5.2.4"
-      QT: "5_12_8"
+      QT: "5_15_2"
       OPENSSL_VER: "1_1_1"
-      QT_PREFIX: "/usr/local/desktop-app/Qt-5.12.8"
+      QT_PREFIX: "/usr/local/desktop-app/Qt-5.15.2"
       LIBICONV_VER: "libiconv-1.16"
       UPLOAD_ARTIFACT: "false"
       ONLY_CACHE: "false"
@@ -69,7 +69,7 @@ jobs:
 
     steps:
       - name: Get repository name.
-        run: echo ::set-env name=REPO_NAME::${GITHUB_REPOSITORY##*/}
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
 
       - name: Clone.
         uses: actions/checkout@v2
@@ -79,6 +79,7 @@ jobs:
 
       - name: First set up.
         run: |
+          sudo chown -R `whoami`:admin /usr/local/share
           brew install automake fdk-aac lame libass libtool libvorbis libvpx \
           ninja opus sdl shtool texi2html theora x264 xvid yasm pkg-config
 
@@ -93,13 +94,15 @@ jobs:
             thisFile=$REPO_NAME/.github/workflows/mac.yml
             echo `md5 -q $thisFile` >> CACHE_KEY.txt
           fi
-          echo ::set-env name=CACHE_KEY::`md5 -q CACHE_KEY.txt`
+          echo "CACHE_KEY=`md5 -q CACHE_KEY.txt`" >> $GITHUB_ENV
 
-          echo ::add-path::$PWD/Libraries/depot_tools
+          echo "$PWD/Libraries/depot_tools" >> $GITHUB_PATH
 
           mkdir -p Libraries/macos
           cd Libraries/macos
-          echo ::set-env name=LibrariesPath::`pwd`
+          echo "LibrariesPath=`pwd`" >> $GITHUB_ENV
+
+          curl -o tg_owt-version.json https://api.github.com/repos/desktop-app/tg_owt/git/refs/heads/master
 
       - name: Patches.
         run: |
@@ -131,6 +134,20 @@ jobs:
           make -j$(nproc)
           sudo make install
 
+      - name: MozJPEG.
+        run: |
+          cd $LibrariesPath
+
+          git clone -b v4.0.1-rc2 $GIT/mozilla/mozjpeg.git
+          cd mozjpeg
+          cmake -B build . \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local/macos \
+          -DWITH_JPEG8=ON \
+          -DPNG_SUPPORTED=OFF
+          cmake --build build -j$(nproc)
+          sudo cmake --install build
+
       - name: OpenSSL cache.
         id: cache-openssl
         uses: actions/cache@v2
@@ -153,7 +170,7 @@ jobs:
           $MIN_MAC
           make build_libs -j$(nproc)
 
-          SSL_DIR=$LibrariesPath/openssl_${{ env.OPENSSL_VER }}
+          SSL_DIR=$LibrariesPath/openssl_$OPENSSL_VER
           mkdir -p $SSL_DIR/include
           copyLib() {
             cp $1.a $SSL_DIR/$1.a
@@ -166,7 +183,7 @@ jobs:
         id: cache-opus
         uses: actions/cache@v2
         with:
-          path: ${{ env.LibrariesPath }}/opus
+          path: ${{ env.LibrariesPath }}/opus-cache
           key: ${{ runner.OS }}-opus-${{ env.CACHE_KEY }}
       - name: Opus.
         if: steps.cache-opus.outputs.cache-hit != 'true'
@@ -179,16 +196,17 @@ jobs:
           ./autogen.sh
           CFLAGS="$MIN_MAC $UNGUARDED" CPPFLAGS="$MIN_MAC $UNGUARDED" LDFLAGS="$MIN_MAC" ./configure --prefix=$PREFIX
           make -j$(nproc)
+          sudo make DESTDIR="$LibrariesPath/opus-cache" install
       - name: Opus install.
         run: |
-          cd $LibrariesPath/opus
-          sudo make install
+          cd $LibrariesPath
+          sudo cp -R opus-cache/. /
 
       - name: Libiconv cache.
         id: cache-libiconv
         uses: actions/cache@v2
         with:
-          path: ${{ env.LibrariesPath }}/${{ env.LIBICONV_VER }}
+          path: ${{ env.LibrariesPath }}/libiconv-cache
           key: ${{ runner.OS }}-${{ env.LIBICONV_VER }}-${{ env.CACHE_KEY }}
       - name: Libiconv.
         if: steps.cache-libiconv.outputs.cache-hit != 'true'
@@ -200,10 +218,11 @@ jobs:
           cd $LIBICONV_VER
           CFLAGS="$MIN_MAC $UNGUARDED" CPPFLAGS="$MIN_MAC $UNGUARDED" LDFLAGS="$MIN_MAC" ./configure --enable-static --prefix=$PREFIX
           make -j$(nproc)
+          sudo make DESTDIR="$LibrariesPath/libiconv-cache" install
       - name: Libiconv install.
         run: |
-          cd $LibrariesPath/$LIBICONV_VER
-          sudo make install
+          cd $LibrariesPath
+          sudo cp -R libiconv-cache/. /
 
       - name: FFmpeg cache.
         id: cache-ffmpeg
@@ -218,7 +237,7 @@ jobs:
 
           git clone $GIT/FFmpeg/FFmpeg.git ffmpeg
           cd ffmpeg
-          git checkout release/3.4
+          git checkout release/4.2
           CFLAGS=`freetype-config --cflags`
           LDFLAGS=`freetype-config --libs`
           PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:/usr/X11/lib/pkgconfig
@@ -227,7 +246,9 @@ jobs:
           --extra-cflags="$MIN_MAC $UNGUARDED" \
           --extra-cxxflags="$MIN_MAC $UNGUARDED" \
           --extra-ldflags="$MIN_MAC" \
-          --enable-protocol=file --enable-libopus \
+          --x86asmexe=`pwd`/macos_yasm_wrap.sh \
+          --enable-protocol=file \
+          --enable-libopus \
           --disable-programs \
           --disable-doc \
           --disable-network \
@@ -349,7 +370,7 @@ jobs:
 
           git clone $GIT/kcat/openal-soft.git
           cd openal-soft
-          git checkout openal-soft-1.19.1
+          git checkout 3970252da9
           cd build
 
           CFLAGS="$UNGUARDED" CPPFLAGS="$UNGUARDED" cmake \
@@ -400,28 +421,28 @@ jobs:
           build/gyp_crashpad.py -Dmac_deployment_target=10.10
           ninja -C out/Debug
 
-      - name: Qt 5.12.8 cache.
+      - name: Qt 5.15.2 cache.
         id: cache-qt
         uses: actions/cache@v2
         with:
           path: ${{ env.LibrariesPath }}/qt-cache
-          key: ${{ runner.OS }}-qt-${{ env.CACHE_KEY }}-${{ hashFiles('**/qtbase_5_12_8/*') }}
-      - name: Use cached Qt 5.12.8.
+          key: ${{ runner.OS }}-qt-${{ env.CACHE_KEY }}-${{ hashFiles('**/qtbase_5_15_2/*') }}
+      - name: Use cached Qt 5.15.2.
         if: steps.cache-qt.outputs.cache-hit == 'true'
         run: |
           cd $LibrariesPath
-          mv qt-cache Qt-5.12.8
+          mv qt-cache Qt-5.15.2
           sudo mkdir -p $QT_PREFIX
-          sudo mv -f Qt-5.12.8 "$(dirname "$QT_PREFIX")"/
-      - name: Qt 5.12.8 build.
+          sudo mv -f Qt-5.15.2 "$(dirname "$QT_PREFIX")"/
+      - name: Qt 5.15.2 build.
         if: steps.cache-qt.outputs.cache-hit != 'true'
         run: |
           cd $LibrariesPath
 
-          git clone git://code.qt.io/qt/qt5.git qt$QT
-          cd qt$QT
+          git clone git://code.qt.io/qt/qt5.git qt_$QT
+          cd qt_$QT
           perl init-repository --module-subset=qtbase,qtimageformats
-          git checkout v5.12.8
+          git checkout v5.15.2
           git submodule update qtbase
           git submodule update qtimageformats
           cd qtbase
@@ -440,13 +461,46 @@ jobs:
           -securetransport \
           -nomake examples \
           -nomake tests \
-          -platform macx-clang
+          -platform macx-clang \
+          -I "/usr/local/macos/include" \
+          LIBJPEG_LIBS="/usr/local/macos/lib/libjpeg.a" \
+          ZLIB_LIBS="/usr/local/macos/lib/libz.a"
 
           make -j$(nproc)
           sudo make install
 
           make clean
           cp -r $QT_PREFIX $LibrariesPath/qt-cache
+
+      - name: WebRTC cache.
+        id: cache-webrtc
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.LibrariesPath }}/tg_owt
+          key: ${{ runner.OS }}-webrtc-${{ env.CACHE_KEY }}-${{ hashFiles('**/tg_owt-version.json') }}
+      - name: WebRTC.
+        if: steps.cache-webrtc.outputs.cache-hit != 'true'
+        run: |
+          cd $LibrariesPath
+
+          git clone --recursive $GIT/desktop-app/tg_owt.git
+          mkdir -p tg_owt/out/Debug
+          cd tg_owt/out/Debug
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+          -DTG_OWT_SPECIAL_TARGET=mac \
+          -DTG_OWT_LIBJPEG_INCLUDE_PATH=/usr/local/macos/include \
+          -DTG_OWT_OPENSSL_INCLUDE_PATH=`pwd`/../../../openssl_$OPENSSL_VER/include \
+          -DTG_OWT_OPUS_INCLUDE_PATH=$PREFIX/include/opus \
+          -DTG_OWT_FFMPEG_INCLUDE_PATH=/usr/local/include \
+          ../..
+          ninja
+
+          # Cleanup.
+          cd $LibrariesPath/tg_owt
+          mv out/Debug/libtg_owt.a libtg_owt.a
+          rm -rf out
+          mkdir -p out/Debug
+          mv libtg_owt.a out/Debug/libtg_owt.a
 
       - name: Telegram Desktop build.
         if: env.ONLY_CACHE == 'false'
@@ -457,12 +511,18 @@ jobs:
           if [ -n "${{ matrix.defines }}" ]; then
             DEFINE="-D ${{ matrix.defines }}=ON"
             echo Define from matrix: $DEFINE
-            echo ::set-env name=ARTIFACT_NAME::Telegram_${{ matrix.defines }}
+            echo "ARTIFACT_NAME=Telegram_${{ matrix.defines }}" >> $GITHUB_ENV
           else
-            echo ::set-env name=ARTIFACT_NAME::Telegram
+            echo "ARTIFACT_NAME=Telegram" >> $GITHUB_ENV
           fi
 
-          ./configure.sh -D TDESKTOP_API_TEST=ON -D DESKTOP_APP_USE_PACKAGED=OFF $DEFINE
+          ./configure.sh \
+          -D CMAKE_C_FLAGS="-Werror" \
+          -D CMAKE_CXX_FLAGS="-Werror" \
+          -D TDESKTOP_API_TEST=ON \
+          -D DESKTOP_APP_USE_PACKAGED=OFF \
+          -D DESKTOP_APP_DISABLE_CRASH_REPORTS=OFF \
+          $DEFINE
 
           cd ../out
 

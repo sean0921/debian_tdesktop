@@ -22,6 +22,7 @@ enum class PermissionStatus {
 
 enum class PermissionType {
 	Microphone,
+	Camera,
 };
 
 enum class SystemSettingsType {
@@ -30,31 +31,29 @@ enum class SystemSettingsType {
 
 void SetWatchingMediaKeys(bool watching);
 void SetApplicationIcon(const QIcon &icon);
-QString CurrentExecutablePath(int argc, char *argv[]);
 QString SingleInstanceLocalServerName(const QString &hash);
 void RegisterCustomScheme(bool force = false);
 PermissionStatus GetPermissionStatus(PermissionType type);
 void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCallback);
 void OpenSystemSettingsForPermission(PermissionType type);
 bool OpenSystemSettings(SystemSettingsType type);
-
-[[nodiscard]] std::optional<crl::time> LastUserInputTime();
-[[nodiscard]] inline bool LastUserInputTimeSupported() {
-	return LastUserInputTime().has_value();
-}
+void IgnoreApplicationActivationRightNow();
+bool AutostartSupported();
+bool TrayIconSupported();
+bool SkipTaskbarSupported();
+QImage GetImageFromClipboard();
+bool StartSystemMove(QWindow *window);
+bool StartSystemResize(QWindow *window, Qt::Edges edges);
+bool ShowWindowMenu(QWindow *window);
+bool WindowsNeedShadow();
+bool SetWindowExtents(QWindow *window, const QMargins &extents);
+bool UnsetWindowExtents(QWindow *window);
+Window::ControlsLayout WindowControlsLayout();
 
 [[nodiscard]] std::optional<bool> IsDarkMode();
 [[nodiscard]] inline bool IsDarkModeSupported() {
 	return IsDarkMode().has_value();
 }
-
-void IgnoreApplicationActivationRightNow();
-bool AutostartSupported();
-bool TrayIconSupported();
-QImage GetImageFromClipboard();
-bool StartSystemMove(QWindow *window);
-bool StartSystemResize(QWindow *window, Qt::Edges edges);
-Window::ControlsLayout WindowControlsLayout();
 
 namespace ThirdParty {
 

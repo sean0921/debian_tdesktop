@@ -7,6 +7,7 @@
 #pragma once
 
 #include "base/basic_types.h"
+#include "base/algorithm.h"
 
 #include <QtCore/QList>
 #include <QtCore/QVector>
@@ -343,10 +344,13 @@ inline QString PrepareForSending(const QString &text, PrepareTextOption option =
 // Replace bad symbols with space and remove '\r'.
 void ApplyServerCleaning(TextWithEntities &result);
 
-QByteArray SerializeTags(const TextWithTags::Tags &tags);
-TextWithTags::Tags DeserializeTags(QByteArray data, int textLength);
-QString TagsMimeType();
-QString TagsTextMimeType();
+[[nodiscard]] int SerializeTagsSize(const TextWithTags::Tags &tags);
+[[nodiscard]] QByteArray SerializeTags(const TextWithTags::Tags &tags);
+[[nodiscard]] TextWithTags::Tags DeserializeTags(
+	QByteArray data,
+	int textLength);
+[[nodiscard]] QString TagsMimeType();
+[[nodiscard]] QString TagsTextMimeType();
 
 inline const auto kMentionTagStart = qstr("mention://user.");
 

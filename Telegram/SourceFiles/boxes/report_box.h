@@ -8,7 +8,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "boxes/abstract_box.h"
+#include "ui/layers/generic_box.h"
 #include "mtproto/sender.h"
+
+namespace Window {
+class SessionController;
+} // namespace Window
 
 namespace Ui {
 template <typename Enum>
@@ -32,6 +37,7 @@ protected:
 private:
 	enum class Reason {
 		Spam,
+		Fake,
 		Violence,
 		ChildAbuse,
 		Pornography,
@@ -51,6 +57,7 @@ private:
 
 	std::shared_ptr<Ui::RadioenumGroup<Reason>> _reasonGroup;
 	object_ptr<Ui::Radioenum<Reason>> _reasonSpam = { nullptr };
+	object_ptr<Ui::Radioenum<Reason>> _reasonFake = { nullptr };
 	object_ptr<Ui::Radioenum<Reason>> _reasonViolence = { nullptr };
 	object_ptr<Ui::Radioenum<Reason>> _reasonChildAbuse = { nullptr };
 	object_ptr<Ui::Radioenum<Reason>> _reasonPornography = { nullptr };
@@ -60,3 +67,8 @@ private:
 	mtpRequestId _requestId = 0;
 
 };
+
+void BlockSenderFromRepliesBox(
+	not_null<Ui::GenericBox*> box,
+	not_null<Window::SessionController*> controller,
+	FullMsgId id);

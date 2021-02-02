@@ -14,7 +14,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/text/text_utilities.h"
-#include "core/file_utilities.h"
 #include "base/platform/base_platform_info.h"
 #include "core/click_handler_types.h"
 #include "core/update_checker.h"
@@ -89,8 +88,10 @@ void AboutBox::resizeEvent(QResizeEvent *e) {
 void AboutBox::showVersionHistory() {
 	if (cRealAlphaVersion()) {
 		auto url = qsl("https://tdesktop.com/");
-		if (Platform::IsWindows()) {
+		if (Platform::IsWindows32Bit()) {
 			url += qsl("win/%1.zip");
+		} else if (Platform::IsWindows64Bit()) {
+			url += qsl("win64/%1.zip");
 		} else if (Platform::IsOSXBuild()) {
 			url += qsl("osx/%1.zip");
 		} else if (Platform::IsMac()) {
@@ -108,7 +109,7 @@ void AboutBox::showVersionHistory() {
 
 		Ui::show(Box<InformBox>("The link to the current private alpha version of Telegram Desktop was copied to the clipboard."));
 	} else {
-		File::OpenUrl(qsl("https://desktop.telegram.org/changelog"));
+		UrlClickHandler::Open(qsl("https://desktop.telegram.org/changelog"));
 	}
 }
 
@@ -125,7 +126,7 @@ QString telegramFaqLink() {
 	const auto langpacked = [&](const char *language) {
 		return result + '/' + language;
 	};
-	const auto current = Lang::Current().id();
+	const auto current = Lang::Id();
 	for (const auto language : { "de", "es", "it", "ko" }) {
 		if (current.startsWith(QLatin1String(language))) {
 			return langpacked(language);
@@ -143,6 +144,9 @@ QString currentVersionText() {
 		result += qsl(" alpha %1").arg(cAlphaVersion() % 1000);
 	} else if (AppBetaVersion) {
 		result += " beta";
+	}
+	if (Platform::IsWindows64Bit()) {
+		result += " x64";
 	}
 	return result;
 }

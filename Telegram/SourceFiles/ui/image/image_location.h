@@ -446,7 +446,7 @@ inline bool operator>=(
 
 class DownloadLocation {
 public:
-	base::variant<
+	std::variant<
 		StorageFileLocation,
 		WebFileLocation,
 		GeoPointLocation,
@@ -614,6 +614,7 @@ struct ImageWithLocation {
 	QByteArray bytes;
 	QImage preloaded;
 	int bytesCount = 0;
+	int progressivePartSize = 0;
 };
 
 InMemoryKey inMemoryKey(const StorageFileLocation &location);
@@ -642,56 +643,4 @@ inline QSize shrinkToKeepAspect(int32 width, int32 height, int32 towidth, int32 
 		h = toheight;
 	}
 	return QSize(qMax(w, 1), qMax(h, 1));
-}
-
-class PsFileBookmark;
-class ReadAccessEnabler {
-public:
-	ReadAccessEnabler(const PsFileBookmark *bookmark);
-	ReadAccessEnabler(const std::shared_ptr<PsFileBookmark> &bookmark);
-	bool failed() const {
-		return _failed;
-	}
-	~ReadAccessEnabler();
-
-private:
-	const PsFileBookmark *_bookmark;
-	bool _failed;
-
-};
-
-class FileLocation {
-public:
-	FileLocation() = default;
-	explicit FileLocation(const QString &name);
-
-	static FileLocation InMediaCacheLocation();
-
-	[[nodiscard]] bool check() const;
-	[[nodiscard]] const QString &name() const;
-	void setBookmark(const QByteArray &bookmark);
-	QByteArray bookmark() const;
-	[[nodiscard]] bool isEmpty() const {
-		return name().isEmpty();
-	}
-	[[nodiscard]] bool inMediaCache() const;
-
-	bool accessEnable() const;
-	void accessDisable() const;
-
-	QString fname;
-	QDateTime modified;
-	qint32 size;
-
-private:
-	std::shared_ptr<PsFileBookmark> _bookmark;
-
-};
-inline bool operator==(const FileLocation &a, const FileLocation &b) {
-	return (a.name() == b.name())
-		&& (a.modified == b.modified)
-		&& (a.size == b.size);
-}
-inline bool operator!=(const FileLocation &a, const FileLocation &b) {
-	return !(a == b);
 }

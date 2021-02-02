@@ -14,11 +14,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "data/data_cloud_file.h"
 #include "data/data_changes.h"
+#include "chat_helpers/send_context_menu.h" // SendMenu::FillSendMenu
 #include "chat_helpers/stickers_lottie.h"
 #include "ui/widgets/buttons.h"
+#include "ui/widgets/popup_menu.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/image/image.h"
+#include "ui/cached_round_corners.h"
 #include "lottie/lottie_multi_player.h"
 #include "lottie/lottie_single_player.h"
 #include "lottie/lottie_animation.h"
@@ -35,7 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "apiwrap.h"
-#include "app.h"
+#include "api/api_toggling_media.h" // Api::ToggleFavedSticker
 #include "styles/style_chat_helpers.h"
 #include "styles/style_window.h"
 
@@ -140,7 +143,7 @@ private:
 		Search,
 		Settings,
 	};
-	using OverState = base::variant<SpecialOver, int>;
+	using OverState = std::variant<SpecialOver, int>;
 
 	template <typename Callback>
 	void enumerateVisibleIcons(Callback callback);
@@ -401,7 +404,7 @@ void StickersListWidget::Footer::setSelectedIcon(
 	auto iconsCountForCentering = (2 * _iconSel + 1);
 	auto iconsWidthForCentering = iconsCountForCentering
 		* st::stickerIconWidth;
-	auto iconsXFinal = snap(
+	auto iconsXFinal = std::clamp(
 		(_iconsLeft + iconsWidthForCentering + _iconsRight - width()) / 2,
 		0,
 		_iconsMax);
@@ -483,13 +486,19 @@ void StickersListWidget::Footer::paintSelectionBar(Painter &p) const {
 }
 
 void StickersListWidget::Footer::paintLeftRightFading(Painter &p) const {
-	auto o_left = snap(_iconsX.current() / st::stickerIconLeft.width(), 0., 1.);
+	auto o_left = std::clamp(
+		_iconsX.current() / st::stickerIconLeft.width(),
+		0.,
+		1.);
 	if (o_left > 0) {
 		p.setOpacity(o_left);
 		st::stickerIconLeft.fill(p, style::rtlrect(_iconsLeft, _iconsTop, st::stickerIconLeft.width(), st::emojiFooterHeight, width()));
 		p.setOpacity(1.);
 	}
-	auto o_right = snap((_iconsMax - _iconsX.current()) / st::stickerIconRight.width(), 0., 1.);
+	auto o_right = std::clamp(
+		(_iconsMax - _iconsX.current()) / st::stickerIconRight.width(),
+		0.,
+		1.);
 	if (o_right > 0) {
 		p.setOpacity(o_right);
 		st::stickerIconRight.fill(p, style::rtlrect(width() - _iconsRight - st::stickerIconRight.width(), _iconsTop, st::stickerIconRight.width(), st::emojiFooterHeight, width()));
@@ -545,13 +554,17 @@ void StickersListWidget::Footer::mouseMoveEvent(QMouseEvent *e) {
 
 	if (!_iconsDragging
 		&& !_icons.empty()
-		&& base::get_if<int>(&_iconDown) != nullptr) {
+		&& v::is<int>(_iconDown)) {
 		if ((_iconsMousePos - _iconsMouseDown).manhattanLength() >= QApplication::startDragDistance()) {
 			_iconsDragging = true;
 		}
 	}
 	if (_iconsDragging) {
-		auto newX = snap(_iconsStartX + (rtl() ? -1 : 1) * (_iconsMouseDown.x() - _iconsMousePos.x()), 0, _iconsMax);
+		auto newX = std::clamp(
+			(rtl() ? -1 : 1) * (_iconsMouseDown.x() - _iconsMousePos.x())
+				+ _iconsStartX,
+			0,
+			_iconsMax);
 		if (newX != qRound(_iconsX.current())) {
 			_iconsX = anim::value(newX, newX);
 			_iconsStartAnim = 0;
@@ -576,7 +589,7 @@ void StickersListWidget::Footer::mouseReleaseEvent(QMouseEvent *e) {
 
 	updateSelected();
 	if (wasDown == _iconOver) {
-		if (const auto index = base::get_if<int>(&_iconOver)) {
+		if (const auto index = std::get_if<int>(&_iconOver)) {
 			_iconSelX = anim::value(
 				*index * st::stickerIconWidth,
 				*index * st::stickerIconWidth);
@@ -586,7 +599,10 @@ void StickersListWidget::Footer::mouseReleaseEvent(QMouseEvent *e) {
 }
 
 void StickersListWidget::Footer::finishDragging() {
-	auto newX = snap(_iconsStartX + _iconsMouseDown.x() - _iconsMousePos.x(), 0, _iconsMax);
+	auto newX = std::clamp(
+		_iconsStartX + _iconsMouseDown.x() - _iconsMousePos.x(),
+		0,
+		_iconsMax);
 	if (newX != qRound(_iconsX.current())) {
 		_iconsX = anim::value(newX, newX);
 		_iconsStartAnim = 0;
@@ -601,7 +617,7 @@ bool StickersListWidget::Footer::eventHook(QEvent *e) {
 	if (e->type() == QEvent::TouchBegin) {
 	} else if (e->type() == QEvent::Wheel) {
 		if (!_icons.empty()
-			&& (base::get_if<int>(&_iconOver) != nullptr)
+			&& v::is<int>(_iconOver)
 			&& (_iconDown == SpecialOver::None)) {
 			scrollByWheelEvent(static_cast<QWheelEvent*>(e));
 		}
@@ -611,16 +627,26 @@ bool StickersListWidget::Footer::eventHook(QEvent *e) {
 
 void StickersListWidget::Footer::scrollByWheelEvent(
 		not_null<QWheelEvent*> e) {
-	auto horizontal = (e->angleDelta().x() != 0 || e->orientation() == Qt::Horizontal);
-	auto vertical = (e->angleDelta().y() != 0 || e->orientation() == Qt::Vertical);
+	auto horizontal = (e->angleDelta().x() != 0);
+	auto vertical = (e->angleDelta().y() != 0);
 	if (horizontal) {
 		_horizontal = true;
 	}
 	auto newX = qRound(_iconsX.current());
 	if (/*_horizontal && */horizontal) {
-		newX = snap(newX - (rtl() ? -1 : 1) * (e->pixelDelta().x() ? e->pixelDelta().x() : e->angleDelta().x()), 0, _iconsMax);
+		newX = std::clamp(
+			newX - (rtl() ? -1 : 1) * (e->pixelDelta().x()
+				? e->pixelDelta().x()
+				: e->angleDelta().x()),
+			0,
+			_iconsMax);
 	} else if (/*!_horizontal && */vertical) {
-		newX = snap(newX - (e->pixelDelta().y() ? e->pixelDelta().y() : e->angleDelta().y()), 0, _iconsMax);
+		newX = std::clamp(
+			newX - (e->pixelDelta().y()
+				? e->pixelDelta().y()
+				: e->angleDelta().y()),
+			0,
+			_iconsMax);
 	}
 	if (newX != qRound(_iconsX.current())) {
 		_iconsX = anim::value(newX, newX);
@@ -632,7 +658,7 @@ void StickersListWidget::Footer::scrollByWheelEvent(
 }
 
 void StickersListWidget::Footer::updateSelected() {
-	if (_iconDown >= 0) {
+	if (_iconDown != SpecialOver::None) {
 		return;
 	}
 
@@ -913,7 +939,7 @@ Main::Session &StickersListWidget::session() const {
 	return controller()->session();
 }
 
-rpl::producer<not_null<DocumentData*>> StickersListWidget::chosen() const {
+rpl::producer<TabbedSelector::FileChosen> StickersListWidget::chosen() const {
 	return _chosen.events();
 }
 
@@ -1121,16 +1147,16 @@ int StickersListWidget::countDesiredHeight(int newWidth) {
 	if (newWidth <= st::stickerPanWidthMin) {
 		return 0;
 	}
-	auto availableWidth = newWidth - (st::stickerPanPadding - st::buttonRadius);
+	auto availableWidth = newWidth - (st::stickerPanPadding - st::roundRadiusSmall);
 	auto columnCount = availableWidth / st::stickerPanWidthMin;
 	auto singleWidth = availableWidth / columnCount;
-	auto fullWidth = (st::buttonRadius + newWidth + st::emojiScroll.width);
+	auto fullWidth = (st::roundRadiusSmall + newWidth + st::emojiScroll.width);
 	auto rowsRight = (fullWidth - columnCount * singleWidth) / 2;
 	accumulate_max(rowsRight, st::emojiScroll.width);
 	_rowsLeft = fullWidth
 		- columnCount * singleWidth
 		- rowsRight
-		- st::buttonRadius;
+		- st::roundRadiusSmall;
 	_singleSize = QSize(singleWidth, singleWidth);
 	setColumnCount(columnCount);
 
@@ -1506,8 +1532,10 @@ void StickersListWidget::paintStickers(Painter &p, QRect clip) {
 	}
 
 	auto &sets = shownSets();
-	auto selectedSticker = base::get_if<OverSticker>(&_selected);
-	auto selectedButton = base::get_if<OverButton>(_pressed ? &_pressed : &_selected);
+	auto selectedSticker = std::get_if<OverSticker>(&_selected);
+	auto selectedButton = std::get_if<OverButton>(!v::is_null(_pressed)
+		? &_pressed
+		: &_selected);
 
 	if (sets.empty() && _section == Section::Search) {
 		paintEmptySearchResults(p);
@@ -1526,13 +1554,13 @@ void StickersListWidget::paintStickers(Painter &p, QRect clip) {
 				? set.count
 				: loadedCount;
 
-			auto widthForTitle = stickersRight() - (st::emojiPanHeaderLeft - st::buttonRadius);
+			auto widthForTitle = stickersRight() - (st::emojiPanHeaderLeft - st::roundRadiusSmall);
 			if (featuredHasAddButton(info.section)) {
 				auto add = featuredAddRect(info.section);
 				auto selected = selectedButton ? (selectedButton->section == info.section) : false;
 				auto &textBg = selected ? st::stickersTrendingAdd.textBgOver : st::stickersTrendingAdd.textBg;
 
-				App::roundRect(p, myrtlrect(add), textBg, ImageRoundRadius::Small);
+				Ui::FillRoundRect(p, myrtlrect(add), textBg, ImageRoundRadius::Small);
 				if (set.ripple) {
 					set.ripple->paint(p, add.x(), add.y(), width());
 					if (set.ripple->empty()) {
@@ -1562,7 +1590,7 @@ void StickersListWidget::paintStickers(Painter &p, QRect clip) {
 			}
 			p.setFont(st::stickersTrendingHeaderFont);
 			p.setPen(st::stickersTrendingHeaderFg);
-			p.drawTextLeft(st::emojiPanHeaderLeft - st::buttonRadius, info.top + st::stickersTrendingHeaderTop, width(), titleText, titleWidth);
+			p.drawTextLeft(st::emojiPanHeaderLeft - st::roundRadiusSmall, info.top + st::stickersTrendingHeaderTop, width(), titleText, titleWidth);
 
 			if (set.flags & MTPDstickerSet_ClientFlag::f_unread) {
 				p.setPen(Qt::NoPen);
@@ -1570,14 +1598,14 @@ void StickersListWidget::paintStickers(Painter &p, QRect clip) {
 
 				{
 					PainterHighQualityEnabler hq(p);
-					p.drawEllipse(style::rtlrect(st::emojiPanHeaderLeft - st::buttonRadius + titleWidth + st::stickersFeaturedUnreadSkip, info.top + st::stickersTrendingHeaderTop + st::stickersFeaturedUnreadTop, st::stickersFeaturedUnreadSize, st::stickersFeaturedUnreadSize, width()));
+					p.drawEllipse(style::rtlrect(st::emojiPanHeaderLeft - st::roundRadiusSmall + titleWidth + st::stickersFeaturedUnreadSkip, info.top + st::stickersTrendingHeaderTop + st::stickersFeaturedUnreadTop, st::stickersFeaturedUnreadSize, st::stickersFeaturedUnreadSize, width()));
 				}
 			}
 
 			auto statusText = (count > 0) ? tr::lng_stickers_count(tr::now, lt_count, count) : tr::lng_contacts_loading(tr::now);
 			p.setFont(st::stickersTrendingSubheaderFont);
 			p.setPen(st::stickersTrendingSubheaderFg);
-			p.drawTextLeft(st::emojiPanHeaderLeft - st::buttonRadius, info.top + st::stickersTrendingSubheaderTop, width(), statusText);
+			p.drawTextLeft(st::emojiPanHeaderLeft - st::roundRadiusSmall, info.top + st::stickersTrendingSubheaderTop, width(), statusText);
 
 			if (info.rowsTop >= clip.y() + clip.height()) {
 				return true;
@@ -1597,7 +1625,7 @@ void StickersListWidget::paintStickers(Painter &p, QRect clip) {
 		if (setHasTitle(set) && clip.top() < info.rowsTop) {
 			auto titleText = set.title;
 			auto titleWidth = st::stickersTrendingHeaderFont->width(titleText);
-			auto widthForTitle = stickersRight() - (st::emojiPanHeaderLeft - st::buttonRadius);
+			auto widthForTitle = stickersRight() - (st::emojiPanHeaderLeft - st::roundRadiusSmall);
 			if (hasRemoveButton(info.section)) {
 				auto remove = removeButtonRect(info.section);
 				auto selected = selectedButton ? (selectedButton->section == info.section) : false;
@@ -1617,12 +1645,12 @@ void StickersListWidget::paintStickers(Painter &p, QRect clip) {
 			}
 			p.setFont(st::emojiPanHeaderFont);
 			p.setPen(st::emojiPanHeaderFg);
-			p.drawTextLeft(st::emojiPanHeaderLeft - st::buttonRadius, info.top + st::emojiPanHeaderTop, width(), titleText, titleWidth);
+			p.drawTextLeft(st::emojiPanHeaderLeft - st::roundRadiusSmall, info.top + st::emojiPanHeaderTop, width(), titleText, titleWidth);
 		}
 		if (clip.top() + clip.height() <= info.rowsTop) {
 			return true;
 		} else if (set.id == Data::Stickers::MegagroupSetId && set.stickers.empty()) {
-			auto buttonSelected = (base::get_if<OverGroupAdd>(&_selected) != nullptr);
+			auto buttonSelected = (std::get_if<OverGroupAdd>(&_selected) != nullptr);
 			paintMegagroupEmptySet(p, info.rowsTop, buttonSelected);
 			return true;
 		}
@@ -1748,7 +1776,7 @@ void StickersListWidget::paintEmptySearchResults(Painter &p) {
 }
 
 int StickersListWidget::megagroupSetInfoLeft() const {
-	return st::emojiPanHeaderLeft - st::buttonRadius;
+	return st::emojiPanHeaderLeft - st::roundRadiusSmall;
 }
 
 void StickersListWidget::paintMegagroupEmptySet(Painter &p, int y, bool buttonSelected) {
@@ -1762,7 +1790,7 @@ void StickersListWidget::paintMegagroupEmptySet(Painter &p, int y, bool buttonSe
 		: st::stickerGroupCategoryAdd.textBg;
 
 	auto button = _megagroupSetButtonRect.translated(0, y);
-	App::roundRect(p, myrtlrect(button), textBg, ImageRoundRadius::Small);
+	Ui::FillRoundRect(p, myrtlrect(button), textBg, ImageRoundRadius::Small);
 	if (_megagroupSetButtonRipple) {
 		_megagroupSetButtonRipple->paint(p, button.x(), button.y(), width());
 		if (_megagroupSetButtonRipple->empty()) {
@@ -1816,8 +1844,8 @@ void StickersListWidget::setupLottie(Set &set, int section, int index) {
 
 QSize StickersListWidget::boundingBoxSize() const {
 	return QSize(
-		_singleSize.width() - st::buttonRadius * 2,
-		_singleSize.height() - st::buttonRadius * 2);
+		_singleSize.width() - st::roundRadiusSmall * 2,
+		_singleSize.height() - st::roundRadiusSmall * 2);
 }
 
 void StickersListWidget::paintSticker(Painter &p, Set &set, int y, int section, int index, bool selected, bool deleteSelected) {
@@ -1842,7 +1870,7 @@ void StickersListWidget::paintSticker(Painter &p, Set &set, int y, int section, 
 	if (selected) {
 		auto tl = pos;
 		if (rtl()) tl.setX(width() - tl.x() - _singleSize.width());
-		App::roundRect(p, QRect(tl, _singleSize), st::emojiPanHover, StickerHoverCorners);
+		Ui::FillRoundRect(p, QRect(tl, _singleSize), st::emojiPanHover, Ui::StickerHoverCorners);
 	}
 
 	media->checkStickerSmall();
@@ -1855,7 +1883,7 @@ void StickersListWidget::paintSticker(Painter &p, Set &set, int y, int section, 
 		w = std::max(size.width(), 1);
 		h = std::max(size.height(), 1);
 	} else {
-		auto coef = qMin((_singleSize.width() - st::buttonRadius * 2) / float64(document->dimensions.width()), (_singleSize.height() - st::buttonRadius * 2) / float64(document->dimensions.height()));
+		auto coef = qMin((_singleSize.width() - st::roundRadiusSmall * 2) / float64(document->dimensions.width()), (_singleSize.height() - st::roundRadiusSmall * 2) / float64(document->dimensions.height()));
 		if (coef > 1) coef = 1;
 		w = std::max(qRound(coef * document->dimensions.width()), 1);
 		h = std::max(qRound(coef * document->dimensions.height()), 1);
@@ -1968,20 +1996,20 @@ void StickersListWidget::mousePressEvent(QMouseEvent *e) {
 }
 
 void StickersListWidget::setPressed(OverState newPressed) {
-	if (auto button = base::get_if<OverButton>(&_pressed)) {
+	if (auto button = std::get_if<OverButton>(&_pressed)) {
 		auto &sets = shownSets();
 		Assert(button->section >= 0 && button->section < sets.size());
 		auto &set = sets[button->section];
 		if (set.ripple) {
 			set.ripple->lastStop();
 		}
-	} else if (base::get_if<OverGroupAdd>(&_pressed)) {
+	} else if (std::get_if<OverGroupAdd>(&_pressed)) {
 		if (_megagroupSetButtonRipple) {
 			_megagroupSetButtonRipple->lastStop();
 		}
 	}
 	_pressed = newPressed;
-	if (auto button = base::get_if<OverButton>(&_pressed)) {
+	if (auto button = std::get_if<OverButton>(&_pressed)) {
 		auto &sets = shownSets();
 		Assert(button->section >= 0 && button->section < sets.size());
 		auto &set = sets[button->section];
@@ -1989,10 +2017,10 @@ void StickersListWidget::setPressed(OverState newPressed) {
 			set.ripple = createButtonRipple(button->section);
 		}
 		set.ripple->add(mapFromGlobal(QCursor::pos()) - buttonRippleTopLeft(button->section));
-	} else if (base::get_if<OverGroupAdd>(&_pressed)) {
+	} else if (std::get_if<OverGroupAdd>(&_pressed)) {
 		if (!_megagroupSetButtonRipple) {
 			auto maskSize = _megagroupSetButtonRect.size();
-			auto mask = Ui::RippleAnimation::roundRectMask(maskSize, st::buttonRadius);
+			auto mask = Ui::RippleAnimation::roundRectMask(maskSize, st::roundRadiusSmall);
 			_megagroupSetButtonRipple = std::make_unique<Ui::RippleAnimation>(st::stickerGroupCategoryAdd.ripple, std::move(mask), [this] {
 				rtlupdate(megagroupSetButtonRectFinal());
 			});
@@ -2020,7 +2048,7 @@ std::unique_ptr<Ui::RippleAnimation> StickersListWidget::createButtonRipple(int 
 
 	if (shownSets()[section].externalLayout) {
 		auto maskSize = QSize(_addWidth - st::stickersTrendingAdd.width, st::stickersTrendingAdd.height);
-		auto mask = Ui::RippleAnimation::roundRectMask(maskSize, st::buttonRadius);
+		auto mask = Ui::RippleAnimation::roundRectMask(maskSize, st::roundRadiusSmall);
 		return std::make_unique<Ui::RippleAnimation>(
 			st::stickersTrendingAdd.ripple,
 			std::move(mask),
@@ -2043,11 +2071,70 @@ QPoint StickersListWidget::buttonRippleTopLeft(int section) const {
 	return myrtlrect(removeButtonRect(section)).topLeft() + st::stickerPanRemoveSet.rippleAreaPosition;
 }
 
+void StickersListWidget::showStickerSetBox(not_null<DocumentData*> document) {
+	if (document->sticker()
+		&& document->sticker()->set.type() != mtpc_inputStickerSetEmpty) {
+		_displayingSet = true;
+		checkHideWithBox(StickerSetBox::Show(controller(), document));
+	}
+}
+
+void StickersListWidget::fillContextMenu(
+		not_null<Ui::PopupMenu*> menu,
+		SendMenu::Type type) {
+	auto selected = _selected;
+	auto &sets = shownSets();
+	if (v::is_null(selected) || !v::is_null(_pressed)) {
+		return;
+	}
+	if (auto sticker = std::get_if<OverSticker>(&selected)) {
+		Assert(sticker->section >= 0 && sticker->section < sets.size());
+		auto &set = sets[sticker->section];
+		Assert(sticker->index >= 0 && sticker->index < set.stickers.size());
+
+		const auto document = set.stickers[sticker->index].document;
+		const auto send = [=](Api::SendOptions options) {
+			_chosen.fire_copy({
+				.document = document,
+				.options = options });
+		};
+		SendMenu::FillSendMenu(
+			menu,
+			type,
+			SendMenu::DefaultSilentCallback(send),
+			SendMenu::DefaultScheduleCallback(this, type, send));
+
+		const auto toggleFavedSticker = [=] {
+			Api::ToggleFavedSticker(
+				document,
+				Data::FileOriginStickerSet(Data::Stickers::FavedSetId, 0));
+		};
+		menu->addAction(
+			(document->owner().stickers().isFaved(document)
+				? tr::lng_faved_stickers_remove
+				: tr::lng_faved_stickers_add)(tr::now),
+			toggleFavedSticker);
+
+		menu->addAction(tr::lng_context_pack_info(tr::now), [=] {
+			showStickerSetBox(document);
+		});
+
+		if (const auto id = set.id; id == Data::Stickers::RecentSetId) {
+			menu->addAction(tr::lng_recent_stickers_remove(tr::now), [=] {
+				Api::ToggleRecentSticker(
+					document,
+					Data::FileOriginStickerSet(id, 0),
+					false);
+			});
+		}
+	}
+}
+
 void StickersListWidget::mouseReleaseEvent(QMouseEvent *e) {
 	_previewTimer.cancel();
 
 	auto pressed = _pressed;
-	setPressed(std::nullopt);
+	setPressed(v::null);
 	if (pressed != _selected) {
 		update();
 	}
@@ -2062,8 +2149,8 @@ void StickersListWidget::mouseReleaseEvent(QMouseEvent *e) {
 	updateSelected();
 
 	auto &sets = shownSets();
-	if (pressed && pressed == _selected) {
-		if (auto sticker = base::get_if<OverSticker>(&pressed)) {
+	if (!v::is_null(pressed) && pressed == _selected) {
+		if (auto sticker = std::get_if<OverSticker>(&pressed)) {
 			Assert(sticker->section >= 0 && sticker->section < sets.size());
 			auto &set = sets[sticker->section];
 			Assert(sticker->index >= 0 && sticker->index < set.stickers.size());
@@ -2079,20 +2166,14 @@ void StickersListWidget::mouseReleaseEvent(QMouseEvent *e) {
 			}
 			const auto document = set.stickers[sticker->index].document;
 			if (e->modifiers() & Qt::ControlModifier) {
-				if (document->sticker()
-					&& document->sticker()->set.type() != mtpc_inputStickerSetEmpty) {
-					_displayingSet = true;
-					checkHideWithBox(StickerSetBox::Show(
-						controller(),
-						document));
-				}
+				showStickerSetBox(document);
 			} else {
-				_chosen.fire_copy(document);
+				_chosen.fire_copy({ .document = document });
 			}
-		} else if (auto set = base::get_if<OverSet>(&pressed)) {
+		} else if (auto set = std::get_if<OverSet>(&pressed)) {
 			Assert(set->section >= 0 && set->section < sets.size());
 			displaySet(sets[set->section].id);
-		} else if (auto button = base::get_if<OverButton>(&pressed)) {
+		} else if (auto button = std::get_if<OverButton>(&pressed)) {
 			Assert(button->section >= 0 && button->section < sets.size());
 			if (sets[button->section].externalLayout) {
 				installSet(sets[button->section].id);
@@ -2103,7 +2184,7 @@ void StickersListWidget::mouseReleaseEvent(QMouseEvent *e) {
 			} else {
 				removeSet(sets[button->section].id);
 			}
-		} else if (base::get_if<OverGroupAdd>(&pressed)) {
+		} else if (std::get_if<OverGroupAdd>(&pressed)) {
 			Ui::show(Box<StickersBox>(controller(), _megagroupSet));
 		}
 	}
@@ -2172,7 +2253,7 @@ void StickersListWidget::removeFavedSticker(int section, int index) {
 	const auto &sticker = _mySets[section].stickers[index];
 	const auto document = sticker.document;
 	session().data().stickers().setFaved(document, false);
-	session().api().toggleFavedSticker(
+	Api::ToggleFavedSticker(
 		document,
 		Data::FileOriginStickerSet(Data::Stickers::FavedSetId, 0),
 		false);
@@ -2215,8 +2296,8 @@ void StickersListWidget::enterFromChildEvent(QEvent *e, QWidget *child) {
 }
 
 void StickersListWidget::clearSelection() {
-	setPressed(std::nullopt);
-	setSelected(std::nullopt);
+	setPressed(v::null);
+	setSelected(v::null);
 	update();
 }
 
@@ -2694,11 +2775,11 @@ bool StickersListWidget::preventAutoHide() {
 }
 
 void StickersListWidget::updateSelected() {
-	if (_pressed && !_previewShown) {
+	if (!v::is_null(_pressed) && !_previewShown) {
 		return;
 	}
 
-	auto newSelected = OverState { std::nullopt };
+	auto newSelected = OverState { v::null };
 	auto p = mapFromGlobal(_lastMousePosition);
 	if (!rect().contains(p)
 		|| p.y() < getVisibleTop() || p.y() >= getVisibleBottom()
@@ -2771,13 +2852,15 @@ bool StickersListWidget::stickerHasDeleteButton(const Set &set, int index) const
 
 void StickersListWidget::setSelected(OverState newSelected) {
 	if (_selected != newSelected) {
-		setCursor(newSelected ? style::cur_pointer : style::cur_default);
+		setCursor(!v::is_null(newSelected)
+			? style::cur_pointer
+			: style::cur_default);
 
 		auto &sets = shownSets();
 		auto updateSelected = [&]() {
-			if (auto sticker = base::get_if<OverSticker>(&_selected)) {
+			if (auto sticker = std::get_if<OverSticker>(&_selected)) {
 				rtlupdate(stickerRect(sticker->section, sticker->index));
-			} else if (auto button = base::get_if<OverButton>(&_selected)) {
+			} else if (auto button = std::get_if<OverButton>(&_selected)) {
 				if (button->section >= 0
 					&& button->section < sets.size()
 					&& sets[button->section].externalLayout) {
@@ -2785,7 +2868,7 @@ void StickersListWidget::setSelected(OverState newSelected) {
 				} else {
 					rtlupdate(removeButtonRect(button->section));
 				}
-			} else if (base::get_if<OverGroupAdd>(&_selected)) {
+			} else if (std::get_if<OverGroupAdd>(&_selected)) {
 				rtlupdate(megagroupSetButtonRectFinal());
 			}
 		};
@@ -2794,7 +2877,7 @@ void StickersListWidget::setSelected(OverState newSelected) {
 		updateSelected();
 
 		if (_previewShown && _pressed != _selected) {
-			if (const auto sticker = base::get_if<OverSticker>(&_selected)) {
+			if (const auto sticker = std::get_if<OverSticker>(&_selected)) {
 				_pressed = _selected;
 				Assert(sticker->section >= 0 && sticker->section < sets.size());
 				const auto &set = sets[sticker->section];
@@ -2809,7 +2892,7 @@ void StickersListWidget::setSelected(OverState newSelected) {
 }
 
 void StickersListWidget::showPreview() {
-	if (const auto sticker = base::get_if<OverSticker>(&_pressed)) {
+	if (const auto sticker = std::get_if<OverSticker>(&_pressed)) {
 		const auto &sets = shownSets();
 		Assert(sticker->section >= 0 && sticker->section < sets.size());
 		const auto &set = sets[sticker->section];

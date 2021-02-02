@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/shadow.h"
 #include "ui/emoji_config.h"
 #include "ui/ui_utility.h"
+#include "ui/cached_round_corners.h"
 #include "lang/lang_keys.h"
 #include "emoji_suggestions_data.h"
 #include "emoji_suggestions_helper.h"
@@ -20,7 +21,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "window/window_session_controller.h"
 #include "facades.h"
-#include "app.h"
 #include "styles/style_chat_helpers.h"
 
 namespace ChatHelpers {
@@ -211,7 +211,7 @@ void EmojiColorPicker::paintEvent(QPaintEvent *e) {
 		return;
 	}
 	Ui::Shadow::paint(p, inner, width(), st::defaultRoundShadow);
-	App::roundRect(p, inner, st::boxBg, BoxCorners);
+	Ui::FillRoundRect(p, inner, st::boxBg, Ui::BoxCorners);
 
 	auto x = st::emojiPanMargins.left() + 2 * st::emojiColorsPadding + _singleSize.width();
 	if (rtl()) x = width() - x - st::emojiColorsSep;
@@ -372,7 +372,7 @@ void EmojiColorPicker::drawVariant(Painter &p, int variant) {
 	if (variant == _selected) {
 		QPoint tl(w);
 		if (rtl()) tl.setX(width() - tl.x() - _singleSize.width());
-		App::roundRect(p, QRect(tl, _singleSize), st::emojiPanHover, StickerHoverCorners);
+		Ui::FillRoundRect(p, QRect(tl, _singleSize), st::emojiPanHover, Ui::StickerHoverCorners);
 	}
 	const auto esize = Ui::Emoji::GetSizeLarge();
 	Ui::Emoji::Draw(
@@ -478,7 +478,7 @@ EmojiListWidget::SectionInfo EmojiListWidget::sectionInfoByOffset(int yOffset) c
 }
 
 int EmojiListWidget::countDesiredHeight(int newWidth) {
-	auto fullWidth = (st::buttonRadius + newWidth + st::emojiScroll.width);
+	auto fullWidth = (st::roundRadiusSmall + newWidth + st::emojiScroll.width);
 	_columnCount = std::max(
 		(fullWidth - st::emojiPadding * 2) / st::emojiPanDesiredSize,
 		1);
@@ -487,7 +487,7 @@ int EmojiListWidget::countDesiredHeight(int newWidth) {
 	auto rowsRight = std::max(_rowsLeft, st::emojiScroll.width);
 	auto singleWidth = (fullWidth - _rowsLeft - rowsRight)
 		/ _columnCount;
-	_rowsLeft -= st::buttonRadius;
+	_rowsLeft -= st::roundRadiusSmall;
 	_singleSize = QSize(singleWidth, singleWidth - 4 * st::lineWidth);
 	_picker->setSingleSize(_singleSize);
 	return sectionInfo(kEmojiSectionCount - 1).rowsBottom + st::emojiPanPadding;
@@ -541,7 +541,7 @@ void EmojiListWidget::paintEvent(QPaintEvent *e) {
 		if (info.section > 0 && r.top() < info.rowsTop) {
 			p.setFont(st::emojiPanHeaderFont);
 			p.setPen(st::emojiPanHeaderFg);
-			p.drawTextLeft(st::emojiPanHeaderLeft - st::buttonRadius, info.top + st::emojiPanHeaderTop, width(), ChatHelpers::EmojiCategoryTitle(info.section)(tr::now));
+			p.drawTextLeft(st::emojiPanHeaderLeft - st::roundRadiusSmall, info.top + st::emojiPanHeaderTop, width(), ChatHelpers::EmojiCategoryTitle(info.section)(tr::now));
 		}
 		if (r.top() + r.height() > info.rowsTop) {
 			ensureLoaded(info.section);
@@ -558,7 +558,7 @@ void EmojiListWidget::paintEvent(QPaintEvent *e) {
 					if (selected) {
 						auto tl = w;
 						if (rtl()) tl.setX(width() - tl.x() - _singleSize.width());
-						App::roundRect(p, QRect(tl, _singleSize), st::emojiPanHover, StickerHoverCorners);
+						Ui::FillRoundRect(p, QRect(tl, _singleSize), st::emojiPanHover, Ui::StickerHoverCorners);
 					}
 					Ui::Emoji::Draw(
 						p,
@@ -663,9 +663,9 @@ void EmojiListWidget::showPicker() {
 		_picker->showEmoji(_emoji[section][sel]);
 
 		auto y = emojiRect(section, sel).y();
-		y -= _picker->height() - st::buttonRadius + getVisibleTop();
+		y -= _picker->height() - st::roundRadiusSmall + getVisibleTop();
 		if (y < st::emojiPanHeader) {
-			y += _picker->height() - st::buttonRadius + _singleSize.height() - st::buttonRadius;
+			y += _picker->height() - st::roundRadiusSmall + _singleSize.height() - st::roundRadiusSmall;
 		}
 		auto xmax = width() - _picker->width();
 		auto coef = float64(sel % _columnCount) / float64(_columnCount - 1);

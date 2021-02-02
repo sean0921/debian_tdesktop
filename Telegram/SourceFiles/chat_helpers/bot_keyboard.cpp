@@ -12,10 +12,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "data/data_session.h"
 #include "main/main_session.h"
+#include "ui/cached_round_corners.h"
 #include "facades.h"
-#include "app.h"
 #include "styles/style_widgets.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 namespace {
 
@@ -69,14 +69,14 @@ void Style::repaint(not_null<const HistoryItem*> item) const {
 }
 
 int Style::buttonRadius() const {
-	return st::buttonRadius;
+	return st::roundRadiusSmall;
 }
 
 void Style::paintButtonBg(
 		Painter &p,
 		const QRect &rect,
 		float64 howMuchOver) const {
-	App::roundRect(p, rect, st::botKbBg, BotKeyboardCorners);
+	Ui::FillRoundRect(p, rect, st::botKbBg, Ui::BotKeyboardCorners);
 }
 
 void Style::paintButtonIcon(

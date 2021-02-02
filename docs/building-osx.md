@@ -1,6 +1,6 @@
 ## Build instructions for Xcode 10.1
 
-**NB** These are used for OS X 10.10/10.11 build, after the [Building using Xcode][xcode] instructions.
+**NB** These are outdated, please refer to [Building using Xcode][xcode] instructions.
 
 ### Prepare folder
 
@@ -46,7 +46,6 @@ Go to ***BuildPath*** and run
     cd ../..
 
     cd Libraries
-    LibrariesPath=`pwd`
 
     git clone https://github.com/desktop-app/patches.git
     cd patches
@@ -69,10 +68,21 @@ Go to ***BuildPath*** and run
     sudo make install
     cd ..
 
-    git clone https://github.com/openssl/openssl
-    cd openssl
-    git checkout OpenSSL_1_0_1-stable
-    ./Configure darwin64-x86_64-cc -static -mmacosx-version-min=10.10
+    git clone -b v4.0.1-rc2 https://github.com/mozilla/mozjpeg.git
+    cd mozjpeg
+    cmake -B build . \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr/local \
+    -DWITH_JPEG8=ON \
+    -DPNG_SUPPORTED=OFF
+    cmake --build build $MAKE_THREADS_CNT
+    sudo cmake --install build
+    cd ..
+
+    git clone https://github.com/openssl/openssl openssl_1_1_1
+    cd openssl_1_1_1
+    git checkout OpenSSL_1_1_1-stable
+    ./Configure no-tests darwin64-x86_64-cc -static -mmacosx-version-min=10.10
     make build_libs $MAKE_THREADS_CNT
     cd ..
 
@@ -241,16 +251,43 @@ Go to ***BuildPath*** and run
     git apply ../../patches/qtbase_5_6_2.diff
     cd ..
 
-    ./configure -prefix "/usr/local/desktop-app/Qt-5.6.2" -debug-and-release -force-debug-info -opensource -confirm-license -static -opengl desktop -no-openssl -securetransport -nomake examples -nomake tests -platform macx-clang
+    ./configure -prefix "/usr/local/desktop-app/Qt-5.6.2" -debug-and-release -force-debug-info -opensource -confirm-license -static -opengl desktop -no-openssl -securetransport -nomake examples -nomake tests -platform macx-clang -I "/usr/local/include" LIBJPEG_LIBS="/usr/local/lib/libjpeg.a" ZLIB_LIBS="/usr/local/lib/libz.a"
     make $MAKE_THREADS_CNT
     sudo make install
     cd ..
+
+    git clone --recursive https://github.com/desktop-app/tg_owt.git
+    cd tg_owt
+    mkdir out
+    cd out
+    mkdir Debug
+    cd Debug
+    cmake -G Ninja \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DTG_OWT_SPECIAL_TARGET=osx \
+    -DTG_OWT_LIBJPEG_INCLUDE_PATH=/usr/local/include \
+    -DTG_OWT_OPENSSL_INCLUDE_PATH=`pwd`/../../../openssl_1_1_1/include \
+    -DTG_OWT_OPUS_INCLUDE_PATH=/usr/local/include/opus \
+    -DTG_OWT_FFMPEG_INCLUDE_PATH=`pwd`/../../../ffmpeg ../..
+    ninja
+    cd ..
+    mkdir Release
+    cd Release
+    cmake -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DTG_OWT_SPECIAL_TARGET=osx \
+    -DTG_OWT_LIBJPEG_INCLUDE_PATH=/usr/local/include \
+    -DTG_OWT_OPENSSL_INCLUDE_PATH=`pwd`/../../../openssl_1_1_1/include \
+    -DTG_OWT_OPUS_INCLUDE_PATH=/usr/local/include/opus \
+    -DTG_OWT_FFMPEG_INCLUDE_PATH=`pwd`/../../../ffmpeg ../..
+    ninja
+    cd ../../..
 
 ### Building the project
 
 Go to ***BuildPath*/tdesktop/Telegram** and run (using [your **api_id** and **api_hash**](#obtain-your-api-credentials))
 
-    ./configure.sh -D TDESKTOP_API_ID=YOUR_API_ID -D TDESKTOP_API_HASH=YOUR_API_HASH -D DESKTOP_APP_USE_PACKAGED=OFF
+    ./configure.sh -D TDESKTOP_API_ID=YOUR_API_ID -D TDESKTOP_API_HASH=YOUR_API_HASH -D DESKTOP_APP_USE_PACKAGED=OFF -D DESKTOP_APP_DISABLE_CRASH_REPORTS=OFF
 
 Then launch Xcode, open ***BuildPath*/tdesktop/out/Telegram.xcodeproj** and build for Debug / Release.
 

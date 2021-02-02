@@ -8,9 +8,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "data/data_cloud_file.h"
+#include "api/api_common.h"
 
 class FileLoader;
 class History;
+class UserData;
 
 namespace Data {
 class LocationPoint;
@@ -62,7 +64,7 @@ public:
 		MTPDmessage::Flags flags,
 		MTPDmessage_ClientFlags clientFlags,
 		MsgId msgId,
-		UserId fromId,
+		PeerId fromId,
 		MTPint mtpDate,
 		UserId viaBotId,
 		MsgId replyToId,
@@ -123,6 +125,12 @@ private:
 
 	std::unique_ptr<internal::SendData> sendData;
 
+};
+
+struct ResultSelected {
+	not_null<Result*> result;
+	not_null<UserData*> bot;
+	Api::SendOptions options;
 };
 
 } // namespace InlineBots

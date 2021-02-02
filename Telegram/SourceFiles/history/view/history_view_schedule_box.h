@@ -13,22 +13,25 @@ namespace Api {
 struct SendOptions;
 } // namespace Api
 
-enum class SendMenuType;
+namespace SendMenu {
+enum class Type;
+} // namespace SendMenu
 
 namespace HistoryView {
 
 [[nodiscard]] TimeId DefaultScheduleTime();
 [[nodiscard]] bool CanScheduleUntilOnline(not_null<PeerData*> peer);
+
 void ScheduleBox(
 	not_null<Ui::GenericBox*> box,
-	SendMenuType type,
+	SendMenu::Type type,
 	Fn<void(Api::SendOptions)> done,
 	TimeId time);
 
 template <typename Guard, typename Submit>
 [[nodiscard]] object_ptr<Ui::GenericBox> PrepareScheduleBox(
 		Guard &&guard,
-		SendMenuType type,
+		SendMenu::Type type,
 		Submit &&submit,
 		TimeId scheduleTime = DefaultScheduleTime()) {
 	return Box(

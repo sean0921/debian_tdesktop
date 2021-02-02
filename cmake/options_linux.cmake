@@ -6,11 +6,11 @@
 
 target_compile_options(common_options
 INTERFACE
+    -fPIC
     $<IF:$<CONFIG:Debug>,,-fno-strict-aliasing>
     -pipe
     -Wall
     -W
-    -fPIC
     -Wno-unused-variable
     -Wno-unused-parameter
     -Wno-unused-function
@@ -24,9 +24,10 @@ INTERFACE
     -Wno-stringop-overflow
     -Wno-maybe-uninitialized
     -Wno-error=class-memaccess
+    $<$<NOT:$<COMPILE_LANGUAGE:C>>:-Wno-register>
 )
 
-if (NOT DESKTOP_APP_USE_PACKAGED)
+if (DESKTOP_APP_SPECIAL_TARGET)
     target_compile_options(common_options
     INTERFACE
         $<IF:$<CONFIG:Debug>,,-Ofast>
@@ -48,14 +49,14 @@ if (NOT DESKTOP_APP_USE_PACKAGED)
 endif()
 
 if (DESKTOP_APP_USE_PACKAGED)
-    target_link_libraries(common_options
-    INTERFACE
-        atomic
-    )
+    find_library(ATOMIC_LIBRARY atomic)
 else()
-    target_link_static_libraries(common_options
-    INTERFACE
-        atomic
-    )
+    find_library(ATOMIC_LIBRARY libatomic.a)
 endif()
 
+if (ATOMIC_LIBRARY)
+    target_link_libraries(common_options
+    INTERFACE
+        ${ATOMIC_LIBRARY}
+    )
+endif()

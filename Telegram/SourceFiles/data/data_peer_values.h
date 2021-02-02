@@ -84,6 +84,7 @@ template <
 	typename = typename PeerType::FullFlags::Change>
 inline auto PeerFullFlagsValue(PeerType *peer) {
 	Expects(peer != nullptr);
+
 	return peer->fullFlagsValue();
 }
 
@@ -105,10 +106,11 @@ inline auto PeerFullFlagValue(
 	return SingleFlagValue(PeerFullFlagsValue(peer), flag);
 }
 
-rpl::producer<bool> CanWriteValue(UserData *user);
-rpl::producer<bool> CanWriteValue(ChatData *chat);
-rpl::producer<bool> CanWriteValue(ChannelData *channel);
-rpl::producer<bool> CanWriteValue(not_null<PeerData*> peer);
+[[nodiscard]] rpl::producer<bool> CanWriteValue(UserData *user);
+[[nodiscard]] rpl::producer<bool> CanWriteValue(ChatData *chat);
+[[nodiscard]] rpl::producer<bool> CanWriteValue(ChannelData *channel);
+[[nodiscard]] rpl::producer<bool> CanWriteValue(not_null<PeerData*> peer);
+[[nodiscard]] rpl::producer<bool> CanPinMessagesValue(not_null<PeerData*> peer);
 
 [[nodiscard]] TimeId SortByOnlineValue(not_null<UserData*> user, TimeId now);
 [[nodiscard]] crl::time OnlineChangeTimeout(TimeId online, TimeId now);
@@ -118,6 +120,7 @@ rpl::producer<bool> CanWriteValue(not_null<PeerData*> peer);
 [[nodiscard]] QString OnlineTextFull(not_null<UserData*> user, TimeId now);
 [[nodiscard]] bool OnlineTextActive(TimeId online, TimeId now);
 [[nodiscard]] bool OnlineTextActive(not_null<UserData*> user, TimeId now);
-[[nodiscard]] bool IsPeerAnOnlineUser(not_null<PeerData*> peer);
+[[nodiscard]] bool IsUserOnline(not_null<UserData*> user);
+[[nodiscard]] bool ChannelHasActiveCall(not_null<ChannelData*> channel);
 
 } // namespace Data

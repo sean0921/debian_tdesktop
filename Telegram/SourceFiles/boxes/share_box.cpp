@@ -21,8 +21,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/wrap/slide_wrap.h"
-#include "ui/text_options.h"
+#include "ui/text/text_options.h"
 #include "chat_helpers/message_field.h"
+#include "chat_helpers/send_context_menu.h"
 #include "history/history.h"
 #include "history/history_message.h"
 #include "history/view/history_view_schedule_box.h"
@@ -39,7 +40,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 class ShareBox::Inner final : public Ui::RpWidget, private base::Subscriber {
 public:
@@ -165,7 +166,7 @@ ShareBox::ShareBox(
 , _filterCallback(std::move(filterCallback))
 , _select(
 	this,
-	st::contactsMultiSelect,
+	st::defaultMultiSelect,
 	tr::lng_participant_filter())
 , _comment(
 	this,
@@ -408,13 +409,13 @@ void ShareBox::keyPressEvent(QKeyEvent *e) {
 	}
 }
 
-SendMenuType ShareBox::sendMenuType() const {
+SendMenu::Type ShareBox::sendMenuType() const {
 	const auto selected = _inner->selected();
 	return ranges::all_of(selected, HistoryView::CanScheduleUntilOnline)
-		? SendMenuType::ScheduledToUser
+		? SendMenu::Type::ScheduledToUser
 		: (selected.size() == 1 && selected.front()->isSelf())
-		? SendMenuType::Reminder
-		: SendMenuType::Scheduled;
+		? SendMenu::Type::Reminder
+		: SendMenu::Type::Scheduled;
 }
 
 void ShareBox::createButtons() {
@@ -423,7 +424,7 @@ void ShareBox::createButtons() {
 		const auto send = addButton(tr::lng_share_confirm(), [=] {
 			submit({});
 		});
-		SetupSendMenuAndShortcuts(
+		SendMenu::SetupMenuAndShortcuts(
 			send,
 			[=] { return sendMenuType(); },
 			[=] { submitSilent(); },
@@ -634,7 +635,11 @@ void ShareBox::Inner::updateChat(not_null<PeerData*> peer) {
 void ShareBox::Inner::updateChatName(
 		not_null<Chat*> chat,
 		not_null<PeerData*> peer) {
-	const auto text = peer->isSelf() ? tr::lng_saved_messages(tr::now) : peer->name;
+	const auto text = peer->isSelf()
+		? tr::lng_saved_messages(tr::now)
+		: peer->isRepliesChat()
+		? tr::lng_replies_messages(tr::now)
+		: peer->name;
 	chat->name.setText(st::shareNameStyle, text, Ui::NameTextOptions());
 }
 

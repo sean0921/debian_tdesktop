@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/timer.h"
 #include "ui/rp_widget.h"
 #include "ui/widgets/dropdown_menu.h"
 #include "ui/effects/animations.h"
@@ -55,15 +56,18 @@ class Pip;
 #define USE_OPENGL_OVERLAY_WIDGET
 #endif // Q_OS_MAC && !OS_MAC_OLD
 
+struct OverlayParentTraits : Ui::RpWidgetDefaultTraits {
+	static constexpr bool kSetZeroGeometry = false;
+};
+
 #ifdef USE_OPENGL_OVERLAY_WIDGET
-using OverlayParent = Ui::RpWidgetWrap<QOpenGLWidget>;
+using OverlayParent = Ui::RpWidgetWrap<QOpenGLWidget, OverlayParentTraits>;
 #else // USE_OPENGL_OVERLAY_WIDGET
-using OverlayParent = Ui::RpWidget;
+using OverlayParent = Ui::RpWidgetWrap<QWidget, OverlayParentTraits>;
 #endif // USE_OPENGL_OVERLAY_WIDGET
 
 class OverlayWidget final
 	: public OverlayParent
-	, private base::Subscriber
 	, public ClickHandlerHost
 	, private PlaybackControls::Delegate {
 	Q_OBJECT
@@ -124,9 +128,9 @@ private slots:
 	void onDelete();
 	void onOverview();
 	void onCopy();
-	void onMenuDestroy(QObject *obj);
 	void receiveMouse();
-	void onAttachedStickers();
+	void onPhotoAttachedStickers();
+	void onDocumentAttachedStickers();
 
 	void onDropdown();
 
@@ -153,13 +157,20 @@ private:
 		OverVideo,
 	};
 	struct Entity {
-		base::optional_variant<
+		std::variant<
+			v::null_t,
 			not_null<PhotoData*>,
 			not_null<DocumentData*>> data;
 		HistoryItem *item;
 	};
+	enum class SavePhotoVideo {
+		None,
+		QuickSave,
+		SaveAs,
+	};
 
 	void paintEvent(QPaintEvent *e) override;
+	void resizeEvent(QResizeEvent *e) override;
 
 	void keyPressEvent(QKeyEvent *e) override;
 	void wheelEvent(QWheelEvent *e) override;
@@ -202,9 +213,16 @@ private:
 	void assignMediaPointer(not_null<PhotoData*> photo);
 
 	void updateOver(QPoint mpos);
-	void moveToScreen(bool force = false);
+	void moveToScreen();
+	void updateGeometry();
 	bool moveToNext(int delta);
 	void preloadData(int delta);
+
+	void handleVisibleChanged(bool visible);
+	void handleScreenChanged(QScreen *screen);
+
+	bool contentCanBeSaved() const;
+	void checkForSaveLoaded();
 
 	Entity entityForUserPhotos(int index) const;
 	Entity entityForSharedMedia(int index) const;
@@ -212,7 +230,8 @@ private:
 	Entity entityByIndex(int index) const;
 	Entity entityForItemId(const FullMsgId &itemId) const;
 	bool moveToEntity(const Entity &entity, int preloadDelta = 0);
-	void setContext(base::optional_variant<
+	void setContext(std::variant<
+		v::null_t,
 		not_null<HistoryItem*>,
 		not_null<PeerData*>> context);
 
@@ -255,7 +274,11 @@ private:
 	void dropdownHidden();
 	void updateDocSize();
 	void updateControls();
-	void updateActions();
+	void updateControlsGeometry();
+
+	using MenuCallback = Fn<void(const QString &, Fn<void()>)>;
+	void fillContextMenuActions(const MenuCallback &addAction);
+
 	void resizeCenteredControls();
 	void resizeContentByScreenSize();
 
@@ -357,6 +380,8 @@ private:
 	void paintTransformedStaticContent(Painter &p);
 	void clearStreaming(bool savePosition = true);
 	bool canInitStreaming() const;
+
+	void applyHideWindowWorkaround();
 
 	QBrush _transparentBrush;
 
@@ -471,26 +496,20 @@ private:
 	};
 	ControlsState _controlsState = ControlsShown;
 	crl::time _controlsAnimStarted = 0;
-	QTimer _controlsHideTimer;
+	base::Timer _controlsHideTimer;
 	anim::value _controlsOpacity;
 	bool _mousePressed = false;
 
-	Ui::PopupMenu *_menu = nullptr;
+	base::unique_qptr<Ui::PopupMenu> _menu;
 	object_ptr<Ui::DropdownMenu> _dropdown;
-	object_ptr<QTimer> _dropdownShowTimer;
-
-	struct ActionData {
-		QString text;
-		const char *member;
-	};
-	QList<ActionData> _actions;
+	base::Timer _dropdownShowTimer;
 
 	bool _receiveMouse = true;
 
 	bool _touchPress = false;
 	bool _touchMove = false;
 	bool _touchRightButton = false;
-	QTimer _touchTimer;
+	base::Timer _touchTimer;
 	QPoint _touchStart;
 	QPoint _accumScroll;
 
@@ -498,8 +517,9 @@ private:
 	crl::time _saveMsgStarted = 0;
 	anim::value _saveMsgOpacity;
 	QRect _saveMsg;
-	QTimer _saveMsgUpdater;
+	base::Timer _saveMsgUpdater;
 	Ui::Text::String _saveMsgText;
+	SavePhotoVideo _savePhotoVideoWhenLoaded = SavePhotoVideo::None;
 
 	base::flat_map<OverState, crl::time> _animations;
 	base::flat_map<OverState, anim::value> _animationOpacities;

@@ -63,18 +63,10 @@ f_WTSUnRegisterSessionNotification WTSUnRegisterSessionNotification;
 f_SHQueryUserNotificationState SHQueryUserNotificationState;
 f_SHChangeNotify SHChangeNotify;
 f_SetCurrentProcessExplicitAppUserModelID SetCurrentProcessExplicitAppUserModelID;
-f_RoGetActivationFactory RoGetActivationFactory;
-f_WindowsCreateStringReference WindowsCreateStringReference;
-f_WindowsDeleteString WindowsDeleteString;
 f_PropVariantToString PropVariantToString;
 f_PSStringFromPropertyKey PSStringFromPropertyKey;
 f_DwmIsCompositionEnabled DwmIsCompositionEnabled;
 f_DwmSetWindowAttribute DwmSetWindowAttribute;
-f_RmStartSession RmStartSession;
-f_RmRegisterResources RmRegisterResources;
-f_RmGetList RmGetList;
-f_RmShutdown RmShutdown;
-f_RmEndSession RmEndSession;
 f_GetProcessMemoryInfo GetProcessMemoryInfo;
 f_SetWindowCompositionAttribute SetWindowCompositionAttribute;
 
@@ -117,23 +109,9 @@ void start() {
 		LoadMethod(LibPropSys, "PropVariantToString", PropVariantToString);
 		LoadMethod(LibPropSys, "PSStringFromPropertyKey", PSStringFromPropertyKey);
 
-		if (IsWindows8OrGreater()) {
-			const auto LibComBase = SafeLoadLibrary(u"combase.dll"_q);
-			LoadMethod(LibComBase, "RoGetActivationFactory", RoGetActivationFactory);
-			LoadMethod(LibComBase, "WindowsCreateStringReference", WindowsCreateStringReference);
-			LoadMethod(LibComBase, "WindowsDeleteString", WindowsDeleteString);
-		}
-
 		const auto LibDwmApi = SafeLoadLibrary(u"dwmapi.dll"_q);
 		LoadMethod(LibDwmApi, "DwmIsCompositionEnabled", DwmIsCompositionEnabled);
 		LoadMethod(LibDwmApi, "DwmSetWindowAttribute", DwmSetWindowAttribute);
-
-		const auto LibRstrtMgr = SafeLoadLibrary(u"rstrtmgr.dll"_q);
-		LoadMethod(LibRstrtMgr, "RmStartSession", RmStartSession);
-		LoadMethod(LibRstrtMgr, "RmRegisterResources", RmRegisterResources);
-		LoadMethod(LibRstrtMgr, "RmGetList", RmGetList);
-		LoadMethod(LibRstrtMgr, "RmShutdown", RmShutdown);
-		LoadMethod(LibRstrtMgr, "RmEndSession", RmEndSession);
 	}
 
 	const auto LibPsApi = SafeLoadLibrary(u"psapi.dll"_q);

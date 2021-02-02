@@ -17,11 +17,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/input_fields.h"
 #include "ui/emoji_config.h"
 #include "ui/ui_utility.h"
+#include "ui/cached_round_corners.h"
 #include "platform/platform_specific.h"
 #include "core/application.h"
 #include "base/event_filter.h"
 #include "main/main_session.h"
-#include "app.h"
 #include "styles/style_chat_helpers.h"
 
 #include <QtWidgets/QApplication>
@@ -171,22 +171,23 @@ bool SuggestionsWidget::eventHook(QEvent *e) {
 }
 
 void SuggestionsWidget::scrollByWheelEvent(not_null<QWheelEvent*> e) {
-	const auto horizontal = (e->angleDelta().x() != 0)
-		|| (e->orientation() == Qt::Horizontal);
-	const auto vertical = (e->angleDelta().y() != 0)
-		|| (e->orientation() == Qt::Vertical);
+	const auto horizontal = (e->angleDelta().x() != 0);
+	const auto vertical = (e->angleDelta().y() != 0);
 	const auto current = scrollCurrent();
 	const auto scroll = [&] {
 		if (horizontal) {
 			const auto delta = e->pixelDelta().x()
 				? e->pixelDelta().x()
 				: e->angleDelta().x();
-			return snap(current - ((rtl() ? -1 : 1) * delta), 0, _scrollMax);
+			return std::clamp(
+				current - ((rtl() ? -1 : 1) * delta),
+				0,
+				_scrollMax);
 		} else if (vertical) {
 			const auto delta = e->pixelDelta().y()
 				? e->pixelDelta().y()
 				: e->angleDelta().y();
-			return snap(current - delta, 0, _scrollMax);
+			return std::clamp(current - delta, 0, _scrollMax);
 		}
 		return current;
 	}();
@@ -218,11 +219,11 @@ void SuggestionsWidget::paintEvent(QPaintEvent *e) {
 		? _pressed
 		: _selectedAnimation.value(_selected);
 	if (selected > -1.) {
-		App::roundRect(
+		Ui::FillRoundRect(
 			p,
 			QRect(selected * _oneWidth, 0, _oneWidth, _oneWidth),
 			st::emojiPanHover,
-			StickerHoverCorners);
+			Ui::StickerHoverCorners);
 	}
 
 	for (auto i = from; i != till; ++i) {
@@ -243,7 +244,7 @@ void SuggestionsWidget::paintEvent(QPaintEvent *e) {
 
 void SuggestionsWidget::paintFadings(Painter &p) const {
 	const auto scroll = scrollCurrent();
-	const auto o_left = snap(
+	const auto o_left = std::clamp(
 		scroll / float64(st::emojiSuggestionsFadeAfter),
 		0.,
 		1.);
@@ -258,7 +259,7 @@ void SuggestionsWidget::paintFadings(Painter &p) const {
 		st::emojiSuggestionsFadeLeft.fill(p, rect);
 		p.setOpacity(1.);
 	}
-	const auto o_right = snap(
+	const auto o_right = std::clamp(
 		(_scrollMax - scroll) / float64(st::emojiSuggestionsFadeAfter),
 		0.,
 		1.);
@@ -424,7 +425,7 @@ void SuggestionsWidget::mouseMoveEvent(QMouseEvent *e) {
 	const auto globalPosition = e->globalPos();
 	if (_dragScrollStart >= 0) {
 		const auto delta = (_mousePressPosition.x() - globalPosition.x());
-		const auto scroll = snap(
+		const auto scroll = std::clamp(
 			_dragScrollStart + (rtl() ? -1 : 1) * delta,
 			0,
 			_scrollMax);

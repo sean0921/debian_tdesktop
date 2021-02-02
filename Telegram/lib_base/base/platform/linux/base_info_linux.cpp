@@ -6,77 +6,138 @@
 //
 #include "base/platform/linux/base_info_linux.h"
 
+#include "base/platform/linux/base_xcb_utilities_linux.h"
+
 #include <QtCore/QJsonObject>
 #include <QtCore/QLocale>
-#include <QtCore/QFile>
-#include <QtCore/QProcess>
 #include <QtCore/QVersionNumber>
 #include <QtCore/QDate>
 #include <QtGui/QGuiApplication>
+
+// this file is used on both Linux & BSD
+#ifdef Q_OS_LINUX
 #include <gnu/libc-version.h>
+#endif // Q_OS_LINUX
 
 namespace Platform {
 namespace {
 
-void FallbackFontConfig(
-		const QString &from,
-		const QString &to,
-		bool overwrite) {
-	const auto finish = gsl::finally([&] {
-		if (QFile(to).exists()) {
-			qputenv("FONTCONFIG_FILE", QFile::encodeName(to));
-		}
-	});
+QString GetDesktopEnvironment() {
+	const auto value = qgetenv("XDG_CURRENT_DESKTOP");
+	return value.contains(':')
+		? value.left(value.indexOf(':'))
+		: value;
+}
 
-	QProcess process;
-	process.setProcessChannelMode(QProcess::MergedChannels);
-	process.start("fc-list", QStringList() << "--version");
-	process.waitForFinished();
-	if (process.exitCode() > 0) {
-		return;
+QString GetWindowManager() {
+	base::Platform::XCB::CustomConnection connection;
+	if (xcb_connection_has_error(connection)) {
+		return {};
 	}
 
-	const auto result = QString::fromUtf8(process.readAllStandardOutput());
-
-	const auto version = QVersionNumber::fromString(
-		result.split("version ").last());
-	if (version.isNull()) {
-		return;
+	const auto root = base::Platform::XCB::GetRootWindow(connection);
+	if (!root.has_value()) {
+		return {};
 	}
 
-	if (version < QVersionNumber::fromString("2.13")) {
-		return;
+	const auto nameAtom = base::Platform::XCB::GetAtom(
+		connection,
+		"_NET_WM_NAME");
+
+	const auto utf8Atom = base::Platform::XCB::GetAtom(
+		connection,
+		"UTF8_STRING");
+
+	const auto supportingWindow = base::Platform::XCB::GetSupportingWMCheck(
+		connection,
+		*root);
+
+	if (!nameAtom.has_value()
+		|| !utf8Atom.has_value()
+		|| !supportingWindow.has_value()
+		|| *supportingWindow == XCB_WINDOW_NONE) {
+		return {};
+	}
+	const auto cookie = xcb_get_property(
+		connection,
+		false,
+		*supportingWindow,
+		*nameAtom,
+		*utf8Atom,
+		0,
+		1024);
+
+	auto reply = xcb_get_property_reply(
+		connection,
+		cookie,
+		nullptr);
+
+	if (!reply) {
+		return {};
 	}
 
-	if (!QFile(to).exists() || overwrite) {
-		QFile(from).copy(to);
-	}
+	const auto name = (reply->format == 8 && reply->type == *utf8Atom)
+		? QString::fromUtf8(
+			reinterpret_cast<const char*>(
+				xcb_get_property_value(reply)),
+			xcb_get_property_value_length(reply))
+		: QString();
+
+	free(reply);
+	return name;
 }
 
 } // namespace
 
 QString DeviceModelPretty() {
-	const auto cpuArch = QSysInfo::buildCpuArchitecture();
-
-	if (cpuArch == qstr("x86_64")) {
-		return "PC 64bit";
-	} else if (cpuArch == qstr("i386")) {
-		return "PC 32bit";
-	}
-
-	return "PC " + cpuArch;
+#ifdef Q_PROCESSOR_X86_64
+	return "PC 64bit";
+#elif defined Q_PROCESSOR_X86_32 // Q_PROCESSOR_X86_64
+	return "PC 32bit";
+#else // Q_PROCESSOR_X86_64 || Q_PROCESSOR_X86_32
+	return "PC " + QSysInfo::buildCpuArchitecture();
+#endif // else for Q_PROCESSOR_X86_64 || Q_PROCESSOR_X86_32
 }
 
 QString SystemVersionPretty() {
-	const auto result = getenv("XDG_CURRENT_DESKTOP");
-	const auto value = result ? QString::fromLatin1(result) : QString();
-	const auto list = value.split(':', QString::SkipEmptyParts);
+	static const auto result = [&] {
+		QStringList resultList{};
 
-	return "Linux "
-		+ (list.isEmpty() ? QString() : list[0] + ' ')
-		+ (IsWayland() ? "Wayland " : "X11 ")
-		+ "glibc "
-		+ GetGlibCVersion();
+#ifdef Q_OS_LINUX
+		resultList << "Linux";
+#else // Q_OS_LINUX
+		resultList << QSysInfo::kernelType();
+#endif // !Q_OS_LINUX
+
+		if (const auto desktopEnvironment = GetDesktopEnvironment();
+			!desktopEnvironment.isEmpty()) {
+			resultList << desktopEnvironment;
+		} else if (const auto windowManager = GetWindowManager();
+			!windowManager.isEmpty()) {
+			resultList << windowManager;
+		}
+
+		if (IsWayland()) {
+			resultList << "Wayland";
+		} else {
+			resultList << "X11";
+		}
+
+		const auto libcName = GetLibcName();
+		const auto libcVersion = GetLibcVersion();
+		if (!libcVersion.isEmpty()) {
+			if (!libcName.isEmpty()) {
+				resultList << libcName;
+			} else {
+				resultList << "libc";
+			}
+			resultList << libcVersion;
+		}
+
+		return resultList.join(' ');
+	}();
+
+	return result;
 }
 
 QString SystemCountry() {
@@ -92,13 +153,17 @@ QString SystemLanguage() {
 }
 
 QDate WhenSystemBecomesOutdated() {
+	const auto libcName = GetLibcName();
+	const auto libcVersion = GetLibcVersion();
+
 	if (IsLinux32Bit()) {
 		return QDate(2020, 9, 1);
-	} else if (const auto version = GetGlibCVersion(); !version.isEmpty()) {
-		if (QVersionNumber::fromString(version) < QVersionNumber(2, 23)) {
+	} else if (libcName == qstr("glibc") && !libcVersion.isEmpty()) {
+		if (QVersionNumber::fromString(libcVersion) < QVersionNumber(2, 23)) {
 			return QDate(2020, 9, 1); // Older than Ubuntu 16.04.
 		}
 	}
+
 	return QDate();
 }
 
@@ -120,26 +185,35 @@ QString AutoUpdateKey() {
 	}
 }
 
-QString GetGlibCVersion() {
+QString GetLibcName() {
+#ifdef Q_OS_LINUX
+	return "glibc";
+#endif // Q_OS_LINUX
+
+	return QString();
+}
+
+QString GetLibcVersion() {
+#ifdef Q_OS_LINUX
 	static const auto result = [&] {
 		const auto version = QString::fromLatin1(gnu_get_libc_version());
 		return QVersionNumber::fromString(version).isNull() ? QString() : version;
 	}();
 	return result;
+#endif // Q_OS_LINUX
+
+	return QString();
 }
 
 bool IsWayland() {
-	return QGuiApplication::platformName().startsWith("wayland", Qt::CaseInsensitive);
+	return QGuiApplication::instance()
+		? QGuiApplication::platformName().startsWith(
+			"wayland",
+			Qt::CaseInsensitive)
+		: qEnvironmentVariableIsSet("WAYLAND_DISPLAY");
 }
 
 void Start(QJsonObject options) {
-	const auto from = options.value("custom_font_config_src").toString();
-	const auto to = options.value("custom_font_config_dst").toString();
-	if (!from.isEmpty() && !to.isEmpty()) {
-		const auto keep = options.value("custom_font_config_keep").toInt();
-		const auto overwrite = (keep != 1);
-		FallbackFontConfig(from, to, overwrite);
-	}
 }
 
 void Finish() {

@@ -11,17 +11,25 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/emoji_config.h"
 #include "ui/effects/animation_value.h"
 #include "app.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
+#include "styles/style_dialogs.h"
+#include "styles/style_widgets.h" // style::IconButton
+#include "styles/style_info.h" // st::topBarCall
 
 namespace Ui {
 namespace {
+
+[[nodiscard]] bool IsExternal(const QString &name) {
+	return !name.isEmpty()
+		&& (name.front() == QChar(0))
+		&& QStringView(name).mid(1) == qstr("external");
+}
 
 void PaintSavedMessagesInner(
 		Painter &p,
 		int x,
 		int y,
 		int size,
-		const style::color &bg,
 		const style::color &fg) {
 	// |<----width----->|
 	//
@@ -91,6 +99,67 @@ void PaintSavedMessagesInner(
 	}
 }
 
+void PaintIconInner(
+		Painter &p,
+		int x,
+		int y,
+		int size,
+		int defaultSize,
+		const style::icon &icon,
+		const style::color &fg) {
+	if (size == defaultSize) {
+		const auto rect = QRect{ x, y, size, size };
+		icon.paintInCenter(
+			p,
+			rect,
+			fg->c);
+	} else {
+		p.save();
+		const auto ratio = size / float64(defaultSize);
+		p.translate(x + size / 2., y + size / 2.);
+		p.scale(ratio, ratio);
+		const auto skip = defaultSize;
+		const auto rect = QRect{ -skip, -skip, 2 * skip, 2 * skip };
+		icon.paintInCenter(
+			p,
+			rect,
+			fg->c);
+		p.restore();
+	}
+}
+
+void PaintRepliesMessagesInner(
+		Painter &p,
+		int x,
+		int y,
+		int size,
+		const style::color &fg) {
+	PaintIconInner(
+		p,
+		x,
+		y,
+		size,
+		st::dialogsPhotoSize,
+		st::dialogsRepliesUserpic,
+		fg);
+}
+
+void PaintExternalMessagesInner(
+		Painter &p,
+		int x,
+		int y,
+		int size,
+		const style::color &fg) {
+	PaintIconInner(
+		p,
+		x,
+		y,
+		size,
+		st::msgPhotoSize,
+		st::topBarCall.icon,
+		fg);
+}
+
 template <typename Callback>
 [[nodiscard]] QPixmap Generate(int size, Callback callback) {
 	auto result = QImage(
@@ -112,6 +181,10 @@ EmptyUserpic::EmptyUserpic(const style::color &color, const QString &name)
 	fillString(name);
 }
 
+QString EmptyUserpic::ExternalName() {
+	return QChar(0) + u"external"_q;
+}
+
 template <typename Callback>
 void EmptyUserpic::paint(
 		Painter &p,
@@ -131,10 +204,17 @@ void EmptyUserpic::paint(
 	p.setPen(Qt::NoPen);
 	paintBackground();
 
-	p.setFont(font);
-	p.setBrush(Qt::NoBrush);
-	p.setPen(st::historyPeerUserpicFg);
-	p.drawText(QRect(x, y, size, size), _string, QTextOption(style::al_center));
+	if (IsExternal(_string)) {
+		PaintExternalMessagesInner(p, x, y, size, st::historyPeerUserpicFg);
+	} else {
+		p.setFont(font);
+		p.setBrush(Qt::NoBrush);
+		p.setPen(st::historyPeerUserpicFg);
+		p.drawText(
+			QRect(x, y, size, size),
+			_string,
+			QTextOption(style::al_center));
+	}
 }
 
 void EmptyUserpic::paint(
@@ -150,7 +230,7 @@ void EmptyUserpic::paint(
 
 void EmptyUserpic::paintRounded(Painter &p, int x, int y, int outerWidth, int size) const {
 	paint(p, x, y, outerWidth, size, [&p, x, y, size] {
-		p.drawRoundedRect(x, y, size, size, st::buttonRadius, st::buttonRadius);
+		p.drawRoundedRect(x, y, size, size, st::roundRadiusSmall, st::roundRadiusSmall);
 	});
 }
 
@@ -197,7 +277,7 @@ void EmptyUserpic::PaintSavedMessages(
 	p.setPen(Qt::NoPen);
 	p.drawEllipse(x, y, size, size);
 
-	PaintSavedMessagesInner(p, x, y, size, bg, fg);
+	PaintSavedMessagesInner(p, x, y, size, fg);
 }
 
 void EmptyUserpic::PaintSavedMessagesRounded(
@@ -213,9 +293,9 @@ void EmptyUserpic::PaintSavedMessagesRounded(
 	PainterHighQualityEnabler hq(p);
 	p.setBrush(bg);
 	p.setPen(Qt::NoPen);
-	p.drawRoundedRect(x, y, size, size, st::buttonRadius, st::buttonRadius);
+	p.drawRoundedRect(x, y, size, size, st::roundRadiusSmall, st::roundRadiusSmall);
 
-	PaintSavedMessagesInner(p, x, y, size, bg, fg);
+	PaintSavedMessagesInner(p, x, y, size, fg);
 }
 
 QPixmap EmptyUserpic::GenerateSavedMessages(int size) {
@@ -227,6 +307,76 @@ QPixmap EmptyUserpic::GenerateSavedMessages(int size) {
 QPixmap EmptyUserpic::GenerateSavedMessagesRounded(int size) {
 	return Generate(size, [&](Painter &p) {
 		PaintSavedMessagesRounded(p, 0, 0, size, size);
+	});
+}
+
+void EmptyUserpic::PaintRepliesMessages(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size) {
+	const auto &bg = st::historyPeerSavedMessagesBg;
+	const auto &fg = st::historyPeerUserpicFg;
+	PaintRepliesMessages(p, x, y, outerWidth, size, bg, fg);
+}
+
+void EmptyUserpic::PaintRepliesMessagesRounded(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size) {
+	const auto &bg = st::historyPeerSavedMessagesBg;
+	const auto &fg = st::historyPeerUserpicFg;
+	PaintRepliesMessagesRounded(p, x, y, outerWidth, size, bg, fg);
+}
+
+void EmptyUserpic::PaintRepliesMessages(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size,
+		const style::color &bg,
+		const style::color &fg) {
+	x = rtl() ? (outerWidth - x - size) : x;
+
+	PainterHighQualityEnabler hq(p);
+	p.setBrush(bg);
+	p.setPen(Qt::NoPen);
+	p.drawEllipse(x, y, size, size);
+
+	PaintRepliesMessagesInner(p, x, y, size, fg);
+}
+
+void EmptyUserpic::PaintRepliesMessagesRounded(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size,
+		const style::color &bg,
+		const style::color &fg) {
+	x = rtl() ? (outerWidth - x - size) : x;
+
+	PainterHighQualityEnabler hq(p);
+	p.setBrush(bg);
+	p.setPen(Qt::NoPen);
+	p.drawRoundedRect(x, y, size, size, st::roundRadiusSmall, st::roundRadiusSmall);
+
+	PaintRepliesMessagesInner(p, x, y, size, fg);
+}
+
+QPixmap EmptyUserpic::GenerateRepliesMessages(int size) {
+	return Generate(size, [&](Painter &p) {
+		PaintRepliesMessages(p, 0, 0, size, size);
+	});
+}
+
+QPixmap EmptyUserpic::GenerateRepliesMessagesRounded(int size) {
+	return Generate(size, [&](Painter &p) {
+		PaintRepliesMessagesRounded(p, 0, 0, size, size);
 	});
 }
 
@@ -250,6 +400,10 @@ QPixmap EmptyUserpic::generate(int size) {
 }
 
 void EmptyUserpic::fillString(const QString &name) {
+	if (IsExternal(name)) {
+		_string = name;
+		return;
+	}
 	QList<QString> letters;
 	QList<int> levels;
 

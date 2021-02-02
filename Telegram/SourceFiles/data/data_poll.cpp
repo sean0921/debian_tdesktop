@@ -13,7 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/call_delayed.h"
 #include "main/main_session.h"
 #include "api/api_text_entities.h"
-#include "ui/text_options.h"
+#include "ui/text/text_options.h"
 
 namespace {
 
@@ -145,9 +145,7 @@ bool PollData::applyResults(const MTPPollResults &results) {
 					recent->v
 				) | ranges::view::transform([&](MTPint userId) {
 					const auto user = _owner->user(userId.v);
-					return (user->loadedStatus != PeerData::NotLoaded)
-						? user.get()
-						: nullptr;
+					return user->isMinimalLoaded() ? user.get() : nullptr;
 				}) | ranges::view::filter([](UserData *user) {
 					return user != nullptr;
 				}) | ranges::view::transform([](UserData *user) {

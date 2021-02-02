@@ -26,8 +26,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/buttons.h"
 #include "ui/wrap/fade_wrap.h"
 #include "ui/widgets/shadow.h"
+#include "ui/text/format_values.h"
 #include "window/window_controller.h"
-#include "layout.h" // formatDurationText
 #include "styles/style_window.h"
 #include "styles/style_media_view.h"
 #include "styles/style_calls.h" // st::callShadow
@@ -334,7 +334,7 @@ Qt::Edges RectPartToQtEdges(RectPart rectPart) {
 		return Qt::BottomEdge;
 	}
 
-	return 0;
+	return Qt::Edges();
 }
 
 } // namespace
@@ -591,7 +591,7 @@ void PipPanel::paintEvent(QPaintEvent *e) {
 	QPainter p(this);
 
 	if (_useTransparency) {
-		Ui::Platform::StartTranslucentPaint(p, e->region().rects());
+		Ui::Platform::StartTranslucentPaint(p, e->region());
 	}
 
 	auto request = FrameRequest();
@@ -706,29 +706,35 @@ void PipPanel::mouseMoveEvent(QMouseEvent *e) {
 	if (!_dragState
 		&& (point - _pressPoint).manhattanLength() > distance
 		&& !_dragDisabled) {
-		if (Platform::IsWayland()) {
-			const auto stateEdges = RectPartToQtEdges(*_pressState);
-			if (stateEdges) {
-				if (!Platform::StartSystemResize(windowHandle(), stateEdges)) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0) || defined DESKTOP_APP_QT_PATCHED
-					windowHandle()->startSystemResize(stateEdges);
-#endif // Qt >= 5.15 || DESKTOP_APP_QT_PATCHED
-				}
-			} else {
-				if (!Platform::StartSystemMove(windowHandle())) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0) || defined DESKTOP_APP_QT_PATCHED
-					windowHandle()->startSystemMove();
-#endif // Qt >= 5.15 || DESKTOP_APP_QT_PATCHED
-				}
-			}
-			return;
-		}
 		_dragState = _pressState;
 		updateDecorations();
 		_dragStartGeometry = geometry().marginsRemoved(_padding);
 	}
 	if (_dragState) {
-		processDrag(point);
+		if (Platform::IsWayland()) {
+			startSystemDrag();
+		} else {
+			processDrag(point);
+		}
+	}
+}
+
+void PipPanel::startSystemDrag() {
+	Expects(_dragState.has_value());
+
+	const auto stateEdges = RectPartToQtEdges(*_dragState);
+	if (stateEdges) {
+		if (!Platform::StartSystemResize(windowHandle(), stateEdges)) {
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0) || defined DESKTOP_APP_QT_PATCHED
+			windowHandle()->startSystemResize(stateEdges);
+#endif // Qt >= 5.15 || DESKTOP_APP_QT_PATCHED
+		}
+	} else {
+		if (!Platform::StartSystemMove(windowHandle())) {
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0) || defined DESKTOP_APP_QT_PATCHED
+			windowHandle()->startSystemMove();
+#endif // Qt >= 5.15 || DESKTOP_APP_QT_PATCHED
+		}
 	}
 }
 
@@ -783,6 +789,9 @@ void PipPanel::finishDrag(QPoint point) {
 	const auto position = pos();
 	const auto clamped = [&] {
 		auto result = position;
+		if (Platform::IsWayland()) {
+			return result;
+		}
 		if (result.x() > screen.x() + screen.width() - inner.width()) {
 			result.setX(screen.x() + screen.width() - inner.width());
 		}
@@ -1326,7 +1335,7 @@ void Pip::paintPlaybackTexts(QPainter &p) const {
 void Pip::handleStreamingUpdate(Streaming::Update &&update) {
 	using namespace Streaming;
 
-	update.data.match([&](Information &update) {
+	v::match(update.data, [&](Information &update) {
 		_panel.setAspectRatio(
 			FlipSizeByRotation(update.video.size, _rotation));
 	}, [&](const PreloadedVideo &update) {
@@ -1378,9 +1387,9 @@ void Pip::updatePlaybackTexts(
 		int64 frequency) {
 	const auto playAlready = position / frequency;
 	const auto playLeft = (length / frequency) - playAlready;
-	const auto already = formatDurationText(playAlready);
+	const auto already = Ui::FormatDurationText(playAlready);
 	const auto minus = QChar(8722);
-	const auto left = minus + formatDurationText(playLeft);
+	const auto left = minus + Ui::FormatDurationText(playLeft);
 	if (_timeAlready == already && _timeLeft == left) {
 		return;
 	}

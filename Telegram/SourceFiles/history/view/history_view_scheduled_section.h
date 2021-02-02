@@ -13,24 +13,24 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_messages.h"
 
 class History;
-enum class CompressConfirm;
 enum class SendMediaType;
 struct SendingAlbum;
-enum class SendMenuType;
+
+namespace SendMenu {
+enum class Type;
+} // namespace SendMenu
 
 namespace Api {
 struct SendOptions;
 } // namespace Api
-
-namespace Storage {
-struct PreparedList;
-} // namespace Storage
 
 namespace Ui {
 class ScrollArea;
 class PlainShadow;
 class FlatButton;
 class HistoryDownButton;
+struct PreparedList;
+class SendFilesWay;
 } // namespace Ui
 
 namespace Profile {
@@ -60,6 +60,7 @@ public:
 
 	not_null<History*> history() const;
 	Dialogs::RowDescriptor activeChat() const override;
+	bool preventsClose(Fn<void()> &&continueCallback) const override;
 
 	bool hasTopBarShadow() const override {
 		return true;
@@ -71,7 +72,7 @@ public:
 	bool showInternal(
 		not_null<Window::SectionMemento*> memento,
 		const Window::SectionShow &params) override;
-	std::unique_ptr<Window::SectionMemento> createMemento() override;
+	std::shared_ptr<Window::SectionMemento> createMemento() override;
 
 	void setInternalState(
 		const QRect &geometry,
@@ -103,10 +104,17 @@ public:
 		not_null<HistoryItem*> second) override;
 	void listSelectionChanged(SelectedItems &&items) override;
 	void listVisibleItemsChanged(HistoryItemsList &&items) override;
-	std::optional<int> listUnreadBarView(
+	MessagesBarData listMessagesBar(
 		const std::vector<not_null<Element*>> &elements) override;
 	void listContentRefreshed() override;
 	ClickHandlerPtr listDateLink(not_null<Element*> view) override;
+	bool listElementHideReply(not_null<const Element*> view) override;
+	bool listElementShownUnread(not_null<const Element*> view) override;
+	bool listIsGoodForAroundPosition(not_null<const Element *> view) override;
+	void listSendBotCommand(
+		const QString &command,
+		const FullMsgId &context) override;
+	void listHandleViaClick(not_null<UserData*> bot) override;
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
@@ -143,36 +151,40 @@ private:
 
 	void send();
 	void send(Api::SendOptions options);
+	void sendVoice(QByteArray bytes, VoiceWaveform waveform, int duration);
+	void sendVoice(
+		QByteArray bytes,
+		VoiceWaveform waveform,
+		int duration,
+		Api::SendOptions options);
 	void edit(
 		not_null<HistoryItem*> item,
 		Api::SendOptions options,
 		mtpRequestId *const saveEditMsgRequestId);
 	void highlightSingleNewMessage(const Data::MessagesSlice &slice);
 	void chooseAttach();
-	[[nodiscard]] SendMenuType sendMenuType() const;
+	[[nodiscard]] SendMenu::Type sendMenuType() const;
 
 	void uploadFile(const QByteArray &fileContent, SendMediaType type);
 	bool confirmSendingFiles(
 		QImage &&image,
 		QByteArray &&content,
-		CompressConfirm compressed,
+		std::optional<bool> overrideSendImagesAsPhotos = std::nullopt,
 		const QString &insertTextOnCancel = QString());
 	bool confirmSendingFiles(
-		Storage::PreparedList &&list,
-		CompressConfirm compressed,
+		Ui::PreparedList &&list,
 		const QString &insertTextOnCancel = QString());
 	bool confirmSendingFiles(
 		not_null<const QMimeData*> data,
-		CompressConfirm compressed,
+		std::optional<bool> overrideSendImagesAsPhotos = std::nullopt,
 		const QString &insertTextOnCancel = QString());
-	bool showSendingFilesError(const Storage::PreparedList &list) const;
-	void uploadFilesAfterConfirmation(
-		Storage::PreparedList &&list,
-		SendMediaType type,
+	bool showSendingFilesError(const Ui::PreparedList &list) const;
+	void sendingFilesConfirmed(
+		Ui::PreparedList &&list,
+		Ui::SendFilesWay way,
 		TextWithTags &&caption,
-		MsgId replyTo,
 		Api::SendOptions options,
-		std::shared_ptr<SendingAlbum> album);
+		bool ctrlShiftEnter);
 
 	void sendExistingDocument(not_null<DocumentData*> document);
 	bool sendExistingDocument(
@@ -237,4 +249,4 @@ private:
 
 };
 
-} // namespace HistoryScheduled
+} // namespace HistoryView

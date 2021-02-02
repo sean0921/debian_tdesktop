@@ -8,12 +8,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/notifications_manager_default.h"
 
 #include "platform/platform_notifications_manager.h"
+#include "platform/platform_specific.h"
 #include "core/application.h"
 #include "lang/lang_keys.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/platform/ui_platform_utility.h"
-#include "ui/text_options.h"
+#include "ui/text/text_options.h"
 #include "ui/emoji_config.h"
 #include "ui/empty_userpic.h"
 #include "ui/ui_utility.h"
@@ -24,7 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_account.h"
 #include "history/history.h"
 #include "history/history_item.h"
-#include "platform/platform_specific.h"
+#include "base/platform/base_platform_last_input.h"
 #include "base/call_delayed.h"
 #include "facades.h"
 #include "app.h"
@@ -416,7 +417,7 @@ Widget::Widget(
 	QPoint startPosition,
 	int shift,
 	Direction shiftDirection)
-: TWidget(Core::App().getModalParent())
+: RpWidget(Core::App().getModalParent())
 , _manager(manager)
 , _startPosition(startPosition)
 , _direction(shiftDirection)
@@ -587,7 +588,10 @@ Notification::Notification(
 , _fromScheduled(fromScheduled)
 , _close(this, st::notifyClose)
 , _reply(this, tr::lng_notification_reply(), st::defaultBoxButton) {
-	subscribe(Lang::Current().updated(), [this] { refreshLang(); });
+	Lang::Updated(
+	) | rpl::start_with_next([=] {
+		refreshLang();
+	}, lifetime());
 
 	auto position = computePosition(st::notifyMinHeight);
 	updateGeometry(position.x(), position.y(), st::notifyWidth, st::notifyMinHeight);
@@ -660,7 +664,7 @@ void Notification::prepareActionsCache() {
 bool Notification::checkLastInput(bool hasReplyingNotifications) {
 	if (!_waitingForInput) return true;
 
-	const auto waitForUserInput = Platform::LastUserInputTimeSupported()
+	const auto waitForUserInput = base::Platform::LastUserInputTimeSupported()
 		? (Core::App().lastNonIdleTime() <= _started)
 		: false;
 	if (!waitForUserInput) {
@@ -736,6 +740,9 @@ void Notification::updateNotifyDisplay() {
 		if (!options.hideNameAndPhoto) {
 			if (_fromScheduled && _history->peer->isSelf()) {
 				Ui::EmptyUserpic::PaintSavedMessages(p, st::notifyPhotoPos.x(), st::notifyPhotoPos.y(), width(), st::notifyPhotoSize);
+				_userpicLoaded = true;
+			} else if (_history->peer->isRepliesChat()) {
+				Ui::EmptyUserpic::PaintRepliesMessages(p, st::notifyPhotoPos.x(), st::notifyPhotoPos.y(), width(), st::notifyPhotoSize);
 				_userpicLoaded = true;
 			} else {
 				_userpicView = _history->peer->createUserpicView();

@@ -25,9 +25,7 @@ endif()
 target_compile_options(common_options
 INTERFACE
     -pipe
-    -g
     -Wall
-    -Werror
     -W
     -fPIE
     -Wno-deprecated-declarations # temp for range-v3
@@ -40,7 +38,16 @@ INTERFACE
     -Wno-sign-compare
     -Wno-unknown-attributes
     -Wno-pragma-system-header-outside-header
+    -Wno-range-loop-analysis
 )
+
+if (DESKTOP_APP_SPECIAL_TARGET)
+    target_compile_options(common_options
+    INTERFACE
+        -g
+        -Werror
+    )
+endif()
 
 target_link_frameworks(common_options
 INTERFACE
@@ -68,6 +75,7 @@ INTERFACE
     AppKit
     CoreWLAN
     IOKit
+    GSS
 )
 
 if (NOT build_osx)

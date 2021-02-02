@@ -58,7 +58,7 @@ FileKey GenerateKey(const QString &basePath) {
 	path.reserve(basePath.size() + 0x11);
 	path += basePath;
 	do {
-		result = rand_value<FileKey>();
+		result = openssl::RandomValue<FileKey>();
 		path.resize(basePath.size());
 		path += ToFilePart(result);
 	} while (!result || KeyAlreadyUsed(path));
@@ -197,7 +197,14 @@ bool FileWriteDescriptor::open(File &file, char postfix) {
 
 bool FileWriteDescriptor::writeHeader(QFileDevice &file) {
 	if (!file.open(QIODevice::WriteOnly)) {
-		return false;
+		const auto dir = QDir(_basePath);
+		if (dir.exists()) {
+			return false;
+		} else if (!QDir().mkpath(dir.absolutePath())) {
+			return false;
+		} else if (!file.open(QIODevice::WriteOnly)) {
+			return false;
+		}
 	}
 	file.write(TdfMagic, TdfMagicLen);
 	const auto version = qint32(AppVersion);

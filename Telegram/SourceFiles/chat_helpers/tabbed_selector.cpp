@@ -10,12 +10,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/emoji_list_widget.h"
 #include "chat_helpers/stickers_list_widget.h"
 #include "chat_helpers/gifs_list_widget.h"
+#include "chat_helpers/send_context_menu.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/discrete_sliders.h"
+#include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/image/image_prepare.h"
+#include "ui/cached_round_corners.h"
 #include "window/window_session_controller.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -150,8 +153,9 @@ void TabbedSelector::SlideAnimation::paintFrame(QPainter &p, float64 dt, float64
 	auto rightAlpha = (leftToRight ? departingAlpha : arrivingAlpha);
 
 	// _innerLeft ..(left).. leftTo ..(both).. bothTo ..(none).. noneTo ..(right).. _innerRight
-	auto leftTo = _innerLeft + snap(_innerWidth + leftCoord, 0, _innerWidth);
-	auto rightFrom = _innerLeft + snap(rightCoord, 0, _innerWidth);
+	auto leftTo = _innerLeft
+		+ std::clamp(_innerWidth + leftCoord, 0, _innerWidth);
+	auto rightFrom = _innerLeft + std::clamp(rightCoord, 0, _innerWidth);
 	auto painterRightFrom = rightFrom / cIntRetinaFactor();
 	if (opacity < 1.) {
 		_frame.fill(Qt::transparent);
@@ -409,13 +413,14 @@ rpl::producer<EmojiPtr> TabbedSelector::emojiChosen() const {
 	return emoji()->chosen();
 }
 
-rpl::producer<not_null<DocumentData*>> TabbedSelector::fileChosen() const {
+rpl::producer<TabbedSelector::FileChosen> TabbedSelector::fileChosen() const {
 	return full()
 		? rpl::merge(stickers()->chosen(), gifs()->fileChosen())
-		: rpl::never<not_null<DocumentData*>>() | rpl::type_erased();
+		: rpl::never<TabbedSelector::FileChosen>() | rpl::type_erased();
 }
 
-rpl::producer<not_null<PhotoData*>> TabbedSelector::photoChosen() const {
+auto TabbedSelector::photoChosen() const
+-> rpl::producer<TabbedSelector::PhotoChosen>{
 	return full() ? gifs()->photoChosen() : nullptr;
 }
 
@@ -447,13 +452,13 @@ void TabbedSelector::resizeEvent(QResizeEvent *e) {
 			st::lineWidth);
 	}
 
-	auto scrollWidth = width() - st::buttonRadius;
+	auto scrollWidth = width() - st::roundRadiusSmall;
 	auto scrollHeight = height() - scrollTop() - marginBottom();
 	auto inner = currentTab()->widget();
 	auto innerWidth = scrollWidth - st::emojiScroll.width;
 	auto updateScrollGeometry = [&] {
 		_scroll->setGeometryToLeft(
-			st::buttonRadius,
+			st::roundRadiusSmall,
 			scrollTop(),
 			scrollWidth,
 			scrollHeight);
@@ -518,10 +523,10 @@ void TabbedSelector::paintSlideFrame(Painter &p) {
 	if (_roundRadius > 0) {
 		if (full()) {
 			auto topPart = QRect(0, 0, width(), _tabsSlider->height() + _roundRadius);
-			App::roundRect(p, topPart, st::emojiPanBg, ImageRoundRadius::Small, RectPart::FullTop | RectPart::NoTopBottom);
+			Ui::FillRoundRect(p, topPart, st::emojiPanBg, ImageRoundRadius::Small, RectPart::FullTop | RectPart::NoTopBottom);
 		} else {
 			auto topPart = QRect(0, 0, width(), 3 * _roundRadius);
-			App::roundRect(p, topPart, st::emojiPanBg, ImageRoundRadius::Small, RectPart::FullTop);
+			Ui::FillRoundRect(p, topPart, st::emojiPanBg, ImageRoundRadius::Small, RectPart::FullTop);
 		}
 	} else if (full()) {
 		p.fillRect(0, 0, width(), _tabsSlider->height(), st::emojiPanBg);
@@ -535,15 +540,15 @@ void TabbedSelector::paintContent(Painter &p) {
 	if (_roundRadius > 0) {
 		if (full()) {
 			auto topPart = QRect(0, 0, width(), _tabsSlider->height() + _roundRadius);
-			App::roundRect(p, topPart, st::emojiPanBg, ImageRoundRadius::Small, RectPart::FullTop | RectPart::NoTopBottom);
+			Ui::FillRoundRect(p, topPart, st::emojiPanBg, ImageRoundRadius::Small, RectPart::FullTop | RectPart::NoTopBottom);
 		} else {
 			auto topPart = QRect(0, 0, width(), 3 * _roundRadius);
-			App::roundRect(p, topPart, st::emojiPanBg, ImageRoundRadius::Small, RectPart::FullTop);
+			Ui::FillRoundRect(p, topPart, st::emojiPanBg, ImageRoundRadius::Small, RectPart::FullTop);
 		}
 
 		auto bottomPart = QRect(0, _footerTop - _roundRadius, width(), st::emojiFooterHeight + _roundRadius);
 		auto bottomParts = RectPart::NoTopBottom | RectPart::FullBottom;
-		App::roundRect(p, bottomPart, bottomBg, ImageRoundRadius::Small, bottomParts);
+		Ui::FillRoundRect(p, bottomPart, bottomBg, ImageRoundRadius::Small, bottomParts);
 	} else {
 		if (full()) {
 			p.fillRect(0, 0, width(), _tabsSlider->height(), st::emojiPanBg);
@@ -557,7 +562,7 @@ void TabbedSelector::paintContent(Painter &p) {
 		p.fillRect(0, sidesTop, width(), sidesHeight, st::emojiPanBg);
 	} else {
 		p.fillRect(myrtlrect(width() - st::emojiScroll.width, sidesTop, st::emojiScroll.width, sidesHeight), st::emojiPanBg);
-		p.fillRect(myrtlrect(0, sidesTop, st::buttonRadius, sidesHeight), st::emojiPanBg);
+		p.fillRect(myrtlrect(0, sidesTop, st::roundRadiusSmall, sidesHeight), st::emojiPanBg);
 	}
 }
 
@@ -584,7 +589,13 @@ void TabbedSelector::refreshStickers() {
 }
 
 bool TabbedSelector::preventAutoHide() const {
-	return full() ? stickers()->preventAutoHide() : false;
+	return full()
+		? (stickers()->preventAutoHide() || hasMenu())
+		: false;
+}
+
+bool TabbedSelector::hasMenu() const {
+	return (_menu && !_menu->empty());
 }
 
 QImage TabbedSelector::grabForAnimation() {
@@ -865,6 +876,22 @@ void TabbedSelector::scrollToY(int y) {
 	if (full()) {
 		_topShadow->update();
 	}
+}
+
+void TabbedSelector::showMenuWithType(SendMenu::Type type) {
+	_menu = base::make_unique_q<Ui::PopupMenu>(this);
+	currentTab()->widget()->fillContextMenu(_menu, type);
+
+	if (!_menu->empty()) {
+		_menu->popup(QCursor::pos());
+	}
+}
+
+rpl::producer<> TabbedSelector::contextMenuRequested() const {
+	return events(
+	) | rpl::filter([=](not_null<QEvent*> e) {
+		return e->type() == QEvent::ContextMenu;
+	}) | rpl::to_empty;
 }
 
 TabbedSelector::Inner::Inner(

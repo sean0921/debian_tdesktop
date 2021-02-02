@@ -16,6 +16,7 @@ class HistoryBlock;
 class HistoryItem;
 class HistoryMessage;
 class HistoryService;
+struct HistoryMessageReply;
 
 namespace Window {
 class SessionController;
@@ -31,6 +32,8 @@ class Media;
 
 enum class Context : char {
 	History,
+	Replies,
+	Pinned,
 	//Feed, // #feed
 	AdminLog,
 	ContactPreview
@@ -48,7 +51,7 @@ public:
 		Element *replacing = nullptr) = 0;
 	virtual bool elementUnderCursor(not_null<const Element*> view) = 0;
 	virtual crl::time elementHighlightTime(
-		not_null<const Element*> element) = 0;
+		not_null<const HistoryItem*> item) = 0;
 	virtual bool elementInSelectionMode() = 0;
 	virtual bool elementIntersectsRange(
 		not_null<const Element*> view,
@@ -62,6 +65,12 @@ public:
 		const TextWithEntities &text,
 		Fn<void()> hiddenCallback) = 0;
 	virtual bool elementIsGifPaused() = 0;
+	virtual bool elementHideReply(not_null<const Element*> view) = 0;
+	virtual bool elementShownUnread(not_null<const Element*> view) = 0;
+	virtual void elementSendBotCommand(
+		const QString &command,
+		const FullMsgId &context) = 0;
+	virtual void elementHandleViaClick(not_null<UserData*> bot) = 0;
 
 };
 
@@ -78,7 +87,7 @@ public:
 		Element *replacing = nullptr) override;
 	bool elementUnderCursor(not_null<const Element*> view) override;
 	crl::time elementHighlightTime(
-		not_null<const Element*> element) override;
+		not_null<const HistoryItem*> item) override;
 	bool elementInSelectionMode() override;
 	bool elementIntersectsRange(
 		not_null<const Element*> view,
@@ -92,6 +101,12 @@ public:
 		const TextWithEntities &text,
 		Fn<void()> hiddenCallback) override;
 	bool elementIsGifPaused() override;
+	bool elementHideReply(not_null<const Element*> view) override;
+	bool elementShownUnread(not_null<const Element*> view) override;
+	void elementSendBotCommand(
+		const QString &command,
+		const FullMsgId &context) override;
+	void elementHandleViaClick(not_null<UserData*> bot) override;
 
 private:
 	const not_null<Window::SessionController*> _controller;
@@ -111,10 +126,12 @@ TextSelection ShiftItemSelection(
 	TextSelection selection,
 	const Ui::Text::String &byText);
 
+QString DateTooltipText(not_null<Element*> view);
+
 // Any HistoryView::Element can have this Component for
 // displaying the unread messages bar above the message.
 struct UnreadBar : public RuntimeComponent<UnreadBar, Element> {
-	void init();
+	void init(const QString &string);
 
 	static int height();
 	static int marginTop();
@@ -123,6 +140,7 @@ struct UnreadBar : public RuntimeComponent<UnreadBar, Element> {
 
 	QString text;
 	int width = 0;
+	rpl::lifetime lifetime;
 
 };
 
@@ -202,7 +220,7 @@ public:
 
 	bool computeIsAttachToPrevious(not_null<Element*> previous);
 
-	void createUnreadBar();
+	void createUnreadBar(rpl::producer<QString> text);
 	void destroyUnreadBar();
 
 	int displayedDateHeight() const;
@@ -255,9 +273,12 @@ public:
 	virtual bool hasOutLayout() const;
 	virtual bool drawBubble() const;
 	virtual bool hasBubble() const;
+	virtual int minWidthForMedia() const {
+		return 0;
+	}
 	virtual bool hasFastReply() const;
 	virtual bool displayFastReply() const;
-	virtual bool displayRightAction() const;
+	virtual std::optional<QSize> rightActionSize() const;
 	virtual void drawRightAction(
 		Painter &p,
 		int left,
@@ -267,6 +288,10 @@ public:
 	virtual bool displayEditedBadge() const;
 	virtual TimeId displayedEditDate() const;
 	virtual bool hasVisibleText() const;
+	virtual HistoryMessageReply *displayedReply() const;
+	virtual void applyGroupAdminChanges(
+		const base::flat_set<UserId> &changes) {
+	}
 
 	struct VerticalRepaintRange {
 		int top = 0;
@@ -274,8 +299,16 @@ public:
 	};
 	[[nodiscard]] virtual VerticalRepaintRange verticalRepaintRange() const;
 
+	virtual bool hasHeavyPart() const;
+	virtual void unloadHeavyPart();
 	void checkHeavyPart();
-	void unloadHeavyPart();
+
+	void paintCustomHighlight(
+		Painter &p,
+		int y,
+		int height,
+		not_null<const HistoryItem*> item) const;
+	float64 highlightOpacity(not_null<const HistoryItem*> item) const;
 
 	// Legacy blocks structure.
 	HistoryBlock *block();
@@ -286,9 +319,15 @@ public:
 	void setIndexInBlock(int index);
 	int indexInBlock() const;
 	Element *previousInBlocks() const;
+	Element *previousDisplayedInBlocks() const;
 	Element *nextInBlocks() const;
+	Element *nextDisplayedInBlocks() const;
 	void previousInBlocksChanged();
 	void nextInBlocksRemoved();
+
+	[[nodiscard]] ClickHandlerPtr fromPhotoLink() const {
+		return fromLink();
+	}
 
 	virtual ~Element();
 
@@ -296,6 +335,8 @@ protected:
 	void paintHighlight(
 		Painter &p,
 		int geometryHeight) const;
+
+	[[nodiscard]] ClickHandlerPtr fromLink() const;
 
 	virtual void refreshDataIdHook();
 

@@ -30,7 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "lottie/lottie_single_player.h"
 #include "chat_helpers/stickers_lottie.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 namespace HistoryView {
 namespace {
@@ -80,11 +80,13 @@ Sticker::Sticker(
 
 Sticker::~Sticker() {
 	if (_lottie || _dataMedia) {
-		unloadLottie();
+		if (_lottie) {
+			unloadLottie();
+		}
 		if (_dataMedia) {
 			_data->owner().keepAlive(base::take(_dataMedia));
+			_parent->checkHeavyPart();
 		}
-		_parent->checkHeavyPart();
 	}
 }
 
@@ -107,7 +109,9 @@ void Sticker::initSize() {
 }
 
 QSize Sticker::size() {
-	initSize();
+	if (_size.isEmpty()) {
+		initSize();
+	}
 	return _size;
 }
 
@@ -192,11 +196,12 @@ void Sticker::paintLottie(Painter &p, const QRect &r, bool selected) {
 		: (isEmojiSticker()
 			|| !Core::App().settings().loopAnimatedStickers());
 	const auto count = _lottie->information().framesCount;
-	_atTheEnd = (frame.index + 1 == count);
+	_frameIndex = frame.index;
+	_framesCount = count;
 	_nextLastDiceFrame = !paused
 		&& (_diceIndex > 0)
 		&& (frame.index + 2 == count);
-	const auto lastDiceFrame = (_diceIndex > 0) && _atTheEnd;
+	const auto lastDiceFrame = (_diceIndex > 0) && atTheEnd();
 	const auto switchToNext = !playOnce
 		|| (!lastDiceFrame && (frame.index != 0 || !_lottieOncePlayed));
 	if (!paused
@@ -299,7 +304,7 @@ void Sticker::setupLottie() {
 		_dataMedia.get(),
 		_replacements,
 		ChatHelpers::StickerLottieSize::MessageHistory,
-		_size * cIntRetinaFactor(),
+		size() * cIntRetinaFactor(),
 		Lottie::Quality::High);
 	lottieCreated();
 }
@@ -311,7 +316,7 @@ void Sticker::lottieCreated() {
 
 	_lottie->updates(
 	) | rpl::start_with_next([=](Lottie::Update update) {
-		update.data.match([&](const Lottie::Information &information) {
+		v::match(update.data, [&](const Lottie::Information &information) {
 			_parent->history()->owner().requestViewResize(_parent);
 		}, [&](const Lottie::DisplayFrameRequest &request) {
 			_parent->history()->owner().requestViewRepaint(_parent);

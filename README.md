@@ -17,12 +17,16 @@ The latest version is available for
 
 * [Windows 7 and above](https://telegram.org/dl/desktop/win) ([portable](https://telegram.org/dl/desktop/win_portable))
 * [macOS 10.12 and above](https://telegram.org/dl/desktop/mac)
-* [OS X 10.10 and 10.11](https://telegram.org/dl/desktop/osx)
-* [Linux static build for 64 bit](https://telegram.org/dl/desktop/linux) ([32 bit](https://telegram.org/dl/desktop/linux32))
+* [Linux static build for 64 bit](https://telegram.org/dl/desktop/linux)
 * [Snap](https://snapcraft.io/telegram-desktop)
 * [Flatpak](https://flathub.org/apps/details/org.telegram.desktop)
 
 ## Old system versions
+
+Version **2.4.4** was the last that supports older systems
+
+* [OS X 10.10 and 10.11](https://updates.tdesktop.com/tosx/tsetup-osx.2.4.4.dmg)
+* [Linux static build for 32 bit](https://updates.tdesktop.com/tlinux32/tsetup32.2.4.4.tar.xz)
 
 Version **1.8.15** was the last that supports older systems
 
@@ -32,8 +36,9 @@ Version **1.8.15** was the last that supports older systems
 
 ## Third-party
 
-* Qt 5.12.8, 5.6.2 and 5.3.2 slightly patched ([LGPL](http://doc.qt.io/qt-5/lgpl.html))
+* Qt 5.15.2, 5.6.2 and 5.3.2 slightly patched ([LGPL](http://doc.qt.io/qt-5/lgpl.html))
 * OpenSSL 1.1.1 and 1.0.1 ([OpenSSL License](https://www.openssl.org/source/license.html))
+* WebRTC ([New BSD License](https://github.com/desktop-app/tg_owt/blob/master/LICENSE))
 * zlib 1.2.11 ([zlib License](http://www.zlib.net/zlib_license.html))
 * LZMA SDK 9.20 ([public domain](http://www.7-zip.org/sdk.html))
 * liblzma ([public domain](http://tukaani.org/xz/))
@@ -45,7 +50,6 @@ Version **1.8.15** was the last that supports older systems
 * Opus codec ([BSD License](http://www.opus-codec.org/license/))
 * FFmpeg ([LGPL](https://www.ffmpeg.org/legal.html))
 * Guideline Support Library ([MIT License](https://github.com/Microsoft/GSL/blob/master/LICENSE))
-* Mapbox Variant ([BSD License](https://github.com/mapbox/variant/blob/master/LICENSE))
 * Range-v3 ([Boost License](https://github.com/ericniebler/range-v3/blob/master/LICENSE.txt))
 * Open Sans font ([Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0.html))
 * Vazir font ([License](https://github.com/rastikerdar/vazir-font/blob/master/LICENSE))
@@ -59,7 +63,7 @@ Version **1.8.15** was the last that supports older systems
 ## Build instructions
 
 * [Visual Studio 2019][msvc]
-* [Xcode 11][xcode]
+* [Xcode 12][xcode]
 * [CMake on GNU/Linux][cmake]
 
 [//]: # (LINKS)

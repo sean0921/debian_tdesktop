@@ -91,7 +91,8 @@ private:
 	public:
 		using PrepareFrame = not_null<Frame*>;
 		using PrepareNextCheck = crl::time;
-		using PrepareState = base::optional_variant<
+		using PrepareState = std::variant<
+			v::null_t,
 			PrepareFrame,
 			PrepareNextCheck>;
 		struct PresentFrame {
@@ -108,13 +109,11 @@ private:
 			crl::time trackTime,
 			bool dropStaleFrames);
 
-		// RasterizeCallback(not_null<Frame*>).
-		template <typename RasterizeCallback>
 		[[nodiscard]] PresentFrame presentFrame(
+			not_null<VideoTrackObject*> object,
 			TimePoint trackTime,
 			float64 playbackSpeed,
-			bool dropStaleFrames,
-			RasterizeCallback &&rasterize);
+			bool dropStaleFrames);
 		[[nodiscard]] bool firstPresentHappened() const;
 
 		// Called from the main thread.

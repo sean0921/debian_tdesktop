@@ -19,7 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/text/text_utilities.h"
-#include "ui/text_options.h"
+#include "ui/text/text_options.h"
 #include "ui/ui_utility.h"
 #include "data/data_drafts.h"
 #include "data/data_folder.h"
@@ -187,6 +187,11 @@ InnerWidget::InnerWidget(
 			RowDescriptor(update.history, FullMsgId()),
 			updateRect,
 			UpdateRowSection::Default | UpdateRowSection::Filtered);
+	}, lifetime());
+
+	session().data().speakingAnimationUpdated(
+	) | rpl::start_with_next([=](not_null<History*> history) {
+		updateDialogRowCornerStatus(history);
 	}, lifetime());
 
 	setupOnlineStatusCheck();
@@ -380,7 +385,7 @@ int InnerWidget::searchedOffset() const {
 
 int InnerWidget::searchInChatSkip() const {
 	auto result = st::searchedBarHeight + st::dialogsSearchInHeight;
-	if (_searchFromUser) {
+	if (_searchFromPeer) {
 		result += st::lineWidth + st::dialogsSearchInHeight;
 	}
 	return result;
@@ -811,7 +816,7 @@ void InnerWidget::paintSearchInChat(Painter &p) const {
 
 	auto fullRect = QRect(0, top, width(), height - top);
 	p.fillRect(fullRect, st::dialogsBg);
-	if (_searchFromUser) {
+	if (_searchFromPeer) {
 		p.fillRect(QRect(0, top + st::dialogsSearchInHeight, width(), st::lineWidth), st::shadowFg);
 	}
 
@@ -819,6 +824,8 @@ void InnerWidget::paintSearchInChat(Painter &p) const {
 	if (const auto peer = _searchInChat.peer()) {
 		if (peer->isSelf()) {
 			paintSearchInSaved(p, top, _searchInChatText);
+		} else if (peer->isRepliesChat()) {
+			paintSearchInReplies(p, top, _searchInChatText);
 		} else {
 			paintSearchInPeer(p, peer, _searchInChatUserpic, top, _searchInChatText);
 		}
@@ -827,7 +834,7 @@ void InnerWidget::paintSearchInChat(Painter &p) const {
 	} else {
 		Unexpected("Empty Key in paintSearchInChat.");
 	}
-	if (const auto from = _searchFromUser) {
+	if (const auto from = _searchFromPeer) {
 		top += st::dialogsSearchInHeight + st::lineWidth;
 		p.setPen(st::dialogsTextFg);
 		p.setTextPalette(st::dialogsSearchFromPalette);
@@ -892,6 +899,16 @@ void InnerWidget::paintSearchInSaved(
 		const Ui::Text::String &text) const {
 	const auto paintUserpic = [&](Painter &p, int x, int y, int size) {
 		Ui::EmptyUserpic::PaintSavedMessages(p, x, y, width(), size);
+	};
+	paintSearchInFilter(p, paintUserpic, top, nullptr, text);
+}
+
+void InnerWidget::paintSearchInReplies(
+		Painter &p,
+		int top,
+		const Ui::Text::String &text) const {
+	const auto paintUserpic = [&](Painter &p, int x, int y, int size) {
+		Ui::EmptyUserpic::PaintRepliesMessages(p, x, y, width(), size);
 	};
 	paintSearchInFilter(p, paintUserpic, top, nullptr, text);
 }
@@ -1802,23 +1819,17 @@ void InnerWidget::contextMenuEvent(QContextMenuEvent *e) {
 		} else {
 			fillArchiveSearchMenu(_menu.get());
 		}
-	} else if (const auto history = row.key.history()) {
-		Window::FillPeerMenu(
+	} else {
+		Window::FillDialogsEntryMenu(
 			_controller,
-			history->peer,
-			_filterId,
+			Dialogs::EntryState{
+				.key = row.key,
+				.section = Dialogs::EntryState::Section::ChatsList,
+				.filterId = _filterId,
+			},
 			[&](const QString &text, Fn<void()> callback) {
 				return _menu->addAction(text, std::move(callback));
-			},
-			Window::PeerMenuSource::ChatsList);
-	} else if (const auto folder = row.key.folder()) {
-		Window::FillFolderMenu(
-			_controller,
-			folder,
-			[&](const QString &text, Fn<void()> callback) {
-				return _menu->addAction(text, std::move(callback));
-			},
-			Window::PeerMenuSource::ChatsList);
+			});
 	}
 	connect(_menu.get(), &QObject::destroyed, [=] {
 		if (_menuRow.key) {
@@ -1830,7 +1841,7 @@ void InnerWidget::contextMenuEvent(QContextMenuEvent *e) {
 			selectByMouse(globalPosition);
 		}
 	});
-	if (_menu->actions().empty()) {
+	if (_menu->empty()) {
 		_menu = nullptr;
 	} else {
 		_menu->popup(e->globalPos());
@@ -1856,7 +1867,7 @@ void InnerWidget::applyFilterUpdate(QString newFilter, bool force) {
 	newFilter = words.isEmpty() ? QString() : words.join(' ');
 	if (newFilter != _filter || force) {
 		_filter = newFilter;
-		if (_filter.isEmpty() && !_searchFromUser) {
+		if (_filter.isEmpty() && !_searchFromPeer) {
 			clearFilter();
 		} else {
 			_state = WidgetState::Filtered;
@@ -2270,7 +2281,7 @@ void InnerWidget::refreshEmptyLabel() {
 	resizeEmptyLabel();
 	_empty->setClickHandlerFilter([=](const auto &...) {
 		if (_emptyState == EmptyState::NoContacts) {
-			App::wnd()->onShowAddContact();
+			App::wnd()->showAddContact();
 		} else if (_emptyState == EmptyState::EmptyFolder) {
 			editOpenedFilter();
 		}
@@ -2316,7 +2327,7 @@ bool InnerWidget::hasFilteredResults() const {
 	return !_filterResults.empty() && _hashtagResults.empty();
 }
 
-void InnerWidget::searchInChat(Key key, UserData *from) {
+void InnerWidget::searchInChat(Key key, PeerData *from) {
 	_searchInMigrated = nullptr;
 	if (const auto peer = key.peer()) {
 		if (const auto migrateTo = peer->migrateTo()) {
@@ -2326,7 +2337,7 @@ void InnerWidget::searchInChat(Key key, UserData *from) {
 		}
 	}
 	_searchInChat = key;
-	_searchFromUser = from;
+	_searchFromPeer = from;
 	if (_searchInChat) {
 		_controller->closeFolder();
 		onHashtagFilterUpdate(QStringRef());
@@ -2335,9 +2346,9 @@ void InnerWidget::searchInChat(Key key, UserData *from) {
 	} else {
 		_cancelSearchInChat->hide();
 	}
-	if (_searchFromUser) {
+	if (_searchFromPeer) {
 		_cancelSearchFromUser->show();
-		_searchFromUserUserpic = _searchFromUser->createUserpicView();
+		_searchFromUserUserpic = _searchFromPeer->createUserpicView();
 	} else {
 		_cancelSearchFromUser->hide();
 		_searchFromUserUserpic = nullptr;
@@ -2359,6 +2370,8 @@ void InnerWidget::refreshSearchInChatLabel() {
 		if (const auto peer = _searchInChat.peer()) {
 			if (peer->isSelf()) {
 				return tr::lng_saved_messages(tr::now);
+			} else if (peer->isRepliesChat()) {
+				return tr::lng_replies_messages(tr::now);
 			}
 			return peer->name;
 		//} else if (const auto feed = _searchInChat.feed()) { // #feed
@@ -2372,7 +2385,7 @@ void InnerWidget::refreshSearchInChatLabel() {
 			dialog,
 			Ui::DialogTextOptions());
 	}
-	const auto from = _searchFromUser ? _searchFromUser->name : QString();
+	const auto from = _searchFromPeer ? _searchFromPeer->name : QString();
 	if (!from.isEmpty()) {
 		const auto fromUserText = tr::lng_dlg_search_from(
 			tr::now,
@@ -2424,7 +2437,13 @@ void InnerWidget::selectSkip(int32 direction) {
 				? _collapsedSelected
 				: int(_collapsedRows.size()
 					+ (list->cfind(_selected) - list->cbegin() - _skipTopDialogs));
-			cur = snap(cur + direction, 0, static_cast<int>(_collapsedRows.size() + list->size() - _skipTopDialogs - 1));
+			cur = std::clamp(
+				cur + direction,
+				0,
+				static_cast<int>(_collapsedRows.size()
+					+ list->size()
+					- _skipTopDialogs
+					- 1));
 			if (cur < _collapsedRows.size()) {
 				_collapsedSelected = cur;
 				_selected = nullptr;
@@ -2464,7 +2483,13 @@ void InnerWidget::selectSkip(int32 direction) {
 					: (base::in_range(_peerSearchSelected, 0, _peerSearchResults.size())
 						? (_peerSearchSelected + _filterResults.size() + _hashtagResults.size())
 						: (_searchedSelected + _peerSearchResults.size() + _filterResults.size() + _hashtagResults.size())));
-			cur = snap(cur + direction, 0, static_cast<int>(_hashtagResults.size() + _filterResults.size() + _peerSearchResults.size() + _searchResults.size()) - 1);
+			cur = std::clamp(
+				cur + direction,
+				0,
+				static_cast<int>(_hashtagResults.size()
+					+ _filterResults.size()
+					+ _peerSearchResults.size()
+					+ _searchResults.size()) - 1);
 			if (cur < _hashtagResults.size()) {
 				_hashtagSelected = cur;
 				_filteredSelected = _peerSearchSelected = _searchedSelected = -1;
@@ -2951,9 +2976,41 @@ MsgId InnerWidget::lastSearchMigratedId() const {
 void InnerWidget::setupOnlineStatusCheck() {
 	session().changes().peerUpdates(
 		Data::PeerUpdate::Flag::OnlineStatus
+		| Data::PeerUpdate::Flag::GroupCall
 	) | rpl::start_with_next([=](const Data::PeerUpdate &update) {
-		userOnlineUpdated(update.peer);
+		if (update.peer->isUser()) {
+			userOnlineUpdated(update.peer);
+		} else {
+			groupHasCallUpdated(update.peer);
+		}
 	}, lifetime());
+}
+
+void InnerWidget::updateDialogRowCornerStatus(not_null<History*> history) {
+	const auto user = history->peer->isUser();
+	const auto size = user
+		? st::dialogsOnlineBadgeSize
+		: st::dialogsCallBadgeSize;
+	const auto stroke = st::dialogsOnlineBadgeStroke;
+	const auto skip = user
+		? st::dialogsOnlineBadgeSkip
+		: st::dialogsCallBadgeSkip;
+	const auto updateRect = QRect(
+		st::dialogsPhotoSize - skip.x() - size,
+		st::dialogsPhotoSize - skip.y() - size,
+		size,
+		size
+	).marginsAdded(
+		{ stroke, stroke, stroke, stroke }
+	).translated(
+		st::dialogsPadding
+	);
+	updateDialogRow(
+		RowDescriptor(
+			history,
+			FullMsgId()),
+		updateRect,
+		UpdateRowSection::Default | UpdateRowSection::Filtered);
 }
 
 void InnerWidget::userOnlineUpdated(not_null<PeerData*> peer) {
@@ -2965,32 +3022,31 @@ void InnerWidget::userOnlineUpdated(not_null<PeerData*> peer) {
 	if (!history) {
 		return;
 	}
-	const auto size = st::dialogsOnlineBadgeSize;
-	const auto stroke = st::dialogsOnlineBadgeStroke;
-	const auto skip = st::dialogsOnlineBadgeSkip;
-	const auto edge = st::dialogsPadding.x() + st::dialogsPhotoSize;
-	const auto updateRect = QRect(
-		edge - skip.x() - size,
-		edge - skip.y() - size,
-		size,
-		size
-	).marginsAdded(
-		{ stroke, stroke, stroke, stroke }
-	).translated(
-		st::dialogsPadding
-	);
+	updateRowCornerStatusShown(history, Data::IsUserOnline(user));
+}
+
+void InnerWidget::groupHasCallUpdated(not_null<PeerData*> peer) {
+	const auto group = peer->asMegagroup();
+	if (!group) {
+		return;
+	}
+	const auto history = session().data().historyLoaded(group);
+	if (!history) {
+		return;
+	}
+	updateRowCornerStatusShown(history, Data::ChannelHasActiveCall(group));
+}
+
+void InnerWidget::updateRowCornerStatusShown(
+		not_null<History*> history,
+		bool shown) {
 	const auto repaint = [=] {
-		updateDialogRow(
-			RowDescriptor(
-				history,
-				FullMsgId()),
-			updateRect,
-			UpdateRowSection::Default | UpdateRowSection::Filtered);
+		updateDialogRowCornerStatus(history);
 	};
 	repaint();
 
 	const auto findRow = [&](not_null<History*> history)
-	-> std::pair<Row*, int> {
+		-> std::pair<Row*, int> {
 		if (state() == WidgetState::Default) {
 			const auto row = shownDialogs()->getRow({ history });
 			return { row, row ? defaultRowTop(row) : 0 };
@@ -3006,8 +3062,8 @@ void InnerWidget::userOnlineUpdated(not_null<PeerData*> peer) {
 	if (const auto &[row, top] = findRow(history); row != nullptr) {
 		const auto visible = (top < _visibleBottom)
 			&& (top + st::dialogsRowHeight > _visibleTop);
-		row->setOnline(
-			Data::OnlineTextActive(user, base::unixtime::now()),
+		row->updateCornerBadgeShown(
+			history->peer,
 			visible ? Fn<void()>(crl::guard(this, repaint)) : nullptr);
 	}
 }
@@ -3150,6 +3206,23 @@ void InnerWidget::setupShortcuts() {
 
 		request->check(Command::FolderPrevious) && request->handle([=] {
 			return nearFolder(false);
+		});
+
+		request->check(Command::ReadChat) && request->handle([=] {
+			const auto history = _selected ? _selected->history() : nullptr;
+			if (history) {
+				if ((history->chatListUnreadCount() > 0)
+					|| history->chatListUnreadMark()) {
+					session().data().histories().readInbox(history);
+				}
+				return true;
+			}
+			return (history != nullptr);
+		});
+
+		request->check(Command::ShowContacts) && request->handle([=] {
+			Ui::show(PrepareContactsBox(_controller));
+			return true;
 		});
 
 		if (session().supportMode() && row.key.history()) {

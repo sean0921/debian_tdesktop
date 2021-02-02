@@ -15,12 +15,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_cursor_state.h"
 #include "ui/image/image.h"
-#include "ui/text_options.h"
+#include "ui/text/text_options.h"
+#include "ui/cached_round_corners.h"
 #include "data/data_session.h"
 #include "data/data_file_origin.h"
 #include "data/data_cloud_file.h"
-#include "app.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 namespace HistoryView {
 
@@ -82,7 +82,7 @@ QSize Location::countOptimalSize() {
 		th = (st::maxMediaSize * th) / tw;
 		tw = st::maxMediaSize;
 	}
-	auto minWidth = qMax(st::minPhotoSize, _parent->infoWidth() + 2 * (st::msgDateImgDelta + st::msgDateImgPadding.x()));
+	auto minWidth = qMax(st::minPhotoSize, _parent->minWidthForMedia());
 	auto maxWidth = qMax(tw, minWidth);
 	auto minHeight = qMax(th, st::minPhotoSize);
 
@@ -118,7 +118,7 @@ QSize Location::countCurrentSize(int newWidth) {
 	} else {
 		newWidth = tw;
 	}
-	auto minWidth = qMax(st::minPhotoSize, _parent->infoWidth() + 2 * (st::msgDateImgDelta + st::msgDateImgPadding.x()));
+	auto minWidth = qMax(st::minPhotoSize, _parent->minWidthForMedia());
 	accumulate_max(newWidth, minWidth);
 	accumulate_max(newHeight, st::minPhotoSize);
 	if (_parent->hasBubble()) {
@@ -179,19 +179,19 @@ void Location::draw(Painter &p, const QRect &r, TextSelection selection, crl::ti
 		}
 		painth -= painty;
 	} else {
-		App::roundShadow(p, 0, 0, paintw, painth, selected ? st::msgInShadowSelected : st::msgInShadow, selected ? InSelectedShadowCorners : InShadowCorners);
+		Ui::FillRoundShadow(p, 0, 0, paintw, painth, selected ? st::msgInShadowSelected : st::msgInShadow, selected ? Ui::InSelectedShadowCorners : Ui::InShadowCorners);
 	}
 
 	auto roundRadius = ImageRoundRadius::Large;
 	auto roundCorners = ((isBubbleTop() && _title.isEmpty() && _description.isEmpty()) ? (RectPart::TopLeft | RectPart::TopRight) : RectPart::None)
-		| (isBubbleBottom() ? (RectPart::BottomLeft | RectPart::BottomRight) : RectPart::None);
+		| (isRoundedInBubbleBottom() ? (RectPart::BottomLeft | RectPart::BottomRight) : RectPart::None);
 	auto rthumb = QRect(paintx, painty, paintw, painth);
 	ensureMediaCreated();
 	if (const auto thumbnail = _media->image()) {
 		const auto &pix = thumbnail->pixSingle(paintw, painth, paintw, painth, roundRadius, roundCorners);
 		p.drawPixmap(rthumb.topLeft(), pix);
 	} else {
-		App::complexLocationRect(p, rthumb, roundRadius, roundCorners);
+		Ui::FillComplexLocationRect(p, rthumb, roundRadius, roundCorners);
 	}
 	const auto paintMarker = [&](const style::icon &icon) {
 		icon.paint(
@@ -203,16 +203,16 @@ void Location::draw(Painter &p, const QRect &r, TextSelection selection, crl::ti
 	paintMarker(st::historyMapPoint);
 	paintMarker(st::historyMapPointInner);
 	if (selected) {
-		App::complexOverlayRect(p, rthumb, roundRadius, roundCorners);
+		Ui::FillComplexOverlayRect(p, rthumb, roundRadius, roundCorners);
 	}
 
 	if (_parent->media() == this) {
 		auto fullRight = paintx + paintw;
 		auto fullBottom = height();
 		_parent->drawInfo(p, fullRight, fullBottom, paintx * 2 + paintw, selected, InfoDisplayType::Image);
-		if (!bubble && _parent->displayRightAction()) {
+		if (const auto size = bubble ? std::nullopt : _parent->rightActionSize()) {
 			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
-			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - size->height());
 			_parent->drawRightAction(p, fastShareLeft, fastShareTop, 2 * paintx + paintw);
 		}
 	}
@@ -278,10 +278,10 @@ TextState Location::textState(QPoint point, StateRequest request) const {
 		if (_parent->pointInTime(fullRight, fullBottom, point, InfoDisplayType::Image)) {
 			result.cursor = CursorState::Date;
 		}
-		if (!bubble && _parent->displayRightAction()) {
+		if (const auto size = bubble ? std::nullopt : _parent->rightActionSize()) {
 			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
-			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
-			if (QRect(fastShareLeft, fastShareTop, st::historyFastShareSize, st::historyFastShareSize).contains(point)) {
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - size->height());
+			if (QRect(fastShareLeft, fastShareTop, size->width(), size->height()).contains(point)) {
 				result.link = _parent->rightActionLink();
 			}
 		}
@@ -319,11 +319,12 @@ bool Location::needsBubble() const {
 		return true;
 	}
 	const auto item = _parent->data();
-	return item->viaBot()
-		|| item->Has<HistoryMessageReply>()
+	return item->repliesAreComments()
+		|| item->externalReply()
+		|| item->viaBot()
+		|| _parent->displayedReply()
 		|| _parent->displayForwardedFrom()
 		|| _parent->displayFromName();
-	return false;
 }
 
 int Location::fullWidth() const {

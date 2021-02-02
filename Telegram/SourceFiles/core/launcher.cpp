@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_launcher.h"
 #include "platform/platform_specific.h"
 #include "base/platform/base_platform_info.h"
+#include "base/platform/base_platform_file_utilities.h"
 #include "ui/main_queue_processor.h"
 #include "ui/ui_utility.h"
 #include "core/crash_reports.h"
@@ -93,6 +94,9 @@ void ComputeDebugMode() {
 	auto file = QFile(debugModeSettingPath);
 	if (file.exists() && file.open(QIODevice::ReadOnly)) {
 		Logs::SetDebugEnabled(file.read(1) != "0");
+	}
+	if (cDebugMode()) {
+		Logs::SetDebugEnabled(true);
 	}
 }
 
@@ -266,14 +270,10 @@ std::unique_ptr<Launcher> Launcher::Create(int argc, char *argv[]) {
 
 Launcher::Launcher(
 	int argc,
-	char *argv[],
-	const QString &deviceModel,
-	const QString &systemVersion)
+	char *argv[])
 : _argc(argc)
 , _argv(argv)
-, _baseIntegration(_argc, _argv)
-, _deviceModel(deviceModel)
-, _systemVersion(systemVersion) {
+, _baseIntegration(_argc, _argv) {
 	base::Integration::Set(&_baseIntegration);
 }
 
@@ -296,10 +296,6 @@ void Launcher::init() {
 	});
 
 	QApplication::setApplicationName(qsl("TelegramDesktop"));
-
-#if defined Q_OS_UNIX && !defined Q_OS_MAC && QT_VERSION >= QT_VERSION_CHECK(5, 7, 0)
-	QApplication::setDesktopFileName(Platform::GetLauncherFilename());
-#endif
 
 #ifndef OS_MAC_OLD
 	QApplication::setAttribute(Qt::AA_DisableHighDpiScaling, true);
@@ -328,6 +324,23 @@ int Launcher::exec() {
 	// Must be started before Platform is started.
 	Logs::start(this);
 
+	if (Logs::DebugEnabled()) {
+		const auto openalLogPath = QDir::toNativeSeparators(
+			cWorkingDir() + qsl("DebugLogs/last_openal_log.txt"));
+
+		qputenv("ALSOFT_LOGLEVEL", "3");
+
+#ifdef Q_OS_WIN
+		_wputenv_s(
+			L"ALSOFT_LOGFILE",
+			openalLogPath.toStdWString().c_str());
+#else // Q_OS_WIN
+		qputenv(
+			"ALSOFT_LOGFILE",
+			QFile::encodeName(openalLogPath));
+#endif // !Q_OS_WIN
+	}
+
 	// Must be started before Sandbox is created.
 	Platform::start();
 	Ui::DisableCustomScaling();
@@ -339,7 +352,7 @@ int Launcher::exec() {
 	if (!UpdaterDisabled() && cRestartingUpdate()) {
 		DEBUG_LOG(("Sandbox Info: executing updater to install update."));
 		if (!launchUpdater(UpdaterLaunch::PerformUpdate)) {
-			psDeleteDir(cWorkingDir() + qsl("tupdates/temp"));
+			base::Platform::DeleteDirectory(cWorkingDir() + qsl("tupdates/temp"));
 		}
 	} else if (cRestarting()) {
 		DEBUG_LOG(("Sandbox Info: executing Telegram because of restart."));
@@ -399,7 +412,7 @@ bool Launcher::customWorkingDir() const {
 }
 
 void Launcher::prepareSettings() {
-	auto path = Platform::CurrentExecutablePath(_argc, _argv);
+	auto path = base::Platform::CurrentExecutablePath(_argc, _argv);
 	LOG(("Executable path before check: %1").arg(path));
 	if (!path.isEmpty()) {
 		auto info = QFileInfo(path);
@@ -417,14 +430,6 @@ void Launcher::prepareSettings() {
 	}
 
 	processArguments();
-}
-
-QString Launcher::deviceModel() const {
-	return _deviceModel;
-}
-
-QString Launcher::systemVersion() const {
-	return _systemVersion;
 }
 
 uint64 Launcher::installationTag() const {
@@ -482,7 +487,7 @@ void Launcher::processArguments() {
 		SetUpdaterDisabledAtStartup();
 	}
 	gUseFreeType = parseResult.contains("-freetype");
-	Logs::SetDebugEnabled(parseResult.contains("-debug"));
+	gDebugMode = parseResult.contains("-debug");
 	gManyInstance = parseResult.contains("-many");
 	gKeyFile = parseResult.value("-key", {}).join(QString()).toLower();
 	gKeyFile = gKeyFile.replace(QRegularExpression("[^a-z0-9\\-_]"), {});

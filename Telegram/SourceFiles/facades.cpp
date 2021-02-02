@@ -31,8 +31,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/view/media/history_view_media.h"
-#include "styles/style_history.h"
 #include "data/data_session.h"
+#include "styles/style_chat.h"
 
 namespace {
 
@@ -113,6 +113,13 @@ void activateBotCommand(
 			column);
 	} break;
 
+	case ButtonType::CallbackWithPassword: {
+		Api::SendBotCallbackDataWithPassword(
+			const_cast<HistoryItem*>(msg.get()),
+			row,
+			column);
+	} break;
+
 	case ButtonType::Buy: {
 		Ui::show(Box<InformBox>(tr::lng_payments_not_supported(tr::now)));
 	} break;
@@ -164,7 +171,13 @@ void activateBotCommand(
 			}
 		}
 		if (const auto m = CheckMainWidget(&msg->history()->session())) {
-			Window::PeerMenuCreatePoll(m->controller(), msg->history()->peer, chosen, disabled);
+			const auto replyToId = MsgId(0);
+			Window::PeerMenuCreatePoll(
+				m->controller(),
+				msg->history()->peer,
+				replyToId,
+				chosen,
+				disabled);
 		}
 	} break;
 
@@ -178,7 +191,7 @@ void activateBotCommand(
 					if (samePeer) {
 						Notify::switchInlineBotButtonReceived(session, QString::fromUtf8(button->data), bot, msg->id);
 						return true;
-					} else if (bot->isBot() && bot->botInfo->inlineReturnPeerId) {
+					} else if (bot->isBot() && bot->botInfo->inlineReturnTo.key) {
 						if (Notify::switchInlineBotButtonReceived(session, QString::fromUtf8(button->data))) {
 							return true;
 						}

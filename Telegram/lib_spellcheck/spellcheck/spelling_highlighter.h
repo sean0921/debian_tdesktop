@@ -69,7 +69,7 @@ private:
 	void invokeCheckText(
 		int textPosition,
 		int textLength,
-		Fn<void(const MisspelledWords &ranges)> callback);
+		Fn<void(MisspelledWords &&ranges)> callback);
 
 	void checkChangedText();
 	void checkSingleWord(const MisspelledWord &singleWord);
@@ -103,6 +103,8 @@ private:
 	int _removedSymbols = 0;
 	int _lastPosition = 0;
 	bool _enabled = true;
+
+	bool _isLastKeyRepeat = false;
 
 	base::Timer _coldSpellcheckingTimer;
 

@@ -51,6 +51,7 @@ public:
 		int index,
 		int amountAtRequestStart,
 		crl::time timeAtRequestStart);
+	void checkSendNextAfterSuccess(MTP::DcId dcId);
 	[[nodiscard]] int chooseSessionIndex(MTP::DcId dcId) const;
 
 private:
@@ -120,7 +121,7 @@ private:
 class DownloadMtprotoTask : public base::has_weak_ptr {
 public:
 	struct Location {
-		base::variant<
+		std::variant<
 			StorageFileLocation,
 			WebFileLocation,
 			GeoPointLocation> data;

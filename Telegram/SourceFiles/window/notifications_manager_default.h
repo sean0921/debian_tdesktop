@@ -43,6 +43,10 @@ public:
 	Manager(System *system);
 	~Manager();
 
+	[[nodiscard]] ManagerType type() const override {
+		return ManagerType::Default;
+	}
+
 	template <typename Method>
 	void enumerateNotifications(Method method) {
 		for (const auto &notification : _notifications) {
@@ -122,7 +126,7 @@ private:
 
 namespace internal {
 
-class Widget : public TWidget, protected base::Subscriber {
+class Widget : public Ui::RpWidget, protected base::Subscriber {
 public:
 	enum class Direction {
 		Up,

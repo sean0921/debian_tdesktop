@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "chat_helpers/tabbed_selector.h"
 #include "ui/widgets/input_fields.h"
+#include "ui/chat/attach/attach_send_files_way.h"
 #include "window/section_widget.h"
 #include "support/support_common.h"
 #include "storage/serialize_common.h"
@@ -68,6 +69,7 @@ QByteArray SessionSettings::serialize() const {
 			stream << quint64(key) << qint32(value);
 		}
 		stream << qint32(_dialogsFiltersEnabled ? 1 : 0);
+		stream << qint32(_supportAllSilent ? 1 : 0);
 	}
 	return result;
 }
@@ -96,7 +98,7 @@ void SessionSettings::addFromSerialized(const QByteArray &serialized) {
 	float64 appDialogsWidthRatio = app.dialogsWidthRatio();
 	int appThirdColumnWidth = app.thirdColumnWidth();
 	int appThirdSectionExtendedBy = app.thirdSectionExtendedBy();
-	qint32 appSendFilesWay = static_cast<qint32>(app.sendFilesWay());
+	qint32 appSendFilesWay = app.sendFilesWay().serialize();
 	qint32 legacyCallsPeerToPeer = qint32(0);
 	qint32 appSendSubmitWay = static_cast<qint32>(app.sendSubmitWay());
 	qint32 supportSwitch = static_cast<qint32>(_supportSwitch);
@@ -126,6 +128,7 @@ void SessionSettings::addFromSerialized(const QByteArray &serialized) {
 	qint32 appAutoDownloadDictionaries = app.autoDownloadDictionaries() ? 1 : 0;
 	base::flat_map<PeerId, MsgId> hiddenPinnedMessages;
 	qint32 dialogsFiltersEnabled = _dialogsFiltersEnabled ? 1 : 0;
+	qint32 supportAllSilent = _supportAllSilent ? 1 : 0;
 
 	stream >> versionTag;
 	if (versionTag == kVersionTag) {
@@ -186,7 +189,7 @@ void SessionSettings::addFromSerialized(const QByteArray &serialized) {
 		if (!stream.atEnd()) {
 			qint32 value = 0;
 			stream >> value;
-			appDialogsWidthRatio = snap(value / 1000000., 0., 1.);
+			appDialogsWidthRatio = std::clamp(value / 1000000., 0., 1.);
 
 			stream >> value;
 			appThirdColumnWidth = value;
@@ -320,6 +323,9 @@ void SessionSettings::addFromSerialized(const QByteArray &serialized) {
 	if (!stream.atEnd()) {
 		stream >> dialogsFiltersEnabled;
 	}
+	if (!stream.atEnd()) {
+		stream >> supportAllSilent;
+	}
 	if (stream.status() != QDataStream::Ok) {
 		LOG(("App Error: "
 			"Bad data for SessionSettings::addFromSerialized()"));
@@ -361,17 +367,15 @@ void SessionSettings::addFromSerialized(const QByteArray &serialized) {
 	_mediaLastPlaybackPosition = std::move(mediaLastPlaybackPosition);
 	_hiddenPinnedMessages = std::move(hiddenPinnedMessages);
 	_dialogsFiltersEnabled = (dialogsFiltersEnabled == 1);
+	_supportAllSilent = (supportAllSilent == 1);
 
 	if (version < 2) {
 		app.setLastSeenWarningSeen(appLastSeenWarningSeen == 1);
 		for (const auto &[key, value] : appSoundOverrides) {
 			app.setSoundOverride(key, value);
 		}
-		auto uncheckedSendFilesWay = static_cast<SendFilesWay>(appSendFilesWay);
-		switch (uncheckedSendFilesWay) {
-		case SendFilesWay::Album:
-		case SendFilesWay::Photos:
-		case SendFilesWay::Files: app.setSendFilesWay(uncheckedSendFilesWay); break;
+		if (const auto sendFilesWay = Ui::SendFilesWay::FromSerialized(appSendFilesWay)) {
+			app.setSendFilesWay(*sendFilesWay);
 		}
 		auto uncheckedSendSubmitWay = static_cast<Ui::InputSubmitSettings>(
 			appSendSubmitWay);

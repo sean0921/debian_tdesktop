@@ -9,6 +9,7 @@
 #include "base/qthelp_url.h"
 #include "base/qthelp_regex.h"
 #include "base/crc32hash.h"
+#include "base/qt_adapters.h"
 #include "ui/text/text.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/emoji_config.h"
@@ -1403,7 +1404,7 @@ QStringList PrepareSearchWords(
 		auto list = clean.split(SplitterOverride
 			? *SplitterOverride
 			: RegExpWordSplit(),
-			QString::SkipEmptyParts);
+			base::QStringSkipEmptyParts);
 		auto size = list.size();
 		result.reserve(list.size());
 		for (const auto &word : std::as_const(list)) {
@@ -1587,7 +1588,8 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 
 	int32 len = result.text.size(), commandOffset = rich ? 0 : len;
 	bool inLink = false, commandIsLink = false;
-	const QChar *start = result.text.constData(), *end = start + result.text.size();
+	const auto start = result.text.constData();
+	const auto end = start + result.text.size();
 	for (int32 offset = 0, matchOffset = offset, mentionSkip = 0; offset < len;) {
 		if (commandOffset <= offset) {
 			for (commandOffset = offset; commandOffset < len; ++commandOffset) {
@@ -1642,6 +1644,10 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 			}
 			if (!(start + mentionStart + 1)->isLetter() || !(start + mentionEnd - 1)->isLetterOrNumber()) {
 				mentionSkip = mentionEnd;
+				if (mentionSkip < len
+					&& (start + mentionSkip)->isLowSurrogate()) {
+					++mentionSkip;
+				}
 				mMention = RegExpMention().match(result.text, qMax(mentionSkip, matchOffset));
 				if (mMention.hasMatch()) {
 					mentionStart = mMention.capturedStart();
@@ -1942,6 +1948,20 @@ void Trim(TextWithEntities &result) {
 			break;
 		}
 	}
+}
+
+int SerializeTagsSize(const TextWithTags::Tags &tags) {
+	auto result = qint32(0);
+	if (tags.isEmpty()) {
+		return result;
+	}
+	result += sizeof(qint32);
+	for (const auto &tag : tags) {
+		result += 2 * sizeof(qint32) // offset, length
+			+ sizeof(quint32) // id.size
+			+ tag.id.size() * sizeof(ushort);
+	}
+	return result;
 }
 
 QByteArray SerializeTags(const TextWithTags::Tags &tags) {

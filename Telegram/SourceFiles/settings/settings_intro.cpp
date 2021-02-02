@@ -18,10 +18,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/labels.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/scroll_area.h"
+#include "ui/cached_round_corners.h"
 #include "lang/lang_keys.h"
 #include "boxes/abstract_box.h"
 #include "window/window_controller.h"
-#include "app.h"
 #include "styles/style_settings.h"
 #include "styles/style_layers.h"
 #include "styles/style_info.h"
@@ -65,9 +65,7 @@ object_ptr<Ui::RpWidget> CreateIntroSettings(
 	AddDivider(result);
 	AddSkip(result);
 	SetupLanguageButton(result, false);
-	if (HasConnectionType()) {
-		SetupConnectionType(&window->account(), result);
-	}
+	SetupConnectionType(&window->account(), result);
 	AddSkip(result);
 	if (HasUpdate()) {
 		AddDivider(result);
@@ -75,10 +73,18 @@ object_ptr<Ui::RpWidget> CreateIntroSettings(
 		SetupUpdate(result);
 		AddSkip(result);
 	}
-	AddDivider(result);
-	AddSkip(result);
-	SetupSystemIntegrationContent(result);
-	AddSkip(result);
+	{
+		auto wrap = object_ptr<Ui::VerticalLayout>(result);
+		SetupSystemIntegrationContent(wrap.data());
+		if (wrap->count() > 0) {
+			AddDivider(result);
+			AddSkip(result);
+			result->add(object_ptr<Ui::OverrideMargins>(
+				result,
+				std::move(wrap)));
+			AddSkip(result);
+		}
+	}
 	AddDivider(result);
 	AddSkip(result);
 	SetupInterfaceScale(result, false);
@@ -352,7 +358,9 @@ void IntroWidget::resizeEvent(QResizeEvent *e) {
 }
 
 void IntroWidget::keyPressEvent(QKeyEvent *e) {
-	CodesFeedString(nullptr, e->text());
+	crl::on_main(this, [text = e->text()]{
+		CodesFeedString(nullptr, text);
+	});
 	return RpWidget::keyPressEvent(e);
 }
 
@@ -465,7 +473,7 @@ int LayerWidget::resizeGetHeight(int newWidth) {
 		_tillTop = _tillBottom = true;
 		return windowHeight;
 	}
-	auto newTop = snap(
+	auto newTop = std::clamp(
 		windowHeight / 24,
 		st::infoLayerTopMinimal,
 		st::infoLayerTopMaximal);
@@ -524,11 +532,11 @@ void LayerWidget::paintEvent(QPaintEvent *e) {
 		parts |= RectPart::FullBottom;
 	}
 	if (parts) {
-		App::roundRect(
+		Ui::FillRoundRect(
 			p,
 			rect(),
 			st::boxBg,
-			BoxCorners,
+			Ui::BoxCorners,
 			nullptr,
 			parts);
 	}

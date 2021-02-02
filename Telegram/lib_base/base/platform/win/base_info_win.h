@@ -18,6 +18,22 @@ inline constexpr bool IsWindows() {
 	return true;
 }
 
+inline constexpr bool IsWindows32Bit() {
+#ifdef Q_PROCESSOR_X86_32
+	return true;
+#else // Q_PROCESSOR_X86_32
+	return false;
+#endif // Q_PROCESSOR_X86_32
+}
+
+inline constexpr bool IsWindows64Bit() {
+#ifdef Q_PROCESSOR_X86_64
+	return true;
+#else // Q_PROCESSOR_X86_64
+	return false;
+#endif // Q_PROCESSOR_X86_64
+}
+
 inline constexpr bool IsWindowsStoreBuild() {
 #ifdef OS_WIN_STORE
 	return true;
@@ -38,10 +54,13 @@ inline bool IsMac10_11OrGreater() { return false; }
 inline bool IsMac10_12OrGreater() { return false; }
 inline bool IsMac10_13OrGreater() { return false; }
 inline bool IsMac10_14OrGreater() { return false; }
+inline bool IsMac10_15OrGreater() { return false; }
+inline bool IsMac11_0OrGreater() { return false; }
 inline constexpr bool IsLinux() { return false; }
 inline constexpr bool IsLinux32Bit() { return false; }
 inline constexpr bool IsLinux64Bit() { return false; }
 inline bool IsWayland() { return false; }
-inline QString GetGlibCVersion() { return QString(); }
+inline QString GetLibcName() { return QString(); }
+inline QString GetLibcVersion() { return QString(); }
 
 } // namespace Platform

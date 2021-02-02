@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session_settings.h"
 #include "ui/image/image.h"
 #include "ui/grouped_layout.h"
+#include "ui/cached_round_corners.h"
 #include "data/data_session.h"
 #include "data/data_streaming.h"
 #include "data/data_photo.h"
@@ -28,8 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "data/data_auto_download.h"
 #include "core/application.h"
-#include "app.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 namespace HistoryView {
 namespace {
@@ -154,7 +154,9 @@ QSize Photo::countOptimalSize() {
 	if (_serviceWidth > 0) {
 		return { _serviceWidth, _serviceWidth };
 	}
-	const auto minWidth = qMax((_parent->hasBubble() ? st::historyPhotoBubbleMinWidth : st::minPhotoSize), _parent->infoWidth() + 2 * (st::msgDateImgDelta + st::msgDateImgPadding.x()));
+	const auto minWidth = qMax(
+		(_parent->hasBubble() ? st::historyPhotoBubbleMinWidth : st::minPhotoSize),
+		_parent->minWidthForMedia());
 	const auto maxActualWidth = qMax(tw, minWidth);
 	maxWidth = qMax(maxActualWidth, th);
 	minHeight = qMax(th, st::minPhotoSize);
@@ -194,7 +196,9 @@ QSize Photo::countCurrentSize(int newWidth) {
 	if (_pixw < 1) _pixw = 1;
 	if (_pixh < 1) _pixh = 1;
 
-	auto minWidth = qMax((_parent->hasBubble() ? st::historyPhotoBubbleMinWidth : st::minPhotoSize), _parent->infoWidth() + 2 * (st::msgDateImgDelta + st::msgDateImgPadding.x()));
+	auto minWidth = qMax(
+		(_parent->hasBubble() ? st::historyPhotoBubbleMinWidth : st::minPhotoSize),
+		_parent->minWidthForMedia());
 	newWidth = qMax(_pixw, minWidth);
 	auto newHeight = qMax(_pixh, st::minPhotoSize);
 	if (_parent->hasBubble() && !_caption.isEmpty()) {
@@ -245,12 +249,12 @@ void Photo::draw(Painter &p, const QRect &r, TextSelection selection, crl::time 
 				rthumb = style::rtlrect(paintx, painty, paintw, painth, width());
 			}
 		} else {
-			App::roundShadow(p, 0, 0, paintw, painth, selected ? st::msgInShadowSelected : st::msgInShadow, selected ? InSelectedShadowCorners : InShadowCorners);
+			Ui::FillRoundShadow(p, 0, 0, paintw, painth, selected ? st::msgInShadowSelected : st::msgInShadow, selected ? Ui::InSelectedShadowCorners : Ui::InShadowCorners);
 		}
 		auto inWebPage = (_parent->media() != this);
 		auto roundRadius = inWebPage ? ImageRoundRadius::Small : ImageRoundRadius::Large;
 		auto roundCorners = inWebPage ? RectPart::AllCorners : ((isBubbleTop() ? (RectPart::TopLeft | RectPart::TopRight) : RectPart::None)
-			| ((isBubbleBottom() && _caption.isEmpty()) ? (RectPart::BottomLeft | RectPart::BottomRight) : RectPart::None));
+			| ((isRoundedInBubbleBottom() && _caption.isEmpty()) ? (RectPart::BottomLeft | RectPart::BottomRight) : RectPart::None));
 		const auto pix = [&] {
 			if (const auto large = _dataMedia->image(PhotoSize::Large)) {
 				return large->pixSingle(_pixw, _pixh, paintw, painth, roundRadius, roundCorners);
@@ -268,14 +272,15 @@ void Photo::draw(Painter &p, const QRect &r, TextSelection selection, crl::time 
 		}();
 		p.drawPixmap(rthumb.topLeft(), pix);
 		if (selected) {
-			App::complexOverlayRect(p, rthumb, roundRadius, roundCorners);
+			Ui::FillComplexOverlayRect(p, rthumb, roundRadius, roundCorners);
 		}
 	}
 	if (radial || (!loaded && !_data->loading())) {
 		const auto radialOpacity = (radial && loaded && !_data->uploading())
 			? _animation->radial.opacity() :
 			1.;
-		QRect inner(rthumb.x() + (rthumb.width() - st::msgFileSize) / 2, rthumb.y() + (rthumb.height() - st::msgFileSize) / 2, st::msgFileSize, st::msgFileSize);
+		const auto innerSize = st::msgFileLayout.thumbSize;
+		QRect inner(rthumb.x() + (rthumb.width() - innerSize) / 2, rthumb.y() + (rthumb.height() - innerSize) / 2, innerSize, innerSize);
 		p.setPen(Qt::NoPen);
 		if (selected) {
 			p.setBrush(st::msgDateImgBgSelected);
@@ -322,9 +327,9 @@ void Photo::draw(Painter &p, const QRect &r, TextSelection selection, crl::time 
 		if (needInfoDisplay()) {
 			_parent->drawInfo(p, fullRight, fullBottom, 2 * paintx + paintw, selected, InfoDisplayType::Image);
 		}
-		if (!bubble && _parent->displayRightAction()) {
+		if (const auto size = bubble ? std::nullopt : _parent->rightActionSize()) {
 			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
-			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - size->height());
 			_parent->drawRightAction(p, fastShareLeft, fastShareTop, 2 * paintx + paintw);
 		}
 	}
@@ -385,7 +390,8 @@ void Photo::paintUserpicFrame(
 	p.drawPixmap(rect, pix);
 
 	if (_data->videoCanBePlayed() && !_streamed) {
-		auto inner = QRect(rect.x() + (rect.width() - st::msgFileSize) / 2, rect.y() + (rect.height() - st::msgFileSize) / 2, st::msgFileSize, st::msgFileSize);
+		const auto innerSize = st::msgFileLayout.thumbSize;
+		auto inner = QRect(rect.x() + (rect.width() - innerSize) / 2, rect.y() + (rect.height() - innerSize) / 2, innerSize, innerSize);
 		p.setPen(Qt::NoPen);
 		if (selected) {
 			p.setBrush(st::msgDateImgBgSelected);
@@ -450,10 +456,10 @@ TextState Photo::textState(QPoint point, StateRequest request) const {
 		if (_parent->pointInTime(fullRight, fullBottom, point, InfoDisplayType::Image)) {
 			result.cursor = CursorState::Date;
 		}
-		if (!bubble && _parent->displayRightAction()) {
+		if (const auto size = bubble ? std::nullopt : _parent->rightActionSize()) {
 			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
-			auto fastShareTop = (fullBottom - st::historyFastShareBottom - st::historyFastShareSize);
-			if (QRect(fastShareLeft, fastShareTop, st::historyFastShareSize, st::historyFastShareSize).contains(point)) {
+			auto fastShareTop = (fullBottom - st::historyFastShareBottom - size->height());
+			if (QRect(fastShareLeft, fastShareTop, size->width(), size->height()).contains(point)) {
 				result.link = _parent->rightActionLink();
 			}
 		}
@@ -461,10 +467,14 @@ TextState Photo::textState(QPoint point, StateRequest request) const {
 	return result;
 }
 
-QSize Photo::sizeForGrouping() const {
+QSize Photo::sizeForGroupingOptimal(int maxWidth) const {
 	const auto width = _data->width();
 	const auto height = _data->height();
 	return { std::max(width, 1), std::max(height, 1) };
+}
+
+QSize Photo::sizeForGrouping(int width) const {
+	return sizeForGroupingOptimal(width);
 }
 
 void Photo::drawGrouped(
@@ -475,6 +485,7 @@ void Photo::drawGrouped(
 		const QRect &geometry,
 		RectParts sides,
 		RectParts corners,
+		float64 highlightOpacity,
 		not_null<uint64*> cacheKey,
 		not_null<QPixmap*> cache) const {
 	ensureDataMediaCreated();
@@ -499,9 +510,18 @@ void Photo::drawGrouped(
 //		App::roundShadow(p, 0, 0, paintw, painth, selected ? st::msgInShadowSelected : st::msgInShadow, selected ? InSelectedShadowCorners : InShadowCorners);
 	}
 	p.drawPixmap(geometry.topLeft(), *cache);
-	if (selected) {
+
+	const auto overlayOpacity = selected
+		? (1. - highlightOpacity)
+		: highlightOpacity;
+	if (overlayOpacity > 0.) {
+		p.setOpacity(overlayOpacity);
 		const auto roundRadius = ImageRoundRadius::Large;
-		App::complexOverlayRect(p, geometry, roundRadius, corners);
+		Ui::FillComplexOverlayRect(p, geometry, roundRadius, corners);
+		if (!selected) {
+			Ui::FillComplexOverlayRect(p, geometry, roundRadius, corners);
+		}
+		p.setOpacity(1.);
 	}
 
 	const auto displayState = radial
@@ -704,7 +724,7 @@ void Photo::setStreamed(std::unique_ptr<Streamed> value) {
 void Photo::handleStreamingUpdate(::Media::Streaming::Update &&update) {
 	using namespace ::Media::Streaming;
 
-	update.data.match([&](Information &update) {
+	v::match(update.data, [&](Information &update) {
 		streamingReady(std::move(update));
 	}, [&](const PreloadedVideo &update) {
 	}, [&](const UpdateVideo &update) {
@@ -801,8 +821,10 @@ bool Photo::needsBubble() const {
 	}
 	const auto item = _parent->data();
 	if (item->toHistoryMessage()) {
-		return item->viaBot()
-			|| item->Has<HistoryMessageReply>()
+		return item->repliesAreComments()
+			|| item->externalReply()
+			|| item->viaBot()
+			|| _parent->displayedReply()
 			|| _parent->displayForwardedFrom()
 			|| _parent->displayFromName();
 	}

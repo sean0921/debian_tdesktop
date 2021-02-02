@@ -24,11 +24,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "chat_helpers/message_field.h"
+#include "chat_helpers/send_context_menu.h"
 #include "history/view/history_view_schedule_box.h"
 #include "settings/settings_common.h"
 #include "base/unique_qptr.h"
 #include "base/event_filter.h"
 #include "base/call_delayed.h"
+#include "base/openssl_help.h"
 #include "window/window_session_controller.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
@@ -753,11 +755,13 @@ CreatePollBox::CreatePollBox(
 	not_null<Window::SessionController*> controller,
 	PollData::Flags chosen,
 	PollData::Flags disabled,
-	Api::SendType sendType)
+	Api::SendType sendType,
+	SendMenu::Type sendMenuType)
 : _controller(controller)
 , _chosen(chosen)
 , _disabled(disabled)
-, _sendType(sendType) {
+, _sendType(sendType)
+, _sendMenuType(sendMenuType) {
 }
 
 rpl::producer<CreatePollBox::Result> CreatePollBox::submitRequests() const {
@@ -882,7 +886,7 @@ not_null<Ui::InputField*> CreatePollBox::setupSolution(
 object_ptr<Ui::RpWidget> CreatePollBox::setupContent() {
 	using namespace Settings;
 
-	const auto id = rand_value<uint64>();
+	const auto id = openssl::RandomValue<uint64>();
 	const auto error = lifetime().make_state<Errors>(Error::Question);
 
 	auto result = object_ptr<Ui::VerticalLayout>(this);
@@ -1058,19 +1062,19 @@ object_ptr<Ui::RpWidget> CreatePollBox::setupContent() {
 			*error &= ~Error::Solution;
 		}
 	};
-	const auto showError = [=](const QString &text) {
-		Ui::Toast::Show(text);
+	const auto showError = [](tr::phrase<> text) {
+		Ui::Toast::Show(text(tr::now));
 	};
 	const auto send = [=](Api::SendOptions sendOptions) {
 		collectError();
 		if (*error & Error::Question) {
-			showError(tr::lng_polls_choose_question(tr::now));
+			showError(tr::lng_polls_choose_question);
 			question->setFocus();
 		} else if (*error & Error::Options) {
-			showError(tr::lng_polls_choose_answers(tr::now));
+			showError(tr::lng_polls_choose_answers);
 			options->focusFirst();
 		} else if (*error & Error::Correct) {
-			showError(tr::lng_polls_choose_correct(tr::now));
+			showError(tr::lng_polls_choose_correct);
 		} else if (*error & Error::Solution) {
 			solution->showError();
 		} else if (!*error) {
@@ -1078,15 +1082,13 @@ object_ptr<Ui::RpWidget> CreatePollBox::setupContent() {
 		}
 	};
 	const auto sendSilent = [=] {
-		auto options = Api::SendOptions();
-		options.silent = true;
-		send(options);
+		send({ .silent = true });
 	};
 	const auto sendScheduled = [=] {
 		Ui::show(
 			HistoryView::PrepareScheduleBox(
 				this,
-				SendMenuType::Scheduled,
+				SendMenu::Type::Scheduled,
 				send),
 			Ui::LayerOption::KeepOther);
 	};
@@ -1101,20 +1103,24 @@ object_ptr<Ui::RpWidget> CreatePollBox::setupContent() {
 		FocusAtEnd(question);
 	}, lifetime());
 
+	const auto isNormal = (_sendType == Api::SendType::Normal);
+
 	const auto submit = addButton(
-		tr::lng_polls_create_button(),
-		[=] { send({}); });
-	if (_sendType == Api::SendType::Normal) {
-		const auto sendMenuType = [=] {
-			collectError();
-			return *error ? SendMenuType::Disabled : SendMenuType::Scheduled;
-		};
-		SetupSendMenuAndShortcuts(
-			submit.data(),
-			sendMenuType,
-			sendSilent,
-			sendScheduled);
-	}
+		isNormal
+			? tr::lng_polls_create_button()
+			: tr::lng_schedule_button(),
+		[=] { isNormal ? send({}) : sendScheduled(); });
+	const auto sendMenuType = [=] {
+		collectError();
+		return (*error)
+			? SendMenu::Type::Disabled
+			: _sendMenuType;
+	};
+	SendMenu::SetupMenuAndShortcuts(
+		submit.data(),
+		sendMenuType,
+		sendSilent,
+		sendScheduled);
 	addButton(tr::lng_cancel(), [=] { closeBox(); });
 
 	return result;

@@ -9,6 +9,7 @@
 #include "lottie/lottie_frame_renderer.h"
 #include "ffmpeg/ffmpeg_utility.h"
 #include "base/bytes.h"
+#include "base/assertion.h"
 
 #include <QDataStream>
 #include <lz4.h>
@@ -138,7 +139,7 @@ void DecodeYUV2RGB(
 	uint8_t *dst[AV_NUM_DATA_POINTERS] = { to.bits(), nullptr };
 	int dstLineSize[AV_NUM_DATA_POINTERS] = { to.bytesPerLine(), 0 };
 
-	const auto lines = sws_scale(
+	sws_scale(
 		context.get(),
 		src,
 		srcLineSize,
@@ -146,8 +147,6 @@ void DecodeYUV2RGB(
 		to.height(),
 		dst,
 		dstLineSize);
-
-	Ensures(lines == to.height());
 }
 
 void DecodeAlpha(QImage &to, const EncodedStorage &from) {
@@ -215,7 +214,7 @@ void EncodeRGB2YUV(
 		0
 	};
 
-	const auto lines = sws_scale(
+	sws_scale(
 		context.get(),
 		src,
 		srcLineSize,
@@ -223,8 +222,6 @@ void EncodeRGB2YUV(
 		from.height(),
 		dst,
 		dstLineSize);
-
-	Ensures(lines == from.height());
 }
 
 void EncodeAlpha(EncodedStorage &to, const QImage &from) {

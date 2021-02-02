@@ -11,12 +11,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/themes/window_themes_embedded.h"
 #include "window/themes/window_theme_editor.h"
 #include "window/window_controller.h"
+#include "platform/platform_specific.h"
 #include "mainwidget.h"
 #include "main/main_session.h"
 #include "apiwrap.h"
 #include "storage/localstorage.h"
 #include "storage/localimageloader.h"
 #include "storage/file_upload.h"
+#include "base/openssl_help.h"
 #include "base/parse_helper.h"
 #include "base/zlib_help.h"
 #include "base/unixtime.h"
@@ -30,7 +32,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "app.h"
 #include "styles/style_widgets.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 #include <QtCore/QBuffer>
 
@@ -462,7 +464,9 @@ SendMediaReady PrepareWallPaper(MTP::DcId dcId, const QImage &image) {
 			MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)),
 			MTP_int(image.width()),
 			MTP_int(image.height()), MTP_int(0)));
-		thumbnails.emplace(type[0], std::move(image));
+		thumbnails.emplace(
+			type[0],
+			PreparedPhotoThumb{ .image = std::move(image) });
 	};
 	push("s", scaled(320));
 
@@ -473,7 +477,7 @@ SendMediaReady PrepareWallPaper(MTP::DcId dcId, const QImage &image) {
 	attributes.push_back(MTP_documentAttributeImageSize(
 		MTP_int(image.width()),
 		MTP_int(image.height())));
-	const auto id = rand_value<DocumentId>();
+	const auto id = openssl::RandomValue<DocumentId>();
 	const auto document = MTP_document(
 		MTP_flags(0),
 		MTP_long(id),
@@ -1319,16 +1323,13 @@ void ToggleNightModeWithConfirmation(
 	if (Background()->nightModeChangeAllowed()) {
 		toggle();
 	} else {
-		const auto box = std::make_shared<QPointer<ConfirmBox>>();
-		const auto disableAndToggle = [=] {
+		const auto disableAndToggle = [=](Fn<void()> &&close) {
 			Core::App().settings().setSystemDarkModeEnabled(false);
 			Core::App().saveSettingsDelayed();
 			toggle();
-			if (*box) {
-				(*box)->closeBox();
-			}
+			close();
 		};
-		*box = window->show(Box<ConfirmBox>(
+		window->show(Box<ConfirmBox>(
 			tr::lng_settings_auto_night_warning(tr::now),
 			tr::lng_settings_auto_night_disable(tr::now),
 			disableAndToggle));

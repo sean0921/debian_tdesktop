@@ -13,8 +13,8 @@ class QDate;
 namespace Platform {
 
 enum class OutdateReason {
-    IsOld,
-    Is32Bit,
+	IsOld,
+	Is32Bit,
 };
 
 [[nodiscard]] QString DeviceModelPretty();
@@ -27,6 +27,8 @@ enum class OutdateReason {
 [[nodiscard]] QString AutoUpdateKey();
 
 [[nodiscard]] constexpr bool IsWindows();
+[[nodiscard]] constexpr bool IsWindows32Bit();
+[[nodiscard]] constexpr bool IsWindows64Bit();
 [[nodiscard]] constexpr bool IsWindowsStoreBuild();
 [[nodiscard]] bool IsWindowsXPOrGreater();
 [[nodiscard]] bool IsWindowsVistaOrGreater();
@@ -47,12 +49,16 @@ enum class OutdateReason {
 [[nodiscard]] bool IsMac10_12OrGreater();
 [[nodiscard]] bool IsMac10_13OrGreater();
 [[nodiscard]] bool IsMac10_14OrGreater();
+[[nodiscard]] bool IsMac10_15OrGreater();
+[[nodiscard]] bool IsMac11_0OrGreater();
 
 [[nodiscard]] constexpr bool IsLinux();
 [[nodiscard]] constexpr bool IsLinux32Bit();
 [[nodiscard]] constexpr bool IsLinux64Bit();
 [[nodiscard]] bool IsWayland();
-[[nodiscard]] QString GetGlibCVersion();
+
+[[nodiscard]] QString GetLibcName();
+[[nodiscard]] QString GetLibcVersion();
 
 void Start(QJsonObject settings);
 void Finish();

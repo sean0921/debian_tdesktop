@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_updates.h"
 
+#include "api/api_authorizations.h"
 #include "api/api_text_entities.h"
 #include "main/main_session.h"
 #include "main/main_account.h"
@@ -21,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_channel.h"
 #include "data/data_chat_filters.h"
 #include "data/data_cloud_themes.h"
+#include "data/data_group_call.h"
 #include "data/data_drafts.h"
 #include "data/data_histories.h"
 #include "data/data_folder.h"
@@ -62,6 +64,22 @@ enum class DataIsLoadedResult {
 	Ok = 3,
 };
 
+void ProcessScheduledMessageWithElapsedTime(
+		not_null<Main::Session*> session,
+		bool needToAdd,
+		const MTPDmessage &data) {
+	if (needToAdd && !data.is_from_scheduled()) {
+		// If we still need to add a new message,
+		// we should first check if this message is in
+		// the list of scheduled messages.
+		// This is necessary to correctly update the file reference.
+		// Note that when a message is scheduled until online
+		// while the recipient is already online, the server sends
+		// an ordinary new message with skipped "from_scheduled" flag.
+		session->data().scheduledMessages().checkEntitiesAndUpdate(data);
+	}
+}
+
 bool IsForceLogoutNotification(const MTPDupdateServiceNotification &data) {
 	return qs(data.vtype()).startsWith(qstr("AUTH_KEY_DROP_"));
 }
@@ -97,20 +115,9 @@ bool ForwardedInfoDataLoaded(
 		not_null<Main::Session*> session,
 		const MTPMessageFwdHeader &header) {
 	return header.match([&](const MTPDmessageFwdHeader &data) {
-		if (const auto channelId = data.vchannel_id()) {
-			if (!session->data().channelLoaded(channelId->v)) {
-				return false;
-			}
-			if (const auto fromId = data.vfrom_id()) {
-				const auto from = session->data().user(fromId->v);
-				// Minimal loaded is fine in this case.
-				if (from->loadedStatus == PeerData::NotLoaded) {
-					return false;
-				}
-			}
-		} else if (const auto fromId = data.vfrom_id()) {
+		if (const auto fromId = data.vfrom_id()) {
 			// Fully loaded is required in this case.
-			if (!session->data().userLoaded(fromId->v)) {
+			if (!session->data().peerLoaded(peerFromMTP(*fromId))) {
 				return false;
 			}
 		}
@@ -145,7 +152,7 @@ DataIsLoadedResult AllDataLoadedForMessage(
 	return message.match([&](const MTPDmessage &message) {
 		if (const auto fromId = message.vfrom_id()) {
 			if (!message.is_post()
-				&& !session->data().userLoaded(fromId->v)) {
+				&& !session->data().peerLoaded(peerFromMTP(*fromId))) {
 				return DataIsLoadedResult::FromNotLoaded;
 			}
 		}
@@ -168,7 +175,7 @@ DataIsLoadedResult AllDataLoadedForMessage(
 	}, [&](const MTPDmessageService &message) {
 		if (const auto fromId = message.vfrom_id()) {
 			if (!message.is_post()
-				&& !session->data().userLoaded(fromId->v)) {
+				&& !session->data().peerLoaded(peerFromMTP(*fromId))) {
 				return DataIsLoadedResult::FromNotLoaded;
 			}
 		}
@@ -226,6 +233,27 @@ Updates::Updates(not_null<Main::Session*> session)
 	)).done([=](const MTPupdates_State &result) {
 		stateDone(result);
 	}).send();
+
+	using namespace rpl::mappers;
+	base::ObservableViewer(
+		api().fullPeerUpdated()
+	) | rpl::filter([](not_null<PeerData*> peer) {
+		return peer->isChat() || peer->isMegagroup();
+	}) | rpl::start_with_next([=](not_null<PeerData*> peer) {
+		if (const auto users = _pendingSpeakingCallMembers.take(peer)) {
+			if (const auto call = peer->groupCall()) {
+				for (const auto [userId, when] : *users) {
+					call->applyActiveUpdate(
+						userId,
+						Data::LastSpokeTimes{
+							.anything = when,
+							.voice = when
+						},
+						peer->owner().userLoaded(userId));
+				}
+			}
+		}
+	}, _lifetime);
 }
 
 Main::Session &Updates::session() const {
@@ -785,6 +813,10 @@ void Updates::mtpUpdateReceived(const MTPUpdates &updates) {
 	}
 }
 
+int32 Updates::pts() const {
+	return _ptsWaiter.current();
+}
+
 void Updates::updateOnline() {
 	updateOnline(false);
 }
@@ -880,6 +912,58 @@ bool Updates::isQuitPrevent() {
 	updateOnline();
 	return true;
 }
+void Updates::handleSendActionUpdate(
+		PeerId peerId,
+		MsgId rootId,
+		UserId userId,
+		const MTPSendMessageAction &action) {
+	const auto history = session().data().historyLoaded(peerId);
+	if (!history) {
+		return;
+	}
+	const auto peer = history->peer;
+	const auto user = (userId == session().userId())
+		? session().user().get()
+		: session().data().userLoaded(userId);
+	const auto isSpeakingInCall = (action.type()
+		== mtpc_speakingInGroupCallAction);
+	if (isSpeakingInCall) {
+		if (!peer->isChat() && !peer->isChannel()) {
+			return;
+		}
+		const auto call = peer->groupCall();
+		const auto now = crl::now();
+		if (call) {
+			call->applyActiveUpdate(
+				userId,
+				Data::LastSpokeTimes{ .anything = now, .voice = now },
+				user);
+		} else {
+			const auto chat = peer->asChat();
+			const auto channel = peer->asChannel();
+			const auto active = chat
+				? (chat->flags() & MTPDchat::Flag::f_call_active)
+				: (channel->flags() & MTPDchannel::Flag::f_call_active);
+			if (active) {
+				_pendingSpeakingCallMembers.emplace(
+					peer).first->second[userId] = now;
+				session().api().requestFullPeer(peer);
+			}
+		}
+	}
+	if (!user || user->isSelf()) {
+		return;
+	}
+	const auto when = requestingDifference()
+		? 0
+		: base::unixtime::now();
+	session().data().registerSendAction(
+		history,
+		rootId,
+		user,
+		action,
+		when);
+}
 
 void Updates::applyUpdatesNoPtsCheck(const MTPUpdates &updates) {
 	switch (updates.type()) {
@@ -890,23 +974,26 @@ void Updates::applyUpdatesNoPtsCheck(const MTPUpdates &updates) {
 		const auto peerUserId = d.is_out()
 			? d.vuser_id()
 			: MTP_int(_session->userId());
-		const auto fwd = d.vfwd_from();
 		_session->data().addNewMessage(
 			MTP_message(
 				MTP_flags(flags),
 				d.vid(),
-				d.is_out() ? MTP_int(_session->userId()) : d.vuser_id(),
-				MTP_peerUser(peerUserId),
-				fwd ? (*fwd) : MTPMessageFwdHeader(),
+				(d.is_out()
+					? peerToMTP(_session->userPeerId())
+					: MTP_peerUser(d.vuser_id())),
+				MTP_peerUser(d.vuser_id()),
+				d.vfwd_from() ? *d.vfwd_from() : MTPMessageFwdHeader(),
 				MTP_int(d.vvia_bot_id().value_or_empty()),
-				MTP_int(d.vreply_to_msg_id().value_or_empty()),
+				d.vreply_to() ? *d.vreply_to() : MTPMessageReplyHeader(),
 				d.vdate(),
 				d.vmessage(),
 				MTP_messageMediaEmpty(),
 				MTPReplyMarkup(),
 				MTP_vector<MTPMessageEntity>(d.ventities().value_or_empty()),
-				MTPint(),
-				MTPint(),
+				MTPint(), // views
+				MTPint(), // forwards
+				MTPMessageReplies(),
+				MTPint(), // edit_date
 				MTPstring(),
 				MTPlong(),
 				//MTPMessageReactions(),
@@ -917,24 +1004,26 @@ void Updates::applyUpdatesNoPtsCheck(const MTPUpdates &updates) {
 
 	case mtpc_updateShortChatMessage: {
 		const auto &d = updates.c_updateShortChatMessage();
-		const auto flags = mtpCastFlags(d.vflags().v) | MTPDmessage::Flag::f_from_id;
-		const auto fwd = d.vfwd_from();
+		const auto flags = mtpCastFlags(d.vflags().v)
+			| MTPDmessage::Flag::f_from_id;
 		_session->data().addNewMessage(
 			MTP_message(
 				MTP_flags(flags),
 				d.vid(),
-				d.vfrom_id(),
+				MTP_peerUser(d.vfrom_id()),
 				MTP_peerChat(d.vchat_id()),
-				fwd ? (*fwd) : MTPMessageFwdHeader(),
+				d.vfwd_from() ? *d.vfwd_from() : MTPMessageFwdHeader(),
 				MTP_int(d.vvia_bot_id().value_or_empty()),
-				MTP_int(d.vreply_to_msg_id().value_or_empty()),
+				d.vreply_to() ? *d.vreply_to() : MTPMessageReplyHeader(),
 				d.vdate(),
 				d.vmessage(),
 				MTP_messageMediaEmpty(),
 				MTPReplyMarkup(),
 				MTP_vector<MTPMessageEntity>(d.ventities().value_or_empty()),
-				MTPint(),
-				MTPint(),
+				MTPint(), // views
+				MTPint(), // forwards
+				MTPMessageReplies(),
+				MTPint(), // edit_date
 				MTPstring(),
 				MTPlong(),
 				//MTPMessageReactions(),
@@ -963,17 +1052,7 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 				LOG(("Skipping message, because it is already in blocks!"));
 				needToAdd = false;
 			}
-			if (needToAdd && !data.is_from_scheduled()) {
-				// If we still need to add a new message,
-				// we should first check if this message is in
-				// the list of scheduled messages.
-				// This is necessary to correctly update the file reference.
-				// Note that when a message is scheduled until online
-				// while the recipient is already online, the server sends
-				// an ordinary new message with skipped "from_scheduled" flag.
-				_session->data().scheduledMessages().checkEntitiesAndUpdate(
-					data);
-			}
+			ProcessScheduledMessageWithElapsedTime(_session, needToAdd, data);
 		}
 		if (needToAdd) {
 			_session->data().addNewMessage(
@@ -1062,10 +1141,12 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 		auto &d = update.c_updateNewChannelMessage();
 		auto needToAdd = true;
 		if (d.vmessage().type() == mtpc_message) { // index forwarded messages to links _overview
-			if (_session->data().checkEntitiesAndViewsUpdate(d.vmessage().c_message())) { // already in blocks
+			const auto &data = d.vmessage().c_message();
+			if (_session->data().checkEntitiesAndViewsUpdate(data)) { // already in blocks
 				LOG(("Skipping message, because it is already in blocks!"));
 				needToAdd = false;
 			}
+			ProcessScheduledMessageWithElapsedTime(_session, needToAdd, data);
 		}
 		if (needToAdd) {
 			_session->data().addNewMessage(
@@ -1078,6 +1159,17 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 	case mtpc_updateEditChannelMessage: {
 		auto &d = update.c_updateEditChannelMessage();
 		_session->data().updateEditedMessage(d.vmessage());
+	} break;
+
+	case mtpc_updatePinnedChannelMessages: {
+		const auto &d = update.c_updatePinnedChannelMessages();
+		const auto channelId = d.vchannel_id().v;
+		for (const auto &msgId : d.vmessages().v) {
+			const auto item = session().data().message(channelId, msgId.v);
+			if (item) {
+				item->setIsPinned(d.is_pinned());
+			}
+		}
 	} break;
 
 	case mtpc_updateEditMessage: {
@@ -1093,6 +1185,17 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 	case mtpc_updateDeleteChannelMessages: {
 		auto &d = update.c_updateDeleteChannelMessages();
 		_session->data().processMessagesDeleted(d.vchannel_id().v, d.vmessages().v);
+	} break;
+
+	case mtpc_updatePinnedMessages: {
+		const auto &d = update.c_updatePinnedMessages();
+		const auto peerId = peerFromMTP(d.vpeer());
+		for (const auto &msgId : d.vmessages().v) {
+			const auto item = session().data().message(0, msgId.v);
+			if (item) {
+				item->setIsPinned(d.is_pinned());
+			}
+		}
 	} break;
 
 	default: Unexpected("Type in applyUpdateNoPtsCheck()");
@@ -1390,6 +1493,21 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 		}
 	} break;
 
+	case mtpc_updatePinnedChannelMessages: {
+		auto &d = update.c_updatePinnedChannelMessages();
+		auto channel = session().data().channelLoaded(d.vchannel_id().v);
+
+		if (channel && !_handlingChannelDifference) {
+			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
+				return;
+			} else {
+				channel->ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
+			}
+		} else {
+			applyUpdateNoPtsCheck(update);
+		}
+	} break;
+
 	// Messages being read.
 	case mtpc_updateReadHistoryInbox: {
 		auto &d = update.c_updateReadHistoryInbox();
@@ -1536,32 +1654,29 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateUserTyping: {
 		auto &d = update.c_updateUserTyping();
-		const auto userId = peerFromUser(d.vuser_id());
-		const auto history = session().data().historyLoaded(userId);
-		const auto user = session().data().userLoaded(d.vuser_id().v);
-		if (history && user) {
-			const auto when = requestingDifference() ? 0 : base::unixtime::now();
-			session().data().registerSendAction(history, user, d.vaction(), when);
-		}
+		handleSendActionUpdate(
+			peerFromUser(d.vuser_id()),
+			0,
+			d.vuser_id().v,
+			d.vaction());
 	} break;
 
 	case mtpc_updateChatUserTyping: {
 		auto &d = update.c_updateChatUserTyping();
-		const auto history = [&]() -> History* {
-			if (const auto chat = session().data().chatLoaded(d.vchat_id().v)) {
-				return session().data().historyLoaded(chat->id);
-			} else if (const auto channel = session().data().channelLoaded(d.vchat_id().v)) {
-				return session().data().historyLoaded(channel->id);
-			}
-			return nullptr;
-		}();
-		const auto user = (d.vuser_id().v == session().userId())
-			? nullptr
-			: session().data().userLoaded(d.vuser_id().v);
-		if (history && user) {
-			const auto when = requestingDifference() ? 0 : base::unixtime::now();
-			session().data().registerSendAction(history, user, d.vaction(), when);
-		}
+		handleSendActionUpdate(
+			peerFromChat(d.vchat_id()),
+			0,
+			d.vuser_id().v,
+			d.vaction());
+	} break;
+
+	case mtpc_updateChannelUserTyping: {
+		const auto &d = update.c_updateChannelUserTyping();
+		handleSendActionUpdate(
+			peerFromChannel(d.vchannel_id()),
+			d.vtop_msg_id().value_or_empty(),
+			d.vuser_id().v,
+			d.vaction());
 	} break;
 
 	case mtpc_updateChatParticipants: {
@@ -1726,14 +1841,17 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 		auto &d = update.c_updateEncryptedMessagesRead();
 	} break;
 
-	case mtpc_updatePhoneCall: {
-		Core::App().calls().handleUpdate(&session(), update.c_updatePhoneCall());
+	case mtpc_updatePhoneCall:
+	case mtpc_updatePhoneCallSignalingData:
+	case mtpc_updateGroupCallParticipants:
+	case mtpc_updateGroupCall: {
+		Core::App().calls().handleUpdate(&session(), update);
 	} break;
 
-	case mtpc_updateUserBlocked: {
-		const auto &d = update.c_updateUserBlocked();
-		if (const auto user = session().data().userLoaded(d.vuser_id().v)) {
-			user->setIsBlocked(mtpIsTrue(d.vblocked()));
+	case mtpc_updatePeerBlocked: {
+		const auto &d = update.c_updatePeerBlocked();
+		if (const auto peer = session().data().peerLoaded(peerFromMTP(d.vpeer_id()))) {
+			peer->setIsBlocked(mtpIsTrue(d.vblocked()));
 		}
 	} break;
 
@@ -1752,7 +1870,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 			}
 		} else {
 			session().data().serviceNotification(text, d.vmedia());
-			session().data().checkNewAuthorization();
+			session().api().authorizations().reload();
 		}
 	} break;
 
@@ -1911,9 +2029,51 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 	} break;
 
 	case mtpc_updateChannelMessageViews: {
-		auto &d = update.c_updateChannelMessageViews();
-		if (auto item = session().data().message(d.vchannel_id().v, d.vid().v)) {
+		const auto &d = update.c_updateChannelMessageViews();
+		if (const auto item = session().data().message(d.vchannel_id().v, d.vid().v)) {
 			item->setViewsCount(d.vviews().v);
+		}
+	} break;
+
+	case mtpc_updateChannelMessageForwards: {
+		const auto &d = update.c_updateChannelMessageForwards();
+		if (const auto item = session().data().message(d.vchannel_id().v, d.vid().v)) {
+			item->setForwardsCount(d.vforwards().v);
+		}
+	} break;
+
+	case mtpc_updateReadChannelDiscussionInbox: {
+		const auto &d = update.c_updateReadChannelDiscussionInbox();
+		const auto channelId = d.vchannel_id().v;
+		const auto msgId = d.vtop_msg_id().v;
+		const auto readTillId = d.vread_max_id().v;
+		const auto item = session().data().message(channelId, msgId);
+		if (item) {
+			item->setRepliesInboxReadTill(readTillId);
+			if (const auto post = item->lookupDiscussionPostOriginal()) {
+				post->setRepliesInboxReadTill(readTillId);
+			}
+		}
+		if (const auto broadcastId = d.vbroadcast_id()) {
+			if (const auto post = session().data().message(
+					broadcastId->v,
+					d.vbroadcast_post()->v)) {
+				post->setRepliesInboxReadTill(readTillId);
+			}
+		}
+	} break;
+
+	case mtpc_updateReadChannelDiscussionOutbox: {
+		const auto &d = update.c_updateReadChannelDiscussionOutbox();
+		const auto channelId = d.vchannel_id().v;
+		const auto msgId = d.vtop_msg_id().v;
+		const auto readTillId = d.vread_max_id().v;
+		const auto item = session().data().message(channelId, msgId);
+		if (item) {
+			item->setRepliesOutboxReadTill(readTillId);
+			if (const auto post = item->lookupDiscussionPostOriginal()) {
+				post->setRepliesOutboxReadTill(readTillId);
+			}
 		}
 	} break;
 
@@ -1928,28 +2088,9 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 	} break;
 
 	// Pinned message.
-	case mtpc_updateUserPinnedMessage: {
-		const auto &d = update.c_updateUserPinnedMessage();
-		if (const auto user = session().data().userLoaded(d.vuser_id().v)) {
-			user->setPinnedMessageId(d.vid().v);
-		}
-	} break;
-
-	case mtpc_updateChatPinnedMessage: {
-		const auto &d = update.c_updateChatPinnedMessage();
-		if (const auto chat = session().data().chatLoaded(d.vchat_id().v)) {
-			const auto status = chat->applyUpdateVersion(d.vversion().v);
-			if (status == ChatData::UpdateStatus::Good) {
-				chat->setPinnedMessageId(d.vid().v);
-			}
-		}
-	} break;
-
-	case mtpc_updateChannelPinnedMessage: {
-		const auto &d = update.c_updateChannelPinnedMessage();
-		if (const auto channel = session().data().channelLoaded(d.vchannel_id().v)) {
-			channel->setPinnedMessageId(d.vid().v);
-		}
+	case mtpc_updatePinnedMessages: {
+		const auto &d = update.c_updatePinnedMessages();
+		updateAndApply(d.vpts().v, d.vpts_count().v, update);
 	} break;
 
 	////// Cloud sticker sets
