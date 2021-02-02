@@ -4,7 +4,7 @@
 # For license and copyright information please follow this link:
 # https://github.com/desktop-app/legal/blob/master/LEGAL
 
-add_library(lib_ui OBJECT)
+add_library(lib_ui STATIC)
 add_library(desktop-app::lib_ui ALIAS lib_ui)
 init_target(lib_ui)
 
@@ -42,8 +42,11 @@ PRIVATE
     ui/effects/animations.h
     ui/effects/cross_animation.cpp
     ui/effects/cross_animation.h
+    ui/effects/cross_line.cpp
+    ui/effects/cross_line.h
     ui/effects/fade_animation.cpp
     ui/effects/fade_animation.h
+    ui/effects/gradient.h
     ui/effects/numbers_animation.cpp
     ui/effects/numbers_animation.h
     ui/effects/panel_animation.cpp
@@ -66,6 +69,14 @@ PRIVATE
     ui/layers/layer_manager.h
     ui/layers/layer_widget.cpp
     ui/layers/layer_widget.h
+    ui/paint/arcs.cpp
+    ui/paint/arcs.h
+    ui/paint/blob.cpp
+    ui/paint/blob.h
+    ui/paint/blobs.cpp
+    ui/paint/blobs.h
+    ui/paint/blobs_linear.cpp
+    ui/paint/blobs_linear.h
     ui/platform/linux/ui_window_linux.cpp
     ui/platform/linux/ui_window_linux.h
     ui/platform/linux/ui_utility_linux.cpp
@@ -84,6 +95,7 @@ PRIVATE
     ui/platform/win/ui_window_win.h
     ui/platform/win/ui_utility_win.cpp
     ui/platform/win/ui_utility_win.h
+    ui/platform/ui_platform_window.cpp
     ui/platform/ui_platform_window.h
     ui/platform/ui_platform_utility.h
     ui/style/style_core.cpp
@@ -122,6 +134,10 @@ PRIVATE
     ui/widgets/box_content_divider.h
     ui/widgets/buttons.cpp
     ui/widgets/buttons.h
+    ui/widgets/call_button.cpp
+    ui/widgets/call_button.h
+    ui/widgets/call_mute_button.cpp
+    ui/widgets/call_mute_button.h
     ui/widgets/checkbox.cpp
     ui/widgets/checkbox.h
     ui/widgets/dropdown_menu.cpp
@@ -132,8 +148,18 @@ PRIVATE
     ui/widgets/input_fields.h
     ui/widgets/labels.cpp
     ui/widgets/labels.h
-    ui/widgets/menu.cpp
-    ui/widgets/menu.h
+    ui/widgets/menu/menu.cpp
+    ui/widgets/menu/menu.h
+    ui/widgets/menu/menu_action.cpp
+    ui/widgets/menu/menu_action.h
+    ui/widgets/menu/menu_common.cpp
+    ui/widgets/menu/menu_common.h
+    ui/widgets/menu/menu_item_base.cpp
+    ui/widgets/menu/menu_item_base.h
+    ui/widgets/menu/menu_separator.cpp
+    ui/widgets/menu/menu_separator.h
+    ui/widgets/menu/menu_toggle.cpp
+    ui/widgets/menu/menu_toggle.h
     ui/widgets/popup_menu.cpp
     ui/widgets/popup_menu.h
     ui/widgets/scroll_area.cpp
@@ -186,6 +212,9 @@ PRIVATE
     ui/ui_log.h
     ui/ui_utility.cpp
     ui/ui_utility.h
+
+    ui/ui_pch.h
+
     emoji_suggestions/emoji_suggestions.cpp
     emoji_suggestions/emoji_suggestions.h
     emoji_suggestions/emoji_suggestions_helper.h

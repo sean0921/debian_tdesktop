@@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/admin_log/history_admin_log_inner.h"
 
-#include "styles/style_history.h"
 #include "history/history.h"
 #include "history/view/media/history_view_media.h"
 #include "history/view/media/history_view_web_page.h"
@@ -22,10 +21,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/message_field.h"
 #include "boxes/sticker_set_box.h"
 #include "base/platform/base_platform_info.h"
+#include "base/unixtime.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
 #include "core/application.h"
 #include "apiwrap.h"
+#include "api/api_attached_stickers.h"
 #include "layout.h"
 #include "window/window_session_controller.h"
 #include "main/main_session.h"
@@ -49,6 +50,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "facades.h"
 #include "app.h"
+#include "styles/style_chat.h"
 
 #include <QtWidgets/QApplication>
 #include <QtGui/QClipboard>
@@ -508,8 +510,17 @@ QString InnerWidget::tooltipText() const {
 	if (_mouseCursorState == CursorState::Date
 		&& _mouseAction == MouseAction::None) {
 		if (const auto view = App::hoveredItem()) {
-			auto dateText = view->dateTime().toString(
-				QLocale::system().dateTimeFormat(QLocale::LongFormat));
+			const auto format = QLocale::system().dateTimeFormat(
+				QLocale::LongFormat);
+			auto dateText = HistoryView::DateTooltipText(view);
+
+			const auto sentIt = _itemDates.find(view->data());
+			if (sentIt != end(_itemDates)) {
+				dateText += '\n' + tr::lng_sent_date(
+					tr::now,
+					lt_date,
+					base::unixtime::parse(sentIt->second).toString(format));
+			}
 			return dateText;
 		}
 	} else if (_mouseCursorState == CursorState::Forwarded
@@ -555,7 +566,7 @@ bool InnerWidget::elementUnderCursor(
 }
 
 crl::time InnerWidget::elementHighlightTime(
-		not_null<const HistoryView::Element*> element) {
+		not_null<const HistoryItem*> item) {
 	return crl::time(0);
 }
 
@@ -589,6 +600,22 @@ void InnerWidget::elementShowTooltip(
 
 bool InnerWidget::elementIsGifPaused() {
 	return _controller->isGifPausedAtLeastFor(Window::GifPauseReason::Any);
+}
+
+bool InnerWidget::elementHideReply(not_null<const Element*> view) {
+	return true;
+}
+
+bool InnerWidget::elementShownUnread(not_null<const Element*> view) {
+	return view->data()->unread();
+}
+
+void InnerWidget::elementSendBotCommand(
+	const QString &command,
+	const FullMsgId &context) {
+}
+
+void InnerWidget::elementHandleViaClick(not_null<UserData*> bot) {
 }
 
 void InnerWidget::saveState(not_null<SectionMemento*> memento) {
@@ -705,7 +732,10 @@ void InnerWidget::addEvents(Direction direction, const QVector<MTPChannelAdminLo
 			}
 
 			auto count = 0;
-			const auto addOne = [&](OwnedItem item) {
+			const auto addOne = [&](OwnedItem item, TimeId sentDate) {
+				if (sentDate) {
+					_itemDates.emplace(item->data(), sentDate);
+				}
 				_eventIds.emplace(id);
 				_itemsByData.emplace(item->data(), item.get());
 				addToItems.push_back(std::move(item));
@@ -1064,6 +1094,16 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			_menu->addAction(tr::lng_context_copy_image(tr::now), [=] {
 				copyContextImage(photo);
 			});
+			if (photo->hasAttachedStickers()) {
+				const auto controller = _controller;
+				auto callback = [=] {
+					auto &attached = session().api().attachedStickers();
+					attached.requestAttachedStickerSets(controller, photo);
+				};
+				_menu->addAction(
+					tr::lng_context_attached_stickers(tr::now),
+					std::move(callback));
+			}
 		} else {
 			auto document = lnkDocument->document();
 			if (document->loading()) {
@@ -1096,6 +1136,16 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				_menu->addAction(lnkIsVideo ? tr::lng_context_save_video(tr::now) : (lnkIsVoice ?  tr::lng_context_save_audio(tr::now) : (lnkIsAudio ?  tr::lng_context_save_audio_file(tr::now) :  tr::lng_context_save_file(tr::now))), App::LambdaDelayed(st::defaultDropdownMenu.menu.ripple.hideDuration, this, [this, document] {
 					saveDocumentToFile(document);
 				}));
+				if (document->hasAttachedStickers()) {
+					const auto controller = _controller;
+					auto callback = [=, doc = document] {
+						auto &attached = session().api().attachedStickers();
+						attached.requestAttachedStickerSets(controller, doc);
+					};
+					_menu->addAction(
+						tr::lng_context_attached_stickers(tr::now),
+						std::move(callback));
+				}
 			}
 		}
 	} else if (lnkPeer) { // suggest to block
@@ -1140,7 +1190,7 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		}
 	}
 
-	if (_menu->actions().empty()) {
+	if (_menu->empty()) {
 		_menu = nullptr;
 	} else {
 		_menu->popup(e->globalPos());
@@ -1474,18 +1524,20 @@ void InnerWidget::mouseActionFinish(const QPoint &screenPos, Qt::MouseButton but
 	_mouseSelectType = TextSelectType::Letters;
 	//_widget->noSelectingScroll(); // TODO
 
-#if defined Q_OS_UNIX && !defined Q_OS_MAC
-	if (_selectedItem && _selectedText.from != _selectedText.to) {
+	if (QGuiApplication::clipboard()->supportsSelection()
+		&& _selectedItem
+		&& _selectedText.from != _selectedText.to) {
 		TextUtilities::SetClipboardText(
 			_selectedItem->selectedText(_selectedText),
 			QClipboard::Selection);
 	}
-#endif // Q_OS_UNIX && !Q_OS_MAC
 }
 
 void InnerWidget::updateSelected() {
 	auto mousePosition = mapFromGlobal(_mousePosition);
-	auto point = QPoint(snap(mousePosition.x(), 0, width()), snap(mousePosition.y(), _visibleTop, _visibleBottom));
+	auto point = QPoint(
+		std::clamp(mousePosition.x(), 0, width()),
+		std::clamp(mousePosition.y(), _visibleTop, _visibleBottom));
 
 	auto itemPoint = QPoint();
 	auto begin = std::rbegin(_items), end = std::rend(_items);

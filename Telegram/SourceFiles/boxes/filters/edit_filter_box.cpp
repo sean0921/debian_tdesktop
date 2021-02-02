@@ -241,19 +241,31 @@ void FilterChatsPreview::paintEvent(QPaintEvent *e) {
 	}
 	for (auto &[history, userpic, button] : _removePeer) {
 		const auto savedMessages = history->peer->isSelf();
-		if (savedMessages) {
-			Ui::EmptyUserpic::PaintSavedMessages(
-				p,
-				iconLeft,
-				top + iconTop,
-				width(),
-				st.photoSize);
+		const auto repliesMessages = history->peer->isRepliesChat();
+		if (savedMessages || repliesMessages) {
+			if (savedMessages) {
+				Ui::EmptyUserpic::PaintSavedMessages(
+					p,
+					iconLeft,
+					top + iconTop,
+					width(),
+					st.photoSize);
+			} else {
+				Ui::EmptyUserpic::PaintRepliesMessages(
+					p,
+					iconLeft,
+					top + iconTop,
+					width(),
+					st.photoSize);
+			}
 			p.setPen(st::contactsNameFg);
 			p.drawTextLeft(
 				nameLeft,
 				top + nameTop,
 				width(),
-				tr::lng_saved_messages(tr::now));
+				(savedMessages
+					? tr::lng_saved_messages(tr::now)
+					: tr::lng_replies_messages(tr::now)));
 		} else {
 			history->peer->paintUserpicLeft(
 				p,
@@ -308,7 +320,7 @@ void EditExceptions(
 	const auto include = (options & Flag::Contacts) != Flags(0);
 	const auto rules = data->current();
 	auto controller = std::make_unique<EditFilterChatsListController>(
-		window,
+		&window->session(),
 		(include
 			? tr::lng_filters_include_title()
 			: tr::lng_filters_exclude_title()),
@@ -319,7 +331,7 @@ void EditExceptions(
 	auto initBox = [=](not_null<PeerListBox*> box) {
 		box->setCloseByOutsideClick(false);
 		box->addButton(tr::lng_settings_save(), crl::guard(context, [=] {
-			const auto peers = box->peerListCollectSelectedRows();
+			const auto peers = box->collectSelectedRows();
 			const auto rules = data->current();
 			auto &&histories = ranges::view::all(
 				peers

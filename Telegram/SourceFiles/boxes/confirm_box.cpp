@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "apiwrap.h"
+#include "api/api_invite_links.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "ui/widgets/checkbox.h"
@@ -69,12 +70,27 @@ TextParseOptions kMarkedTextBoxOptions = {
 	Qt::LayoutDirectionAuto, // dir
 };
 
+[[nodiscard]] bool IsOldForPin(MsgId id, not_null<PeerData*> peer) {
+	const auto normal = peer->migrateToOrMe();
+	const auto migrated = normal->migrateFrom();
+	const auto top = Data::ResolveTopPinnedId(normal, migrated);
+	if (!top) {
+		return false;
+	} else if (peer == migrated) {
+		return top.channel || (id < top.msg);
+	} else if (migrated) {
+		return top.channel && (id < top.msg);
+	} else {
+		return (id < top.msg);
+	}
+}
+
 } // namespace
 
 ConfirmBox::ConfirmBox(
 	QWidget*,
 	const QString &text,
-	FnMut<void()> confirmedCallback,
+	ConfirmBox::ConfirmedCallback confirmedCallback,
 	FnMut<void()> cancelledCallback)
 : _confirmText(tr::lng_box_ok(tr::now))
 , _cancelText(tr::lng_cancel(tr::now))
@@ -89,7 +105,7 @@ ConfirmBox::ConfirmBox(
 	QWidget*,
 	const QString &text,
 	const QString &confirmText,
-	FnMut<void()> confirmedCallback,
+	ConfirmBox::ConfirmedCallback confirmedCallback,
 	FnMut<void()> cancelledCallback)
 : _confirmText(confirmText)
 , _cancelText(tr::lng_cancel(tr::now))
@@ -104,7 +120,7 @@ ConfirmBox::ConfirmBox(
 	QWidget*,
 	const TextWithEntities &text,
 	const QString &confirmText,
-	FnMut<void()> confirmedCallback,
+	ConfirmBox::ConfirmedCallback confirmedCallback,
 	FnMut<void()> cancelledCallback)
 : _confirmText(confirmText)
 , _cancelText(tr::lng_cancel(tr::now))
@@ -120,7 +136,7 @@ ConfirmBox::ConfirmBox(
 	const QString &text,
 	const QString &confirmText,
 	const style::RoundButton &confirmStyle,
-	FnMut<void()> confirmedCallback,
+	ConfirmBox::ConfirmedCallback confirmedCallback,
 	FnMut<void()> cancelledCallback)
 : _confirmText(confirmText)
 , _cancelText(tr::lng_cancel(tr::now))
@@ -136,7 +152,7 @@ ConfirmBox::ConfirmBox(
 	const QString &text,
 	const QString &confirmText,
 	const QString &cancelText,
-	FnMut<void()> confirmedCallback,
+	ConfirmBox::ConfirmedCallback confirmedCallback,
 	FnMut<void()> cancelledCallback)
 : _confirmText(confirmText)
 , _cancelText(cancelText)
@@ -153,7 +169,7 @@ ConfirmBox::ConfirmBox(
 	const QString &confirmText,
 	const style::RoundButton &confirmStyle,
 	const QString &cancelText,
-	FnMut<void()> confirmedCallback,
+	ConfirmBox::ConfirmedCallback confirmedCallback,
 	FnMut<void()> cancelledCallback)
 : _confirmText(confirmText)
 , _cancelText(cancelText)
@@ -256,8 +272,16 @@ void ConfirmBox::textUpdated() {
 void ConfirmBox::confirmed() {
 	if (!_confirmed) {
 		_confirmed = true;
-		if (auto callback = std::move(_confirmedCallback)) {
-			callback();
+
+		const auto confirmed = &_confirmedCallback;
+		if (const auto callbackPtr = std::get_if<1>(confirmed)) {
+			if (auto callback = base::take(*callbackPtr)) {
+				callback();
+			}
+		} else if (const auto callbackPtr = std::get_if<2>(confirmed)) {
+			if (auto callback = base::take(*callbackPtr)) {
+				callback([=] { closeBox(); });
+			}
 		}
 	}
 }
@@ -370,7 +394,7 @@ void MaxInviteBox::prepare() {
 
 	_channel->session().changes().peerUpdates(
 		_channel,
-		Data::PeerUpdate::Flag::InviteLink
+		Data::PeerUpdate::Flag::InviteLinks
 	) | rpl::start_with_next([=] {
 		rtlupdate(_invitationLink);
 	}, lifetime());
@@ -384,7 +408,7 @@ void MaxInviteBox::mousePressEvent(QMouseEvent *e) {
 	mouseMoveEvent(e);
 	if (_linkOver) {
 		if (_channel->inviteLink().isEmpty()) {
-			_channel->session().api().exportInviteLink(_channel);
+			_channel->session().api().inviteLinks().create(_channel);
 		} else {
 			QGuiApplication::clipboard()->setText(_channel->inviteLink());
 			Ui::Toast::Show(tr::lng_create_channel_link_copied(tr::now));
@@ -436,20 +460,43 @@ PinMessageBox::PinMessageBox(
 : _peer(peer)
 , _api(&peer->session().mtp())
 , _msgId(msgId)
-, _text(this, tr::lng_pinned_pin_sure(tr::now), st::boxLabel) {
+, _pinningOld(IsOldForPin(msgId, peer))
+, _text(
+	this,
+	(_pinningOld
+		? tr::lng_pinned_pin_old_sure(tr::now)
+		: (peer->isChat() || peer->isMegagroup())
+		? tr::lng_pinned_pin_sure_group(tr::now)
+		: tr::lng_pinned_pin_sure(tr::now)),
+	st::boxLabel) {
 }
 
 void PinMessageBox::prepare() {
 	addButton(tr::lng_pinned_pin(), [this] { pinMessage(); });
 	addButton(tr::lng_cancel(), [this] { closeBox(); });
 
-	if (_peer->isChat() || _peer->isMegagroup()) {
-		_notify.create(this, tr::lng_pinned_notify(tr::now), true, st::defaultBoxCheckbox);
+	if (_peer->isUser() && !_peer->isSelf()) {
+		_pinForPeer.create(
+			this,
+			tr::lng_pinned_also_for_other(
+				tr::now,
+				lt_user,
+				_peer->shortName()),
+			false,
+			st::defaultBoxCheckbox);
+		_checkbox = _pinForPeer;
+	} else if (!_pinningOld && (_peer->isChat() || _peer->isMegagroup())) {
+		_notify.create(
+			this,
+			tr::lng_pinned_notify(tr::now),
+			true,
+			st::defaultBoxCheckbox);
+		_checkbox = _notify;
 	}
 
 	auto height = st::boxPadding.top() + _text->height() + st::boxPadding.bottom();
-	if (_notify) {
-		height += st::boxMediumSkip + _notify->heightNoMargins();
+	if (_checkbox) {
+		height += st::boxMediumSkip + _checkbox->heightNoMargins();
 	}
 	setDimensions(st::boxWidth, height);
 }
@@ -457,8 +504,8 @@ void PinMessageBox::prepare() {
 void PinMessageBox::resizeEvent(QResizeEvent *e) {
 	BoxContent::resizeEvent(e);
 	_text->moveToLeft(st::boxPadding.left(), st::boxPadding.top());
-	if (_notify) {
-		_notify->moveToLeft(st::boxPadding.left(), _text->y() + _text->height() + st::boxMediumSkip);
+	if (_checkbox) {
+		_checkbox->moveToLeft(st::boxPadding.left(), _text->y() + _text->height() + st::boxMediumSkip);
 	}
 }
 
@@ -476,6 +523,9 @@ void PinMessageBox::pinMessage() {
 	auto flags = MTPmessages_UpdatePinnedMessage::Flags(0);
 	if (_notify && !_notify->checked()) {
 		flags |= MTPmessages_UpdatePinnedMessage::Flag::f_silent;
+	}
+	if (_pinForPeer && !_pinForPeer->checked()) {
+		flags |= MTPmessages_UpdatePinnedMessage::Flag::f_pm_oneside;
 	}
 	_requestId = _api.request(MTPmessages_UpdatePinnedMessage(
 		MTP_flags(flags),
@@ -528,7 +578,8 @@ void DeleteMessagesBox::prepare() {
 	const auto appendDetails = [&](TextWithEntities &&text) {
 		details.append(qstr("\n\n")).append(std::move(text));
 	};
-	auto deleteText = tr::lng_box_delete();
+	auto deleteText = lifetime().make_state<rpl::variable<QString>>();
+	*deleteText = tr::lng_box_delete();
 	auto deleteStyle = &st::defaultBoxButton;
 	if (const auto peer = _wipeHistoryPeer) {
 		if (_wipeHistoryJustClear) {
@@ -548,16 +599,22 @@ void DeleteMessagesBox::prepare() {
 				: peer->isMegagroup()
 				? tr::lng_sure_leave_group(tr::now)
 				: tr::lng_sure_leave_channel(tr::now);
-			deleteText = _wipeHistoryPeer->isUser()
-				? tr::lng_box_delete()
-				: tr::lng_box_leave();
-			deleteStyle = &(peer->isChannel()
-				? st::defaultBoxButton
-				: st::attentionBoxButton);
+			if (!peer->isUser()) {
+				*deleteText = tr::lng_box_leave();
+			}
+			deleteStyle = &st::attentionBoxButton;
 		}
 		if (auto revoke = revokeText(peer)) {
 			_revoke.create(this, revoke->checkbox, false, st::defaultBoxCheckbox);
 			appendDetails(std::move(revoke->description));
+			if (!peer->isUser() && !_wipeHistoryJustClear) {
+				_revoke->checkedValue(
+				) | rpl::start_with_next([=](bool revokeForAll) {
+					*deleteText = revokeForAll
+						? tr::lng_box_delete()
+						: tr::lng_box_leave();
+				}, _revoke->lifetime());
+			}
 		}
 	} else if (_moderateFrom) {
 		Assert(_moderateInChannel != nullptr);
@@ -594,7 +651,7 @@ void DeleteMessagesBox::prepare() {
 	_text.create(this, rpl::single(std::move(details)), st::boxLabel);
 
 	addButton(
-		std::move(deleteText),
+		deleteText->value(),
 		[=] { deleteAndClear(); },
 		*deleteStyle);
 	addButton(tr::lng_cancel(), [=] { closeBox(); });
@@ -652,6 +709,8 @@ auto DeleteMessagesBox::revokeText(not_null<PeerData*> peer) const
 				tr::now,
 				lt_user,
 				user->firstName);
+		} else if (_wipeHistoryJustClear) {
+			return std::nullopt;
 		} else {
 			result.checkbox = tr::lng_delete_for_everyone_check(tr::now);
 		}
@@ -752,7 +811,10 @@ void DeleteMessagesBox::resizeEvent(QResizeEvent *e) {
 
 void DeleteMessagesBox::keyPressEvent(QKeyEvent *e) {
 	if (e->key() == Qt::Key_Enter || e->key() == Qt::Key_Return) {
-		deleteAndClear();
+		// Don't make the clearing history so easy.
+		if (!_wipeHistoryPeer) {
+			deleteAndClear();
+		}
 	} else {
 		BoxContent::keyPressEvent(e);
 	}
@@ -808,56 +870,16 @@ void DeleteMessagesBox::deleteAndClear() {
 		_deleteConfirmedCallback();
 	}
 
-	auto remove = std::vector<not_null<HistoryItem*>>();
-	remove.reserve(_ids.size());
-	base::flat_map<not_null<History*>, QVector<MTPint>> idsByPeer;
-	base::flat_map<not_null<PeerData*>, QVector<MTPint>> scheduledIdsByPeer;
-	for (const auto itemId : _ids) {
-		if (const auto item = _session->data().message(itemId)) {
-			const auto history = item->history();
-			if (item->isScheduled()) {
-				const auto wasOnServer = !item->isSending()
-					&& !item->hasFailed();
-				if (wasOnServer) {
-					scheduledIdsByPeer[history->peer].push_back(MTP_int(
-						_session->data().scheduledMessages().lookupId(item)));
-				} else {
-					_session->data().scheduledMessages().removeSending(item);
-				}
-				continue;
-			}
-			remove.push_back(item);
-			if (IsServerMsgId(item->id)) {
-				idsByPeer[history].push_back(MTP_int(itemId.msg));
-			}
-		}
-	}
-
-	for (const auto &[history, ids] : idsByPeer) {
-		history->owner().histories().deleteMessages(history, ids, revoke);
-	}
-	for (const auto &[peer, ids] : scheduledIdsByPeer) {
-		peer->session().api().request(MTPmessages_DeleteScheduledMessages(
-			peer->input,
-			MTP_vector<MTPint>(ids)
-		)).done([peer=peer](const MTPUpdates &result) {
-			peer->session().api().applyUpdates(result);
-		}).send();
-	}
-
-	for (const auto item : remove) {
-		const auto history = item->history();
-		const auto wasLast = (history->lastMessage() == item);
-		const auto wasInChats = (history->chatListMessage() == item);
-		item->destroy();
-
-		if (wasLast || wasInChats) {
-			history->requestChatListMessage();
-		}
-	}
-
+	// deleteMessages can initiate closing of the current section,
+	// which will cause this box to be destroyed.
 	const auto session = _session;
-	Ui::hideLayer();
+	const auto weak = Ui::MakeWeak(this);
+
+	session->data().histories().deleteMessages(_ids, revoke);
+
+	if (const auto strong = weak.data()) {
+		strong->closeBox();
+	}
 	session->data().sendHistoryChangeNotifications();
 }
 

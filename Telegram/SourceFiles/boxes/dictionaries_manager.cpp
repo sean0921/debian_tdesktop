@@ -91,7 +91,7 @@ QString StateDescription(const DictState &state) {
 auto CreateMultiSelect(QWidget *parent) {
 	const auto result = Ui::CreateChild<Ui::MultiSelect>(
 		parent,
-		st::contactsMultiSelect,
+		st::defaultMultiSelect,
 		tr::lng_participant_filter());
 
 	result->resizeToWidth(st::boxWidth);
@@ -225,7 +225,7 @@ auto AddButtonWithLoader(
 
 	buttonState->value(
 	) | rpl::start_with_next([=](const DictState &state) {
-		const auto isToggledSet = state.is<Active>();
+		const auto isToggledSet = v::is<Active>(state);
 		const auto toggled = isToggledSet ? 1. : 0.;
 		const auto over = !button->isDisabled()
 			&& (button->isDown() || button->isOver());
@@ -252,7 +252,7 @@ auto AddButtonWithLoader(
 					dictionaryRemoved->events(),
 					buttonState->value(
 					) | rpl::filter([](const DictState &state) {
-						return state.is<Failed>();
+						return v::is<Failed>(state);
 					}) | rpl::to_empty
 				) | rpl::map_to(false)
 			)
@@ -276,13 +276,14 @@ auto AddButtonWithLoader(
 			});
 	}) | rpl::flatten_latest(
 	) | rpl::filter([=](const DictState &state) {
-		return !buttonState->current().is<Failed>() || !state.is<Available>();
+		return !v::is<Failed>(buttonState->current())
+			|| !v::is<Available>(state);
 	});
 
 	button->toggledValue(
 	) | rpl::start_with_next([=](bool toggled) {
 		const auto &state = buttonState->current();
-		if (toggled && (state.is<Available>() || state.is<Failed>())) {
+		if (toggled && (v::is<Available>(state) || v::is<Failed>(state))) {
 			const auto weak = Ui::MakeWeak(button);
 			setLocalLoader(base::make_unique_q<Loader>(
 				QCoreApplication::instance(),
@@ -292,7 +293,7 @@ auto AddButtonWithLoader(
 				Spellchecker::DictPathByLangId(id),
 				Spellchecker::GetDownloadSize(id),
 				crl::guard(weak, destroyLocalLoader)));
-		} else if (!toggled && state.is<Loading>()) {
+		} else if (!toggled && v::is<Loading>(state)) {
 			if (const auto g = rawGlobalLoaderPtr()) {
 				g->destroy();
 				return;

@@ -649,36 +649,41 @@ void ListWidget::restart() {
 }
 
 void ListWidget::itemRemoved(not_null<const HistoryItem*> item) {
-	if (isMyItem(item)) {
-		auto id = GetUniversalId(item);
-
-		auto sectionIt = findSectionByItem(id);
-		if (sectionIt != _sections.end()) {
-			if (sectionIt->removeItem(id)) {
-				auto top = sectionIt->top();
-				if (sectionIt->empty()) {
-					_sections.erase(sectionIt);
-				}
-				refreshHeight();
-			}
-		}
-
-		if (isItemLayout(item, _overLayout)) {
-			_overLayout = nullptr;
-		}
-
-		if (const auto i = _layouts.find(id); i != _layouts.end()) {
-			_heavyLayouts.remove(i->second.item.get());
-			_layouts.erase(i);
-		}
-		_dragSelected.remove(id);
-
-		if (const auto i = _selected.find(id); i != _selected.cend()) {
-			removeItemSelection(i);
-		}
-
-		mouseActionUpdate(_mousePosition);
+	if (!isMyItem(item)) {
+		return;
 	}
+	auto id = GetUniversalId(item);
+
+	auto needHeightRefresh = false;
+	auto sectionIt = findSectionByItem(id);
+	if (sectionIt != _sections.end()) {
+		if (sectionIt->removeItem(id)) {
+			auto top = sectionIt->top();
+			if (sectionIt->empty()) {
+				_sections.erase(sectionIt);
+			}
+			needHeightRefresh = true;
+		}
+	}
+
+	if (isItemLayout(item, _overLayout)) {
+		_overLayout = nullptr;
+	}
+
+	if (const auto i = _layouts.find(id); i != _layouts.end()) {
+		_heavyLayouts.remove(i->second.item.get());
+		_layouts.erase(i);
+	}
+	_dragSelected.remove(id);
+
+	if (const auto i = _selected.find(id); i != _selected.cend()) {
+		removeItemSelection(i);
+	}
+
+	if (needHeightRefresh) {
+		refreshHeight();
+	}
+	mouseActionUpdate(_mousePosition);
 }
 
 FullMsgId ListWidget::computeFullId(
@@ -2113,11 +2118,9 @@ void ListWidget::mouseActionFinish(
 	//_widget->noSelectingScroll(); // #TODO scroll by drag
 	//_widget->updateTopBarSelection();
 
-#if defined Q_OS_UNIX && !defined Q_OS_MAC
-	//if (hasSelectedText()) { // #TODO linux clipboard
+	//if (QGuiApplication::clipboard()->supportsSelection() && hasSelectedText()) { // #TODO linux clipboard
 	//	TextUtilities::SetClipboardText(_selected.cbegin()->first->selectedText(_selected.cbegin()->second), QClipboard::Selection);
 	//}
-#endif // Q_OS_UNIX && !Q_OS_MAC
 }
 
 void ListWidget::applyDragSelection() {

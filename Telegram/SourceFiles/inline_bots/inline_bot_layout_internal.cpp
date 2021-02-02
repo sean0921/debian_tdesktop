@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo_media.h"
 #include "data/data_document_media.h"
 #include "data/stickers/data_stickers.h"
+#include "chat_helpers/gifs_list_widget.h" // ChatHelpers::DeleteSavedGif
 #include "chat_helpers/stickers_lottie.h"
 #include "inline_bots/inline_bot_result.h"
 #include "lottie/lottie_single_player.h"
@@ -22,14 +23,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/player/media_player_instance.h"
 #include "history/history_location_manager.h"
 #include "history/view/history_view_cursor_state.h"
-#include "storage/storage_account.h"
+#include "history/view/media/history_view_document.h" // DrawThumbnailAsSongCover
 #include "ui/image/image.h"
+#include "ui/text/format_values.h"
+#include "ui/cached_round_corners.h"
 #include "main/main_session.h"
-#include "apiwrap.h"
 #include "lang/lang_keys.h"
-#include "app.h"
 #include "styles/style_overview.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_widgets.h"
 
@@ -126,17 +127,7 @@ void Gif::setPosition(int32 position) {
 }
 
 void DeleteSavedGifClickHandler::onClickImpl() const {
-	_data->session().api().toggleSavedGif(
-		_data,
-		Data::FileOriginSavedGifs(),
-		false);
-
-	const auto index = _data->owner().stickers().savedGifs().indexOf(_data);
-	if (index >= 0) {
-		_data->owner().stickers().savedGifsRef().remove(index);
-		_data->session().local().writeSavedGifs();
-	}
-	_data->owner().stickers().notifySavedGifsUpdated();
+	ChatHelpers::DeleteSavedGif(_data);
 }
 
 int Gif::resizeGetHeight(int width) {
@@ -217,7 +208,8 @@ void Gif::paint(Painter &p, const QRect &clip, const PaintContext *context) cons
 			}
 			return &st::historyFileInDownload;
 		}();
-		QRect inner((_width - st::msgFileSize) / 2, (height - st::msgFileSize) / 2, st::msgFileSize, st::msgFileSize);
+		const auto size = st::inlineRadialSize;
+		QRect inner((_width - size) / 2, (height - size) / 2, size, size);
 		icon->paintInCenter(p, inner);
 		if (radial) {
 			p.setOpacity(1);
@@ -470,7 +462,7 @@ void Sticker::paint(Painter &p, const QRect &clip, const PaintContext *context) 
 	auto over = _a_over.value(_active ? 1. : 0.);
 	if (over > 0) {
 		p.setOpacity(over);
-		App::roundRect(p, QRect(QPoint(0, 0), st::stickerPanSize), st::emojiPanHover, StickerHoverCorners);
+		Ui::FillRoundRect(p, QRect(QPoint(0, 0), st::stickerPanSize), st::emojiPanHover, Ui::StickerHoverCorners);
 		p.setOpacity(1);
 	}
 
@@ -517,8 +509,8 @@ void Sticker::clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) {
 
 QSize Sticker::getThumbSize() const {
 	int width = qMax(content_width(), 1), height = qMax(content_height(), 1);
-	float64 coefw = (st::stickerPanSize.width() - st::buttonRadius * 2) / float64(width);
-	float64 coefh = (st::stickerPanSize.height() - st::buttonRadius * 2) / float64(height);
+	float64 coefw = (st::stickerPanSize.width() - st::roundRadiusSmall * 2) / float64(width);
+	float64 coefh = (st::stickerPanSize.height() - st::roundRadiusSmall * 2) / float64(height);
 	float64 coef = qMin(qMin(coefw, coefh), 1.);
 	int w = qRound(coef * content_width()), h = qRound(coef * content_height());
 	return QSize(qMax(w, 1), qMax(h, 1));
@@ -531,8 +523,8 @@ void Sticker::setupLottie() const {
 		_dataMedia.get(),
 		ChatHelpers::StickerLottieSize::InlineResults,
 		QSize(
-			st::stickerPanSize.width() - st::buttonRadius * 2,
-			st::stickerPanSize.height() - st::buttonRadius * 2
+			st::stickerPanSize.width() - st::roundRadiusSmall * 2,
+			st::stickerPanSize.height() - st::roundRadiusSmall * 2
 		) * cIntRetinaFactor());
 
 	_lottie->updates(
@@ -684,7 +676,7 @@ Video::Video(not_null<Context*> context, not_null<Result*> result)
 , _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip) {
 	if (int duration = content_duration()) {
-		_duration = formatDurationText(duration);
+		_duration = Ui::FormatDurationText(duration);
 		_durationWidth = st::normalFont->width(_duration);
 	}
 }
@@ -744,7 +736,7 @@ void Video::paint(Painter &p, const QRect &clip, const PaintContext *context) co
 		int durationTop = st::inlineRowMargin + st::inlineThumbSize - st::normalFont->height - st::inlineDurationMargin;
 		int durationW = _durationWidth + 2 * st::msgDateImgPadding.x(), durationH = st::normalFont->height + 2 * st::msgDateImgPadding.y();
 		int durationX = (st::inlineThumbSize - durationW) / 2, durationY = st::inlineRowMargin + st::inlineThumbSize - durationH;
-		App::roundRect(p, durationX, durationY - st::msgDateImgPadding.y(), durationW, durationH, st::msgDateImgBg, DateCorners);
+		Ui::FillRoundRect(p, durationX, durationY - st::msgDateImgPadding.y(), durationW, durationH, st::msgDateImgBg, Ui::DateCorners);
 		p.setPen(st::msgDateImgFg);
 		p.setFont(st::normalFont);
 		p.drawText(durationX + st::msgDateImgPadding.x(), durationTop + st::normalFont->ascent, _duration);
@@ -828,8 +820,8 @@ void CancelFileClickHandler::onClickImpl() const {
 
 File::File(not_null<Context*> context, not_null<Result*> result)
 : FileBase(context, result)
-, _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::msgFileSize - st::inlineThumbSkip)
-, _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::msgFileSize - st::inlineThumbSkip)
+, _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineFileSize - st::inlineThumbSkip)
+, _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineFileSize - st::inlineThumbSkip)
 , _open(std::make_shared<OpenFileClickHandler>(result))
 , _cancel(std::make_shared<CancelFileClickHandler>(result))
 , _document(getShownDocument()) {
@@ -845,7 +837,7 @@ File::File(not_null<Context*> context, not_null<Result*> result)
 
 void File::initDimensions() {
 	_maxw = st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft;
-	int textWidth = _maxw - (st::msgFileSize + st::inlineThumbSkip);
+	int textWidth = _maxw - (st::inlineFileSize + st::inlineThumbSkip);
 
 	TextParseOptions titleOpts = { 0, _maxw, st::semiboldFont->height, Qt::LayoutDirectionAuto };
 	_title.setText(st::semiboldTextStyle, TextUtilities::SingleLine(_result->getLayoutTitle()), titleOpts);
@@ -853,12 +845,12 @@ void File::initDimensions() {
 	TextParseOptions descriptionOpts = { TextParseMultiline, _maxw, st::normalFont->height, Qt::LayoutDirectionAuto };
 	_description.setText(st::defaultTextStyle, _result->getLayoutDescription(), descriptionOpts);
 
-	_minh = st::msgFileSize;
+	_minh = st::inlineFileSize;
 	_minh += st::inlineRowMargin * 2 + st::inlineRowBorder;
 }
 
 void File::paint(Painter &p, const QRect &clip, const PaintContext *context) const {
-	const auto left = st::msgFileSize + st::inlineThumbSkip;
+	const auto left = st::inlineFileSize + st::inlineThumbSkip;
 
 	ensureDataMediaCreated();
 	const auto loaded = _documentMedia->loaded();
@@ -872,18 +864,23 @@ void File::paint(Painter &p, const QRect &clip, const PaintContext *context) con
 	const auto showPause = updateStatusText();
 	const auto radial = isRadialAnimation();
 
-	auto inner = style::rtlrect(0, st::inlineRowMargin, st::msgFileSize, st::msgFileSize, _width);
+	auto inner = style::rtlrect(0, st::inlineRowMargin, st::inlineFileSize, st::inlineFileSize, _width);
 	p.setPen(Qt::NoPen);
-	if (isThumbAnimation()) {
-		auto over = _animation->a_thumbOver.value(1.);
-		p.setBrush(anim::brush(st::msgFileInBg, st::msgFileInBgOver, over));
-	} else {
-		bool over = ClickHandler::showAsActive(_document->loading() ? _cancel : _open);
-		p.setBrush(over ? st::msgFileInBgOver : st::msgFileInBg);
-	}
 
-	{
+	const auto coverDrawn = _document->isSongWithCover()
+		&& HistoryView::DrawThumbnailAsSongCover(p, _documentMedia, inner);
+	if (!coverDrawn) {
 		PainterHighQualityEnabler hq(p);
+		if (isThumbAnimation()) {
+			const auto over = _animation->a_thumbOver.value(1.);
+			p.setBrush(
+				anim::brush(st::msgFileInBg, st::msgFileInBgOver, over));
+		} else {
+			const auto over = ClickHandler::showAsActive(_document->loading()
+				? _cancel
+				: _open);
+			p.setBrush(over ? st::msgFileInBgOver : st::msgFileInBg);
+		}
 		p.drawEllipse(inner);
 	}
 
@@ -899,6 +896,8 @@ void File::paint(Painter &p, const QRect &clip, const PaintContext *context) con
 			return &st::historyFileInPause;
 		} else if (_document->isImage()) {
 			return &st::historyFileInImage;
+		} else if (_document->isSongWithCover()) {
+			return &st::historyFileSongPlay;
 		} else if (_document->isVoiceMessage()
 			|| _document->isAudioFile()) {
 			return &st::historyFileInPlay;
@@ -915,7 +914,9 @@ void File::paint(Painter &p, const QRect &clip, const PaintContext *context) con
 
 	p.setPen(st::inlineDescriptionFg);
 	bool drawStatusSize = true;
-	if (_statusSize == FileStatusSizeReady || _statusSize == FileStatusSizeLoaded || _statusSize == FileStatusSizeFailed) {
+	if (_statusSize == Ui::FileStatusSizeReady
+		|| _statusSize == Ui::FileStatusSizeLoaded
+		|| _statusSize == Ui::FileStatusSizeFailed) {
 		if (!_description.isEmpty()) {
 			_description.drawLeftElided(p, left, descriptionTop, _width - left, _width);
 			drawStatusSize = false;
@@ -934,10 +935,10 @@ void File::paint(Painter &p, const QRect &clip, const PaintContext *context) con
 TextState File::getState(
 		QPoint point,
 		StateRequest request) const {
-	if (QRect(0, st::inlineRowMargin, st::msgFileSize, st::msgFileSize).contains(point)) {
+	if (QRect(0, st::inlineRowMargin, st::inlineFileSize, st::inlineFileSize).contains(point)) {
 		return { nullptr, _document->loading() ? _cancel : _open };
 	} else {
-		auto left = st::msgFileSize + st::inlineThumbSkip;
+		auto left = st::inlineFileSize + st::inlineThumbSkip;
 		if (QRect(left, 0, _width - left, _height).contains(point)) {
 			return { nullptr, _send };
 		}
@@ -1011,15 +1012,15 @@ bool File::updateStatusText() const {
 	bool showPause = false;
 	int32 statusSize = 0, realDuration = 0;
 	if (_document->status == FileDownloadFailed || _document->status == FileUploadFailed) {
-		statusSize = FileStatusSizeFailed;
+		statusSize = Ui::FileStatusSizeFailed;
 	} else if (_document->uploading()) {
 		statusSize = _document->uploadingData->offset;
 	} else if (_document->loading()) {
 		statusSize = _document->loadOffset();
 	} else if (_documentMedia->loaded()) {
-		statusSize = FileStatusSizeLoaded;
+		statusSize = Ui::FileStatusSizeLoaded;
 	} else {
-		statusSize = FileStatusSizeReady;
+		statusSize = Ui::FileStatusSizeReady;
 	}
 
 	if (_document->isVoiceMessage() || _document->isAudioFile()) {
@@ -1048,16 +1049,16 @@ bool File::updateStatusText() const {
 
 void File::setStatusSize(int32 newSize, int32 fullSize, int32 duration, qint64 realDuration) const {
 	_statusSize = newSize;
-	if (_statusSize == FileStatusSizeReady) {
-		_statusText = (duration >= 0) ? formatDurationAndSizeText(duration, fullSize) : (duration < -1 ? formatGifAndSizeText(fullSize) : formatSizeText(fullSize));
-	} else if (_statusSize == FileStatusSizeLoaded) {
-		_statusText = (duration >= 0) ? formatDurationText(duration) : (duration < -1 ? qsl("GIF") : formatSizeText(fullSize));
-	} else if (_statusSize == FileStatusSizeFailed) {
+	if (_statusSize == Ui::FileStatusSizeReady) {
+		_statusText = (duration >= 0) ? Ui::FormatDurationAndSizeText(duration, fullSize) : (duration < -1 ? Ui::FormatGifAndSizeText(fullSize) : Ui::FormatSizeText(fullSize));
+	} else if (_statusSize == Ui::FileStatusSizeLoaded) {
+		_statusText = (duration >= 0) ? Ui::FormatDurationText(duration) : (duration < -1 ? qsl("GIF") : Ui::FormatSizeText(fullSize));
+	} else if (_statusSize == Ui::FileStatusSizeFailed) {
 		_statusText = tr::lng_attach_failed(tr::now);
 	} else if (_statusSize >= 0) {
-		_statusText = formatDownloadText(_statusSize, fullSize);
+		_statusText = Ui::FormatDownloadText(_statusSize, fullSize);
 	} else {
-		_statusText = formatPlayedText(-_statusSize - 1, realDuration);
+		_statusText = Ui::FormatPlayedText(-_statusSize - 1, realDuration);
 	}
 }
 
@@ -1078,16 +1079,16 @@ void Contact::initDimensions() {
 	_description.setText(st::defaultTextStyle, _result->getLayoutDescription(), descriptionOpts);
 	int32 descriptionHeight = qMin(_description.countHeight(_maxw), st::normalFont->height);
 
-	_minh = st::msgFileSize;
+	_minh = st::inlineFileSize;
 	_minh += st::inlineRowMargin * 2 + st::inlineRowBorder;
 }
 
 void Contact::paint(Painter &p, const QRect &clip, const PaintContext *context) const {
 	int32 left = st::emojiPanHeaderLeft - st::inlineResultsLeft;
 
-	left = st::msgFileSize + st::inlineThumbSkip;
-	prepareThumbnail(st::msgFileSize, st::msgFileSize);
-	QRect rthumb(style::rtlrect(0, st::inlineRowMargin, st::msgFileSize, st::msgFileSize, _width));
+	left = st::inlineFileSize + st::inlineThumbSkip;
+	prepareThumbnail(st::inlineFileSize, st::inlineFileSize);
+	QRect rthumb(style::rtlrect(0, st::inlineRowMargin, st::inlineFileSize, st::inlineFileSize, _width));
 	p.drawPixmapLeft(rthumb.topLeft(), _width, _thumb);
 
 	int titleTop = st::inlineRowMargin + st::inlineRowFileNameTop;
@@ -1107,8 +1108,8 @@ void Contact::paint(Painter &p, const QRect &clip, const PaintContext *context) 
 TextState Contact::getState(
 		QPoint point,
 		StateRequest request) const {
-	if (!QRect(0, st::inlineRowMargin, st::msgFileSize, st::inlineThumbSize).contains(point)) {
-		auto left = (st::msgFileSize + st::inlineThumbSkip);
+	if (!QRect(0, st::inlineRowMargin, st::inlineFileSize, st::inlineThumbSize).contains(point)) {
+		auto left = (st::inlineFileSize + st::inlineThumbSkip);
 		if (QRect(left, 0, _width - left, _height).contains(point)) {
 			return { nullptr, _send };
 		}
@@ -1168,15 +1169,15 @@ Article::Article(
 void Article::initDimensions() {
 	_maxw = st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft;
 	int32 textWidth = _maxw - (_withThumb ? (st::inlineThumbSize + st::inlineThumbSkip) : 0);
-	TextParseOptions titleOpts = { 0, _maxw, 2 * st::semiboldFont->height, Qt::LayoutDirectionAuto };
+	TextParseOptions titleOpts = { 0, textWidth, 2 * st::semiboldFont->height, Qt::LayoutDirectionAuto };
 	_title.setText(st::semiboldTextStyle, TextUtilities::SingleLine(_result->getLayoutTitle()), titleOpts);
-	int32 titleHeight = qMin(_title.countHeight(_maxw), 2 * st::semiboldFont->height);
+	int32 titleHeight = qMin(_title.countHeight(textWidth), 2 * st::semiboldFont->height);
 
 	int32 descriptionLines = (_withThumb || _url) ? 2 : 3;
 	QString description = _result->getLayoutDescription();
-	TextParseOptions descriptionOpts = { TextParseMultiline, _maxw, descriptionLines * st::normalFont->height, Qt::LayoutDirectionAuto };
+	TextParseOptions descriptionOpts = { TextParseMultiline, textWidth, descriptionLines * st::normalFont->height, Qt::LayoutDirectionAuto };
 	_description.setText(st::defaultTextStyle, description, descriptionOpts);
-	int32 descriptionHeight = qMin(_description.countHeight(_maxw), descriptionLines * st::normalFont->height);
+	int32 descriptionHeight = qMin(_description.countHeight(textWidth), descriptionLines * st::normalFont->height);
 
 	_minh = titleHeight + descriptionHeight;
 	if (_url) _minh += st::normalFont->height;
@@ -1381,9 +1382,10 @@ void Game::paint(Painter &p, const QRect &clip, const PaintContext *context) con
 		bool loaded = _documentMedia->loaded(), loading = document->loading(), displayLoading = document->displayLoading();
 		if (loaded && !_gif && !_gif.isBad()) {
 			auto that = const_cast<Game*>(this);
-			that->_gif = Media::Clip::MakeReader(_documentMedia.get(), FullMsgId(), [that](Media::Clip::Notification notification) {
-				that->clipCallback(notification);
-			});
+			that->_gif = Media::Clip::MakeReader(
+				_documentMedia->owner()->location(),
+				_documentMedia->bytes(),
+				[=](Media::Clip::Notification notification) { that->clipCallback(notification); });
 		}
 
 		bool animating = (_gif && _gif->started());
@@ -1421,7 +1423,7 @@ void Game::paint(Painter &p, const QRect &clip, const PaintContext *context) con
 
 	if (radial) {
 		p.fillRect(rthumb, st::msgDateImgBg);
-		QRect inner((st::inlineThumbSize - st::msgFileSize) / 2, (st::inlineThumbSize - st::msgFileSize) / 2, st::msgFileSize, st::msgFileSize);
+		QRect inner((st::inlineThumbSize - st::inlineRadialSize) / 2, (st::inlineThumbSize - st::inlineRadialSize) / 2, st::inlineRadialSize, st::inlineRadialSize);
 		if (radial) {
 			p.setOpacity(1);
 			QRect rinner(inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine)));

@@ -45,6 +45,11 @@ enum class MediaInBubbleState {
 	Bottom,
 };
 
+struct BubbleSelectionInterval {
+	int top = 0;
+	int height = 0;
+};
+
 [[nodiscard]] QString DocumentTimestampLinkBase(
 	not_null<DocumentData*> document,
 	FullMsgId context);
@@ -55,7 +60,7 @@ enum class MediaInBubbleState {
 
 class Media : public Object {
 public:
-	Media(not_null<Element*> parent) : _parent(parent) {
+	explicit Media(not_null<Element*> parent) : _parent(parent) {
 	}
 
 	[[nodiscard]] not_null<History*> history() const;
@@ -78,6 +83,8 @@ public:
 		return false;
 	}
 	virtual void refreshParentId(not_null<HistoryItem*> realParent) {
+	}
+	virtual void drawHighlight(Painter &p, int top) const {
 	}
 	virtual void draw(
 		Painter &p,
@@ -116,6 +123,12 @@ public:
 	[[nodiscard]] TextSelection unskipSelection(
 		TextSelection selection) const;
 
+	[[nodiscard]] virtual auto getBubbleSelectionIntervals(
+		TextSelection selection) const
+	-> std::vector<BubbleSelectionInterval> {
+		return {};
+	}
+
 	// if we press and drag this link should we drag the item
 	[[nodiscard]] virtual bool dragItemByHandler(
 		const ClickHandlerPtr &p) const = 0;
@@ -152,7 +165,10 @@ public:
 	virtual void checkAnimation() {
 	}
 
-	[[nodiscard]] virtual QSize sizeForGrouping() const {
+	[[nodiscard]] virtual QSize sizeForGroupingOptimal(int maxWidth) const {
+		Unexpected("Grouping method call.");
+	}
+	[[nodiscard]] virtual QSize sizeForGrouping(int width) const {
 		Unexpected("Grouping method call.");
 	}
 	virtual void drawGrouped(
@@ -163,6 +179,7 @@ public:
 			const QRect &geometry,
 			RectParts sides,
 			RectParts corners,
+			float64 highlightOpacity,
 			not_null<uint64*> cacheKey,
 			not_null<QPixmap*> cache) const {
 		Unexpected("Grouping method call.");
@@ -217,6 +234,7 @@ public:
 		return (_inBubbleState == MediaInBubbleState::Bottom)
 			|| (_inBubbleState == MediaInBubbleState::None);
 	}
+	[[nodiscard]] bool isRoundedInBubbleBottom() const;
 	[[nodiscard]] virtual bool skipBubbleTail() const {
 		return false;
 	}
@@ -259,6 +277,9 @@ public:
 		const QRect &bubble,
 		crl::time ms) const {
 	}
+	[[nodiscard]] virtual bool customHighlight() const {
+		return false;
+	}
 
 	virtual bool hasHeavyPart() const {
 		return false;
@@ -284,7 +305,7 @@ protected:
 	virtual void playAnimation(bool autoplay) {
 	}
 
-	not_null<Element*> _parent;
+	const not_null<Element*> _parent;
 	MediaInBubbleState _inBubbleState = MediaInBubbleState::None;
 
 };

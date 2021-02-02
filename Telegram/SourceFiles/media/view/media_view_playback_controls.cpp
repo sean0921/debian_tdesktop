@@ -14,9 +14,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/fade_animation.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/text/format_values.h"
+#include "ui/cached_round_corners.h"
 #include "lang/lang_keys.h"
-#include "layout.h"
-#include "app.h"
 #include "styles/style_media_view.h"
 
 namespace Media {
@@ -104,7 +104,7 @@ PlaybackControls::PlaybackControls(
 void PlaybackControls::handleSeekProgress(float64 progress) {
 	if (!_lastDurationMs) return;
 
-	const auto positionMs = snap(
+	const auto positionMs = std::clamp(
 		static_cast<crl::time>(progress * _lastDurationMs),
 		crl::time(0),
 		_lastDurationMs);
@@ -120,7 +120,7 @@ void PlaybackControls::handleSeekProgress(float64 progress) {
 void PlaybackControls::handleSeekFinished(float64 progress) {
 	if (!_lastDurationMs) return;
 
-	const auto positionMs = snap(
+	const auto positionMs = std::clamp(
 		static_cast<crl::time>(progress * _lastDurationMs),
 		crl::time(0),
 		_lastDurationMs);
@@ -333,9 +333,9 @@ void PlaybackControls::updateTimeTexts(const Player::TrackState &state) {
 
 	_lastDurationMs = (state.length * crl::time(1000)) / playFrequency;
 
-	_timeAlready = formatDurationText(playAlready);
+	_timeAlready = Ui::FormatDurationText(playAlready);
 	auto minus = QChar(8722);
-	_timeLeft = minus + formatDurationText(playLeft);
+	_timeLeft = minus + Ui::FormatDurationText(playLeft);
 
 	if (_seekPositionMs < 0) {
 		refreshTimeTexts();
@@ -350,9 +350,9 @@ void PlaybackControls::refreshTimeTexts() {
 		auto playAlready = _seekPositionMs / crl::time(1000);
 		auto playLeft = (_lastDurationMs / crl::time(1000)) - playAlready;
 
-		timeAlready = formatDurationText(playAlready);
+		timeAlready = Ui::FormatDurationText(playAlready);
 		auto minus = QChar(8722);
-		timeLeft = minus + formatDurationText(playLeft);
+		timeLeft = minus + Ui::FormatDurationText(playLeft);
 	}
 
 	_playedAlready->setText(timeAlready, &alreadyChanged);
@@ -429,7 +429,7 @@ void PlaybackControls::paintEvent(QPaintEvent *e) {
 		_volumeController->setFadeOpacity(1.);
 		_childrenHidden = false;
 	}
-	App::roundRect(p, rect(), st::mediaviewSaveMsgBg, MediaviewSaveCorners);
+	Ui::FillRoundRect(p, rect(), st::mediaviewSaveMsgBg, Ui::MediaviewSaveCorners);
 }
 
 void PlaybackControls::mousePressEvent(QMouseEvent *e) {

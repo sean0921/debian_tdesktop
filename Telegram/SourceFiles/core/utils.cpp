@@ -32,10 +32,6 @@ extern "C" {
 
 #include <QtNetwork/QSslSocket>
 
-#ifdef small
-#undef small
-#endif // small
-
 uint64 _SharedMemoryLocation[4] = { 0x00, 0x01, 0x02, 0x03 };
 
 // Base types compile-time check
@@ -174,17 +170,10 @@ namespace ThirdParty {
 			LOG(("MTP Error: dynlock_create callback is set without dynlock_lock callback!"));
 		}
 
-		av_register_all();
-		avcodec_register_all();
-
-		av_lockmgr_register(_ffmpegLockManager);
-
 		_sslInited = true;
 	}
 
 	void finish() {
-		av_lockmgr_register(nullptr);
-
 		CRYPTO_cleanup_all_ex_data();
 #ifndef LIBRESSL_VERSION_NUMBER
 		FIPS_mode_set(0);

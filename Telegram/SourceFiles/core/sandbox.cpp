@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/sandbox.h"
 
 #include "base/platform/base_platform_info.h"
+#include "platform/platform_specific.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "storage/localstorage.h"
@@ -23,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/invoke_queued.h"
 #include "base/qthelp_url.h"
 #include "base/qthelp_regex.h"
+#include "base/qt_adapters.h"
 #include "ui/effects/animations.h"
 #include "facades.h"
 #include "app.h"
@@ -34,9 +36,6 @@ namespace Core {
 namespace {
 
 constexpr auto kEmptyPidForCommandResponse = 0ULL;
-
-using ErrorSignal = void(QLocalSocket::*)(QLocalSocket::LocalSocketError);
-const auto QLocalSocket_error = ErrorSignal(&QLocalSocket::error);
 
 QChar _toHex(ushort v) {
 	v = v & 0x000F;
@@ -90,6 +89,7 @@ Sandbox::Sandbox(
 	}
 })
 , _launcher(launcher) {
+	setQuitOnLastWindowClosed(false);
 }
 
 int Sandbox::start() {
@@ -111,7 +111,7 @@ int Sandbox::start() {
 		[=] { socketDisconnected(); });
 	connect(
 		&_localSocket,
-		QLocalSocket_error,
+		base::QLocalSocket_error,
 		[=](QLocalSocket::LocalSocketError error) { socketError(error); });
 	connect(
 		&_localSocket,
@@ -216,7 +216,7 @@ void Sandbox::setupScreenScale() {
 Sandbox::~Sandbox() = default;
 
 bool Sandbox::event(QEvent *e) {
-	if (e->type() == QEvent::Close) {
+	if (e->type() == QEvent::Close || e->type() == QEvent::Quit) {
 		App::quit();
 	}
 	return QApplication::event(e);
@@ -315,7 +315,7 @@ void Sandbox::singleInstanceChecked() {
 		return;
 	}
 	const auto result = CrashReports::Start();
-	result.match([&](CrashReports::Status status) {
+	v::match(result, [&](CrashReports::Status status) {
 		if (status == CrashReports::CantOpen) {
 			new NotStartedWindow();
 		} else {
@@ -446,7 +446,6 @@ void Sandbox::checkForQuit() {
 }
 
 void Sandbox::refreshGlobalProxy() {
-#ifndef TDESKTOP_DISABLE_NETWORK_PROXY
 	const auto proxy = !Global::started()
 		? _sandboxProxy
 		: (Global::ProxySettings() == MTP::ProxyData::Settings::Enabled)
@@ -462,7 +461,6 @@ void Sandbox::refreshGlobalProxy() {
 	} else {
 		QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
 	}
-#endif // TDESKTOP_DISABLE_NETWORK_PROXY
 }
 
 uint64 Sandbox::installationTag() const {

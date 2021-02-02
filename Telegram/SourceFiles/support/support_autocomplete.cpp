@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "base/unixtime.h"
 #include "base/call_delayed.h"
+#include "base/qt_adapters.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "apiwrap.h"
@@ -296,16 +297,14 @@ AdminLog::OwnedItem GenerateContactItem(
 	using Flag = MTPDmessage::Flag;
 	const auto id = ServerMaxMsgId + (ServerMaxMsgId / 2) + 1;
 	const auto flags = Flag::f_from_id | Flag::f_media | Flag::f_out;
-	const auto replyTo = 0;
-	const auto viaBotId = 0;
 	const auto message = MTP_message(
 		MTP_flags(flags),
 		MTP_int(id),
-		MTP_int(history->session().userId()),
+		peerToMTP(history->session().userPeerId()),
 		peerToMTP(history->peer->id),
 		MTPMessageFwdHeader(),
-		MTP_int(viaBotId),
-		MTP_int(replyTo),
+		MTPint(), // via_bot_id
+		MTPMessageReplyHeader(),
 		MTP_int(base::unixtime::now()),
 		MTP_string(),
 		MTP_messageMediaContact(
@@ -316,8 +315,10 @@ AdminLog::OwnedItem GenerateContactItem(
 			MTP_int(0)),
 		MTPReplyMarkup(),
 		MTPVector<MTPMessageEntity>(),
-		MTP_int(0),
-		MTP_int(0),
+		MTPint(), // views
+		MTPint(), // forwards
+		MTPMessageReplies(),
+		MTPint(), // edit_date
 		MTP_string(),
 		MTP_long(0),
 		//MTPMessageReactions(),
@@ -484,7 +485,7 @@ void Autocomplete::submitValue(const QString &value) {
 		const auto contact = value.mid(
 			prefix.size(),
 			(line > 0) ? (line - prefix.size()) : -1);
-		const auto parts = contact.split(' ', QString::SkipEmptyParts);
+		const auto parts = contact.split(' ', base::QStringSkipEmptyParts);
 		if (parts.size() > 1) {
 			const auto phone = parts[0];
 			const auto firstName = parts[1];
@@ -527,7 +528,7 @@ void ConfirmContactBox::prepare() {
 	_contact->initDimensions();
 	accumulate_max(maxWidth, _contact->maxWidth());
 	maxWidth += st::boxPadding.left() + st::boxPadding.right();
-	const auto width = snap(maxWidth, st::boxWidth, st::boxWideWidth);
+	const auto width = std::clamp(maxWidth, st::boxWidth, st::boxWideWidth);
 	const auto available = width
 		- st::boxPadding.left()
 		- st::boxPadding.right();

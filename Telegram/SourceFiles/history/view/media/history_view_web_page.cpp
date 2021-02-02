@@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_web_page.h"
 
-#include "layout.h"
 #include "core/click_handler_types.h"
 #include "core/ui_integration.h"
 #include "lang/lang_keys.h"
@@ -18,15 +17,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_cursor_state.h"
 #include "history/view/media/history_view_media_common.h"
 #include "ui/image/image.h"
-#include "ui/text_options.h"
+#include "ui/text/text_options.h"
+#include "ui/text/format_values.h"
+#include "ui/cached_round_corners.h"
+#include "layout.h" // FullSelection
 #include "data/data_session.h"
 #include "data/data_media_types.h"
 #include "data/data_web_page.h"
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
 #include "data/data_file_origin.h"
-#include "app.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 namespace HistoryView {
 namespace {
@@ -53,11 +54,11 @@ std::vector<std::unique_ptr<Data::Media>> PrepareCollageMedia(
 	auto result = std::vector<std::unique_ptr<Data::Media>>();
 	result.reserve(data.items.size());
 	for (const auto item : data.items) {
-		if (const auto document = base::get_if<DocumentData*>(&item)) {
+		if (const auto document = std::get_if<DocumentData*>(&item)) {
 			result.push_back(std::make_unique<Data::MediaFile>(
 				parent,
 				*document));
-		} else if (const auto photo = base::get_if<PhotoData*>(&item)) {
+		} else if (const auto photo = std::get_if<PhotoData*>(&item)) {
 			result.push_back(std::make_unique<Data::MediaPhoto>(
 				parent,
 				*photo));
@@ -200,11 +201,12 @@ QSize WebPage::countOptimalSize() {
 				- st::msgPadding.right()
 				- st::webPageLeft);
 		}
-		auto context = Core::UiIntegration::Context();
+		auto context = Core::MarkedTextContext();
+		using MarkedTextContext = Core::MarkedTextContext;
 		if (_data->siteName == qstr("Twitter")) {
-			context.type = Core::UiIntegration::HashtagMentionType::Twitter;
+			context.type = MarkedTextContext::HashtagMentionType::Twitter;
 		} else if (_data->siteName == qstr("Instagram")) {
-			context.type = Core::UiIntegration::HashtagMentionType::Instagram;
+			context.type = MarkedTextContext::HashtagMentionType::Instagram;
 		}
 		_description.setMarkedText(
 			st::webPageDescriptionStyle,
@@ -286,7 +288,7 @@ QSize WebPage::countOptimalSize() {
 		}
 	}
 	if (_data->type == WebPageType::Video && _data->duration) {
-		_duration = formatDurationText(_data->duration);
+		_duration = Ui::FormatDurationText(_data->duration);
 		_durationWidth = st::msgDateFont->width(_duration);
 	}
 	maxWidth += st::msgPadding.left() + st::webPageLeft + st::msgPadding.right();
@@ -500,7 +502,7 @@ void WebPage::draw(Painter &p, const QRect &r, TextSelection selection, crl::tim
 		}
 		p.drawPixmapLeft(padding.left() + paintw - pw, tshift, width(), pix);
 		if (selected) {
-			App::roundRect(p, style::rtlrect(padding.left() + paintw - pw, tshift, pw, _pixh, width()), p.textPalette().selectOverlay, SelectedOverlaySmallCorners);
+			Ui::FillRoundRect(p, style::rtlrect(padding.left() + paintw - pw, tshift, pw, _pixh, width()), p.textPalette().selectOverlay, Ui::SelectedOverlaySmallCorners);
 		}
 		paintw -= pw + st::webPagePhotoDelta;
 	}
@@ -568,7 +570,7 @@ void WebPage::draw(Painter &p, const QRect &r, TextSelection selection, crl::tim
 				auto dateW = pixwidth - dateX - st::msgDateImgDelta;
 				auto dateH = pixheight - dateY - st::msgDateImgDelta;
 
-				App::roundRect(p, dateX, dateY, dateW, dateH, selected ? st::msgDateImgBgSelected : st::msgDateImgBg, selected ? DateSelectedCorners : DateCorners);
+				Ui::FillRoundRect(p, dateX, dateY, dateW, dateH, selected ? st::msgDateImgBgSelected : st::msgDateImgBg, selected ? Ui::DateSelectedCorners : Ui::DateCorners);
 
 				p.setFont(st::msgDateFont);
 				p.setPen(st::msgDateImgFg);

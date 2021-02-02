@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_cloud_themes.h"
 #include "data/data_chat_filters.h"
 #include "lang/lang_keys.h"
+#include "lang/lang_instance.h"
 #include "storage/localstorage.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -33,7 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_sensitive_content.h"
 #include "api/api_global_privacy.h"
 #include "window/window_session_controller.h"
-#include "core/file_utilities.h"
+#include "core/click_handler_types.h"
 #include "base/call_delayed.h"
 #include "facades.h"
 #include "app.h"
@@ -48,10 +49,10 @@ void SetupLanguageButton(
 		container,
 		tr::lng_settings_language(),
 		rpl::single(
-			Lang::Current().id()
+			Lang::GetInstance().id()
 		) | rpl::then(
-			Lang::Current().idChanges()
-		) | rpl::map([] { return Lang::Current().nativeName(); }),
+			Lang::GetInstance().idChanges()
+		) | rpl::map([] { return Lang::GetInstance().nativeName(); }),
 		icon ? st::settingsSectionButton : st::settingsButton,
 		icon ? &st::settingsIconLanguage : nullptr);
 	const auto guard = Ui::CreateChild<base::binary_guard>(button.get());
@@ -273,7 +274,7 @@ void SetupInterfaceScale(
 }
 
 void OpenFaq() {
-	File::OpenUrl(telegramFaqLink());
+	UrlClickHandler::Open(telegramFaqLink());
 }
 
 void SetupFaq(not_null<Ui::VerticalLayout*> container, bool icon) {

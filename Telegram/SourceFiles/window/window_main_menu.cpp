@@ -8,10 +8,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_main_menu.h"
 
 #include "window/themes/window_theme.h"
+#include "window/window_peer_menu.h"
 #include "window/window_session_controller.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
-#include "ui/widgets/menu.h"
+#include "ui/widgets/menu/menu.h"
+#include "ui/widgets/menu/menu_common.h"
+#include "ui/widgets/menu/menu_toggle.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/shadow.h"
@@ -53,6 +56,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_dialogs.h"
 #include "styles/style_settings.h"
 #include "styles/style_boxes.h"
+#include "styles/style_info.h" // infoTopBarMenu
 #include "styles/style_layers.h"
 
 #include <QtGui/QWindow>
@@ -87,6 +91,47 @@ constexpr auto kMinDiffIntensity = 0.25;
 		|| background->isMonoColorImage()
 		|| background->paper().isPattern()
 		|| Data::IsLegacy1DefaultWallPaper(background->paper());
+}
+
+[[nodiscard]] bool IsAltShift(Qt::KeyboardModifiers modifiers) {
+	return (modifiers & Qt::ShiftModifier) && (modifiers & Qt::AltModifier);
+}
+
+void ShowCallsBox(not_null<Window::SessionController*> window) {
+	auto controller = std::make_unique<Calls::BoxController>(window);
+	const auto initBox = [
+		window,
+		controller = controller.get()
+	](not_null<PeerListBox*> box) {
+		box->addButton(tr::lng_close(), [=] {
+			box->closeBox();
+		});
+		using MenuPointer = base::unique_qptr<Ui::PopupMenu>;
+		const auto menu = std::make_shared<MenuPointer>();
+		const auto menuButton = box->addTopButton(st::infoTopBarMenu);
+		menuButton->setClickedCallback([=] {
+			*menu = base::make_unique_q<Ui::PopupMenu>(menuButton);
+			const auto showSettings = [=] {
+				window->showSettings(
+					Settings::Type::Calls,
+					Window::SectionShow(anim::type::instant));
+			};
+			const auto clearAll = crl::guard(box, [=] {
+				box->getDelegate()->show(Box(Calls::ClearCallsBox, window));
+			});
+			(*menu)->addAction(
+				tr::lng_settings_section_call_settings(tr::now),
+				showSettings);
+			if (controller->delegate()->peerListFullRowsCount() > 0) {
+				(*menu)->addAction(
+					tr::lng_call_box_clear_all(tr::now),
+					clearAll);
+			}
+			(*menu)->popup(QCursor::pos());
+			return true;
+		});
+	};
+	Ui::show(Box<PeerListBox>(std::move(controller), initBox));
 }
 
 } // namespace
@@ -272,6 +317,17 @@ void MainMenu::AccountButton::paintEvent(QPaintEvent *e) {
 }
 
 void MainMenu::AccountButton::contextMenuEvent(QContextMenuEvent *e) {
+	if (!_menu && IsAltShift(e->modifiers())) {
+		_menu = base::make_unique_q<Ui::PopupMenu>(this);
+		const auto addAction = [&](const QString &text, Fn<void()> callback) {
+			return _menu->addAction(
+				text,
+				crl::guard(this, std::move(callback)));
+		};
+		MenuAddMarkAsReadAllChatsAction(&_session->data(), addAction);
+		_menu->popup(QCursor::pos());
+		return;
+	}
 	if (&_session->account() == &Core::App().activeAccount() || _menu) {
 		return;
 	}
@@ -281,14 +337,11 @@ void MainMenu::AccountButton::contextMenuEvent(QContextMenuEvent *e) {
 	}));
 	_menu->addAction(tr::lng_settings_logout(tr::now), crl::guard(this, [=] {
 		const auto session = _session;
-		const auto box = std::make_shared<QPointer<ConfirmBox>>();
-		const auto callback = [=] {
-			if (*box) {
-				(*box)->closeBox();
-			}
+		const auto callback = [=](Fn<void()> &&close) {
+			close();
 			Core::App().logout(&session->account());
 		};
-		*box = Ui::show(Box<ConfirmBox>(
+		Ui::show(Box<ConfirmBox>(
 			tr::lng_sure_logout(tr::now),
 			tr::lng_settings_logout(tr::now),
 			st::attentionBoxButton,
@@ -511,7 +564,7 @@ MainMenu::MainMenu(
 	_inner.get(),
 	object_ptr<Ui::PlainShadow>(_inner.get()))))
 , _menu(_inner->add(
-	object_ptr<Ui::Menu>(_inner.get(), st::mainMenu),
+	object_ptr<Ui::Menu::Menu>(_inner.get(), st::mainMenu),
 	{ 0, st::mainMenuSkip, 0, 0 }))
 , _footer(_inner->add(object_ptr<Ui::RpWidget>(_inner.get())))
 , _telegram(
@@ -552,8 +605,8 @@ MainMenu::MainMenu(
 	}, _inner->lifetime());
 
 	parentResized();
-	_menu->setTriggeredCallback([](QAction *action, int actionTop, Ui::Menu::TriggeredSource source) {
-		emit action->triggered();
+	_menu->setTriggeredCallback([](const Ui::Menu::CallbackData &data) {
+		emit data.action->triggered();
 	});
 	refreshMenu();
 	refreshBackground();
@@ -602,20 +655,21 @@ MainMenu::MainMenu(
 }
 
 void MainMenu::setupArchiveButton() {
+	const auto controller = _controller;
+	const auto folder = [=] {
+		return controller->session().data().folderLoaded(Data::Folder::kId);
+	};
 	const auto showArchive = [=] {
-		const auto folder = _controller->session().data().folderLoaded(
-			Data::Folder::kId);
-		if (folder) {
-			_controller->openFolder(folder);
+		if (const auto f = folder()) {
+			controller->openFolder(f);
 			Ui::hideSettingsAndLayer();
 		}
 	};
 	const auto checkArchive = [=] {
-		const auto folder = _controller->session().data().folderLoaded(
-			Data::Folder::kId);
-		return folder
-			&& !folder->chatsList()->empty()
-			&& _controller->session().settings().archiveInMainMenu();
+		const auto f = folder();
+		return f
+			&& !f->chatsList()->empty()
+			&& controller->session().settings().archiveInMainMenu();
 	};
 	_archiveButton->setVisible(checkArchive());
 	_archiveButton->setAcceptBoth(true);
@@ -628,20 +682,33 @@ void MainMenu::setupArchiveButton() {
 			return;
 		}
 		_contextMenu = base::make_unique_q<Ui::PopupMenu>(this);
-		_contextMenu->addAction(
-			tr::lng_context_archive_to_list(tr::now), [=] {
-			_controller->session().settings().setArchiveInMainMenu(false);
-			_controller->session().saveSettingsDelayed();
+		const auto addAction = [&](const QString &text, Fn<void()> callback) {
+			return _contextMenu->addAction(text, std::move(callback));
+		};
+
+		const auto hide = [=] {
+			controller->session().settings().setArchiveInMainMenu(false);
+			controller->session().saveSettingsDelayed();
 			Ui::hideSettingsAndLayer();
-		});
+		};
+		addAction(tr::lng_context_archive_to_list(tr::now), std::move(hide));
+
+		MenuAddMarkAsReadChatListAction(
+			[f = folder()] { return f->chatsList(); },
+			addAction);
+
 		_contextMenu->popup(QCursor::pos());
 	}, _archiveButton->lifetime());
 
-	_controller->session().data().chatsListChanges(
+	controller->session().data().chatsListChanges(
 	) | rpl::filter([](Data::Folder *folder) {
 		return folder && (folder->id() == Data::Folder::kId);
 	}) | rpl::start_with_next([=](Data::Folder *folder) {
-		_archiveButton->setVisible(checkArchive());
+		const auto isArchiveVisible = checkArchive();
+		_archiveButton->setVisible(isArchiveVisible);
+		if (!isArchiveVisible) {
+			_contextMenu = nullptr;
+		}
 		update();
 	}, lifetime());
 }
@@ -734,7 +801,7 @@ void MainMenu::rebuildAccounts() {
 				}
 				auto activate = [=, guard = _accountSwitchGuard.make_guard()]{
 					if (guard) {
-						Core::App().domain().activate(account);
+						Core::App().domain().maybeActivate(account);
 					}
 				};
 				base::call_delayed(
@@ -788,7 +855,9 @@ not_null<Ui::SlideWrap<Ui::RippleButton>*> MainMenu::setupAddAccount(
 	}, button->lifetime());
 
 	const auto add = [=](MTP::Environment environment) {
-		Core::App().domain().addActivated(environment);
+		Core::App().preventOrInvoke([=] {
+			Core::App().domain().addActivated(environment);
+		});
 	};
 
 	button->setAcceptBoth(true);
@@ -798,8 +867,7 @@ not_null<Ui::SlideWrap<Ui::RippleButton>*> MainMenu::setupAddAccount(
 			add(MTP::Environment::Production);
 			return;
 		} else if (which != Qt::RightButton
-			|| !(button->clickModifiers() & Qt::ShiftModifier)
-			|| !(button->clickModifiers() & Qt::AltModifier)) {
+			|| !IsAltShift(button->clickModifiers())) {
 			return;
 		}
 		_contextMenu = base::make_unique_q<Ui::PopupMenu>(this);
@@ -829,34 +897,22 @@ void MainMenu::refreshMenu() {
 	if (!_controller->session().supportMode()) {
 		const auto controller = _controller;
 		_menu->addAction(tr::lng_create_group_title(tr::now), [] {
-			App::wnd()->onShowNewGroup();
+			App::wnd()->showNewGroup();
 		}, &st::mainMenuNewGroup, &st::mainMenuNewGroupOver);
 		_menu->addAction(tr::lng_create_channel_title(tr::now), [] {
-			App::wnd()->onShowNewChannel();
+			App::wnd()->showNewChannel();
 		}, &st::mainMenuNewChannel, &st::mainMenuNewChannelOver);
 		_menu->addAction(tr::lng_menu_contacts(tr::now), [=] {
-			Ui::show(Box<PeerListBox>(std::make_unique<ContactsBoxController>(controller), [](not_null<PeerListBox*> box) {
-				box->addButton(tr::lng_close(), [box] { box->closeBox(); });
-				box->addLeftButton(tr::lng_profile_add_contact(), [] { App::wnd()->onShowAddContact(); });
-			}));
+			Ui::show(PrepareContactsBox(controller));
 		}, &st::mainMenuContacts, &st::mainMenuContactsOver);
 		if (_controller->session().serverConfig().phoneCallsEnabled.current()) {
 			_menu->addAction(tr::lng_menu_calls(tr::now), [=] {
-				Ui::show(Box<PeerListBox>(std::make_unique<Calls::BoxController>(controller), [=](not_null<PeerListBox*> box) {
-					box->addButton(tr::lng_close(), [=] {
-						box->closeBox();
-					});
-					box->addTopButton(st::callSettingsButton, [=] {
-						controller->showSettings(
-							Settings::Type::Calls,
-							Window::SectionShow(anim::type::instant));
-					});
-				}));
+				ShowCallsBox(controller);
 			}, &st::mainMenuCalls, &st::mainMenuCallsOver);
 		}
 	} else {
 		_menu->addAction(tr::lng_profile_add_contact(tr::now), [] {
-			App::wnd()->onShowAddContact();
+			App::wnd()->showAddContact();
 		}, &st::mainMenuContacts, &st::mainMenuContactsOver);
 
 		const auto fix = std::make_shared<QPointer<QAction>>();
@@ -879,7 +935,8 @@ void MainMenu::refreshMenu() {
 	}, &st::mainMenuSettings, &st::mainMenuSettingsOver);
 
 	_nightThemeAction = std::make_shared<QPointer<QAction>>();
-	auto action = _menu->addAction(tr::lng_menu_night_mode(tr::now), [=] {
+
+	auto nightCallback = [=] {
 		if (Window::Theme::Background()->editingTheme()) {
 			Ui::show(Box<InformBox>(
 				tr::lng_theme_editor_cant_change_theme(tr::now)));
@@ -898,7 +955,17 @@ void MainMenu::refreshMenu() {
 		Window::Theme::ToggleNightModeWithConfirmation(
 			&_controller->window(),
 			toggle);
-	}, &st::mainMenuNightMode, &st::mainMenuNightModeOver);
+	};
+
+	auto item = base::make_unique_q<Ui::Menu::Toggle>(
+		_menu,
+		st::mainMenu,
+		tr::lng_menu_night_mode(tr::now),
+		std::move(nightCallback),
+		&st::mainMenuNightMode,
+		&st::mainMenuNightModeOver);
+
+	auto action = _menu->addAction(std::move(item));
 	*_nightThemeAction = action;
 	action->setCheckable(true);
 	action->setChecked(Window::Theme::IsNightMode());

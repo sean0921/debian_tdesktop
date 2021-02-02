@@ -22,12 +22,6 @@ inline void SetWatchingMediaKeys(bool watching) {
 inline void IgnoreApplicationActivationRightNow() {
 }
 
-inline void FallbackFontConfigCheckBegin() {
-}
-
-inline void FallbackFontConfigCheckEnd() {
-}
-
 inline QImage GetImageFromClipboard() {
 	return {};
 }
@@ -42,6 +36,22 @@ inline bool StartSystemResize(QWindow *window, Qt::Edges edges) {
 
 inline bool TrayIconSupported() {
 	return true;
+}
+
+inline bool SkipTaskbarSupported() {
+	return true;
+}
+
+inline bool SetWindowExtents(QWindow *window, const QMargins &extents) {
+	return false;
+}
+
+inline bool UnsetWindowExtents(QWindow *window) {
+	return false;
+}
+
+inline bool WindowsNeedShadow() {
+	return false;
 }
 
 namespace ThirdParty {
@@ -59,13 +69,7 @@ inline void psCheckLocalSocket(const QString &) {
 
 void psWriteDump();
 
-void psDeleteDir(const QString &dir);
-
-QStringList psInitLogs();
-void psClearInitLogs();
-
 void psActivateProcess(uint64 pid = 0);
-QString psLocalServerPrefix();
 QString psAppDataPath();
 QString psAppDataPathOld();
 void psAutoStart(bool start, bool silent = false);
@@ -81,31 +85,7 @@ void psNewVersion();
 inline QByteArray psDownloadPathBookmark(const QString &path) {
 	return QByteArray();
 }
-inline QByteArray psPathBookmark(const QString &path) {
-	return QByteArray();
-}
 inline void psDownloadPathEnableAccess() {
 }
-
-class PsFileBookmark {
-public:
-	PsFileBookmark(const QByteArray &bookmark) {
-	}
-	bool check() const {
-		return true;
-	}
-	bool enable() const {
-		return true;
-	}
-	void disable() const {
-	}
-	const QString &name(const QString &original) const {
-		return original;
-	}
-	QByteArray bookmark() const {
-		return QByteArray();
-	}
-
-};
 
 bool psLaunchMaps(const Data::LocationPoint &point);

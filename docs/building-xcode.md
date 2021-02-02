@@ -1,4 +1,4 @@
-## Build instructions for Xcode 11
+## Build instructions for Xcode 12
 
 ### Prepare folder
 
@@ -29,7 +29,7 @@ Go to ***BuildPath*** and run
 
     git clone https://github.com/desktop-app/patches.git
     cd patches
-    git checkout 7df6fdd
+    git checkout f22ccc5
     cd ../
     git clone https://chromium.googlesource.com/external/gyp
     git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
@@ -39,15 +39,26 @@ Go to ***BuildPath*** and run
     git apply ../patches/gyp.diff
     ./setup.py build
     sudo ./setup.py install
-    cd ../..
+    cd ..
 
+    git clone -b macos_padding https://github.com/desktop-app/yasm.git
+    cd yasm
+    ./autogen.sh
+    make $MAKE_THREADS_CNT
+    cd ..
+
+    git clone https://github.com/desktop-app/macho_edit.git
+    cd macho_edit
+    xcodebuild build -configuration Release -project macho_edit.xcodeproj -target macho_edit
+    cd ..
+
+    cd ..
     mkdir -p Libraries/macos
     cd Libraries/macos
-    LibrariesPath=`pwd`
 
     git clone https://github.com/desktop-app/patches.git
     cd patches
-    git checkout 7df6fdd
+    git checkout f22ccc5
     cd ..
 
     git clone https://git.tukaani.org/xz.git
@@ -57,23 +68,26 @@ Go to ***BuildPath*** and run
     cd build
     CFLAGS="$UNGUARDED" CPPFLAGS="$UNGUARDED" cmake -D CMAKE_OSX_DEPLOYMENT_TARGET:STRING=10.12 -D CMAKE_INSTALL_PREFIX:STRING=/usr/local/macos ..
     make $MAKE_THREADS_CNT
-    cd ../..
-
-    xz_ver=5.2.4
-    wget https://tukaani.org/xz/xz-$xz_ver.tar.gz
-    tar -xvzf xz-$xz_ver.tar.gz
-    rm xz-$xz_ver.tar.gz
-    cd xz-$xz_ver
-    CFLAGS="$MIN_VER" LDFLAGS="$MIN_VER" ./configure --prefix=/usr/local/macos
-    make $MAKE_THREADS_CNT
     sudo make install
-    cd ..
+    cd ../..
 
     git clone https://github.com/desktop-app/zlib.git
     cd zlib
     CFLAGS="$MIN_VER $UNGUARDED" LDFLAGS="$MIN_VER" ./configure --prefix=/usr/local/macos
     make $MAKE_THREADS_CNT
     sudo make install
+    cd ..
+
+    git clone -b v4.0.1-rc2 https://github.com/mozilla/mozjpeg.git
+    cd mozjpeg
+    cmake -B build . \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local/macos \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=10.12 \
+        -DWITH_JPEG8=ON \
+        -DPNG_SUPPORTED=OFF
+    cmake --build build $MAKE_THREADS_CNT
+    sudo cmake --install build
     cd ..
 
     git clone https://github.com/openssl/openssl openssl_1_1_1
@@ -104,16 +118,19 @@ Go to ***BuildPath*** and run
 
     git clone https://github.com/FFmpeg/FFmpeg.git ffmpeg
     cd ffmpeg
-    git checkout release/3.4
+    git checkout release/4.2
     CFLAGS=`freetype-config --cflags`
     LDFLAGS=`freetype-config --libs`
     PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:/usr/X11/lib/pkgconfig
+    cp ../patches/macos_yasm_wrap.sh ./
 
     ./configure --prefix=/usr/local/macos \
     --extra-cflags="$MIN_VER $UNGUARDED" \
     --extra-cxxflags="$MIN_VER $UNGUARDED" \
     --extra-ldflags="$MIN_VER" \
-    --enable-protocol=file --enable-libopus \
+    --x86asmexe=`pwd`/macos_yasm_wrap.sh \
+    --enable-protocol=file \
+    --enable-libopus \
     --disable-programs \
     --disable-doc \
     --disable-network \
@@ -214,10 +231,8 @@ Go to ***BuildPath*** and run
     sudo make install
     cd ..
 
-    git clone git://repo.or.cz/openal-soft.git
-    cd openal-soft
-    git checkout v1.19
-    cd build
+    git clone --branch capture_with_webrtc https://github.com/telegramdesktop/openal-soft.git
+    cd openal-soft/build
     CFLAGS=$UNGUARDED CPPFLAGS=$UNGUARDED cmake -D CMAKE_INSTALL_PREFIX:PATH=/usr/local/macos -D ALSOFT_EXAMPLES=OFF -D LIBTYPE:STRING=STATIC -D CMAKE_OSX_DEPLOYMENT_TARGET:STRING=10.12 ..
     make $MAKE_THREADS_CNT
     sudo make install
@@ -243,31 +258,61 @@ Go to ***BuildPath*** and run
     ninja -C out/Release
     cd ..
 
-    git clone git://code.qt.io/qt/qt5.git qt5_12_8
-    cd qt5_12_8
+    git clone git://code.qt.io/qt/qt5.git qt_5_15_2
+    cd qt_5_15_2
     perl init-repository --module-subset=qtbase,qtimageformats
-    git checkout v5.12.8
+    git checkout v5.15.2
     git submodule update qtbase qtimageformats
     cd qtbase
-    find ../../patches/qtbase_5_12_8 -type f -print0 | sort -z | xargs -0 git apply
+    find ../../patches/qtbase_5_15_2 -type f -print0 | sort -z | xargs -0 git apply
     cd ..
 
-    ./configure -prefix "/usr/local/desktop-app/Qt-5.12.8" \
-    -debug-and-release \
-    -force-debug-info \
-    -opensource \
-    -confirm-license \
-    -static \
-    -opengl desktop \
-    -no-openssl \
-    -securetransport \
-    -nomake examples \
-    -nomake tests \
-    -platform macx-clang
+    ./configure -prefix "/usr/local/desktop-app/Qt-5.15.2" \
+        -debug-and-release \
+        -force-debug-info \
+        -opensource \
+        -confirm-license \
+        -static \
+        -opengl desktop \
+        -no-openssl \
+        -securetransport \
+        -I "/usr/local/macos/include" \
+        LIBJPEG_LIBS="/usr/local/macos/lib/libjpeg.a" \
+        ZLIB_LIBS="/usr/local/macos/lib/libz.a" \
+        -nomake examples \
+        -nomake tests \
+        -platform macx-clang
 
     make $MAKE_THREADS_CNT
     sudo make install
     cd ..
+
+    git clone --recursive https://github.com/desktop-app/tg_owt.git
+    cd tg_owt
+    mkdir out
+    cd out
+    mkdir Debug
+    cd Debug
+    cmake -G Ninja \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DTG_OWT_SPECIAL_TARGET=mac \
+        -DTG_OWT_LIBJPEG_INCLUDE_PATH=/usr/local/macos/include \
+        -DTG_OWT_OPENSSL_INCLUDE_PATH=`pwd`/../../../openssl_1_1_1/include \
+        -DTG_OWT_OPUS_INCLUDE_PATH=/usr/local/macos/include/opus \
+        -DTG_OWT_FFMPEG_INCLUDE_PATH=/usr/local/macos/include ../..
+    ninja
+    cd ..
+    mkdir Release
+    cd Release
+    cmake -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DTG_OWT_SPECIAL_TARGET=mac \
+        -DTG_OWT_LIBJPEG_INCLUDE_PATH=/usr/local/macos/include \
+        -DTG_OWT_OPENSSL_INCLUDE_PATH=`pwd`/../../../openssl_1_1_1/include \
+        -DTG_OWT_OPUS_INCLUDE_PATH=/usr/local/macos/include/opus \
+        -DTG_OWT_FFMPEG_INCLUDE_PATH=/usr/local/macos/include ../..
+    ninja
+    cd ../../..
 
 ### Building the project
 

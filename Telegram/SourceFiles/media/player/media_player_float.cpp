@@ -28,7 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "facades.h"
 #include "app.h"
 #include "styles/style_media_player.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 #include <QtWidgets/QApplication>
 
@@ -111,7 +111,7 @@ float64 Float::outRatio() const {
 	if (y() + height() > parent.y() + parent.height()) {
 		accumulate_min(min, 1. - (y() + height() - parent.y() - parent.height()) / float64(height()));
 	}
-	return snap(min, 0., 1.);
+	return std::clamp(min, 0., 1.);
 }
 
 void Float::mouseReleaseEvent(QMouseEvent *e) {

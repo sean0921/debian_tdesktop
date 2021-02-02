@@ -80,10 +80,9 @@ inline bool IsTagUnspellcheckable(const QString &tag) {
 	if (tag.isEmpty()) {
 		return false;
 	}
-	const auto isCommonFormatting = ranges::find_if(
-		kUnspellcheckableTags, [&](const auto *t) {
-			return t == tag;
-	}) != end(kUnspellcheckableTags);
+	const auto isCommonFormatting = ranges::any_of(
+		kUnspellcheckableTags,
+		[&](const auto *t) { return t == tag; });
 
 	if (isCommonFormatting) {
 		return true;
@@ -162,9 +161,6 @@ SpellingHighlighter::SpellingHighlighter(
 	Platform::Spellchecker::Init();
 #endif // !Q_OS_WIN
 
-	_textEdit->installEventFilter(this);
-	_textEdit->viewport()->installEventFilter(this);
-
 	_cachedRanges = MisspelledWords();
 
 	// Use the patched SpellCheckUnderline style.
@@ -204,6 +200,13 @@ SpellingHighlighter::SpellingHighlighter(
 		enabled
 	) | rpl::start_with_next([=](bool value) {
 		setEnabled(value);
+		if (_enabled) {
+			_textEdit->installEventFilter(this);
+			_textEdit->viewport()->installEventFilter(this);
+		} else {
+			_textEdit->removeEventFilter(this);
+			_textEdit->viewport()->removeEventFilter(this);
+		}
 	}, _lifetime);
 
 	Spellchecker::SupportedScriptsChanged(
@@ -348,7 +351,9 @@ void SpellingHighlighter::contentsChange(int pos, int removed, int added) {
 			_lastPosition--;
 			_addedSymbols++;
 		}
-
+		if (_isLastKeyRepeat) {
+			return;
+		}
 		checkChangedText();
 	}
 }
@@ -390,12 +395,13 @@ void SpellingHighlighter::checkChangedText() {
 		const auto beginNewSelection = wordUnderCursor.first;
 		const auto endNewSelection = EndOfWord(lastWordNewSelection);
 
+		auto callback = [=](MisspelledWords &&r) {
+			ranges::insert(_cachedRanges, wordInCacheIt(), std::move(r));
+		};
 		invokeCheckText(
 			beginNewSelection,
 			endNewSelection - beginNewSelection,
-			[=](const MisspelledWords &r) {
-				ranges::insert(_cachedRanges, wordInCacheIt(), std::move(r));
-		});
+			std::move(callback));
 		return;
 	}
 
@@ -436,7 +442,7 @@ void SpellingHighlighter::checkCurrentText() {
 		_cachedRanges.clear();
 		return;
 	}
-	invokeCheckText(0, size(), [&](const MisspelledWords &ranges) {
+	invokeCheckText(0, size(), [&](MisspelledWords &&ranges) {
 		_cachedRanges = std::move(ranges);
 	});
 }
@@ -444,7 +450,7 @@ void SpellingHighlighter::checkCurrentText() {
 void SpellingHighlighter::invokeCheckText(
 		int textPosition,
 		int textLength,
-		Fn<void(const MisspelledWords &ranges)> callback) {
+		Fn<void(MisspelledWords &&ranges)> callback) {
 	if (!_enabled) {
 		return;
 	}
@@ -608,7 +614,7 @@ bool SpellingHighlighter::eventFilter(QObject *o, QEvent *e) {
 		return false;
 	}
 	if (e->type() == QEvent::ContextMenu) {
-		const auto c = static_cast<QContextMenuEvent *>(e);
+		const auto c = static_cast<QContextMenuEvent*>(e);
 		const auto menu = _textEdit->createStandardContextMenu();
 		if (!menu || !c) {
 			return false;
@@ -628,11 +634,26 @@ bool SpellingHighlighter::eventFilter(QObject *o, QEvent *e) {
 			c->globalPos());
 		return true;
 	} else if (e->type() == QEvent::KeyPress) {
-		const auto k = static_cast<QKeyEvent *>(e);
+		const auto k = static_cast<QKeyEvent*>(e);
 
 		if (ranges::contains(kKeysToCheck, k->key())) {
 			if (_addedSymbols + _removedSymbols + _lastPosition) {
 				checkCurrentText();
+			}
+		} else if ((o == _textEdit) && k->isAutoRepeat()) {
+			_isLastKeyRepeat = true;
+		}
+	} else if (_isLastKeyRepeat && (o == _textEdit)) {
+		if (e->type() == QEvent::FocusOut) {
+			_isLastKeyRepeat = false;
+			if (_addedSymbols + _removedSymbols + _lastPosition) {
+				checkCurrentText();
+			}
+		} else if (e->type() == QEvent::KeyRelease) {
+			const auto k = static_cast<QKeyEvent*>(e);
+			if (!k->isAutoRepeat()) {
+				_isLastKeyRepeat = false;
+				_coldSpellcheckingTimer.callOnce(kColdSpellcheckingTimeout);
 			}
 		}
 	} else if ((o == _textEdit->viewport())

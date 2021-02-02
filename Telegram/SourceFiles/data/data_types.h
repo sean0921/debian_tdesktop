@@ -287,7 +287,11 @@ using PollId = uint64;
 using WallPaperId = uint64;
 constexpr auto CancelledWebPageId = WebPageId(0xFFFFFFFFFFFFFFFFULL);
 
-using PreparedPhotoThumbs = base::flat_map<char, QImage>;
+struct PreparedPhotoThumb {
+	QImage image;
+	QByteArray bytes;
+};
+using PreparedPhotoThumbs = base::flat_map<char, PreparedPhotoThumb>;
 
 // [0] == -1 -- counting, [0] == -2 -- could not count
 using VoiceWaveform = QVector<signed char>;
@@ -428,6 +432,12 @@ inline bool operator==(
 	return (a.position == b.position)
 		&& (a.anchor == b.anchor)
 		&& (a.scroll == b.scroll);
+}
+
+inline bool operator!=(
+		const MessageCursor &a,
+		const MessageCursor &b) {
+	return !(a == b);
 }
 
 class FileClickHandler : public LeftButtonClickHandler {

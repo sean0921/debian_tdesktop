@@ -15,8 +15,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "boxes/confirm_box.h"
 #include "calls/calls_call.h"
+#include "calls/calls_group_call.h"
 #include "calls/calls_panel.h"
+#include "calls/calls_group_panel.h"
 #include "data/data_user.h"
+#include "data/data_group_call.h"
+#include "data/data_channel.h"
+#include "data/data_chat.h"
 #include "data/data_session.h"
 #include "media/audio/media_audio_track.h"
 #include "platform/platform_specific.h"
@@ -24,6 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "mtproto/mtproto_config.h"
 #include "boxes/rate_call_box.h"
+#include "tgcalls/VideoCaptureInterface.h"
 #include "app.h"
 
 namespace Calls {
@@ -35,17 +41,10 @@ constexpr auto kServerConfigUpdateTimeoutMs = 24 * 3600 * crl::time(1000);
 
 Instance::Instance() = default;
 
-Instance::~Instance() {
-	for (const auto panel : _pendingPanels) {
-		if (panel) {
-			delete panel;
-		}
-	}
-}
+Instance::~Instance() = default;
 
-void Instance::startOutgoingCall(not_null<UserData*> user) {
-	if (alreadyInCall()) { // Already in a call.
-		_currentCallPanel->showAndActivate();
+void Instance::startOutgoingCall(not_null<UserData*> user, bool video) {
+	if (activateCurrentCall()) {
 		return;
 	}
 	if (user->callsStatus() == UserData::CallsStatus::Private) {
@@ -55,17 +54,30 @@ void Instance::startOutgoingCall(not_null<UserData*> user) {
 			tr::lng_call_error_not_available(tr::now, lt_user, user->name)));
 		return;
 	}
-	requestMicrophonePermissionOrFail(crl::guard(this, [=] {
-		createCall(user, Call::Type::Outgoing);
-	}));
+	requestPermissionsOrFail(crl::guard(this, [=] {
+		createCall(user, Call::Type::Outgoing, video);
+	}), video);
+}
+
+void Instance::startOrJoinGroupCall(not_null<PeerData*> peer) {
+	destroyCurrentCall();
+
+	const auto call = peer->groupCall();
+	createGroupCall(
+		peer,
+		call ? call->input() : MTP_inputGroupCall(MTPlong(), MTPlong()));
 }
 
 void Instance::callFinished(not_null<Call*> call) {
-	destroyCall(call);
+	crl::on_main(call, [=] {
+		destroyCall(call);
+	});
 }
 
 void Instance::callFailed(not_null<Call*> call) {
-	destroyCall(call);
+	crl::on_main(call, [=] {
+		destroyCall(call);
+	});
 }
 
 void Instance::callRedial(not_null<Call*> call) {
@@ -74,40 +86,64 @@ void Instance::callRedial(not_null<Call*> call) {
 	}
 }
 
-void Instance::playSound(Sound sound) {
-	switch (sound) {
-	case Sound::Busy: {
-		if (!_callBusyTrack) {
-			_callBusyTrack = Media::Audio::Current().createTrack();
-			_callBusyTrack->fillFromFile(
-				Core::App().settings().getSoundPath(qsl("call_busy")));
-		}
-		_callBusyTrack->playOnce();
-	} break;
+void Instance::groupCallFinished(not_null<GroupCall*> call) {
+	crl::on_main(call, [=] {
+		destroyGroupCall(call);
+	});
+}
 
-	case Sound::Ended: {
-		if (!_callEndedTrack) {
-			_callEndedTrack = Media::Audio::Current().createTrack();
-			_callEndedTrack->fillFromFile(
-				Core::App().settings().getSoundPath(qsl("call_end")));
-		}
-		_callEndedTrack->playOnce();
-	} break;
+void Instance::groupCallFailed(not_null<GroupCall*> call) {
+	crl::on_main(call, [=] {
+		destroyGroupCall(call);
+	});
+}
 
-	case Sound::Connecting: {
-		if (!_callConnectingTrack) {
-			_callConnectingTrack = Media::Audio::Current().createTrack();
-			_callConnectingTrack->fillFromFile(
-				Core::App().settings().getSoundPath(qsl("call_connect")));
-		}
-		_callConnectingTrack->playOnce();
-	} break;
+not_null<Media::Audio::Track*> Instance::ensureSoundLoaded(
+		const QString &key) {
+	const auto i = _tracks.find(key);
+	if (i != end(_tracks)) {
+		return i->second.get();
 	}
+	const auto result = _tracks.emplace(
+		key,
+		Media::Audio::Current().createTrack()).first->second.get();
+	result->fillFromFile(Core::App().settings().getSoundPath(key));
+	return result;
+}
+
+void Instance::playSoundOnce(const QString &key) {
+	ensureSoundLoaded(key)->playOnce();
+}
+
+void Instance::callPlaySound(CallSound sound) {
+	playSoundOnce([&] {
+		switch (sound) {
+		case CallSound::Busy: return "call_busy";
+		case CallSound::Ended: return "call_end";
+		case CallSound::Connecting: return "call_connect";
+		}
+		Unexpected("CallSound in Instance::callPlaySound.");
+		return "";
+	}());
+}
+
+void Instance::groupCallPlaySound(GroupCallSound sound) {
+	playSoundOnce([&] {
+		switch (sound) {
+		case GroupCallSound::Started: return "group_call_start";
+		case GroupCallSound::Ended: return "group_call_end";
+		case GroupCallSound::Connecting: return "group_call_connect";
+		}
+		Unexpected("GroupCallSound in Instance::groupCallPlaySound.");
+		return "";
+	}());
 }
 
 void Instance::destroyCall(not_null<Call*> call) {
 	if (_currentCall.get() == call) {
-		destroyCurrentPanel();
+		_currentCallPanel->closeBeforeDestroy();
+		_currentCallPanel = nullptr;
+
 		auto taken = base::take(_currentCall);
 		_currentCallChanges.fire(nullptr);
 		taken.reset();
@@ -119,19 +155,8 @@ void Instance::destroyCall(not_null<Call*> call) {
 	}
 }
 
-void Instance::destroyCurrentPanel() {
-	_pendingPanels.erase(
-		std::remove_if(
-			_pendingPanels.begin(),
-			_pendingPanels.end(),
-			[](auto &&panel) { return !panel; }),
-		_pendingPanels.end());
-	_pendingPanels.emplace_back(_currentCallPanel.release());
-	_pendingPanels.back()->hideAndDestroy(); // Always queues the destruction.
-}
-
-void Instance::createCall(not_null<UserData*> user, Call::Type type) {
-	auto call = std::make_unique<Call>(getCallDelegate(), user, type);
+void Instance::createCall(not_null<UserData*> user, Call::Type type, bool video) {
+	auto call = std::make_unique<Call>(getCallDelegate(), user, type, video);
 	const auto raw = call.get();
 
 	user->session().account().sessionChanges(
@@ -150,6 +175,43 @@ void Instance::createCall(not_null<UserData*> user, Call::Type type) {
 	_currentCallChanges.fire_copy(raw);
 	refreshServerConfig(&user->session());
 	refreshDhConfig();
+}
+
+void Instance::destroyGroupCall(not_null<GroupCall*> call) {
+	if (_currentGroupCall.get() == call) {
+		_currentGroupCallPanel->closeBeforeDestroy();
+		_currentGroupCallPanel = nullptr;
+
+		auto taken = base::take(_currentGroupCall);
+		_currentGroupCallChanges.fire(nullptr);
+		taken.reset();
+
+		if (App::quitting()) {
+			LOG(("Calls::Instance doesn't prevent quit any more."));
+		}
+		Core::App().quitPreventFinished();
+	}
+}
+
+void Instance::createGroupCall(
+		not_null<PeerData*> peer,
+		const MTPInputGroupCall &inputCall) {
+	destroyCurrentCall();
+
+	auto call = std::make_unique<GroupCall>(
+		getGroupCallDelegate(),
+		peer,
+		inputCall);
+	const auto raw = call.get();
+
+	peer->session().account().sessionChanges(
+	) | rpl::start_with_next([=] {
+		destroyGroupCall(raw);
+	}, raw->lifetime());
+
+	_currentGroupCallPanel = std::make_unique<GroupPanel>(raw);
+	_currentGroupCall = std::move(call);
+	_currentGroupCallChanges.fire_copy(raw);
 }
 
 void Instance::refreshDhConfig() {
@@ -232,18 +294,48 @@ void Instance::refreshServerConfig(not_null<Main::Session*> session) {
 		UpdateConfig(std::string(json.data(), json.size()));
 	}).fail([=](const RPCError &error) {
 		_serverConfigRequestSession = nullptr;
-		}).send();
+	}).send();
 }
 
 void Instance::handleUpdate(
 		not_null<Main::Session*> session,
-		const MTPDupdatePhoneCall& update) {
-	handleCallUpdate(session, update.vphone_call());
+		const MTPUpdate &update) {
+	update.match([&](const MTPDupdatePhoneCall &data) {
+		handleCallUpdate(session, data.vphone_call());
+	}, [&](const MTPDupdatePhoneCallSignalingData &data) {
+		handleSignalingData(session, data);
+	}, [&](const MTPDupdateGroupCall &data) {
+		handleGroupCallUpdate(session, data.vcall());
+	}, [&](const MTPDupdateGroupCallParticipants &data) {
+		handleGroupCallUpdate(session, data);
+	}, [](const auto &) {
+		Unexpected("Update type in Calls::Instance::handleUpdate.");
+	});
 }
 
 void Instance::showInfoPanel(not_null<Call*> call) {
 	if (_currentCall.get() == call) {
 		_currentCallPanel->showAndActivate();
+	}
+}
+
+void Instance::showInfoPanel(not_null<GroupCall*> call) {
+	if (_currentGroupCall.get() == call) {
+		_currentGroupCallPanel->showAndActivate();
+	}
+}
+
+void Instance::setCurrentAudioDevice(bool input, const QString &deviceId) {
+	if (input) {
+		Core::App().settings().setCallInputDeviceId(deviceId);
+	} else {
+		Core::App().settings().setCallOutputDeviceId(deviceId);
+	}
+	Core::App().saveSettingsDelayed();
+	if (const auto call = currentCall()) {
+		call->setCurrentAudioDevice(input, deviceId);
+	} else if (const auto group = currentGroupCall()) {
+		group->setCurrentAudioDevice(input, deviceId);
 	}
 }
 
@@ -271,9 +363,12 @@ void Instance::handleCallUpdate(
 			LOG(("API Error: Self found in phoneCallRequested."));
 		}
 		const auto &config = session->serverConfig();
-		if (alreadyInCall() || !user || user->isSelf()) {
+		if (inCall() || inGroupCall() || !user || user->isSelf()) {
+			const auto flags = phoneCall.is_video()
+				? MTPphone_DiscardCall::Flag::f_video
+				: MTPphone_DiscardCall::Flag(0);
 			session->api().request(MTPphone_DiscardCall(
-				MTP_flags(0),
+				MTP_flags(flags),
 				MTP_inputPhoneCall(phoneCall.vid(), phoneCall.vaccess_hash()),
 				MTP_int(0),
 				MTP_phoneCallDiscardReasonBusy(),
@@ -282,17 +377,134 @@ void Instance::handleCallUpdate(
 		} else if (phoneCall.vdate().v + (config.callRingTimeoutMs / 1000)
 			< base::unixtime::now()) {
 			LOG(("Ignoring too old call."));
+		} else if (Core::App().settings().disableCalls()) {
+			LOG(("Ignoring call because of 'accept calls' settings."));
 		} else {
-			createCall(user, Call::Type::Incoming);
+			createCall(user, Call::Type::Incoming, phoneCall.is_video());
 			_currentCall->handleUpdate(call);
 		}
-	} else if (!_currentCall || !_currentCall->handleUpdate(call)) {
+	} else if (!_currentCall
+		|| (&_currentCall->user()->session() != session)
+		|| !_currentCall->handleUpdate(call)) {
 		DEBUG_LOG(("API Warning: unexpected phone call update %1").arg(call.type()));
 	}
 }
 
-bool Instance::alreadyInCall() {
-	return (_currentCall && _currentCall->state() != Call::State::Busy);
+void Instance::handleGroupCallUpdate(
+		not_null<Main::Session*> session,
+		const MTPGroupCall &call) {
+	const auto callId = call.match([](const auto &data) {
+		return data.vid().v;
+	});
+	if (const auto existing = session->data().groupCall(callId)) {
+		existing->applyUpdate(call);
+	}
+	if (_currentGroupCall
+		&& (&_currentGroupCall->peer()->session() == session)) {
+		_currentGroupCall->handleUpdate(call);
+	}
+}
+
+void Instance::handleGroupCallUpdate(
+		not_null<Main::Session*> session,
+		const MTPDupdateGroupCallParticipants &update) {
+	const auto callId = update.vcall().match([](const auto &data) {
+		return data.vid().v;
+	});
+	if (const auto existing = session->data().groupCall(callId)) {
+		existing->applyUpdate(update);
+	}
+	if (_currentGroupCall
+		&& (&_currentGroupCall->peer()->session() == session)
+		&& (_currentGroupCall->id() == callId)) {
+		_currentGroupCall->handleUpdate(update);
+	}
+}
+
+void Instance::handleSignalingData(
+		not_null<Main::Session*> session,
+		const MTPDupdatePhoneCallSignalingData &data) {
+	if (!_currentCall
+		|| (&_currentCall->user()->session() != session)
+		|| !_currentCall->handleSignalingData(data)) {
+		DEBUG_LOG(("API Warning: unexpected call signaling data %1"
+			).arg(data.vphone_call_id().v));
+	}
+}
+
+bool Instance::inCall() const {
+	if (!_currentCall) {
+		return false;
+	}
+	const auto state = _currentCall->state();
+	return (state != Call::State::Busy);
+}
+
+bool Instance::inGroupCall() const {
+	if (!_currentGroupCall) {
+		return false;
+	}
+	const auto state = _currentGroupCall->state();
+	return (state != GroupCall::State::HangingUp)
+		&& (state != GroupCall::State::Ended)
+		&& (state != GroupCall::State::FailedHangingUp)
+		&& (state != GroupCall::State::Failed);
+}
+
+void Instance::destroyCurrentCall() {
+	if (const auto current = currentCall()) {
+		current->hangup();
+		if (const auto still = currentCall()) {
+			destroyCall(still);
+		}
+	}
+	if (const auto current = currentGroupCall()) {
+		current->hangup();
+		if (const auto still = currentGroupCall()) {
+			destroyGroupCall(still);
+		}
+	}
+}
+
+bool Instance::hasActivePanel(not_null<Main::Session*> session) const {
+	if (inCall()) {
+		return (&_currentCall->user()->session() == session)
+			&& _currentCallPanel->isActive();
+	} else if (inGroupCall()) {
+		return (&_currentGroupCall->peer()->session() == session)
+			&& _currentGroupCallPanel->isActive();
+	}
+	return false;
+}
+
+bool Instance::activateCurrentCall() {
+	if (inCall()) {
+		_currentCallPanel->showAndActivate();
+		return true;
+	} else if (inGroupCall()) {
+		_currentGroupCallPanel->showAndActivate();
+		return true;
+	}
+	return false;
+}
+
+bool Instance::minimizeCurrentActiveCall() {
+	if (inCall() && _currentCallPanel->isActive()) {
+		_currentCallPanel->minimize();
+		return true;
+	} else if (inGroupCall() && _currentGroupCallPanel->isActive()) {
+		_currentGroupCallPanel->minimize();
+		return true;
+	}
+	return false;
+}
+
+bool Instance::closeCurrentActiveCall() {
+	if (inGroupCall() && _currentGroupCallPanel->isActive()) {
+		_currentGroupCallPanel->close();
+		return true;
+	}
+	return false;
 }
 
 Call *Instance::currentCall() const {
@@ -303,13 +515,34 @@ rpl::producer<Call*> Instance::currentCallValue() const {
 	return _currentCallChanges.events_starting_with(currentCall());
 }
 
-void Instance::requestMicrophonePermissionOrFail(Fn<void()> onSuccess) {
-	Platform::PermissionStatus status=Platform::GetPermissionStatus(Platform::PermissionType::Microphone);
-	if (status==Platform::PermissionStatus::Granted) {
+GroupCall *Instance::currentGroupCall() const {
+	return _currentGroupCall.get();
+}
+
+rpl::producer<GroupCall*> Instance::currentGroupCallValue() const {
+	return _currentGroupCallChanges.events_starting_with(currentGroupCall());
+}
+
+void Instance::requestPermissionsOrFail(Fn<void()> onSuccess, bool video) {
+	using Type = Platform::PermissionType;
+	requestPermissionOrFail(Type::Microphone, [=] {
+		auto callback = [=] { crl::on_main(onSuccess); };
+		if (video) {
+			requestPermissionOrFail(Type::Camera, std::move(callback));
+		} else {
+			callback();
+		}
+	});
+}
+
+void Instance::requestPermissionOrFail(Platform::PermissionType type, Fn<void()> onSuccess) {
+	using Status = Platform::PermissionStatus;
+	const auto status = Platform::GetPermissionStatus(type);
+	if (status == Status::Granted) {
 		onSuccess();
-	} else if(status==Platform::PermissionStatus::CanRequest) {
-		Platform::RequestPermission(Platform::PermissionType::Microphone, crl::guard(this, [=](Platform::PermissionStatus status) {
-			if (status==Platform::PermissionStatus::Granted) {
+	} else if (status == Status::CanRequest) {
+		Platform::RequestPermission(type, crl::guard(this, [=](Status status) {
+			if (status == Status::Granted) {
 				crl::on_main(onSuccess);
 			} else {
 				if (_currentCall) {
@@ -318,14 +551,28 @@ void Instance::requestMicrophonePermissionOrFail(Fn<void()> onSuccess) {
 			}
 		}));
 	} else {
-		if (alreadyInCall()) {
+		if (inCall()) {
 			_currentCall->hangup();
 		}
-		Ui::show(Box<ConfirmBox>(tr::lng_no_mic_permission(tr::now), tr::lng_menu_settings(tr::now), crl::guard(this, [] {
-			Platform::OpenSystemSettingsForPermission(Platform::PermissionType::Microphone);
+		if (inGroupCall()) {
+			_currentGroupCall->hangup();
+		}
+		Ui::show(Box<ConfirmBox>(tr::lng_no_mic_permission(tr::now), tr::lng_menu_settings(tr::now), crl::guard(this, [=] {
+			Platform::OpenSystemSettingsForPermission(type);
 			Ui::hideLayer();
 		})));
 	}
+}
+
+std::shared_ptr<tgcalls::VideoCaptureInterface> Instance::getVideoCapture() {
+	if (auto result = _videoCapture.lock()) {
+		return result;
+	}
+	auto result = std::shared_ptr<tgcalls::VideoCaptureInterface>(
+		tgcalls::VideoCaptureInterface::Create(
+			Core::App().settings().callVideoInputDeviceId().toStdString()));
+	_videoCapture = result;
+	return result;
 }
 
 } // namespace Calls

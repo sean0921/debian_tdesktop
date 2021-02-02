@@ -14,6 +14,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "lang/lang_instance.h"
 #include "lang/lang_keys.h"
+#include "main/main_account.h"
+#include "main/main_domain.h"
 #include "main/main_session.h"
 #include "mainwidget.h"
 #include "spellcheck/platform/platform_spellcheck.h"
@@ -89,7 +91,7 @@ const auto kDictionaries = {
 	Dict{{ QLocale::Korean,              615, 1'256'987, "\xed\x95\x9c\xea\xb5\xad\xec\x96\xb4" }}, // ko_KR
 	Dict{{ QLocale::Lithuanian,          616,   267'427, "\x4c\x69\x65\x74\x75\x76\x69\xc5\xb3" }}, // lt_LT
 	Dict{{ QLocale::Latvian,             617,   641'602, "\x4c\x61\x74\x76\x69\x65\xc5\xa1\x75" }}, // lv_LV
-	Dict{{ QLocale::Norwegian,           618,   588'650, "\x4e\x6f\x72\x73\x6b" }}, // nb_NO
+	Dict{{ QLocale::NorwegianBokmal,     618,   588'650, "\x4e\x6f\x72\x73\x6b" }}, // nb_NO
 	Dict{{ QLocale::Dutch,               619,   743'406, "\x4e\x65\x64\x65\x72\x6c\x61\x6e\x64\x73" }}, // nl_NL
 	Dict{{ QLocale::Polish,              620, 1'015'747, "\x50\x6f\x6c\x73\x6b\x69" }}, // pl_PL
 	Dict{{ QLocale::Portuguese,          621, 1'231'999, "\x50\x6f\x72\x74\x75\x67\x75\xc3\xaa\x73 (Brazil)" }}, // pt_BR
@@ -364,7 +366,7 @@ std::vector<int> DefaultLanguages() {
 		append(method->locale());
 	}
 	append(QLocale(Platform::SystemLanguage()));
-	append(QLocale(Lang::LanguageIdOrDefault(Lang::Current().id())));
+	append(QLocale(Lang::LanguageIdOrDefault(Lang::Id())));
 
 	return langs;
 }
@@ -377,6 +379,7 @@ void Start(not_null<Main::Session*> session) {
 		{ &ph::lng_spellchecker_ignore, tr::lng_spellchecker_ignore() },
 	} });
 	const auto settings = &Core::App().settings();
+	auto &lifetime = session->lifetime();
 
 	const auto onEnabled = [=](auto enabled) {
 		Platform::Spellchecker::UpdateLanguages(
@@ -390,31 +393,25 @@ void Start(not_null<Main::Session*> session) {
 	});
 
 	if (Platform::Spellchecker::IsSystemSpellchecker()) {
-
-		const auto scriptsLifetime =
-			session->lifetime().make_state<rpl::lifetime>();
-
-		Spellchecker::SupportedScriptsChanged(
-		) | rpl::start_with_next([=] {
-			AddExceptions();
-			scriptsLifetime->destroy();
-		}, *scriptsLifetime);
+		Spellchecker::SupportedScriptsChanged()
+		| rpl::take(1)
+		| rpl::start_with_next(AddExceptions, lifetime);
 
 		return;
 	}
 
 	Spellchecker::SupportedScriptsChanged(
-	) | rpl::start_with_next(AddExceptions, session->lifetime());
+	) | rpl::start_with_next(AddExceptions, lifetime);
 
 	Spellchecker::SetWorkingDirPath(DictionariesPath());
 
 	settings->dictionariesEnabledChanges(
 	) | rpl::start_with_next([](auto dictionaries) {
 		Platform::Spellchecker::UpdateLanguages(dictionaries);
-	}, session->lifetime());
+	}, lifetime);
 
 	settings->spellcheckerEnabledChanges(
-	) | rpl::start_with_next(onEnabled, session->lifetime());
+	) | rpl::start_with_next(onEnabled, lifetime);
 
 	const auto method = QGuiApplication::inputMethod();
 
@@ -448,10 +445,29 @@ void Start(not_null<Main::Session*> session) {
 			}
 
 			DownloadDictionaryInBackground(session, 0, DefaultLanguages());
-		}, session->lifetime());
+		}, lifetime);
 
 		connectInput();
 	}
+
+	const auto disconnect = [=] {
+		QObject::disconnect(
+			method,
+			&QInputMethod::localeChanged,
+			nullptr,
+			nullptr);
+	};
+	lifetime.add([=] {
+		disconnect();
+		for (auto &[index, account] : session->domain().accounts()) {
+			if (const auto anotherSession = account->maybeSession()) {
+				if (anotherSession->uniqueId() != session->uniqueId()) {
+					Spellchecker::Start(anotherSession);
+					return;
+				}
+			}
+		}
+	});
 
 	rpl::combine(
 		settings->spellcheckerEnabledValue(),
@@ -461,12 +477,8 @@ void Start(not_null<Main::Session*> session) {
 			connectInput();
 			return;
 		}
-		QObject::disconnect(
-			method,
-			&QInputMethod::localeChanged,
-			nullptr,
-			nullptr);
-	}, session->lifetime());
+		disconnect();
+	}, lifetime);
 
 }
 

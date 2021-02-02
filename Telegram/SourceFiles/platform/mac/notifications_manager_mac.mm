@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/base_platform_info.h"
 #include "platform/platform_specific.h"
 #include "base/platform/mac/base_utilities_mac.h"
+#include "base/openssl_help.h"
 #include "history/history.h"
 #include "ui/empty_userpic.h"
 #include "main/main_session.h"
@@ -46,8 +47,6 @@ void queryDoNotDisturbState() {
 using Manager = Platform::Notifications::Manager;
 
 } // namespace
-
-NSImage *qt_mac_create_nsimage(const QPixmap &pm);
 
 @interface NotificationDelegate : NSObject<NSUserNotificationCenterDelegate> {
 }
@@ -164,11 +163,20 @@ bool Supported() {
 	return Platform::IsMac10_8OrGreater();
 }
 
-std::unique_ptr<Window::Notifications::Manager> Create(Window::Notifications::System *system) {
+bool Enforced() {
+	return Supported();
+}
+
+bool ByDefault() {
+	return Supported();
+}
+
+void Create(Window::Notifications::System *system) {
 	if (Supported()) {
-		return std::make_unique<Manager>(system);
+		system->setManager(std::make_unique<Manager>(system));
+	} else {
+		system->setManager(nullptr);
 	}
-	return nullptr;
 }
 
 class Manager::Private : public QObject, private base::Subscriber {
@@ -216,13 +224,17 @@ private:
 	};
 	struct ClearFinish {
 	};
-	using ClearTask = base::variant<ClearFromHistory, ClearFromSession, ClearAll, ClearFinish>;
+	using ClearTask = std::variant<
+		ClearFromHistory,
+		ClearFromSession,
+		ClearAll,
+		ClearFinish>;
 	std::vector<ClearTask> _clearingTasks;
 
 };
 
 Manager::Private::Private(Manager *manager)
-: _managerId(rand_value<uint64>())
+: _managerId(openssl::RandomValue<uint64>())
 , _managerIdString(QString::number(_managerId))
 , _delegate([[NotificationDelegate alloc] initWithManager:manager managerId:_managerId]) {
 	updateDelegate();
@@ -260,8 +272,10 @@ void Manager::Private::showNotification(
 	if (!hideNameAndPhoto && [notification respondsToSelector:@selector(setContentImage:)]) {
 		auto userpic = peer->isSelf()
 			? Ui::EmptyUserpic::GenerateSavedMessages(st::notifyMacPhotoSize)
+			: peer->isRepliesChat()
+			? Ui::EmptyUserpic::GenerateRepliesMessages(st::notifyMacPhotoSize)
 			: peer->genUserpic(userpicView, st::notifyMacPhotoSize);
-		NSImage *img = [qt_mac_create_nsimage(userpic) autorelease];
+		NSImage *img = Q2NSImage(userpic.toImage());
 		[notification setContentImage:img];
 	}
 
@@ -285,21 +299,20 @@ void Manager::Private::clearingThreadLoop() {
 		auto clearFromSessions = base::flat_set<uint64>();
 		{
 			std::unique_lock<std::mutex> lock(_clearingMutex);
-
 			while (_clearingTasks.empty()) {
 				_clearingCondition.wait(lock);
 			}
 			for (auto &task : _clearingTasks) {
-				if (base::get_if<ClearFinish>(&task)) {
+				v::match(task, [&](ClearFinish) {
 					finished = true;
 					clearAll = true;
-				} else if (base::get_if<ClearAll>(&task)) {
+				}, [&](ClearAll) {
 					clearAll = true;
-				} else if (auto fromHistory = base::get_if<ClearFromHistory>(&task)) {
-					clearFromPeers.emplace(fromHistory->fullPeer);
-				} else if (auto fromSession = base::get_if<ClearFromSession>(&task)) {
-					clearFromSessions.emplace(fromSession->sessionId);
-				}
+				}, [&](const ClearFromHistory &value) {
+					clearFromPeers.emplace(value.fullPeer);
+				}, [&](const ClearFromSession &value) {
+					clearFromSessions.emplace(value.sessionId);
+				});
 			}
 			_clearingTasks.clear();
 		}

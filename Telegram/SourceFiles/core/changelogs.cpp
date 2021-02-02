@@ -22,95 +22,100 @@ namespace {
 std::map<int, const char*> BetaLogs() {
 	return {
 	{
-		1009020,
-		"- Fix crash in shared links search.\n"
+		2004006,
+		"- Fix image compression option when sending files with drag-n-drop.\n"
 
-		"- Fix blurred thumbnails in albums with video files.\n"
+		"- Fix caption text selection in media albums.\n"
 
-		"- Fix a possible crash in animated stickers rendering."
+		"- Fix drafts display in personal chats in the chats list.\n"
+
+		"- Bug fixes and other minor improvements.\n"
 	},
 	{
-		1009022,
-		"- Organize chats into Chat Folders if you have too many chats.\n"
+		2004008,
+		"- Upgrade several third party libraries to latest versions.\n"
 	},
 	{
-		2000001,
-		"- Switch between folders using Ctrl+1, ..., Ctrl+8.\n"
+		2004010,
+		"- Use inline bots and sticker by emoji suggestions in channel comments.\n"
 
-		"- Fix crash when a pinned in folder chat was added to archive.\n"
-
-		"- Fix font issues in Linux version."
+		"- Lock voice message recording, listen to your voice message before sending.\n"
 	},
 	{
-		2001008,
-		"- Add support for full group message history export.\n"
+		2004011,
+		"- Improve locked voice message recording.\n"
 
-		"- Allow export of a single chat message history in JSON format."
+		"- Fix main window closing to tray on Windows.\n"
+
+		"- Fix crash in bot command sending.\n"
+
+		"- Fix adding additional photos when sending an album to a group with enabled slow mode.\n"
 	},
 	{
-		2001014,
-		"- Support for multiple accounts."
+		2004012,
+		"- Voice chats in groups. (alpha version)\n"
 	},
 	{
-		2001017,
-		"- Fix messages editing in a non-active account.\n"
+		2004014,
+		"- Create voice chats in legacy groups.\n"
 
-		"- Fix large animated emoji messages editing.\n"
+		"- Fix sticker pack opening.\n"
 
-		"- Fix high definition GIF animations opening in media viewer.\n"
+		"- Fix group status display.\n"
 
-		"- Multiple crash fixes."
+		"- Fix group members display.\n"
 	},
 	{
-		2001018,
-		"- Fix a possible crash in Picture-in-Picture video player.\n"
+		2004015,
+		"- Improve design of voice chats.\n"
 
-		"- Fix copying links from message texts.\n"
+		"- Fix sending of voice messages as replies.\n"
 
-		"- Raise file size limit to 2000 MB.\n"
+		"- Fix 'Open With' menu position in macOS.\n"
 
-		"- Allow using system window frame in Windows and Linux."
+		"- Fix freeze on secondary screen disconnect.\n"
 	},
 	{
-		2001019,
-		"- File uploading in an inactive account correctly finishes.\n"
+		2005002,
+		"- Fix possible crash in video calls.\n"
 
-		"- Stickers panel works correctly after switching between accounts.\n"
+		"- Fix possible crash in connecting to voice chats.\n"
 
-		"- Large .webp files are not shown as stickers.\n"
-
-		"- MacBook TouchBar support was fully rewritten with fixes for multiple accounts.\n"
-
-		"- Custom window title bar works in all Linux versions.\n"
-
-		"- Passcode doesn't auto-lock while you're active in other apps on Linux X11."
+		"- Use different audio module code on Windows in calls.\n"
 	},
 	{
-		2001021,
-		"- Edit your scheduled messages.\n"
+		2005003,
+		"- Allow using mouse buttons in Push-to-Talk shortcut.\n"
 
-		"- See the unread messages indicator for your additional accounts on the main menu button.\n"
-
-		"- Use Auto-Night Mode to make Telegram night mode match the system Dark Mode settings.\n"
-
-		"- Enjoy dark native window frame for Telegram night mode on Windows.\n"
+		"- Fix blurred thumbnails in Shared Links section.\n"
 	},
+	{
+		2005004,
+		"- Implement new audio module code for calls and voice chats.\n"
+
+		"- Allow retracting votes from polls in comments to channel posts.\n"
+
+		"- Show small voice chat button for empty voice chats.\n"
+
+		"- Fix media viewer updating when screen resolution is changed.\n"
+	},
+	{
+		2005005,
+		"- Fix recording of audio in voice chats.\n"
+
+		"- Fix media viewer zoom and crashing.\n"
+	},
+	{
+		2005006,
+		"- Press Up arrow to edit your last sent comment.\n"
+
+		"- Add more information to date tooltips "
+		"in Recent Actions and channel comments.\n"
+
+		"- Bug and crash fixes.\n"
+	}
 	};
 };
-
-QString FormatVersionDisplay(int version) {
-	return QString::number(version / 1000000)
-		+ '.' + QString::number((version % 1000000) / 1000)
-		+ ((version % 1000)
-			? ('.' + QString::number(version % 1000))
-			: QString());
-}
-
-QString FormatVersionPrecise(int version) {
-	return QString::number(version / 1000000)
-		+ '.' + QString::number((version % 1000000) / 1000)
-		+ '.' + QString::number(version % 1000);
-}
 
 } // namespace
 
@@ -214,6 +219,20 @@ void Changelogs::addBetaLog(int changeVersion, const char *changes) {
 	const auto version = FormatVersionDisplay(changeVersion);
 	const auto log = qsl("New in version %1:\n\n").arg(version) + text;
 	addLocalLog(log);
+}
+
+QString FormatVersionDisplay(int version) {
+	return QString::number(version / 1000000)
+		+ '.' + QString::number((version % 1000000) / 1000)
+		+ ((version % 1000)
+			? ('.' + QString::number(version % 1000))
+			: QString());
+}
+
+QString FormatVersionPrecise(int version) {
+	return QString::number(version / 1000000)
+		+ '.' + QString::number((version % 1000000) / 1000)
+		+ '.' + QString::number(version % 1000);
 }
 
 } // namespace Core

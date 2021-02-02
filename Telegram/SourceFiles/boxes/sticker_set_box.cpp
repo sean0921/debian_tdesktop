@@ -24,6 +24,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/image/image_location_factory.h"
 #include "ui/text/text_utilities.h"
 #include "ui/emoji_config.h"
+#include "ui/toast/toast.h"
+#include "ui/widgets/popup_menu.h"
+#include "ui/cached_round_corners.h"
 #include "lottie/lottie_multi_player.h"
 #include "lottie/lottie_animation.h"
 #include "chat_helpers/stickers_lottie.h"
@@ -33,9 +36,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
-#include "app.h"
 #include "styles/style_layers.h"
 #include "styles/style_chat_helpers.h"
+#include "styles/style_info.h"
 
 #include <QtWidgets/QApplication>
 #include <QtGui/QClipboard>
@@ -189,11 +192,10 @@ void StickerSetBox::addStickers() {
 	_inner->install();
 }
 
-void StickerSetBox::shareStickers() {
+void StickerSetBox::copyStickersLink() {
 	const auto url = _controller->session().createInternalLinkFull(
 		qsl("addstickers/") + _inner->shortName());
 	QGuiApplication::clipboard()->setText(url);
-	Ui::show(Box<InformBox>(tr::lng_stickers_copied(tr::now)));
 }
 
 void StickerSetBox::updateTitleAndButtons() {
@@ -207,10 +209,33 @@ void StickerSetBox::updateButtons() {
 		if (_inner->notInstalled()) {
 			addButton(tr::lng_stickers_add_pack(), [=] { addStickers(); });
 			addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+			if (!_inner->shortName().isEmpty()) {
+				const auto top = addTopButton(st::infoTopBarMenu);
+				const auto share = [=] {
+					copyStickersLink();
+					Ui::Toast::Show(tr::lng_stickers_copied(tr::now));
+					closeBox();
+				};
+				const auto menu =
+					std::make_shared<base::unique_qptr<Ui::PopupMenu>>();
+				top->setClickedCallback([=] {
+					*menu = base::make_unique_q<Ui::PopupMenu>(top);
+					(*menu)->addAction(
+						tr::lng_stickers_share_pack(tr::now),
+						share);
+					(*menu)->popup(QCursor::pos());
+					return true;
+				});
+			}
 		} else if (_inner->official()) {
 			addButton(tr::lng_about_done(), [=] { closeBox(); });
 		} else {
-			addButton(tr::lng_stickers_share_pack(), [=] { shareStickers(); });
+			auto share = [=] {
+				copyStickersLink();
+				Ui::Toast::Show(tr::lng_stickers_copied(tr::now));
+			};
+			addButton(tr::lng_stickers_share_pack(), std::move(share));
 			addButton(tr::lng_cancel(), [=] { closeBox(); });
 		}
 	} else {
@@ -309,14 +334,20 @@ void StickerSetBox::Inner::gotSet(const MTPmessages_StickerSet &set) {
 			_setHash = set.vhash().v;
 			_setFlags = set.vflags().v;
 			_setInstallDate = set.vinstalled_date().value_or(0);
-			if (const auto thumb = set.vthumb()) {
-				_setThumbnail = Images::FromPhotoSize(
-					&_controller->session(),
-					set,
-					*thumb);
-			} else {
-				_setThumbnail = ImageWithLocation();
-			}
+			_setThumbnail = [&] {
+				if (const auto thumbs = set.vthumbs()) {
+					for (const auto &thumb : thumbs->v) {
+						const auto result = Images::FromPhotoSize(
+							&_controller->session(),
+							set,
+							thumb);
+						if (result.location.valid()) {
+							return result;
+						}
+					}
+				}
+				return ImageWithLocation();
+			}();
 			const auto &sets = _controller->session().data().stickers().sets();
 			const auto it = sets.find(_setId);
 			if (it != sets.cend()) {
@@ -572,8 +603,8 @@ void StickerSetBox::Inner::paintEvent(QPaintEvent *e) {
 
 QSize StickerSetBox::Inner::boundingBoxSize() const {
 	return QSize(
-		st::stickersSize.width() - st::buttonRadius * 2,
-		st::stickersSize.height() - st::buttonRadius * 2);
+		st::stickersSize.width() - st::roundRadiusSmall * 2,
+		st::stickersSize.height() - st::roundRadiusSmall * 2);
 }
 
 void StickerSetBox::Inner::visibleTopBottomUpdated(
@@ -636,7 +667,7 @@ void StickerSetBox::Inner::paintSticker(
 		p.setOpacity(over);
 		auto tl = position;
 		if (rtl()) tl.setX(width() - tl.x() - st::stickersSize.width());
-		App::roundRect(p, QRect(tl, st::stickersSize), st::emojiPanHover, StickerHoverCorners);
+		Ui::FillRoundRect(p, QRect(tl, st::stickersSize), st::emojiPanHover, Ui::StickerHoverCorners);
 		p.setOpacity(1);
 	}
 
@@ -659,7 +690,7 @@ void StickerSetBox::Inner::paintSticker(
 		w = std::max(size.width(), 1);
 		h = std::max(size.height(), 1);
 	} else {
-		auto coef = qMin((st::stickersSize.width() - st::buttonRadius * 2) / float64(document->dimensions.width()), (st::stickersSize.height() - st::buttonRadius * 2) / float64(document->dimensions.height()));
+		auto coef = qMin((st::stickersSize.width() - st::roundRadiusSmall * 2) / float64(document->dimensions.width()), (st::stickersSize.height() - st::roundRadiusSmall * 2) / float64(document->dimensions.height()));
 		if (coef > 1) coef = 1;
 		w = std::max(qRound(coef * document->dimensions.width()), 1);
 		h = std::max(qRound(coef * document->dimensions.height()), 1);

@@ -20,7 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "styles/style_layers.h"
 #include "styles/style_chat_helpers.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 namespace Window {
 namespace {
@@ -208,7 +208,8 @@ QSize MediaPreviewWidget::currentDimensions() const {
 	QSize result, box;
 	if (_photo) {
 		result = QSize(_photo->width(), _photo->height());
-		box = QSize(width() - 2 * st::boxVerticalMargin, height() - 2 * st::boxVerticalMargin);
+		const auto skip = st::defaultBox.margin.top();
+		box = QSize(width() - 2 * skip, height() - 2 * skip);
 	} else {
 		result = _document->dimensions;
 		if (result.isEmpty()) {
@@ -248,7 +249,7 @@ void MediaPreviewWidget::setupLottie() {
 
 	_lottie->updates(
 	) | rpl::start_with_next([=](Lottie::Update update) {
-		update.data.match([&](const Lottie::Information &) {
+		v::match(update.data, [&](const Lottie::Information &) {
 			this->update();
 		}, [&](const Lottie::DisplayFrameRequest &) {
 			this->update(updateArea());
@@ -375,8 +376,8 @@ void MediaPreviewWidget::validateGifAnimation() {
 	};
 	if (contentLoaded) {
 		_gif = Media::Clip::MakeReader(
-			_documentMedia.get(),
-			FullMsgId(),
+			_documentMedia->owner()->location(),
+			_documentMedia->bytes(),
 			std::move(callback));
 	} else {
 		_gifThumbnail = Media::Clip::MakeReader(

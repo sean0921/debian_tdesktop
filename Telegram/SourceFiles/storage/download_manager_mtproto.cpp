@@ -171,6 +171,10 @@ void DownloadManagerMtproto::checkSendNext(MTP::DcId dcId, Queue &queue) {
 	}
 }
 
+void DownloadManagerMtproto::checkSendNextAfterSuccess(MTP::DcId dcId) {
+	checkSendNext(dcId, _queues[dcId]);
+}
+
 bool DownloadManagerMtproto::trySendNextPart(MTP::DcId dcId, Queue &queue) {
 	auto &balanceData = _balanceData[dcId];
 	const auto &sessions = balanceData.sessions;
@@ -226,10 +230,6 @@ void DownloadManagerMtproto::requestSucceeded(
 		int amountAtRequestStart,
 		crl::time timeAtRequestStart) {
 	using namespace rpl::mappers;
-
-	const auto guard = gsl::finally([&] {
-		checkSendNext(dcId, _queues[dcId]);
-	});
 
 	const auto i = _balanceData.find(dcId);
 	Assert(i != end(_balanceData));
@@ -442,7 +442,7 @@ Data::FileOrigin DownloadMtprotoTask::fileOrigin() const {
 }
 
 uint64 DownloadMtprotoTask::objectId() const {
-	if (const auto v = base::get_if<StorageFileLocation>(&_location.data)) {
+	if (const auto v = std::get_if<StorageFileLocation>(&_location.data)) {
 		return v->objectId();
 	}
 	return 0;
@@ -456,7 +456,7 @@ void DownloadMtprotoTask::refreshFileReferenceFrom(
 		const Data::UpdatedFileReferences &updates,
 		int requestId,
 		const QByteArray &current) {
-	if (const auto v = base::get_if<StorageFileLocation>(&_location.data)) {
+	if (const auto v = std::get_if<StorageFileLocation>(&_location.data)) {
 		v->refreshFileReference(updates);
 		if (v->fileReference() == current) {
 			cancelOnFail();
@@ -525,7 +525,7 @@ mtpRequestId DownloadMtprotoTask::sendRequest(
 			cdnPartFailed(error, id);
 		}).toDC(shiftedDcId).send();
 	}
-	return _location.data.match([&](const WebFileLocation &location) {
+	return v::match(_location.data, [&](const WebFileLocation &location) {
 		return api().request(MTPupload_GetWebFile(
 			MTP_inputWebFileLocation(
 				MTP_bytes(location.url()),
@@ -541,8 +541,10 @@ mtpRequestId DownloadMtprotoTask::sendRequest(
 		return api().request(MTPupload_GetWebFile(
 			MTP_inputWebFileGeoPointLocation(
 				MTP_inputGeoPoint(
+					MTP_flags(0),
 					MTP_double(location.lat),
-					MTP_double(location.lon)),
+					MTP_double(location.lon),
+					MTP_int(0)), // accuracy_radius
 				MTP_long(location.access),
 				MTP_int(location.width),
 				MTP_int(location.height),
@@ -604,24 +606,34 @@ void DownloadMtprotoTask::normalPartLoaded(
 	const auto requestData = finishSentRequest(
 		requestId,
 		FinishRequestReason::Success);
+	const auto owner = _owner;
+	const auto dcId = this->dcId();
 	result.match([&](const MTPDupload_fileCdnRedirect &data) {
 		switchToCDN(requestData, data);
 	}, [&](const MTPDupload_file &data) {
 		partLoaded(requestData.offset, data.vbytes().v);
 	});
+
+	// 'this' may be deleted at this point.
+	owner->checkSendNextAfterSuccess(dcId);
 }
 
 void DownloadMtprotoTask::webPartLoaded(
 		const MTPupload_WebFile &result,
 		mtpRequestId requestId) {
+	const auto requestData = finishSentRequest(
+		requestId,
+		FinishRequestReason::Success);
+	const auto owner = _owner;
+	const auto dcId = this->dcId();
 	result.match([&](const MTPDupload_webFile &data) {
-		const auto requestData = finishSentRequest(
-			requestId,
-			FinishRequestReason::Success);
 		if (setWebFileSizeHook(data.vsize().v)) {
 			partLoaded(requestData.offset, data.vbytes().v);
 		}
 	});
+
+	// 'this' may be deleted at this point.
+	owner->checkSendNextAfterSuccess(dcId);
 }
 
 void DownloadMtprotoTask::cdnPartLoaded(const MTPupload_CdnFile &result, mtpRequestId requestId) {
@@ -645,6 +657,13 @@ void DownloadMtprotoTask::cdnPartLoaded(const MTPupload_CdnFile &result, mtpRequ
 		const auto requestData = finishSentRequest(
 			requestId,
 			FinishRequestReason::Success);
+		const auto owner = _owner;
+		const auto dcId = this->dcId();
+		const auto guard = gsl::finally([=] {
+			// 'this' may be deleted at this point.
+			owner->checkSendNextAfterSuccess(dcId);
+		});
+
 		auto key = bytes::make_span(_cdnEncryptionKey);
 		auto iv = bytes::make_span(_cdnEncryptionIV);
 		Expects(key.size() == MTP::CTRState::KeySize);

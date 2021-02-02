@@ -21,7 +21,7 @@ constexpr auto kMaxItemsInGroup = 10;
 Groups::Groups(not_null<Session*> data) : _data(data) {
 }
 
-bool Groups::isGrouped(not_null<HistoryItem*> item) const {
+bool Groups::isGrouped(not_null<const HistoryItem*> item) const {
 	if (!item->groupId()) {
 		return false;
 	}
@@ -124,7 +124,7 @@ HistoryItemsList::const_iterator Groups::findPositionForItem(
 	return last;
 }
 
-const Group *Groups::find(not_null<HistoryItem*> item) const {
+const Group *Groups::find(not_null<const HistoryItem*> item) const {
 	const auto groupId = item->groupId();
 	if (!groupId) {
 		return nullptr;
@@ -143,6 +143,22 @@ void Groups::refreshViews(const HistoryItemsList &items) {
 	for (const auto item : items) {
 		_data->requestItemViewRefresh(item);
 	}
+}
+
+not_null<HistoryItem*> Groups::findItemToEdit(
+		not_null<HistoryItem*> item) const {
+	const auto group = find(item);
+	if (!group) {
+		return item;
+	}
+	const auto &list = group->items;
+	const auto it = ranges::find_if(
+		list,
+		ranges::not_fn(&HistoryItem::emptyText));
+	if (it == end(list)) {
+		return list.front();
+	}
+	return (*it);
 }
 
 } // namespace Data

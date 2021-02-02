@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/mtproto_rpc_sender.h"
 #include "mtproto/mtproto_dc_options.h"
 #include "mtproto/connection_abstract.h"
+#include "platform/platform_specific.h"
 #include "base/openssl_help.h"
 #include "base/qthelp_url.h"
 #include "base/unixtime.h"
@@ -105,6 +106,19 @@ void WrapInvokeAfter(
 		memcpy(to->data() + size + headlen + skipBeforeRequest + 3, from->constData() + 4 + headlen, lenInInts * sizeof(mtpPrime));
 		if (size + 3 != 7) (*to)[7] += 3 * sizeof(mtpPrime);
 	}
+}
+
+[[nodiscard]] bool ConstTimeIsDifferent(
+		const void *a,
+		const void *b,
+		size_t size) {
+	auto ca = reinterpret_cast<const char*>(a);
+	auto cb = reinterpret_cast<const char*>(b);
+	volatile auto different = false;
+	for (const auto ce = ca + size; ca != ce; ++ca, ++cb) {
+		different = different | (*ca != *cb);
+	}
+	return different;
 }
 
 } // namespace
@@ -620,13 +634,24 @@ void SessionPrivate::tryToSend() {
 			: _instance->systemVersion();
 #if defined OS_MAC_STORE
 		const auto appVersion = QString::fromLatin1(AppVersionStr)
-			+ " mac store";
+			+ " Mac App Store";
 #elif defined OS_WIN_STORE // OS_MAC_STORE
 		const auto appVersion = QString::fromLatin1(AppVersionStr)
-			+ " win store";
-#else // OS_MAC_STORE || OS_WIN_STORE
+			+ " Microsoft Store";
+#elif defined Q_OS_UNIX && !defined Q_OS_MAC // OS_MAC_STORE || OS_WIN_STORE
+		const auto appVersion = [] {
+			if (Platform::InFlatpak()) {
+				return QString::fromLatin1(AppVersionStr)
+					+ " Flatpak";
+			} else if (Platform::InSnap()) {
+				return QString::fromLatin1(AppVersionStr)
+					+ " Snap";
+			}
+			return QString::fromLatin1(AppVersionStr);
+		}();
+#else // OS_MAC_STORE || OS_WIN_STORE || (defined Q_OS_UNIX && !defined Q_OS_MAC)
 		const auto appVersion = QString::fromLatin1(AppVersionStr);
-#endif // OS_MAC_STORE || OS_WIN_STORE
+#endif // OS_MAC_STORE || OS_WIN_STORE || (defined Q_OS_UNIX && !defined Q_OS_MAC)
 		const auto proxyType = _options->proxy.type;
 		const auto mtprotoProxy = (proxyType == ProxyData::Type::Mtproto);
 		const auto clientProxyFields = mtprotoProxy
@@ -1048,7 +1073,10 @@ void SessionPrivate::onSentSome(uint64 size) {
 		if (!_oldConnection) {
 			// 8kb / sec, so 512 kb give 64 sec
 			auto remainBySize = size * _waitForReceived / 8192;
-			remain = snap(remainBySize, remain, uint64(kMaxReceiveTimeout));
+			remain = std::clamp(
+				remainBySize,
+				remain,
+				uint64(kMaxReceiveTimeout));
 			if (remain != _waitForReceived) {
 				DEBUG_LOG(("Checking connect for request with size %1 bytes, delay will be %2").arg(size).arg(remain));
 			}
@@ -1247,7 +1275,7 @@ void SessionPrivate::handleReceived() {
 		auto sha1ForMsgKeyCheck = hashSha1(decryptedInts, hashedDataLength);
 
 		constexpr auto kMsgKeyShift_oldmtp = 4U;
-		if (memcmp(&msgKey, sha1ForMsgKeyCheck.data() + kMsgKeyShift_oldmtp, sizeof(msgKey)) != 0) {
+		if (ConstTimeIsDifferent(&msgKey, sha1ForMsgKeyCheck.data() + kMsgKeyShift_oldmtp, sizeof(msgKey))) {
 			LOG(("TCP Error: bad SHA1 hash after aesDecrypt in message."));
 			TCP_LOG(("TCP Error: bad message %1").arg(Logs::mb(encryptedInts, encryptedBytesCount).str()));
 
@@ -1267,7 +1295,7 @@ void SessionPrivate::handleReceived() {
 		SHA256_Final(sha256Buffer.data(), &msgKeyLargeContext);
 
 		constexpr auto kMsgKeyShift = 8U;
-		if (memcmp(&msgKey, sha256Buffer.data() + kMsgKeyShift, sizeof(msgKey)) != 0) {
+		if (ConstTimeIsDifferent(&msgKey, sha256Buffer.data() + kMsgKeyShift, sizeof(msgKey))) {
 			LOG(("TCP Error: bad SHA256 hash after aesDecrypt in message"));
 			TCP_LOG(("TCP Error: bad message %1").arg(Logs::mb(encryptedInts, encryptedBytesCount).str()));
 
@@ -2490,7 +2518,7 @@ void SessionPrivate::authKeyChecked() {
 		resendAll();
 	} // else receive salt in bad_server_salt first, then try to send all the requests
 
-	_pingIdToSend = rand_value<uint64>(); // get server_salt
+	_pingIdToSend = openssl::RandomValue<uint64>(); // get server_salt
 	_sessionData->queueNeedToResumeAndSend();
 }
 

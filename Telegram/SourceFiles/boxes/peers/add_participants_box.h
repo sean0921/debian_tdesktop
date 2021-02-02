@@ -27,15 +27,15 @@ public:
 		not_null<ChannelData*> channel,
 		base::flat_set<not_null<UserData*>> &&alreadyIn);
 
-	explicit AddParticipantsBoxController(
-		not_null<Window::SessionNavigation*> navigation);
+	explicit AddParticipantsBoxController(not_null<Main::Session*> session);
+	explicit AddParticipantsBoxController(not_null<PeerData*> peer);
 	AddParticipantsBoxController(
-		not_null<Window::SessionNavigation*> navigation,
-		not_null<PeerData*> peer);
-	AddParticipantsBoxController(
-		not_null<Window::SessionNavigation*> navigation,
 		not_null<PeerData*> peer,
 		base::flat_set<not_null<UserData*>> &&alreadyIn);
+
+	[[nodiscard]] not_null<PeerData*> peer() const {
+		return _peer;
+	}
 
 	void rowClicked(not_null<PeerListRow*> row) override;
 	void itemDeselectedHook(not_null<PeerData*> peer) override;
@@ -86,6 +86,9 @@ public:
 		AdminDoneCallback adminDoneCallback,
 		BannedDoneCallback bannedDoneCallback);
 
+	[[nodiscard]] not_null<PeerData*> peer() const {
+		return _peer;
+	}
 	[[nodiscard]] Main::Session &session() const override;
 	void prepare() override;
 	void rowClicked(not_null<PeerListRow*> row) override;

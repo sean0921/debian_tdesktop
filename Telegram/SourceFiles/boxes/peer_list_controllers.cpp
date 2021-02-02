@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/peer_list_controllers.h"
 
+#include "base/openssl_help.h"
 #include "boxes/confirm_box.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/ui_utility.h"
@@ -19,10 +20,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_histories.h"
 #include "apiwrap.h"
 #include "mainwidget.h"
+#include "mainwindow.h"
 #include "lang/lang_keys.h"
 #include "history/history.h"
 #include "dialogs/dialogs_main_list.h"
-#include "window/window_session_controller.h"
+#include "window/window_session_controller.h" // showAddContact()
 #include "facades.h"
 #include "styles/style_boxes.h"
 #include "styles/style_profile.h"
@@ -34,7 +36,7 @@ void ShareBotGame(not_null<UserData*> bot, not_null<PeerData*> chat) {
 	auto &histories = history->owner().histories();
 	const auto requestType = Data::Histories::RequestType::Send;
 	histories.sendRequest(history, requestType, [=](Fn<void()> finish) {
-		const auto randomId = rand_value<uint64>();
+		const auto randomId = openssl::RandomValue<uint64>();
 		const auto api = &chat->session().api();
 		history->sendRequestId = api->request(MTPmessages_SendMedia(
 			MTP_flags(0),
@@ -104,6 +106,21 @@ void AddBotToGroup(not_null<UserData*> bot, not_null<PeerData*> chat) {
 //	return mapFromGlobal(QCursor::pos()) - _st.rippleAreaPosition;
 //}
 
+object_ptr<Ui::BoxContent> PrepareContactsBox(
+		not_null<Window::SessionController*> sessionController) {
+	const auto controller = sessionController;
+	auto delegate = [=](not_null<PeerListBox*> box) {
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+		box->addLeftButton(
+			tr::lng_profile_add_contact(),
+			[=] { controller->widget()->showAddContact(); });
+	};
+	return Box<PeerListBox>(
+		std::make_unique<ContactsBoxController>(
+			&sessionController->session()),
+		std::move(delegate));
+}
+
 void PeerListRowWithLink::setActionLink(const QString &action) {
 	_action = action;
 	refreshActionLink();
@@ -144,9 +161,9 @@ void PeerListRowWithLink::paintAction(
 }
 
 PeerListGlobalSearchController::PeerListGlobalSearchController(
-	not_null<Window::SessionNavigation*> navigation)
-: _navigation(navigation)
-, _api(&_navigation->session().mtp()) {
+	not_null<Main::Session*> session)
+: _session(session)
+, _api(&session->mtp()) {
 	_timer.setCallback([this] { searchOnServer(); });
 }
 
@@ -195,8 +212,8 @@ void PeerListGlobalSearchController::searchDone(
 	auto &contacts = result.c_contacts_found();
 	auto query = _query;
 	if (requestId) {
-		_navigation->session().data().processUsers(contacts.vusers());
-		_navigation->session().data().processChats(contacts.vchats());
+		_session->data().processUsers(contacts.vusers());
+		_session->data().processChats(contacts.vchats());
 		auto it = _queries.find(requestId);
 		if (it != _queries.cend()) {
 			query = it->second;
@@ -206,7 +223,7 @@ void PeerListGlobalSearchController::searchDone(
 	}
 	const auto feedList = [&](const MTPVector<MTPPeer> &list) {
 		for (const auto &mtpPeer : list.v) {
-			const auto peer = _navigation->session().data().peerLoaded(
+			const auto peer = _session->data().peerLoaded(
 				peerFromMTP(mtpPeer));
 			if (peer) {
 				delegate()->peerListSearchAddRow(peer);
@@ -231,9 +248,9 @@ ChatsListBoxController::Row::Row(not_null<History*> history)
 }
 
 ChatsListBoxController::ChatsListBoxController(
-	not_null<Window::SessionNavigation*> navigation)
+	not_null<Main::Session*> session)
 : ChatsListBoxController(
-	std::make_unique<PeerListGlobalSearchController>(navigation)) {
+	std::make_unique<PeerListGlobalSearchController>(session)) {
 }
 
 ChatsListBoxController::ChatsListBoxController(
@@ -339,21 +356,21 @@ bool ChatsListBoxController::appendRow(not_null<History*> history) {
 }
 
 ContactsBoxController::ContactsBoxController(
-	not_null<Window::SessionNavigation*> navigation)
-: PeerListController(
-	std::make_unique<PeerListGlobalSearchController>(navigation))
-, _navigation(navigation) {
+	not_null<Main::Session*> session)
+: ContactsBoxController(
+	session,
+	std::make_unique<PeerListGlobalSearchController>(session)) {
 }
 
 ContactsBoxController::ContactsBoxController(
-	not_null<Window::SessionNavigation*> navigation,
+	not_null<Main::Session*> session,
 	std::unique_ptr<PeerListSearchController> searchController)
 : PeerListController(std::move(searchController))
-, _navigation(navigation) {
+, _session(session) {
 }
 
 Main::Session &ContactsBoxController::session() const {
-	return _navigation->session();
+	return *_session;
 }
 
 void ContactsBoxController::prepare() {
@@ -420,26 +437,24 @@ bool ContactsBoxController::appendRow(not_null<UserData*> user) {
 	return false;
 }
 
-std::unique_ptr<PeerListRow> ContactsBoxController::createRow(not_null<UserData*> user) {
+std::unique_ptr<PeerListRow> ContactsBoxController::createRow(
+		not_null<UserData*> user) {
 	return std::make_unique<PeerListRow>(user);
 }
 
-void AddBotToGroupBoxController::Start(
-		not_null<Window::SessionNavigation*> navigation,
-		not_null<UserData*> bot) {
+void AddBotToGroupBoxController::Start(not_null<UserData*> bot) {
 	auto initBox = [=](not_null<PeerListBox*> box) {
 		box->addButton(tr::lng_cancel(), [box] { box->closeBox(); });
 	};
 	Ui::show(Box<PeerListBox>(
-		std::make_unique<AddBotToGroupBoxController>(navigation, bot),
+		std::make_unique<AddBotToGroupBoxController>(bot),
 		std::move(initBox)));
 }
 
 AddBotToGroupBoxController::AddBotToGroupBoxController(
-	not_null<Window::SessionNavigation*> navigation,
 	not_null<UserData*> bot)
 : ChatsListBoxController(SharingBotGame(bot)
-	? std::make_unique<PeerListGlobalSearchController>(navigation)
+	? std::make_unique<PeerListGlobalSearchController>(&bot->session())
 	: nullptr)
 , _bot(bot) {
 }
@@ -557,15 +572,15 @@ void AddBotToGroupBoxController::prepareViewHook() {
 }
 
 ChooseRecipientBoxController::ChooseRecipientBoxController(
-	not_null<Window::SessionNavigation*> navigation,
+	not_null<Main::Session*> session,
 	FnMut<void(not_null<PeerData*>)> callback)
-: ChatsListBoxController(navigation)
-, _navigation(navigation)
+: ChatsListBoxController(session)
+, _session(session)
 , _callback(std::move(callback)) {
 }
 
 Main::Session &ChooseRecipientBoxController::session() const {
-	return _navigation->session();
+	return *_session;
 }
 
 void ChooseRecipientBoxController::prepareViewHook() {
@@ -584,8 +599,7 @@ void ChooseRecipientBoxController::rowClicked(not_null<PeerListRow*> row) {
 auto ChooseRecipientBoxController::createRow(
 		not_null<History*> history) -> std::unique_ptr<Row> {
 	const auto peer = history->peer;
-	const auto skip = peer->isChannel()
-		&& !peer->isMegagroup()
-		&& !peer->canWrite();
+	const auto skip = (peer->isBroadcast() && !peer->canWrite())
+		|| peer->isRepliesChat();
 	return skip ? nullptr : std::make_unique<Row>(history);
 }

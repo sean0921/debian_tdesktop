@@ -51,28 +51,21 @@ base::flat_set<not_null<UserData*>> GetAlreadyInFromPeer(PeerData *peer) {
 } // namespace
 
 AddParticipantsBoxController::AddParticipantsBoxController(
-	not_null<Window::SessionNavigation*> navigation)
-: ContactsBoxController(
-	navigation,
-	std::make_unique<PeerListGlobalSearchController>(navigation)) {
+	not_null<Main::Session*> session)
+: ContactsBoxController(session) {
 }
 
 AddParticipantsBoxController::AddParticipantsBoxController(
-	not_null<Window::SessionNavigation*> navigation,
 	not_null<PeerData*> peer)
 : AddParticipantsBoxController(
-	navigation,
 	peer,
 	GetAlreadyInFromPeer(peer)) {
 }
 
 AddParticipantsBoxController::AddParticipantsBoxController(
-	not_null<Window::SessionNavigation*> navigation,
 	not_null<PeerData*> peer,
 	base::flat_set<not_null<UserData*>> &&alreadyIn)
-: ContactsBoxController(
-	navigation,
-	std::make_unique<PeerListGlobalSearchController>(navigation))
+: ContactsBoxController(&peer->session())
 , _peer(peer)
 , _alreadyIn(std::move(alreadyIn)) {
 	subscribeToMigration();
@@ -179,7 +172,7 @@ bool AddParticipantsBoxController::inviteSelectedUsers(
 		not_null<PeerListBox*> box) const {
 	Expects(_peer != nullptr);
 
-	const auto rows = box->peerListCollectSelectedRows();
+	const auto rows = box->collectSelectedRows();
 	const auto users = ranges::view::all(
 		rows
 	) | ranges::view::transform([](not_null<PeerData*> peer) {
@@ -198,9 +191,7 @@ bool AddParticipantsBoxController::inviteSelectedUsers(
 void AddParticipantsBoxController::Start(
 		not_null<Window::SessionNavigation*> navigation,
 		not_null<ChatData*> chat) {
-	auto controller = std::make_unique<AddParticipantsBoxController>(
-		navigation,
-		chat);
+	auto controller = std::make_unique<AddParticipantsBoxController>(chat);
 	const auto weak = controller.get();
 	auto initBox = [=](not_null<PeerListBox*> box) {
 		box->addButton(tr::lng_participant_invite(), [=] {
@@ -223,7 +214,6 @@ void AddParticipantsBoxController::Start(
 		base::flat_set<not_null<UserData*>> &&alreadyIn,
 		bool justCreated) {
 	auto controller = std::make_unique<AddParticipantsBoxController>(
-		navigation,
 		channel,
 		std::move(alreadyIn));
 	const auto weak = controller.get();
@@ -576,11 +566,7 @@ void AddSpecialBoxController::showAdmin(
 	}
 
 	// Finally show the admin.
-	const auto currentRights = _additional.isCreator(user)
-		? MTPChatAdminRights(MTP_chatAdminRights(
-			MTP_flags(~MTPDchatAdminRights::Flag::f_add_admins
-				| MTPDchatAdminRights::Flag::f_add_admins)))
-		: adminRights
+	const auto currentRights = adminRights
 		? *adminRights
 		: MTPChatAdminRights(MTP_chatAdminRights(MTP_flags(0)));
 	auto box = Box<EditAdminBox>(
@@ -618,6 +604,7 @@ void AddSpecialBoxController::editAdminDone(
 		_additional.applyParticipant(MTP_channelParticipantCreator(
 			MTP_flags(rank.isEmpty() ? Flag(0) : Flag::f_rank),
 			MTP_int(user->bareId()),
+			rights,
 			MTP_string(rank)));
 	} else if (rights.c_chatAdminRights().vflags().v == 0) {
 		_additional.applyParticipant(MTP_channelParticipant(
@@ -665,7 +652,7 @@ void AddSpecialBoxController::showRestricted(
 	} else if (_additional.adminRights(user).has_value()
 		|| _additional.isCreator(user)) {
 		// The user is an admin or creator.
-		if (_additional.canEditAdmin(user)) {
+		if (!_additional.isCreator(user) && _additional.canEditAdmin(user)) {
 			if (!sure) {
 				_editBox = Ui::show(
 					Box<ConfirmBox>(
@@ -755,7 +742,7 @@ void AddSpecialBoxController::kickUser(
 	if (_additional.adminRights(user).has_value()
 		|| _additional.isCreator(user)) {
 		// The user is an admin or creator.
-		if (_additional.canEditAdmin(user)) {
+		if (!_additional.isCreator(user) && _additional.canEditAdmin(user)) {
 			if (!sure) {
 				_editBox = Ui::show(
 					Box<ConfirmBox>(

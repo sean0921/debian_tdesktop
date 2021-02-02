@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/file_download_web.h"
 
 #include "storage/cache/storage_cache_types.h"
+#include "base/qt_adapters.h"
 
 #include <QtNetwork/QAuthenticator>
 
@@ -18,9 +19,6 @@ constexpr auto kMaxHttpRedirects = 5;
 constexpr auto kResetDownloadPrioritiesTimeout = crl::time(200);
 
 std::weak_ptr<WebLoadManager> GlobalLoadManager;
-
-using ErrorSignal = void(QNetworkReply::*)(QNetworkReply::NetworkError);
-const auto QNetworkReply_error = ErrorSignal(&QNetworkReply::error);
 
 [[nodiscard]] std::shared_ptr<WebLoadManager> GetManager() {
 	auto result = GlobalLoadManager.lock();
@@ -44,7 +42,7 @@ struct Progress {
 	qint64 total = 0;
 };
 
-using Update = base::variant<Progress, QByteArray, Error>;
+using Update = std::variant<Progress, QByteArray, Error>;
 
 struct UpdateForLoader {
 	not_null<webFileLoader*> loader;
@@ -270,7 +268,7 @@ not_null<QNetworkReply*> WebLoadManager::send(int id, const QString &url) {
 		failed(id, result, error);
 	};
 	connect(result, &QNetworkReply::downloadProgress, handleProgress);
-	connect(result, QNetworkReply_error, handleError);
+	connect(result, base::QNetworkReply_error, handleError);
 	return result;
 }
 
@@ -446,6 +444,7 @@ webFileLoader::webFileLoader(
 	session,
 	QString(),
 	0,
+	0,
 	UnknownFileLocation,
 	LoadToCacheAsWell,
 	fromCloud,
@@ -472,9 +471,9 @@ void webFileLoader::startLoading() {
 		_manager->updates(
 			this
 		) | rpl::start_with_next([=](const Update &data) {
-			if (const auto progress = base::get_if<Progress>(&data)) {
+			if (const auto progress = std::get_if<Progress>(&data)) {
 				loadProgress(progress->ready, progress->total);
-			} else if (const auto bytes = base::get_if<QByteArray>(&data)) {
+			} else if (const auto bytes = std::get_if<QByteArray>(&data)) {
 				loadFinished(*bytes);
 			} else {
 				loadFailed();
@@ -489,7 +488,7 @@ int webFileLoader::currentOffset() const {
 }
 
 void webFileLoader::loadProgress(qint64 ready, qint64 total) {
-	_size = total;
+	_fullSize = _loadSize = total;
 	_ready = ready;
 	notifyAboutProgress();
 }

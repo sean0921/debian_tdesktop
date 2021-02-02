@@ -17,14 +17,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/base_platform_info.h"
 #include "ui/effects/animation_value.h"
 #include "core/update_checker.h"
+#include "core/file_location.h"
+#include "core/application.h"
 #include "media/audio/media_audio.h"
 #include "mtproto/mtproto_config.h"
 #include "mtproto/mtproto_dc_options.h"
-#include "core/application.h"
 #include "main/main_domain.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "window/themes/window_theme.h"
+#include "lang/lang_instance.h"
 #include "facades.h"
 
 #include <QtCore/QDirIterator>
@@ -363,9 +365,8 @@ void start() {
 		_readOldMtpData(false, context); // needed further in _readMtpData
 		applyReadContext(std::move(context));
 
-		if (!ApplyDefaultNightMode()) {
-			writeSettings();
-		}
+		_settingsRewriteNeeded = true;
+		ApplyDefaultNightMode();
 		return;
 	}
 	LOG(("App Info: reading settings..."));
@@ -870,7 +871,7 @@ public:
 
 protected:
 	DocumentData *_doc = nullptr;
-	FileLocation _loc;
+	Core::FileLocation _loc;
 	QByteArray _data;
 	VoiceWaveform _waveform;
 	char _wavemax;
@@ -1072,6 +1073,7 @@ bool ApplyDefaultNightMode() {
 		|| _themeKeyLegacy) {
 		return false;
 	}
+	Core::App().startSettingsAndBackground();
 	Window::Theme::ToggleNightMode();
 	Window::Theme::KeepApplied();
 	return true;
@@ -1092,12 +1094,12 @@ void readLangPack() {
 	auto data = QByteArray();
 	langpack.stream >> data;
 	if (langpack.stream.status() == QDataStream::Ok) {
-		Lang::Current().fillFromSerialized(data, langpack.version);
+		Lang::GetInstance().fillFromSerialized(data, langpack.version);
 	}
 }
 
 void writeLangPack() {
-	auto langpack = Lang::Current().serialize();
+	auto langpack = Lang::GetInstance().serialize();
 	if (!_langPackKey) {
 		_langPackKey = GenerateKey(_basePath);
 		writeSettings();

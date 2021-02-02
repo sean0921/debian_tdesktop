@@ -536,20 +536,52 @@ mediaviewTransparentFg: #cccccc; // another transparent filling part
 notificationBg: windowBg; // custom notification window background
 
 // calls
-callBg: #26282cf2; // phone call popup background
+callBg: #26282cf2; // old phone call popup background
+callBgOpaque: #1b1f23; // phone call popup background
+callBgButton: #1b1f237f; // phone call window control buttons bg
 callNameFg: #ffffff; // phone call popup name text
 callFingerprintBg: #00000066; // phone call popup emoji fingerprint background
 callStatusFg: #aaabac; // phone call popup status text
-callIconFg: #ffffff; // phone call popup answer, hangup and mute mic icon
+callIconBg: #ffffff1f; // phone call mute mic and camera button background
+callIconFg: #ffffff; // phone call popup answer, hangup, mute mic and camera icon
+callIconBgActive: #ffffffe5; // phone call line busy cancel, muted mic and camera button background
+callIconFgActive: #222222; // phone call line busy cancel, muted mic and camera icon
+callIconActiveRipple: #f1f1f1; // phone call line busy cancel, muted mic and camera ripple effect
 callAnswerBg: #64c15b; // phone call popup answer button background
 callAnswerRipple: #52b149; // phone call popup answer button ripple effect
 callAnswerBgOuter: #50eb4126; // phone call popup answer button outer ripple effect
 callHangupBg: #d75a5a; // phone call popup hangup button background
 callHangupRipple: #c04646; // phone call popup hangup button ripple effect
-callCancelBg: #ffffff; // phone call popup line busy cancel button background
-callCancelFg: #777777; // phone call popup line busy cancel button icon
-callCancelRipple: #f1f1f1; // phone call popup line busy cancel button ripple effect
-callMuteRipple: #ffffff12; // phone call popup mute mic ripple effect
+callMuteRipple: #ffffff12; // phone call popup mute mic and camera ripple effect
+
+groupCallBg: #1a2026; // group call popup background
+groupCallActiveFg: #4db8ff; // group call active controls text
+groupCallMembersBg: #2c333d; // group call members list background
+groupCallMembersBgOver: #323a45; // group call members list row with mouse over
+groupCallMembersBgRipple: #39424f; // group call member row ripple effect
+groupCallMembersFg: #ffffff; // group call member name text
+groupCallMemberActiveIcon: #8deb90; // group call active member icon
+groupCallMemberActiveStatus: #8deb90; // group call active member status text
+groupCallMemberInactiveIcon: #84888f; // group call inactive member icon
+groupCallMemberInactiveStatus: #61c0ff; // group call inactive member status text
+groupCallMemberMutedIcon: #ed7372; // group call muted by admin member icon
+groupCallMemberNotJoinedStatus: #91979e; // group call non joined member status text
+groupCallIconFg: #ffffff; // group call mute / settings / leave icon
+groupCallLive1: #0dcc39; // group call live button color1
+groupCallLive2: #0bb6bd; // group call live button color2
+groupCallMuted1: #0992ef; // group call muted button color1
+groupCallMuted2: #16ccfb; // group call muted button color2
+groupCallForceMutedBar1: #c65493; // group call force muted top bar color1
+groupCallForceMutedBar2: #7a6af1; // group call force muted top bar color2
+groupCallForceMutedBar3: #5f95e8; // group call force muted top bar color3
+groupCallForceMuted1: #4f9cff; // group call force muted button color1
+groupCallForceMuted2: #9b52e9; // group call force muted button color2
+groupCallForceMuted3: #eb5353; // group call force muted button color3
+groupCallMenuBg: #292d33; // group call popup menu background
+groupCallMenuBgOver: #343940; // group call popup menu with mouse over
+groupCallMenuBgRipple: #3a4047; // group call popup menu ripple effect
+groupCallLeaveBg: #f75c5c7f; // group call leave button background
+groupCallLeaveBgRipple: #f75c5c9e; // group call leave button ripple effect
 
 callBarBg: dialogsBgActive; // active phone call bar background
 callBarMuteRipple: dialogsRippleBgActive; // active phone call bar mute and hangup button ripple effect
@@ -603,3 +635,5 @@ sideBarIconFgActive: #5eb5f7; // filters side bar active item icon
 sideBarBadgeBg: #5eb5f7; // filters side bar badge background
 sideBarBadgeBgMuted: #8393a3; // filters side bar unimportant badge background
 sideBarBadgeFg: #ffffff; // filters side bar badge text
+
+songCoverOverlayFg: #00000066; // song cover overlay

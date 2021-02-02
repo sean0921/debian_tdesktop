@@ -50,6 +50,13 @@ public:
 
 	bool hideNoQuit();
 
+	void showFromTray();
+	void quitFromTray();
+	void activate();
+	virtual void showFromTrayMenu() {
+		showFromTray();
+	}
+
 	void init();
 	HitTestResult hitTest(const QPoint &p) const;
 
@@ -57,6 +64,10 @@ public:
 
 	bool isActive() const {
 		return _isActive;
+	}
+	virtual bool isActiveForTrayMenu() {
+		updateIsActive();
+		return isActive();
 	}
 
 	bool positionInited() const {
@@ -101,11 +112,14 @@ public:
 
 	void clearWidgets();
 
+	QRect inner() const;
 	int computeMinWidth() const;
 	int computeMinHeight() const;
 
 	void recountGeometryConstraints();
 	virtual void updateControlsGeometry();
+
+	bool hasShadow() const;
 
 public slots:
 	bool minimizeToTray();
@@ -114,12 +128,14 @@ public slots:
 	}
 
 protected:
+	void paintEvent(QPaintEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 
 	void savePosition(Qt::WindowState state = Qt::WindowActive);
 	void handleStateChanged(Qt::WindowState state);
 	void handleActiveChanged();
+	void handleVisibleChanged(bool visible);
 
 	virtual void initHook() {
 	}
@@ -128,6 +144,9 @@ protected:
 	}
 
 	virtual void handleActiveChangedHook() {
+	}
+
+	virtual void handleVisibleChangedHook(bool visible) {
 	}
 
 	virtual void clearWidgetsHook() {
@@ -167,6 +186,10 @@ protected:
 	virtual void firstShadowsUpdate() {
 	}
 
+	virtual bool initSizeFromSystem() {
+		return false;
+	}
+
 	// This one is overriden in Windows for historical reasons.
 	virtual int32 screenNameChecksum(const QString &name) const;
 
@@ -179,6 +202,7 @@ protected:
 private:
 	void refreshTitleWidget();
 	void updateMinimumSize();
+	void updateShadowSize();
 	void updatePalette();
 	void initSize();
 
@@ -198,11 +222,14 @@ private:
 	QIcon _icon;
 	bool _usingSupportIcon = false;
 	QString _titleText;
+	style::margins _padding;
 
 	bool _isActive = false;
 
 	base::Observable<void> _dragFinished;
 	rpl::event_stream<> _leaveEvents;
+
+	bool _maximizedBeforeHide = false;
 
 };
 

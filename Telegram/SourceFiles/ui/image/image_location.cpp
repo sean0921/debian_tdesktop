@@ -25,7 +25,6 @@ constexpr auto kPhotoBaseCacheTag = 0x0000000000020000ULL;
 constexpr auto kPhotoBaseCacheMask = 0x000000000000FF00ULL;
 constexpr auto kSerializeTypeShift = quint8(0x08);
 constexpr auto kNonStorageLocationToken = quint8(0x10);
-const auto kInMediaCacheLocation = QString("*media_cache*");
 
 enum class NonStorageLocationType : quint8 {
 	Web,
@@ -621,7 +620,7 @@ InMemoryKey inMemoryKey(const InMemoryLocation &location) {
 }
 
 InMemoryKey inMemoryKey(const DownloadLocation &location) {
-	return location.data.match([](const auto &data) {
+	return v::match(location.data, [](const auto &data) {
 		return inMemoryKey(data);
 	});
 }
@@ -681,8 +680,8 @@ std::optional<StorageImageLocation> StorageImageLocation::FromSerialized(
 }
 
 QByteArray DownloadLocation::serialize() const {
-	if (!valid() || data.is<StorageFileLocation>()) {
-		return data.get_unchecked<StorageFileLocation>().serialize();
+	if (!valid() || v::is<StorageFileLocation>(data)) {
+		return v::get<StorageFileLocation>(data).serialize();
 	}
 	auto result = QByteArray();
 	auto buffer = QBuffer(&result);
@@ -691,7 +690,7 @@ QByteArray DownloadLocation::serialize() const {
 	stream.setVersion(QDataStream::Qt_5_1);
 	stream << quint16(0) << kNonStorageLocationToken;
 
-	data.match([&](const StorageFileLocation &data) {
+	v::match(data, [&](const StorageFileLocation &data) {
 		Unexpected("Variant in DownloadLocation::serialize.");
 	}, [&](const WebFileLocation &data) {
 		stream
@@ -718,11 +717,11 @@ QByteArray DownloadLocation::serialize() const {
 }
 
 int DownloadLocation::serializeSize() const {
-	if (!valid() || data.is<StorageFileLocation>()) {
-		return data.get_unchecked<StorageFileLocation>().serializeSize();
+	if (!valid() || v::is<StorageFileLocation>(data)) {
+		return v::get<StorageFileLocation>(data).serializeSize();
 	}
 	auto result = sizeof(quint16) + sizeof(quint8) + sizeof(quint8);
-	data.match([&](const StorageFileLocation &data) {
+	v::match(data, [&](const StorageFileLocation &data) {
 		Unexpected("Variant in DownloadLocation::serializeSize.");
 	}, [&](const WebFileLocation &data) {
 		result += Serialize::bytearraySize(data.url()) + sizeof(quint64);
@@ -809,15 +808,15 @@ DownloadLocation DownloadLocation::convertToModern(
 		StorageFileLocation::Type type,
 		uint64 id,
 		uint64 accessHash) const {
-	if (!data.is<StorageFileLocation>()) {
+	if (!v::is<StorageFileLocation>(data)) {
 		return *this;
 	}
-	auto &file = data.get_unchecked<StorageFileLocation>();
+	auto &file = v::get<StorageFileLocation>(data);
 	return DownloadLocation{ file.convertToModern(type, id, accessHash) };
 }
 
 Storage::Cache::Key DownloadLocation::cacheKey() const {
-	return data.match([](const GeoPointLocation &data) {
+	return v::match(data, [](const GeoPointLocation &data) {
 		return Data::GeoPointCacheKey(data);
 	}, [](const StorageFileLocation &data) {
 		return data.valid()
@@ -837,13 +836,13 @@ Storage::Cache::Key DownloadLocation::cacheKey() const {
 }
 
 Storage::Cache::Key DownloadLocation::bigFileBaseCacheKey() const {
-	return data.is<StorageFileLocation>()
-		? data.get_unchecked<StorageFileLocation>().bigFileBaseCacheKey()
+	return v::is<StorageFileLocation>(data)
+		? v::get<StorageFileLocation>(data).bigFileBaseCacheKey()
 		: Storage::Cache::Key();
 }
 
 bool DownloadLocation::valid() const {
-	return data.match([](const GeoPointLocation &data) {
+	return v::match(data, [](const GeoPointLocation &data) {
 		return true;
 	}, [](const StorageFileLocation &data) {
 		return data.valid();
@@ -857,32 +856,32 @@ bool DownloadLocation::valid() const {
 }
 
 bool DownloadLocation::isLegacy() const {
-	return data.is<StorageFileLocation>()
-		? data.get_unchecked<StorageFileLocation>().isLegacy()
+	return v::is<StorageFileLocation>(data)
+		? v::get<StorageFileLocation>(data).isLegacy()
 		: false;
 }
 
 QByteArray DownloadLocation::fileReference() const {
-	if (!data.is<StorageFileLocation>()) {
+	if (!v::is<StorageFileLocation>(data)) {
 		return QByteArray();
 	}
-	return data.get_unchecked<StorageFileLocation>().fileReference();
+	return v::get<StorageFileLocation>(data).fileReference();
 }
 
 bool DownloadLocation::refreshFileReference(const QByteArray &data) {
-	if (!this->data.is<StorageFileLocation>()) {
+	if (!v::is<StorageFileLocation>(this->data)) {
 		return false;
 	}
-	auto &file = this->data.get_unchecked<StorageFileLocation>();
+	auto &file = v::get<StorageFileLocation>(this->data);
 	return file.refreshFileReference(data);
 }
 
 bool DownloadLocation::refreshFileReference(
 	const Data::UpdatedFileReferences &updates) {
-	if (!data.is<StorageFileLocation>()) {
+	if (!v::is<StorageFileLocation>(data)) {
 		return false;
 	}
-	auto &file = data.get_unchecked<StorageFileLocation>();
+	auto &file = v::get<StorageFileLocation>(data);
 	return file.refreshFileReference(updates);
 }
 
@@ -938,103 +937,4 @@ std::optional<ImageLocation> ImageLocation::FromSerialized(
 		}
 	}
 	return std::nullopt;
-}
-
-ReadAccessEnabler::ReadAccessEnabler(const PsFileBookmark *bookmark)
-: _bookmark(bookmark)
-, _failed(_bookmark ? !_bookmark->enable() : false) {
-}
-
-ReadAccessEnabler::ReadAccessEnabler(
-	const std::shared_ptr<PsFileBookmark> &bookmark)
-: _bookmark(bookmark.get())
-, _failed(_bookmark ? !_bookmark->enable() : false) {
-}
-
-ReadAccessEnabler::~ReadAccessEnabler() {
-	if (_bookmark && !_failed) _bookmark->disable();
-}
-
-FileLocation::FileLocation(const QString &name) : fname(name) {
-	if (fname.isEmpty() || fname == kInMediaCacheLocation) {
-		size = 0;
-	} else {
-		setBookmark(psPathBookmark(name));
-
-		QFileInfo f(name);
-		if (f.exists()) {
-			qint64 s = f.size();
-			if (s > INT_MAX) {
-				fname = QString();
-				_bookmark = nullptr;
-				size = 0;
-			} else {
-				modified = f.lastModified();
-				size = qint32(s);
-			}
-		} else {
-			fname = QString();
-			_bookmark = nullptr;
-			size = 0;
-		}
-	}
-}
-
-FileLocation FileLocation::InMediaCacheLocation() {
-	return FileLocation(kInMediaCacheLocation);
-}
-
-bool FileLocation::check() const {
-	if (fname.isEmpty() || fname == kInMediaCacheLocation) {
-		return false;
-	}
-
-	ReadAccessEnabler enabler(_bookmark);
-	if (enabler.failed()) {
-		const_cast<FileLocation*>(this)->_bookmark = nullptr;
-	}
-
-	QFileInfo f(name());
-	if (!f.isReadable()) return false;
-
-	quint64 s = f.size();
-	if (s > INT_MAX) {
-		DEBUG_LOG(("File location check: Wrong size %1").arg(s));
-		return false;
-	}
-
-	if (qint32(s) != size) {
-		DEBUG_LOG(("File location check: Wrong size %1 when should be %2").arg(s).arg(size));
-		return false;
-	}
-	auto realModified = f.lastModified();
-	if (realModified != modified) {
-		DEBUG_LOG(("File location check: Wrong last modified time %1 when should be %2").arg(realModified.toMSecsSinceEpoch()).arg(modified.toMSecsSinceEpoch()));
-		return false;
-	}
-	return true;
-}
-
-const QString &FileLocation::name() const {
-	return _bookmark ? _bookmark->name(fname) : fname;
-}
-
-QByteArray FileLocation::bookmark() const {
-	return _bookmark ? _bookmark->bookmark() : QByteArray();
-}
-
-bool FileLocation::inMediaCache() const {
-	return (fname == kInMediaCacheLocation);
-}
-
-void FileLocation::setBookmark(const QByteArray &bm) {
-	_bookmark.reset(bm.isEmpty() ? nullptr : new PsFileBookmark(bm));
-}
-
-bool FileLocation::accessEnable() const {
-	return isEmpty() ? false : (_bookmark ? _bookmark->enable() : true);
-}
-
-void FileLocation::accessDisable() const {
-	return _bookmark ? _bookmark->disable() : (void)0;
 }

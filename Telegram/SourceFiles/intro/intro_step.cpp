@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "storage/storage_account.h"
 #include "lang/lang_keys.h"
+#include "lang/lang_instance.h"
 #include "lang/lang_cloud_manager.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
@@ -175,11 +176,11 @@ void Step::createSession(
 		QImage photo,
 		const QVector<MTPDialogFilter> &filters) {
 	// Save the default language if we've suggested some other and user ignored it.
-	const auto currentId = Lang::Current().id();
+	const auto currentId = Lang::Id();
 	const auto defaultId = Lang::DefaultLanguageId();
 	const auto suggested = Lang::CurrentCloudManager().suggestedLanguage();
 	if (currentId.isEmpty() && !suggested.isEmpty() && suggested != defaultId) {
-		Lang::Current().switchToId(Lang::DefaultLanguage());
+		Lang::GetInstance().switchToId(Lang::DefaultLanguage());
 		Local::writeLangPack();
 	}
 
@@ -410,7 +411,11 @@ int Step::contentTop() const {
 	accumulate_max(result, st::introStepTopMin);
 	if (_hasCover) {
 		const auto currentHeightFull = result + st::introNextTop + st::introContentTopAdd;
-		auto added = 1. - snap(float64(currentHeightFull - st::windowMinHeight) / (st::introStepHeightFull - st::windowMinHeight), 0., 1.);
+		auto added = 1. - std::clamp(
+			float64(currentHeightFull - st::windowMinHeight)
+				/ (st::introStepHeightFull - st::windowMinHeight),
+			0.,
+			1.);
 		result += qRound(added * st::introContentTopAdd);
 	}
 	return result;

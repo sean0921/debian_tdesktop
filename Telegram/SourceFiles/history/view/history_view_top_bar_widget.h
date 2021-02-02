@@ -32,6 +32,8 @@ class SessionController;
 
 namespace HistoryView {
 
+class SendActionPainter;
+
 class TopBarWidget : public Ui::RpWidget, private base::Subscriber {
 public:
 	struct SelectedState {
@@ -41,10 +43,8 @@ public:
 		int canForwardCount = 0;
 		int canSendNowCount = 0;
 	};
-	enum class Section {
-		History,
-		Scheduled,
-	};
+	using ActiveChat = Dialogs::EntryState;
+	using Section = ActiveChat::Section;
 
 	TopBarWidget(
 		QWidget *parent,
@@ -61,7 +61,10 @@ public:
 	}
 	void setAnimatingMode(bool enabled);
 
-	void setActiveChat(Dialogs::Key chat, Section section);
+	void setActiveChat(
+		ActiveChat activeChat,
+		SendActionPainter *sendAction);
+	void setCustomTitle(const QString &title);
 
 	rpl::producer<> forwardSelectionRequest() const {
 		return _forwardSelection.events();
@@ -92,8 +95,10 @@ private:
 	void selectedShowCallback();
 	void updateInfoToggleActive();
 
-	void onCall();
-	void onSearch();
+	void call();
+	void groupCall();
+	void startGroupCall(not_null<ChannelData*> megagroup, bool confirmed);
+	void search();
 	void showMenu();
 	void toggleInfoSection();
 
@@ -123,8 +128,9 @@ private:
 	void updateUnreadBadge();
 
 	const not_null<Window::SessionController*> _controller;
-	Dialogs::Key _activeChat;
-	Section _section = Section::History;
+	ActiveChat _activeChat;
+	QString _customTitleText;
+	rpl::lifetime _activeChatLifetime;
 
 	int _selectedCount = 0;
 	bool _canDelete = false;
@@ -141,6 +147,7 @@ private:
 	object_ptr<Ui::AbstractButton> _info = { nullptr };
 
 	object_ptr<Ui::IconButton> _call;
+	object_ptr<Ui::IconButton> _groupCall;
 	object_ptr<Ui::IconButton> _search;
 	object_ptr<Ui::IconButton> _infoToggle;
 	object_ptr<Ui::IconButton> _menuToggle;
@@ -155,6 +162,8 @@ private:
 	int _rightTaken = 0;
 	bool _animatingMode = false;
 	std::unique_ptr<Ui::InfiniteRadialAnimation> _connecting;
+
+	SendActionPainter *_sendAction = nullptr;
 
 	base::Timer _onlineUpdater;
 

@@ -51,8 +51,25 @@ Controller::~Controller() {
 }
 
 void Controller::showAccount(not_null<Main::Account*> account) {
+	const auto prevSessionUniqueId = (_account && _account->sessionExists())
+		? _account->session().uniqueId()
+		: 0;
 	_accountLifetime.destroy();
 	_account = account;
+
+	const auto updateOnlineOfPrevSesssion = crl::guard(_account, [=] {
+		if (!prevSessionUniqueId) {
+			return;
+		}
+		for (auto &[index, account] : _account->domain().accounts()) {
+			if (const auto anotherSession = account->maybeSession()) {
+				if (anotherSession->uniqueId() == prevSessionUniqueId) {
+					anotherSession->updates().updateOnline();
+					return;
+				}
+			}
+		}
+	});
 
 	_account->sessionValue(
 	) | rpl::start_with_next([=](Main::Session *session) {
@@ -84,6 +101,8 @@ void Controller::showAccount(not_null<Main::Account*> account) {
 			setupIntro();
 			_widget.updateGlobalMenu();
 		}
+
+		crl::on_main(updateOnlineOfPrevSesssion);
 	}, _accountLifetime);
 }
 
@@ -158,7 +177,6 @@ void Controller::showTermsDecline() {
 }
 
 void Controller::showTermsDelete() {
-	const auto box = std::make_shared<QPointer<Ui::BoxContent>>();
 	const auto deleteByTerms = [=] {
 		if (const auto session = account().maybeSession()) {
 			session->termsDeleteNow();
@@ -166,13 +184,12 @@ void Controller::showTermsDelete() {
 			Ui::hideLayer();
 		}
 	};
-	*box = Ui::show(
+	Ui::show(
 		Box<ConfirmBox>(
 			tr::lng_terms_delete_warning(tr::now),
 			tr::lng_terms_delete_now(tr::now),
 			st::attentionBoxButton,
-			deleteByTerms,
-			[=] { if (*box) (*box)->closeBox(); }),
+			deleteByTerms),
 		Ui::LayerOption::KeepOther);
 }
 
@@ -298,6 +315,10 @@ void Controller::minimize() {
 
 void Controller::close() {
 	_widget.close();
+}
+
+void Controller::preventOrInvoke(Fn<void()> &&callback) {
+	_widget.preventOrInvoke(std::move(callback));
 }
 
 QPoint Controller::getPointForCallPanelCenter() const {

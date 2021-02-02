@@ -126,25 +126,6 @@ using f_PSStringFromPropertyKey = HRESULT(FAR STDAPICALLTYPE*)(
 	_In_ UINT cch);
 extern f_PSStringFromPropertyKey PSStringFromPropertyKey;
 
-// COMBASE.DLL
-
-using f_RoGetActivationFactory = HRESULT(FAR STDAPICALLTYPE*)(
-	_In_ HSTRING activatableClassId,
-	_In_ REFIID iid,
-	_COM_Outptr_ void ** factory);
-extern f_RoGetActivationFactory RoGetActivationFactory;
-
-using f_WindowsCreateStringReference = HRESULT(FAR STDAPICALLTYPE*)(
-	_In_reads_opt_(length + 1) PCWSTR sourceString,
-	UINT32 length,
-	_Out_ HSTRING_HEADER * hstringHeader,
-	_Outptr_result_maybenull_ _Result_nullonfailure_ HSTRING * string);
-extern f_WindowsCreateStringReference WindowsCreateStringReference;
-
-using f_WindowsDeleteString = HRESULT(FAR STDAPICALLTYPE*)(
-	_In_opt_ HSTRING string);
-extern f_WindowsDeleteString WindowsDeleteString;
-
 // DWMAPI.DLL
 
 using f_DwmIsCompositionEnabled = HRESULT(FAR STDAPICALLTYPE*)(
@@ -157,42 +138,6 @@ using f_DwmSetWindowAttribute = HRESULT(FAR STDAPICALLTYPE*)(
 	_In_reads_bytes_(cbAttribute) LPCVOID pvAttribute,
 	DWORD cbAttribute);
 extern f_DwmSetWindowAttribute DwmSetWindowAttribute;
-
-// RSTRTMGR.DLL
-
-using f_RmStartSession = DWORD(FAR STDAPICALLTYPE*)(
-	_Out_ DWORD *pSessionHandle,
-	_Reserved_ DWORD dwSessionFlags,
-	_Out_writes_(CCH_RM_SESSION_KEY + 1) WCHAR strSessionKey[]);
-extern f_RmStartSession RmStartSession;
-
-using f_RmRegisterResources = DWORD(FAR STDAPICALLTYPE*)(
-	_In_ DWORD dwSessionHandle,
-	_In_ UINT nFiles,
-	_In_reads_opt_(nFiles) LPCWSTR rgsFileNames[],
-	_In_ UINT nApplications,
-	_In_reads_opt_(nApplications) RM_UNIQUE_PROCESS rgApplications[],
-	_In_ UINT nServices,
-	_In_reads_opt_(nServices) LPCWSTR rgsServiceNames[]);
-extern f_RmRegisterResources RmRegisterResources;
-
-using f_RmGetList = DWORD(FAR STDAPICALLTYPE*)(
-	_In_ DWORD dwSessionHandle,
-	_Out_ UINT *pnProcInfoNeeded,
-	_Inout_ UINT *pnProcInfo,
-	_Inout_updates_opt_(*pnProcInfo) RM_PROCESS_INFO rgAffectedApps[],
-	_Out_ LPDWORD lpdwRebootReasons);
-extern f_RmGetList RmGetList;
-
-using f_RmShutdown = DWORD(FAR STDAPICALLTYPE*)(
-	_In_ DWORD dwSessionHandle,
-	_In_ ULONG lActionFlags,
-	_In_opt_ RM_WRITE_STATUS_CALLBACK fnStatus);
-extern f_RmShutdown RmShutdown;
-
-using f_RmEndSession = DWORD(FAR STDAPICALLTYPE*)(
-	_In_ DWORD dwSessionHandle);
-extern f_RmEndSession RmEndSession;
 
 // PSAPI.DLL
 

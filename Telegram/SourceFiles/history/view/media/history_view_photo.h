@@ -24,7 +24,7 @@ struct Information;
 
 namespace HistoryView {
 
-class Photo : public File {
+class Photo final : public File {
 public:
 	Photo(
 		not_null<Element*> parent,
@@ -58,7 +58,8 @@ public:
 		return _data;
 	}
 
-	QSize sizeForGrouping() const override;
+	QSize sizeForGroupingOptimal(int maxWidth) const override;
+	QSize sizeForGrouping(int width) const override;
 	void drawGrouped(
 		Painter &p,
 		const QRect &clip,
@@ -67,6 +68,7 @@ public:
 		const QRect &geometry,
 		RectParts sides,
 		RectParts corners,
+		float64 highlightOpacity,
 		not_null<uint64*> cacheKey,
 		not_null<QPixmap*> cache) const override;
 	TextState getStateGrouped(
@@ -83,7 +85,7 @@ public:
 		return _caption.isEmpty();
 	}
 	bool skipBubbleTail() const override {
-		return isBubbleBottom() && _caption.isEmpty();
+		return isRoundedInBubbleBottom() && _caption.isEmpty();
 	}
 	bool isReadyForOpen() const override;
 

@@ -28,7 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "lang/lang_keys.h"
 #include "facades.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 #include "styles/style_window.h"
 #include "styles/style_info.h"
 
@@ -371,8 +371,8 @@ void Widget::setupShortcuts() {
 	}, lifetime());
 }
 
-std::unique_ptr<Window::SectionMemento> Widget::createMemento() {
-	auto result = std::make_unique<SectionMemento>(channel());
+std::shared_ptr<Window::SectionMemento> Widget::createMemento() {
+	auto result = std::make_shared<SectionMemento>(channel());
 	saveState(result.get());
 	return result;
 }

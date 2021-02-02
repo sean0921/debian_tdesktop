@@ -13,15 +13,10 @@ if (NOT DESKTOP_APP_USE_PACKAGED)
         INTERFACE
             /usr/local/desktop-app/openssl-1.1.1/include
         )
-    elseif (NOT APPLE OR NOT build_osx)
-        target_include_directories(external_openssl_common SYSTEM
-        INTERFACE
-            ${libs_loc}/openssl_1_1_1/include
-        )
     else()
         target_include_directories(external_openssl_common SYSTEM
         INTERFACE
-            ${libs_loc}/openssl/include
+            ${libs_loc}/openssl_1_1_1/include
         )
     endif()
 
@@ -29,6 +24,7 @@ if (NOT DESKTOP_APP_USE_PACKAGED)
         if (DESKTOP_APP_USE_GLIBC_WRAPS)
             target_link_libraries(external_openssl_common
             INTERFACE
+                desktop-app::linux_glibc_wraps
                 $<TARGET_FILE:desktop-app::linux_glibc_wraps>
             )
         endif()

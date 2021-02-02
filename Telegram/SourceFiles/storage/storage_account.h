@@ -10,9 +10,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "storage/cache/storage_cache_database.h"
 #include "data/stickers/data_stickers_set.h"
+#include "data/data_drafts.h"
 
 class History;
+
+namespace Core {
 class FileLocation;
+} // namespace Core
 
 namespace Export {
 struct Settings;
@@ -36,6 +40,7 @@ using AuthKeyPtr = std::shared_ptr<AuthKey>;
 namespace Storage {
 namespace details {
 struct ReadSettingsContext;
+struct FileReadDescriptor;
 } // namespace details
 
 class EncryptionKey;
@@ -47,7 +52,7 @@ enum class StartResult : uchar;
 struct MessageDraft {
 	MsgId msgId = 0;
 	TextWithTags textWithTags;
-	bool previewCancelled = false;
+	Data::PreviewState previewState = Data::PreviewState::Allowed;
 };
 
 class Account final {
@@ -73,21 +78,20 @@ public:
 	void writeMtpData();
 	void writeMtpConfig();
 
-	void writeDrafts(not_null<History*> history);
 	void writeDrafts(
-		const PeerId &peer,
-		const MessageDraft &localDraft,
-		const MessageDraft &editDraft);
+		not_null<History*> history,
+		Data::DraftKey replaceKey = Data::DraftKey::None(),
+		MessageDraft replaceDraft = MessageDraft());
 	void readDraftsWithCursors(not_null<History*> history);
 	void writeDraftCursors(
-		const PeerId &peer,
-		const MessageCursor &localCursor,
-		const MessageCursor &editCursor);
-	[[nodiscard]] bool hasDraftCursors(const PeerId &peer);
-	[[nodiscard]] bool hasDraft(const PeerId &peer);
+		not_null<History*> history,
+		Data::DraftKey replaceKey = Data::DraftKey::None(),
+		MessageCursor replaceCursor = MessageCursor());
+	[[nodiscard]] bool hasDraftCursors(PeerId peerId);
+	[[nodiscard]] bool hasDraft(PeerId peerId);
 
-	void writeFileLocation(MediaKey location, const FileLocation &local);
-	[[nodiscard]] FileLocation readFileLocation(MediaKey location);
+	void writeFileLocation(MediaKey location, const Core::FileLocation &local);
+	[[nodiscard]] Core::FileLocation readFileLocation(MediaKey location);
 	void removeFileLocation(MediaKey location);
 
 	[[nodiscard]] EncryptionKey cacheKey() const;
@@ -179,11 +183,17 @@ private:
 	std::unique_ptr<Main::SessionSettings> applyReadContext(
 		details::ReadSettingsContext &&context);
 
-	void readDraftCursors(
-		const PeerId &peer,
-		MessageCursor &localCursor,
-		MessageCursor &editCursor);
-	void clearDraftCursors(const PeerId &peer);
+	void readDraftCursors(PeerId peerId, Data::HistoryDrafts &map);
+	void readDraftCursorsLegacy(
+		PeerId peerId,
+		details::FileReadDescriptor &draft,
+		quint64 draftPeer,
+		Data::HistoryDrafts &map);
+	void clearDraftCursors(PeerId peerId);
+	void readDraftsWithCursorsLegacy(
+		not_null<History*> history,
+		details::FileReadDescriptor &draft,
+		quint64 draftPeer);
 
 	void writeStickerSet(
 		QDataStream &stream,
@@ -219,8 +229,8 @@ private:
 	base::flat_map<PeerId, FileKey> _draftCursorsMap;
 	base::flat_map<PeerId, bool> _draftsNotReadMap;
 
-	QMultiMap<MediaKey, FileLocation> _fileLocations;
-	QMap<QString, QPair<MediaKey, FileLocation>> _fileLocationPairs;
+	QMultiMap<MediaKey, Core::FileLocation> _fileLocations;
+	QMap<QString, QPair<MediaKey, Core::FileLocation>> _fileLocationPairs;
 	QMap<MediaKey, MediaKey> _fileLocationAliases;
 
 	FileKey _locationsKey = 0;

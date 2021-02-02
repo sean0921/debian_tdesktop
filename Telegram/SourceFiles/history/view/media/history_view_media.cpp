@@ -14,9 +14,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lottie/lottie_single_player.h"
 #include "storage/storage_shared_media.h"
 #include "data/data_document.h"
-#include "ui/text_options.h"
+#include "ui/item_text_options.h"
 #include "core/ui_integration.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 namespace HistoryView {
 namespace {
@@ -139,7 +139,7 @@ Ui::Text::String Media::createCaption(
 		- st::msgPadding.left()
 		- st::msgPadding.right();
 	auto result = Ui::Text::String(minResizeWidth);
-	const auto context = Core::UiIntegration::Context{
+	const auto context = Core::MarkedTextContext{
 		.session = &history()->session()
 	};
 	result.setMarkedText(
@@ -184,6 +184,12 @@ TextState Media::getStateGrouped(
 		QPoint point,
 		StateRequest request) const {
 	Unexpected("Grouping method call.");
+}
+
+bool Media::isRoundedInBubbleBottom() const {
+	return isBubbleBottom()
+		&& !_parent->data()->repliesAreComments()
+		&& !_parent->data()->externalReply();
 }
 
 } // namespace HistoryView

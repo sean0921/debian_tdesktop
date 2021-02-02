@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "media/player/media_player_instance.h"
 #include "base/platform/base_platform_info.h"
+#include "platform/platform_specific.h"
 #include "base/parse_helper.h"
 #include "facades.h"
 
@@ -88,6 +89,9 @@ const auto CommandByName = base::flat_map<QString, Command>{
 	{ qsl("last_folder")       , Command::ShowFolderLast },
 
 	{ qsl("show_archive")      , Command::ShowArchive },
+	{ qsl("show_contacts")     , Command::ShowContacts },
+
+	{ qsl("read_chat")         , Command::ReadChat },
 
 	// Shortcuts that have no default values.
 	{ qsl("message")           , Command::JustSendMessage },
@@ -130,6 +134,9 @@ const auto CommandNames = base::flat_map<Command, QString>{
 	{ Command::ShowFolderLast , qsl("last_folder") },
 
 	{ Command::ShowArchive    , qsl("show_archive") },
+	{ Command::ShowContacts   , qsl("show_contacts") },
+
+	{ Command::ReadChat       , qsl("read_chat") },
 };
 
 class Manager {
@@ -379,6 +386,9 @@ void Manager::fillDefaults() {
 	set(qsl("ctrl+0"), Command::ChatSelf);
 
 	set(qsl("ctrl+9"), Command::ShowArchive);
+	set(qsl("ctrl+j"), Command::ShowContacts);
+
+	set(qsl("ctrl+r"), Command::ReadChat);
 }
 
 void Manager::writeDefaultFile() {

@@ -48,10 +48,13 @@ enum class Command {
 	FolderPrevious,
 
 	ShowArchive,
+	ShowContacts,
 
 	JustSendMessage,
 	SendSilentMessage,
 	ScheduleMessage,
+
+	ReadChat,
 
 	SupportReloadTemplates,
 	SupportToggleMuted,

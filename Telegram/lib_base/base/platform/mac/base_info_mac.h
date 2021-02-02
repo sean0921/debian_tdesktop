@@ -35,6 +35,8 @@ inline constexpr bool IsMacStoreBuild() {
 }
 
 inline constexpr bool IsWindows() { return false; }
+inline constexpr bool IsWindows32Bit() { return false; }
+inline constexpr bool IsWindows64Bit() { return false; }
 inline constexpr bool IsWindowsStoreBuild() { return false; }
 inline bool IsWindowsXPOrGreater() { return false; }
 inline bool IsWindowsVistaOrGreater() { return false; }
@@ -46,6 +48,10 @@ inline constexpr bool IsLinux() { return false; }
 inline constexpr bool IsLinux32Bit() { return false; }
 inline constexpr bool IsLinux64Bit() { return false; }
 inline bool IsWayland() { return false; }
-inline QString GetGlibCVersion() { return QString(); }
+inline QString GetLibcName() { return QString(); }
+inline QString GetLibcVersion() { return QString(); }
+
+void OpenInputMonitoringPrivacySettings();
+void OpenAccessibilityPrivacySettings();
 
 } // namespace Platform

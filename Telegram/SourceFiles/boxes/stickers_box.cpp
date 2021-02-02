@@ -33,9 +33,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/discrete_sliders.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/image/image.h"
+#include "ui/cached_round_corners.h"
 #include "window/window_session_controller.h"
 #include "main/main_session.h"
-#include "app.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_chat_helpers.h"
@@ -179,7 +179,7 @@ private:
 			return false;
 		}
 	};
-	using SelectedRow = base::optional_variant<MegagroupSet, int>;
+	using SelectedRow = std::variant<v::null_t, MegagroupSet, int>;
 	class AddressField : public Ui::UsernameInput {
 	public:
 		using UsernameInput::UsernameInput;
@@ -1101,7 +1101,7 @@ void StickersBox::Inner::paintRow(Painter &p, not_null<Row*> row, int index) {
 
 	if (_megagroupSet) {
 		auto selectedIndex = [&] {
-			if (auto index = base::get_if<int>(&_selected)) {
+			if (auto index = std::get_if<int>(&_selected)) {
 				return *index;
 			}
 			return -1;
@@ -1129,7 +1129,7 @@ void StickersBox::Inner::paintRow(Painter &p, not_null<Row*> row, int index) {
 			Ui::Shadow::paint(p, rect, width(), st::boxRoundShadow);
 			p.setOpacity(1);
 
-			App::roundRect(p, rect, st::boxBg, BoxCorners);
+			Ui::FillRoundRect(p, rect, st::boxBg, Ui::BoxCorners);
 
 			p.setOpacity(1. - current);
 			paintFakeButton(p, row, index);
@@ -1318,7 +1318,7 @@ void StickersBox::Inner::paintFakeButton(Painter &p, not_null<Row*> row, int ind
 			auto textWidth = (_section == Section::Installed) ? _undoWidth : _addWidth;
 			auto &text = (_section == Section::Installed) ? _undoText : _addText;
 			auto &textBg = selected ? st.textBgOver : st.textBg;
-			App::roundRect(p, myrtlrect(rect), textBg, ImageRoundRadius::Small);
+			Ui::FillRoundRect(p, myrtlrect(rect), textBg, ImageRoundRadius::Small);
 			if (row->ripple) {
 				row->ripple->paint(p, rect.x(), rect.y(), width());
 				if (row->ripple->empty()) {
@@ -1341,7 +1341,7 @@ void StickersBox::Inner::mousePressEvent(QMouseEvent *e) {
 	if (_actionSel >= 0) {
 		setActionDown(_actionSel);
 		update(0, _itemsTop + _actionSel * _rowHeight, width(), _rowHeight);
-	} else if (auto selectedIndex = base::get_if<int>(&_selected)) {
+	} else if (auto selectedIndex = std::get_if<int>(&_selected)) {
 		if (_section == Section::Installed && !_rows[*selectedIndex]->isRecentSet() && _inDragArea) {
 			_above = _dragging = _started = *selectedIndex;
 			_dragStart = mapFromGlobal(_mouse);
@@ -1369,7 +1369,7 @@ void StickersBox::Inner::setActionDown(int newActionDown) {
 			if (_section == Section::Installed) {
 				if (row->removed) {
 					auto rippleSize = QSize(_undoWidth - st::stickersUndoRemove.width, st::stickersUndoRemove.height);
-					auto rippleMask = Ui::RippleAnimation::roundRectMask(rippleSize, st::buttonRadius);
+					auto rippleMask = Ui::RippleAnimation::roundRectMask(rippleSize, st::roundRadiusSmall);
 					ensureRipple(st::stickersUndoRemove.ripple, std::move(rippleMask), removeButton);
 				} else {
 					auto rippleSize = st::stickersRemove.rippleAreaSize;
@@ -1378,7 +1378,7 @@ void StickersBox::Inner::setActionDown(int newActionDown) {
 				}
 			} else if (!row->installed || row->archived || row->removed) {
 				auto rippleSize = QSize(_addWidth - st::stickersTrendingAdd.width, st::stickersTrendingAdd.height);
-				auto rippleMask = Ui::RippleAnimation::roundRectMask(rippleSize, st::buttonRadius);
+				auto rippleMask = Ui::RippleAnimation::roundRectMask(rippleSize, st::roundRadiusSmall);
 				ensureRipple(st::stickersTrendingAdd.ripple, std::move(rippleMask), removeButton);
 			}
 		}
@@ -1394,7 +1394,7 @@ void StickersBox::Inner::setSelected(SelectedRow selected) {
 		return;
 	}
 	auto countSelectedIndex = [&] {
-		if (auto index = base::get_if<int>(&_selected)) {
+		if (auto index = std::get_if<int>(&_selected)) {
 			return *index;
 		}
 		return -1;
@@ -1416,7 +1416,7 @@ void StickersBox::Inner::setPressed(SelectedRow pressed) {
 		return;
 	}
 	auto countPressedIndex = [&] {
-		if (auto index = base::get_if<int>(&_pressed)) {
+		if (auto index = std::get_if<int>(&_pressed)) {
 			return *index;
 		}
 		return -1;
@@ -1436,7 +1436,7 @@ void StickersBox::Inner::setPressed(SelectedRow pressed) {
 		auto &set = _rows[pressedIndex];
 		auto rippleMask = Ui::RippleAnimation::rectMask(QSize(width(), _rowHeight));
 		if (!set->ripple) {
-			set->ripple = std::make_unique<Ui::RippleAnimation>(st::contactsRipple, std::move(rippleMask), [this, pressedIndex] {
+			set->ripple = std::make_unique<Ui::RippleAnimation>(st::defaultRippleAnimation, std::move(rippleMask), [this, pressedIndex] {
 				update(0, _itemsTop + pressedIndex * _rowHeight, width(), _rowHeight);
 			});
 		}
@@ -1544,7 +1544,7 @@ void StickersBox::Inner::updateCursor() {
 		? ((_actionSel >= 0 && (_actionDown < 0 || _actionDown == _actionSel))
 			? style::cur_pointer
 			: style::cur_default)
-		: (_selected.has_value() || _pressed.has_value())
+		: (!v::is_null(_selected) || !v::is_null(_pressed))
 		? style::cur_pointer
 		: style::cur_default);
 }
@@ -1582,7 +1582,7 @@ void StickersBox::Inner::mouseReleaseEvent(QMouseEvent *e) {
 		_dragging = _started = -1;
 	} else if (pressed == _selected && _actionSel < 0 && _actionDown < 0) {
 		const auto selectedIndex = [&] {
-			if (auto index = base::get_if<int>(&_selected)) {
+			if (auto index = std::get_if<int>(&_selected)) {
 				return *index;
 			}
 			return -1;
@@ -1602,7 +1602,7 @@ void StickersBox::Inner::mouseReleaseEvent(QMouseEvent *e) {
 					showSetByRow(*row);
 				}
 			}
-		} else if (_megagroupSelectedSet && _selected.is<MegagroupSet>()) {
+		} else if (_megagroupSelectedSet && v::is<MegagroupSet>(_selected)) {
 			showSetByRow(*_megagroupSelectedSet);
 		}
 	}

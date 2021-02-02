@@ -80,9 +80,6 @@ public:
 		return true;
 	}
 	[[nodiscard]] PeerData *specialNotificationPeer() const;
-	virtual void applyGroupAdminChanges(
-		const base::flat_set<UserId> &changes) {
-	}
 
 	[[nodiscard]] UserData *viaBot() const;
 	[[nodiscard]] UserData *getMessageBot() const;
@@ -116,6 +113,9 @@ public:
 	[[nodiscard]] bool out() const {
 		return _flags & MTPDmessage::Flag::f_out;
 	}
+	[[nodiscard]] bool isPinned() const {
+		return _flags & MTPDmessage::Flag::f_pinned;
+	}
 	[[nodiscard]] bool unread() const;
 	[[nodiscard]] bool showNotification() const;
 	void markClientSideAsRead();
@@ -124,6 +124,7 @@ public:
 	[[nodiscard]] bool isUnreadMedia() const;
 	[[nodiscard]] bool hasUnreadMediaFlag() const;
 	void markMediaRead();
+	void setIsPinned(bool isPinned);
 
 	// For edit media in history_message.
 	virtual void returnSavedMedia() {};
@@ -192,6 +193,45 @@ public:
 	[[nodiscard]] virtual int viewsCount() const {
 		return hasViews() ? 1 : -1;
 	}
+	[[nodiscard]] virtual int repliesCount() const {
+		return 0;
+	}
+	[[nodiscard]] virtual bool repliesAreComments() const {
+		return false;
+	}
+	[[nodiscard]] virtual bool externalReply() const {
+		return false;
+	}
+
+	[[nodiscard]] virtual MsgId repliesInboxReadTill() const {
+		return MsgId(0);
+	}
+	virtual void setRepliesInboxReadTill(MsgId readTillId) {
+	}
+	[[nodiscard]] virtual MsgId computeRepliesInboxReadTillFull() const {
+		return MsgId(0);
+	}
+	[[nodiscard]] virtual MsgId repliesOutboxReadTill() const {
+		return MsgId(0);
+	}
+	virtual void setRepliesOutboxReadTill(MsgId readTillId) {
+	}
+	[[nodiscard]] virtual MsgId computeRepliesOutboxReadTillFull() const {
+		return MsgId(0);
+	}
+	virtual void setRepliesMaxId(MsgId maxId) {
+	}
+	virtual void setRepliesPossibleMaxId(MsgId possibleMaxId) {
+	}
+	[[nodiscard]] virtual bool areRepliesUnread() const {
+		return false;
+	}
+
+	[[nodiscard]] virtual FullMsgId commentsItemId() const {
+		return FullMsgId();
+	}
+	virtual void setCommentsItemId(FullMsgId id) {
+	}
 
 	[[nodiscard]] virtual bool needCheck() const;
 
@@ -215,7 +255,7 @@ public:
 	}
 
 	virtual void addToUnreadMentions(UnreadMentionType type);
-	virtual void eraseFromUnreadMentions() {
+	virtual void destroyHistoryEntry() {
 	}
 	[[nodiscard]] virtual Storage::SharedMediaTypesMask sharedMediaTypes() const = 0;
 
@@ -245,9 +285,23 @@ public:
 		return TextForMimeData();
 	}
 
-	virtual void setViewsCount(int32 count) {
+	virtual void setViewsCount(int count) {
+	}
+	virtual void setForwardsCount(int count) {
+	}
+	virtual void setReplies(const MTPMessageReplies &data) {
+	}
+	virtual void clearReplies() {
+	}
+	virtual void changeRepliesCount(int delta, PeerId replier) {
+	}
+	virtual void setReplyToTop(MsgId replyToTop) {
+	}
+	virtual void setPostAuthor(const QString &author) {
 	}
 	virtual void setRealId(MsgId newId);
+	virtual void incrementReplyToTopCounter() {
+	}
 
 	void drawInDialog(
 		Painter &p,
@@ -262,7 +316,6 @@ public:
 		return _text.isEmpty();
 	}
 
-	[[nodiscard]] bool isPinned() const;
 	[[nodiscard]] bool canPin() const;
 	[[nodiscard]] bool canStopPoll() const;
 	[[nodiscard]] virtual bool allowsSendNow() const;
@@ -301,6 +354,7 @@ public:
 		return nullptr;
 	}
 	[[nodiscard]] MsgId replyToId() const;
+	[[nodiscard]] MsgId replyToTop() const;
 
 	[[nodiscard]] not_null<PeerData*> author() const;
 
@@ -326,6 +380,7 @@ public:
 
 	[[nodiscard]] ChannelData *discussionPostOriginalSender() const;
 	[[nodiscard]] bool isDiscussionPost() const;
+	[[nodiscard]] HistoryItem *lookupDiscussionPostOriginal() const;
 	[[nodiscard]] PeerData *displayFrom() const;
 
 	[[nodiscard]] virtual std::unique_ptr<HistoryView::Element> createView(
@@ -334,8 +389,6 @@ public:
 
 	void updateDate(TimeId newDate);
 	[[nodiscard]] bool canUpdateDate() const;
-
-	[[nodiscard]] bool canBeEditedFromHistory() const;
 
 	virtual ~HistoryItem();
 
@@ -348,7 +401,7 @@ protected:
 		MTPDmessage::Flags flags,
 		MTPDmessage_ClientFlags clientFlags,
 		TimeId date,
-		UserId from);
+		PeerId from);
 
 	virtual void markMediaAsReadHook() {
 	}

@@ -40,35 +40,35 @@ Key::Key(not_null<PollData*> poll, FullMsgId contextId)
 }
 
 PeerData *Key::peer() const {
-	if (const auto peer = base::get_if<not_null<PeerData*>>(&_value)) {
+	if (const auto peer = std::get_if<not_null<PeerData*>>(&_value)) {
 		return *peer;
 	}
 	return nullptr;
 }
 
 //Data::Feed *Key::feed() const { // #feed
-//	if (const auto feed = base::get_if<not_null<Data::Feed*>>(&_value)) {
+//	if (const auto feed = std::get_if<not_null<Data::Feed*>>(&_value)) {
 //		return *feed;
 //	}
 //	return nullptr;
 //}
 
 UserData *Key::settingsSelf() const {
-	if (const auto tag = base::get_if<Settings::Tag>(&_value)) {
+	if (const auto tag = std::get_if<Settings::Tag>(&_value)) {
 		return tag->self;
 	}
 	return nullptr;
 }
 
 PollData *Key::poll() const {
-	if (const auto data = base::get_if<PollKey>(&_value)) {
+	if (const auto data = std::get_if<PollKey>(&_value)) {
 		return data->poll;
 	}
 	return nullptr;
 }
 
 FullMsgId Key::pollContextId() const {
-	if (const auto data = base::get_if<PollKey>(&_value)) {
+	if (const auto data = std::get_if<PollKey>(&_value)) {
 		return data->contextId;
 	}
 	return FullMsgId();
@@ -123,7 +123,7 @@ PollData *AbstractController::poll() const {
 }
 
 void AbstractController::showSection(
-		Window::SectionMemento &&memento,
+		std::shared_ptr<Window::SectionMemento> memento,
 		const Window::SectionShow &params) {
 	return parentController()->showSection(std::move(memento), params);
 }
@@ -131,6 +131,13 @@ void AbstractController::showSection(
 void AbstractController::showBackFromStack(
 		const Window::SectionShow &params) {
 	return parentController()->showBackFromStack(params);
+}
+
+void AbstractController::showPeerHistory(
+		PeerId peerId,
+		const Window::SectionShow &params,
+		MsgId msgId) {
+	return parentController()->showPeerHistory(peerId, params, msgId);
 }
 
 Controller::Controller(
@@ -163,7 +170,7 @@ void Controller::setupMigrationViewer() {
 		const auto section = _section;
 		InvokeQueued(_widget, [=] {
 			window->showSection(
-				Memento(peer, section),
+				std::make_shared<Memento>(peer, section),
 				Window::SectionShow(
 					Window::SectionShow::Way::Backward,
 					anim::type::instant,
@@ -254,9 +261,9 @@ void Controller::saveSearchState(not_null<ContentMemento*> memento) {
 }
 
 void Controller::showSection(
-		Window::SectionMemento &&memento,
+		std::shared_ptr<Window::SectionMemento> memento,
 		const Window::SectionShow &params) {
-	if (!_widget->showInternal(&memento, params)) {
+	if (!_widget->showInternal(memento.get(), params)) {
 		AbstractController::showSection(std::move(memento), params);
 	}
 }

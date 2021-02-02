@@ -36,20 +36,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <mach-o/dyld.h>
 #include <AVFoundation/AVFoundation.h>
 
-namespace {
-
-QStringList _initLogs;
-
-};
-
-namespace {
-
-QRect _monitorRect;
-crl::time _monitorLastGot = 0;
-
-} // namespace
-
 QRect psDesktopRect() {
+	static QRect _monitorRect;
+	static crl::time _monitorLastGot = 0;
 	auto tnow = crl::now();
 	if (tnow > _monitorLastGot + 1000 || tnow < _monitorLastGot) {
 		_monitorLastGot = tnow;
@@ -63,18 +52,6 @@ void psWriteDump() {
 	double v = objc_appkitVersion();
 	CrashReports::dump() << "OS-Version: " << v;
 #endif // DESKTOP_APP_DISABLE_CRASH_REPORTS
-}
-
-void psDeleteDir(const QString &dir) {
-	objc_deleteDir(dir);
-}
-
-QStringList psInitLogs() {
-	return _initLogs;
-}
-
-void psClearInitLogs() {
-	_initLogs = QStringList();
 }
 
 void psActivateProcess(uint64 pid) {
@@ -118,24 +95,12 @@ void finish() {
 	objc_finish();
 }
 
-QString CurrentExecutablePath(int argc, char *argv[]) {
-	return NS2QString([[NSBundle mainBundle] bundlePath]);
-}
-
 QString SingleInstanceLocalServerName(const QString &hash) {
 #ifndef OS_MAC_STORE
 	return qsl("/tmp/") + hash + '-' + cGUIDStr();
 #else // OS_MAC_STORE
 	return objc_documentsPath() + hash.left(4);
 #endif // OS_MAC_STORE
-}
-
-void RemoveQuarantine(const QString &path) {
-	const auto kQuarantineAttribute = "com.apple.quarantine";
-
-	DEBUG_LOG(("Removing quarantine attribute: %1").arg(path));
-	const auto local = QFile::encodeName(path);
-	removexattr(local.data(), kQuarantineAttribute, 0);
 }
 
 bool IsDarkMenuBar() {
@@ -158,10 +123,8 @@ std::optional<bool> IsDarkMode() {
 }
 
 void RegisterCustomScheme(bool force) {
-#ifndef TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME
 	OSStatus result = LSSetDefaultHandlerForURLScheme(CFSTR("tg"), (CFStringRef)[[NSBundle mainBundle] bundleIdentifier]);
 	DEBUG_LOG(("App Info: set default handler for 'tg' scheme result: %1").arg(result));
-#endif // !TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME
 }
 
 // I do check for availability, just not in the exact way clang is content with
@@ -170,19 +133,23 @@ void RegisterCustomScheme(bool force) {
 PermissionStatus GetPermissionStatus(PermissionType type) {
 #ifndef OS_MAC_OLD
 	switch (type) {
-		case PermissionType::Microphone:
-			if([AVCaptureDevice respondsToSelector: @selector(authorizationStatusForMediaType:)]) { // Available starting with 10.14
-				switch([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio]) {
-					case AVAuthorizationStatusNotDetermined:
-						return PermissionStatus::CanRequest;
-					case AVAuthorizationStatusAuthorized:
-						return PermissionStatus::Granted;
-					case AVAuthorizationStatusDenied:
-					case AVAuthorizationStatusRestricted:
-						return PermissionStatus::Denied;
-				}
+	case PermissionType::Microphone:
+	case PermissionType::Camera:
+		const auto nativeType = (type == PermissionType::Microphone)
+			? AVMediaTypeAudio
+			: AVMediaTypeVideo;
+		if ([AVCaptureDevice respondsToSelector: @selector(authorizationStatusForMediaType:)]) { // Available starting with 10.14
+			switch ([AVCaptureDevice authorizationStatusForMediaType:nativeType]) {
+				case AVAuthorizationStatusNotDetermined:
+					return PermissionStatus::CanRequest;
+				case AVAuthorizationStatusAuthorized:
+					return PermissionStatus::Granted;
+				case AVAuthorizationStatusDenied:
+				case AVAuthorizationStatusRestricted:
+					return PermissionStatus::Denied;
 			}
-			break;
+		}
+		break;
 	}
 #endif // OS_MAC_OLD
 	return PermissionStatus::Granted;
@@ -191,15 +158,19 @@ PermissionStatus GetPermissionStatus(PermissionType type) {
 void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCallback) {
 #ifndef OS_MAC_OLD
 	switch (type) {
-		case PermissionType::Microphone:
-			if ([AVCaptureDevice respondsToSelector: @selector(requestAccessForMediaType:completionHandler:)]) { // Available starting with 10.14
-				[AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
-					crl::on_main([=] {
-						resultCallback(granted ? PermissionStatus::Granted : PermissionStatus::Denied);
-					});
-				}];
-			}
-			break;
+	case PermissionType::Microphone:
+	case PermissionType::Camera:
+		const auto nativeType = (type == PermissionType::Microphone)
+			? AVMediaTypeAudio
+			: AVMediaTypeVideo;
+		if ([AVCaptureDevice respondsToSelector: @selector(requestAccessForMediaType:completionHandler:)]) { // Available starting with 10.14
+			[AVCaptureDevice requestAccessForMediaType:nativeType completionHandler:^(BOOL granted) {
+				crl::on_main([=] {
+					resultCallback(granted ? PermissionStatus::Granted : PermissionStatus::Denied);
+				});
+			}];
+		}
+		break;
 	}
 #endif // OS_MAC_OLD
 	resultCallback(PermissionStatus::Granted);
@@ -209,9 +180,12 @@ void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCal
 void OpenSystemSettingsForPermission(PermissionType type) {
 #ifndef OS_MAC_OLD
 	switch (type) {
-		case PermissionType::Microphone:
-			[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"]];
-			break;
+	case PermissionType::Microphone:
+		[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"]];
+		break;
+	case PermissionType::Camera:
+		[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"]];
+		break;
 	}
 #endif // OS_MAC_OLD
 }
@@ -225,73 +199,18 @@ bool OpenSystemSettings(SystemSettingsType type) {
 	return true;
 }
 
-// Taken from https://github.com/trueinteractions/tint/issues/53.
-std::optional<crl::time> LastUserInputTime() {
-	CFMutableDictionaryRef properties = 0;
-	CFTypeRef obj;
-	mach_port_t masterPort;
-	io_iterator_t iter;
-	io_registry_entry_t curObj;
-
-	IOMasterPort(MACH_PORT_NULL, &masterPort);
-
-	/* Get IOHIDSystem */
-	IOServiceGetMatchingServices(masterPort, IOServiceMatching("IOHIDSystem"), &iter);
-	if (iter == 0) {
-		return std::nullopt;
-	} else {
-		curObj = IOIteratorNext(iter);
-	}
-	if (IORegistryEntryCreateCFProperties(curObj, &properties, kCFAllocatorDefault, 0) == KERN_SUCCESS && properties != NULL) {
-		obj = CFDictionaryGetValue(properties, CFSTR("HIDIdleTime"));
-		CFRetain(obj);
-	} else {
-		return std::nullopt;
-	}
-
-	uint64 err = ~0L, idleTime = err;
-	if (obj) {
-		CFTypeID type = CFGetTypeID(obj);
-
-		if (type == CFDataGetTypeID()) {
-			CFDataGetBytes((CFDataRef) obj, CFRangeMake(0, sizeof(idleTime)), (UInt8*)&idleTime);
-		} else if (type == CFNumberGetTypeID()) {
-			CFNumberGetValue((CFNumberRef)obj, kCFNumberSInt64Type, &idleTime);
-		} else {
-			// error
-		}
-
-		CFRelease(obj);
-
-		if (idleTime != err) {
-			idleTime /= 1000000; // return as ms
-		}
-	} else {
-		// error
-	}
-
-	CFRelease((CFTypeRef)properties);
-	IOObjectRelease(curObj);
-	IOObjectRelease(iter);
-	if (idleTime == err) {
-		return std::nullopt;
-	}
-	return (crl::now() - static_cast<crl::time>(idleTime));
-}
-
 void IgnoreApplicationActivationRightNow() {
 	objc_ignoreApplicationActivationRightNow();
 }
 
 Window::ControlsLayout WindowControlsLayout() {
-	Window::ControlsLayout controls;
-	controls.left = {
-		Window::Control::Close,
-		Window::Control::Minimize,
-		Window::Control::Maximize,
+	return Window::ControlsLayout{
+		.left = {
+			Window::Control::Close,
+			Window::Control::Minimize,
+			Window::Control::Maximize,
+		}
 	};
-
-	return controls;
 }
 
 } // namespace Platform
@@ -312,10 +231,6 @@ void psDownloadPathEnableAccess() {
 
 QByteArray psDownloadPathBookmark(const QString &path) {
 	return objc_downloadPathBookmark(path);
-}
-
-QByteArray psPathBookmark(const QString &path) {
-	return objc_pathBookmark(path);
 }
 
 bool psLaunchMaps(const Data::LocationPoint &point) {

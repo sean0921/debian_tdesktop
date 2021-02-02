@@ -650,9 +650,9 @@ Editor::Editor(
 : _window(window)
 , _cloud(cloud)
 , _scroll(this, st::themesScroll)
-, _close(this, st::contactsMultiSelect.fieldCancel)
+, _close(this, st::defaultMultiSelect.fieldCancel)
 , _menuToggle(this, st::themesMenuToggle)
-, _select(this, st::contactsMultiSelect, tr::lng_country_ph())
+, _select(this, st::defaultMultiSelect, tr::lng_country_ph())
 , _leftShadow(this)
 , _topShadow(this)
 , _save(this, tr::lng_theme_editor_save_button(tr::now).toUpper(), st::dialogsUpdateButton) {
@@ -892,15 +892,12 @@ void Editor::closeWithConfirmation() {
 		closeEditor();
 		return;
 	}
-	const auto box = std::make_shared<QPointer<Ui::BoxContent>>();
-	const auto close = crl::guard(this, [=] {
+	const auto close = crl::guard(this, [=](Fn<void()> &&close) {
 		Background()->clearEditingTheme(ClearEditing::RevertChanges);
 		closeEditor();
-		if (*box) {
-			(*box)->closeBox();
-		}
+		close();
 	});
-	*box = _window->show(Box<ConfirmBox>(
+	_window->show(Box<ConfirmBox>(
 		tr::lng_theme_editor_sure_close(tr::now),
 		tr::lng_close(tr::now),
 		close));

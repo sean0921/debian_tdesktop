@@ -9,8 +9,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "window/themes/window_themes_embedded.h"
 #include "window/window_controls_layout.h"
+#include "ui/chat/attach/attach_send_files_way.h"
+#include "platform/platform_notifications_manager.h"
 
-enum class SendFilesWay;
 enum class RectPart;
 
 namespace Ui {
@@ -20,6 +21,10 @@ enum class InputSubmitSettings;
 namespace Window {
 enum class Column;
 } // namespace Window
+
+namespace Webrtc {
+enum class Backend;
+} // namespace Webrtc
 
 namespace Core {
 
@@ -131,10 +136,12 @@ public:
 		_notifyView = value;
 	}
 	[[nodiscard]] bool nativeNotifications() const {
-		return _nativeNotifications;
+		return _nativeNotifications.value_or(Platform::Notifications::ByDefault());
 	}
 	void setNativeNotifications(bool value) {
-		_nativeNotifications = value;
+		_nativeNotifications = (value == Platform::Notifications::ByDefault())
+			? std::nullopt
+			: std::make_optional(value);
 	}
 	[[nodiscard]] int notificationsCount() const {
 		return _notificationsCount;
@@ -175,17 +182,29 @@ public:
 	void setAutoLock(int value) {
 		_autoLock = value;
 	}
-	[[nodiscard]] QString callOutputDeviceID() const {
-		return _callOutputDeviceID;
+	[[nodiscard]] QString callOutputDeviceId() const {
+		return _callOutputDeviceId.isEmpty()
+			? u"default"_q
+			: _callOutputDeviceId;
 	}
-	void setCallOutputDeviceID(const QString &value) {
-		_callOutputDeviceID = value;
+	void setCallOutputDeviceId(const QString &value) {
+		_callOutputDeviceId = value;
 	}
-	[[nodiscard]] QString callInputDeviceID() const {
-		return _callInputDeviceID;
+	[[nodiscard]] QString callInputDeviceId() const {
+		return _callInputDeviceId.isEmpty()
+			? u"default"_q
+			: _callInputDeviceId;
 	}
-	void setCallInputDeviceID(const QString &value) {
-		_callInputDeviceID = value;
+	void setCallInputDeviceId(const QString &value) {
+		_callInputDeviceId = value;
+	}
+	[[nodiscard]] QString callVideoInputDeviceId() const {
+		return _callVideoInputDeviceId.isEmpty()
+			? u"default"_q
+			: _callVideoInputDeviceId;
+	}
+	void setCallVideoInputDeviceId(const QString &value) {
+		_callVideoInputDeviceId = value;
 	}
 	[[nodiscard]] int callOutputVolume() const {
 		return _callOutputVolume;
@@ -205,6 +224,31 @@ public:
 	void setCallAudioDuckingEnabled(bool value) {
 		_callAudioDuckingEnabled = value;
 	}
+	[[nodiscard]] Webrtc::Backend callAudioBackend() const;
+	void setDisableCalls(bool value) {
+		_disableCalls = value;
+	}
+	[[nodiscard]] bool disableCalls() const {
+		return _disableCalls;
+	}
+	[[nodiscard]] bool groupCallPushToTalk() const {
+		return _groupCallPushToTalk;
+	}
+	void setGroupCallPushToTalk(bool value) {
+		_groupCallPushToTalk = value;
+	}
+	[[nodiscard]] QByteArray groupCallPushToTalkShortcut() const {
+		return _groupCallPushToTalkShortcut;
+	}
+	void setGroupCallPushToTalkShortcut(const QByteArray &serialized) {
+		_groupCallPushToTalkShortcut = serialized;
+	}
+	[[nodiscard]] crl::time groupCallPushToTalkDelay() const {
+		return _groupCallPushToTalkDelay;
+	}
+	void setGroupCallPushToTalkDelay(crl::time delay) {
+		_groupCallPushToTalkDelay = delay;
+	}
 	[[nodiscard]] Window::Theme::AccentColors &themesAccentColors() {
 		return _themesAccentColors;
 	}
@@ -217,10 +261,10 @@ public:
 	[[nodiscard]] bool lastSeenWarningSeen() const {
 		return _lastSeenWarningSeen;
 	}
-	void setSendFilesWay(SendFilesWay way) {
+	void setSendFilesWay(Ui::SendFilesWay way) {
 		_sendFilesWay = way;
 	}
-	[[nodiscard]] SendFilesWay sendFilesWay() const {
+	[[nodiscard]] Ui::SendFilesWay sendFilesWay() const {
 		return _sendFilesWay;
 	}
 	void setSendSubmitWay(Ui::InputSubmitSettings value) {
@@ -242,6 +286,12 @@ public:
 	}
 	void setExeLaunchWarning(bool warning) {
 		_exeLaunchWarning = warning;
+	}
+	[[nodiscard]] bool ipRevealWarning() const {
+		return _ipRevealWarning;
+	}
+	void setIpRevealWarning(bool warning) {
+		_ipRevealWarning = warning;
 	}
 	[[nodiscard]] bool loopAnimatedStickers() const {
 		return _loopAnimatedStickers;
@@ -482,24 +532,30 @@ private:
 	bool _desktopNotify = true;
 	bool _flashBounceNotify = true;
 	DBINotifyView _notifyView = dbinvShowPreview;
-	bool _nativeNotifications = false;
+	std::optional<bool> _nativeNotifications;
 	int _notificationsCount = 3;
 	ScreenCorner _notificationsCorner = ScreenCorner::BottomRight;
 	bool _includeMutedCounter = true;
 	bool _countUnreadMessages = true;
 	rpl::variable<bool> _notifyAboutPinned = true;
 	int _autoLock = 3600;
-	QString _callOutputDeviceID = u"default"_q;
-	QString _callInputDeviceID = u"default"_q;
+	QString _callOutputDeviceId = u"default"_q;
+	QString _callInputDeviceId = u"default"_q;
+	QString _callVideoInputDeviceId = u"default"_q;
 	int _callOutputVolume = 100;
 	int _callInputVolume = 100;
 	bool _callAudioDuckingEnabled = true;
+	bool _disableCalls = false;
+	bool _groupCallPushToTalk = false;
+	QByteArray _groupCallPushToTalkShortcut;
+	crl::time _groupCallPushToTalkDelay = 20;
 	Window::Theme::AccentColors _themesAccentColors;
 	bool _lastSeenWarningSeen = false;
-	SendFilesWay _sendFilesWay;
-	Ui::InputSubmitSettings _sendSubmitWay;
+	Ui::SendFilesWay _sendFilesWay = Ui::SendFilesWay();
+	Ui::InputSubmitSettings _sendSubmitWay = Ui::InputSubmitSettings();
 	base::flat_map<QString, QString> _soundOverrides;
 	bool _exeLaunchWarning = true;
+	bool _ipRevealWarning = true;
 	bool _loopAnimatedStickers = true;
 	rpl::variable<bool> _largeEmoji = true;
 	rpl::variable<bool> _replaceEmoji = true;
@@ -512,8 +568,8 @@ private:
 	rpl::variable<bool> _autoDownloadDictionaries = true;
 	rpl::variable<bool> _mainMenuAccountsShown = true;
 	bool _tabbedSelectorSectionEnabled = false; // per-window
-	Window::Column _floatPlayerColumn; // per-window
-	RectPart _floatPlayerCorner; // per-window
+	Window::Column _floatPlayerColumn = Window::Column(); // per-window
+	RectPart _floatPlayerCorner = RectPart(); // per-window
 	bool _thirdSectionInfoEnabled = true; // per-window
 	rpl::event_stream<bool> _thirdSectionInfoEnabledValue; // per-window
 	int _thirdSectionExtendedBy = -1; // per-window

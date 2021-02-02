@@ -18,6 +18,7 @@ public:
 		| MTPDchat::Flag::f_deactivated
 		| MTPDchat::Flag::f_migrated_to
 		| MTPDchat::Flag::f_admin_rights
+		| MTPDchat::Flag::f_call_not_empty
 		| MTPDchat::Flag::f_default_banned_rights;
 	using Flags = Data::Flags<
 		MTPDchat::Flags,
@@ -141,9 +142,10 @@ public:
 	void applyEditAdmin(not_null<UserData*> user, bool isAdmin);
 
 	void setInviteLink(const QString &newInviteLink);
-	QString inviteLink() const {
+	[[nodiscard]] QString inviteLink() const {
 		return _inviteLink;
 	}
+	[[nodiscard]] bool canHaveInviteLink() const;
 	void refreshBotStatus();
 
 	enum class UpdateStatus {
@@ -162,8 +164,14 @@ public:
 	ChannelData *getMigrateToChannel() const;
 	void setMigrateToChannel(ChannelData *channel);
 
+	[[nodiscard]] Data::GroupCall *groupCall() const {
+		return _call.get();
+	}
+	void setGroupCall(const MTPInputGroupCall &call);
+	void clearGroupCall();
+
 	// Still public data members.
-	MTPint inputChat;
+	const MTPint inputChat;
 
 	int count = 0;
 	TimeId date = 0;
@@ -185,7 +193,10 @@ private:
 	AdminRightFlags _adminRights;
 	int _version = 0;
 
+	std::unique_ptr<Data::GroupCall> _call;
+
 	ChannelData *_migratedTo = nullptr;
+	rpl::lifetime _lifetime;
 
 };
 

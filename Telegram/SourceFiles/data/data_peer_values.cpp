@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_user.h"
 #include "base/unixtime.h"
+#include "base/qt_adapters.h"
 
 namespace Data {
 namespace {
@@ -39,7 +40,7 @@ int OnlinePhraseChangeInSeconds(TimeId online, TimeId now) {
 		return (hours + 1) * 3600 - (now - online);
 	}
 	const auto nowFull = base::unixtime::parse(now);
-	const auto tomorrow = QDateTime(nowFull.date().addDays(1));
+	const auto tomorrow = base::QDateToDateTime(nowFull.date().addDays(1));
 	return std::max(static_cast<TimeId>(nowFull.secsTo(tomorrow)), 0);
 }
 
@@ -170,6 +171,10 @@ rpl::producer<bool> PeerFlagValue(
 
 rpl::producer<bool> CanWriteValue(UserData *user) {
 	using namespace rpl::mappers;
+
+	if (user->isRepliesChat()) {
+		return rpl::single(false);
+	}
 	return PeerFlagValue(user, MTPDuser::Flag::f_deleted)
 		| rpl::map(!_1);
 }
@@ -207,6 +212,7 @@ rpl::producer<bool> CanWriteValue(ChatData *chat) {
 rpl::producer<bool> CanWriteValue(ChannelData *channel) {
 	const auto mask = 0
 		| MTPDchannel::Flag::f_left
+		| MTPDchannel::Flag::f_has_link
 		| MTPDchannel_ClientFlag::f_forbidden
 		| MTPDchannel::Flag::f_creator
 		| MTPDchannel::Flag::f_broadcast;
@@ -229,8 +235,9 @@ rpl::producer<bool> CanWriteValue(ChannelData *channel) {
 			const auto notAmInFlags = 0
 				| MTPDchannel::Flag::f_left
 				| MTPDchannel_ClientFlag::f_forbidden;
-			return !(flags & notAmInFlags)
-				&& (postMessagesRight
+			const auto allowed = !(flags & notAmInFlags)
+				|| (flags & MTPDchannel::Flag::f_has_link);
+			return allowed && (postMessagesRight
 					|| (flags & MTPDchannel::Flag::f_creator)
 					|| (!(flags & MTPDchannel::Flag::f_broadcast)
 						&& !sendMessagesRestriction
@@ -246,7 +253,71 @@ rpl::producer<bool> CanWriteValue(not_null<PeerData*> peer) {
 	} else if (auto channel = peer->asChannel()) {
 		return CanWriteValue(channel);
 	}
-	Unexpected("Bad peer value in CanWriteValue()");
+	Unexpected("Bad peer value in CanWriteValue");
+}
+
+// This is duplicated in PeerData::canPinMessages().
+rpl::producer<bool> CanPinMessagesValue(not_null<PeerData*> peer) {
+	using namespace rpl::mappers;
+	if (const auto user = peer->asUser()) {
+		return PeerFullFlagsValue(
+			user,
+			MTPDuserFull::Flag::f_can_pin_message
+		) | rpl::map(_1 != MTPDuserFull::Flag(0));
+	} else if (const auto chat = peer->asChat()) {
+		const auto mask = 0
+			| MTPDchat::Flag::f_deactivated
+			| MTPDchat_ClientFlag::f_forbidden
+			| MTPDchat::Flag::f_left
+			| MTPDchat::Flag::f_creator
+			| MTPDchat::Flag::f_kicked;
+		return rpl::combine(
+			PeerFlagsValue(chat, mask),
+			AdminRightValue(chat, ChatAdminRight::f_pin_messages),
+			DefaultRestrictionValue(chat, ChatRestriction::f_pin_messages),
+			[](
+				MTPDchat::Flags flags,
+				bool adminRightAllows,
+				bool defaultRestriction) {
+			const auto amOutFlags = 0
+				| MTPDchat::Flag::f_deactivated
+				| MTPDchat_ClientFlag::f_forbidden
+				| MTPDchat::Flag::f_left
+				| MTPDchat::Flag::f_kicked;
+			return !(flags & amOutFlags)
+				&& ((flags & MTPDchat::Flag::f_creator)
+					|| adminRightAllows
+					|| !defaultRestriction);
+		});
+	} else if (const auto megagroup = peer->asMegagroup()) {
+		if (megagroup->amCreator()) {
+			return rpl::single(true);
+		}
+		return rpl::combine(
+			AdminRightValue(megagroup, ChatAdminRight::f_pin_messages),
+			DefaultRestrictionValue(megagroup, ChatRestriction::f_pin_messages),
+			PeerFlagValue(megagroup, MTPDchannel::Flag::f_username),
+			PeerFullFlagValue(megagroup, MTPDchannelFull::Flag::f_location),
+			megagroup->restrictionsValue()
+		) | rpl::map([=](
+				bool adminRightAllows,
+				bool defaultRestriction,
+				bool hasUsername,
+				bool hasLocation,
+				Data::Flags<ChatRestrictions>::Change restrictions) {
+			return adminRightAllows
+				|| (!hasUsername
+					&& !hasLocation
+					&& !defaultRestriction
+					&& !(restrictions.value & ChatRestriction::f_pin_messages));
+		});
+	} else if (const auto channel = peer->asChannel()) {
+		if (channel->amCreator()) {
+			return rpl::single(true);
+		}
+		return AdminRightValue(channel, ChatAdminRight::f_edit_messages);
+	}
+	Unexpected("Peer type in CanPinMessagesValue.");
 }
 
 TimeId SortByOnlineValue(not_null<UserData*> user, TimeId now) {
@@ -279,7 +350,7 @@ TimeId SortByOnlineValue(not_null<UserData*> user, TimeId now) {
 crl::time OnlineChangeTimeout(TimeId online, TimeId now) {
 	const auto result = OnlinePhraseChangeInSeconds(online, now);
 	Assert(result >= 0);
-	return snap(
+	return std::clamp(
 		result * crl::time(1000),
 		kMinOnlineChangeTimeout,
 		kMaxOnlineChangeTimeout);
@@ -367,11 +438,12 @@ bool OnlineTextActive(not_null<UserData*> user, TimeId now) {
 	return OnlineTextActive(user->onlineTill, now);
 }
 
-bool IsPeerAnOnlineUser(not_null<PeerData*> peer) {
-	if (const auto user = peer->asUser()) {
-		return OnlineTextActive(user, base::unixtime::now());
-	}
-	return false;
+bool IsUserOnline(not_null<UserData*> user) {
+	return OnlineTextActive(user, base::unixtime::now());
+}
+
+bool ChannelHasActiveCall(not_null<ChannelData*> channel) {
+	return (channel->flags() & MTPDchannel::Flag::f_call_not_empty);
 }
 
 } // namespace Data

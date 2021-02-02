@@ -45,7 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "facades.h"
 #include "app.h"
 #include "styles/style_dialogs.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 #include "styles/style_info.h"
 #include "styles/style_window.h"
 
@@ -208,8 +208,8 @@ Widget::Widget(
 	connect(_inner, SIGNAL(completeHashtag(QString)), this, SLOT(onCompleteHashtag(QString)));
 	connect(_inner, SIGNAL(refreshHashtags()), this, SLOT(onFilterCursorMoved()));
 	connect(_inner, SIGNAL(cancelSearchInChat()), this, SLOT(onCancelSearchInChat()));
-	subscribe(_inner->searchFromUserChanged, [this](UserData *user) {
-		setSearchInChat(_searchInChat, user);
+	subscribe(_inner->searchFromUserChanged, [this](PeerData *from) {
+		setSearchInChat(_searchInChat, from);
 		applyFilterUpdate(true);
 	});
 	_inner->chosenRow(
@@ -523,8 +523,11 @@ void Widget::refreshFolderTopBar() {
 			updateControlsGeometry();
 		}
 		_folderTopBar->setActiveChat(
-			_openedFolder,
-			HistoryView::TopBarWidget::Section::History);
+			HistoryView::TopBarWidget::ActiveChat{
+				.key = _openedFolder,
+				.section = Dialogs::EntryState::Section::ChatsList,
+			},
+			nullptr);
 	} else {
 		_folderTopBar.destroy();
 	}
@@ -788,7 +791,7 @@ void Widget::onDraggingScrollTimer() {
 bool Widget::onSearchMessages(bool searchCache) {
 	auto result = false;
 	auto q = _filter->getLastText().trimmed();
-	if (q.isEmpty() && !_searchFromUser) {
+	if (q.isEmpty() && !_searchFromAuthor) {
 		cancelSearchRequest();
 		_api.request(base::take(_peerSearchRequest)).cancel();
 		return true;
@@ -803,7 +806,7 @@ bool Widget::onSearchMessages(bool searchCache) {
 		const auto i = _searchCache.find(q);
 		if (i != _searchCache.end()) {
 			_searchQuery = q;
-			_searchQueryFrom = _searchFromUser;
+			_searchQueryFrom = _searchFromAuthor;
 			_searchNextRate = 0;
 			_searchFull = _searchFullMigrated = false;
 			cancelSearchRequest();
@@ -815,9 +818,9 @@ bool Widget::onSearchMessages(bool searchCache) {
 				0);
 			result = true;
 		}
-	} else if (_searchQuery != q || _searchQueryFrom != _searchFromUser) {
+	} else if (_searchQuery != q || _searchQueryFrom != _searchFromAuthor) {
 		_searchQuery = q;
-		_searchQueryFrom = _searchFromUser;
+		_searchQueryFrom = _searchFromAuthor;
 		_searchNextRate = 0;
 		_searchFull = _searchFullMigrated = false;
 		cancelSearchRequest();
@@ -835,8 +838,9 @@ bool Widget::onSearchMessages(bool searchCache) {
 					peer->input,
 					MTP_string(_searchQuery),
 					(_searchQueryFrom
-						? _searchQueryFrom->inputUser
-						: MTP_inputUserEmpty()),
+						? _searchQueryFrom->input
+						: MTP_inputPeerEmpty()),
+					MTPint(), // top_msg_id
 					MTP_inputMessagesFilterEmpty(),
 					MTP_int(0),
 					MTP_int(0),
@@ -847,12 +851,12 @@ bool Widget::onSearchMessages(bool searchCache) {
 					MTP_int(0),
 					MTP_int(0)
 				)).done([=](const MTPmessages_Messages &result) {
-					searchReceived(type, result, _searchRequest);
 					_searchInHistoryRequest = 0;
+					searchReceived(type, result, _searchRequest);
 					finish();
 				}).fail([=](const RPCError &error) {
-					searchFailed(type, error, _searchRequest);
 					_searchInHistoryRequest = 0;
+					searchFailed(type, error, _searchRequest);
 					finish();
 				}).send();
 				_searchQueries.emplace(_searchRequest, _searchQuery);
@@ -883,6 +887,9 @@ bool Widget::onSearchMessages(bool searchCache) {
 				MTP_flags(flags),
 				MTP_int(folderId),
 				MTP_string(_searchQuery),
+				MTP_inputMessagesFilterEmpty(),
+				MTP_int(0), // min_date
+				MTP_int(0), // max_date
 				MTP_int(0),
 				MTP_inputPeerEmpty(),
 				MTP_int(0),
@@ -1004,8 +1011,9 @@ void Widget::onSearchMore() {
 					peer->input,
 					MTP_string(_searchQuery),
 					(_searchQueryFrom
-						? _searchQueryFrom->inputUser
-						: MTP_inputUserEmpty()),
+						? _searchQueryFrom->input
+						: MTP_inputPeerEmpty()),
+					MTPint(), // top_msg_id
 					MTP_inputMessagesFilterEmpty(),
 					MTP_int(0),
 					MTP_int(0),
@@ -1062,6 +1070,9 @@ void Widget::onSearchMore() {
 				MTP_flags(flags),
 				MTP_int(folderId),
 				MTP_string(_searchQuery),
+				MTP_inputMessagesFilterEmpty(),
+				MTP_int(0), // min_date
+				MTP_int(0), // max_date
 				MTP_int(_searchNextRate),
 				offsetPeer
 					? offsetPeer->input
@@ -1094,8 +1105,9 @@ void Widget::onSearchMore() {
 				_searchInMigrated->peer->input,
 				MTP_string(_searchQuery),
 				(_searchQueryFrom
-					? _searchQueryFrom->inputUser
-					: MTP_inputUserEmpty()),
+					? _searchQueryFrom->input
+					: MTP_inputPeerEmpty()),
+				MTPint(), // top_msg_id
 				MTP_inputMessagesFilterEmpty(),
 				MTP_int(0),
 				MTP_int(0),
@@ -1260,7 +1272,15 @@ void Widget::searchFailed(
 		SearchRequestType type,
 		const RPCError &error,
 		mtpRequestId requestId) {
-	if (_searchRequest == requestId) {
+	if (error.type() == qstr("SEARCH_QUERY_EMPTY")) {
+		searchReceived(
+			type,
+			MTP_messages_messages(
+				MTP_vector<MTPMessage>(),
+				MTP_vector<MTPChat>(),
+				MTP_vector<MTPUser>()),
+			requestId);
+	} else if (_searchRequest == requestId) {
 		_searchRequest = 0;
 		if (type == SearchRequestType::MigratedFromStart || type == SearchRequestType::MigratedFromOffset) {
 			_searchFullMigrated = true;
@@ -1370,7 +1390,7 @@ void Widget::applyFilterUpdate(bool force) {
 
 	auto filterText = _filter->getLastText();
 	_inner->applyFilterUpdate(filterText, force);
-	if (filterText.isEmpty() && !_searchFromUser) {
+	if (filterText.isEmpty() && !_searchFromAuthor) {
 		clearSearchCache();
 	}
 	_cancelSearch->toggle(!filterText.isEmpty(), anim::type::normal);
@@ -1385,7 +1405,7 @@ void Widget::applyFilterUpdate(bool force) {
 		_peerSearchQuery = QString();
 	}
 
-	if (_chooseFromUser->toggled() || _searchFromUser) {
+	if (_chooseFromUser->toggled() || _searchFromAuthor) {
 		auto switchToChooseFrom = SwitchToChooseFromQuery();
 		if (_lastFilterText != switchToChooseFrom
 			&& switchToChooseFrom.startsWith(_lastFilterText)
@@ -1402,7 +1422,7 @@ void Widget::searchInChat(Key chat) {
 	applyFilterUpdate(true);
 }
 
-void Widget::setSearchInChat(Key chat, UserData *from) {
+void Widget::setSearchInChat(Key chat, PeerData *from) {
 	if (chat.folder()) {
 		chat = Key();
 	}
@@ -1423,13 +1443,13 @@ void Widget::setSearchInChat(Key chat, UserData *from) {
 	} else if (!_searchInChat) {
 		from = nullptr;
 	}
-	if (_searchFromUser != from || searchInPeerUpdated) {
-		_searchFromUser = from;
+	if (_searchFromAuthor != from || searchInPeerUpdated) {
+		_searchFromAuthor = from;
 		updateSearchFromVisibility();
 		clearSearchCache();
 	}
-	_inner->searchInChat(_searchInChat, _searchFromUser);
-	if (_searchFromUser && _lastFilterText == SwitchToChooseFromQuery()) {
+	_inner->searchInChat(_searchInChat, _searchFromAuthor);
+	if (_searchFromAuthor && _lastFilterText == SwitchToChooseFromQuery()) {
 		onCancelSearch();
 	}
 	_filter->setFocus();
@@ -1457,9 +1477,9 @@ void Widget::showSearchFrom() {
 		const auto chat = _searchInChat;
 		ShowSearchFromBox(
 			peer,
-			crl::guard(this, [=](not_null<UserData*> user) {
+			crl::guard(this, [=](not_null<PeerData*> from) {
 				Ui::hideLayer();
-				setSearchInChat(chat, user);
+				setSearchInChat(chat, from);
 				applyFilterUpdate(true);
 			}),
 			crl::guard(this, [=] { _filter->setFocus(); }));
@@ -1548,7 +1568,7 @@ void Widget::updateSearchFromVisibility(bool fast) {
 	auto visible = [&] {
 		if (const auto peer = _searchInChat.peer()) {
 			if (peer->isChat() || peer->isMegagroup()) {
-				return !_searchFromUser;
+				return !_searchFromAuthor;
 			}
 		}
 		return false;
@@ -1756,7 +1776,7 @@ bool Widget::onCancelSearch() {
 			if (const auto peer = _searchInChat.peer()) {
 				Ui::showPeerHistory(peer, ShowAtUnreadMsgId);
 			//} else if (const auto feed = _searchInChat.feed()) { // #feed
-			//	controller()->showSection(HistoryFeed::Memento(feed));
+			//	controller()->showSection(std::make_shared<HistoryFeed::Memento>(feed));
 			} else {
 				Unexpected("Empty key in onCancelSearch().");
 			}
@@ -1774,21 +1794,20 @@ bool Widget::onCancelSearch() {
 void Widget::onCancelSearchInChat() {
 	cancelSearchRequest();
 	if (_searchInChat) {
-		if (Adaptive::OneColumn() && !controller()->selectingPeer()) {
+		if (Adaptive::OneColumn()
+			&& !controller()->selectingPeer()
+			&& _filter->getLastText().trimmed().isEmpty()) {
 			if (const auto peer = _searchInChat.peer()) {
 				Ui::showPeerHistory(peer, ShowAtUnreadMsgId);
 			//} else if (const auto feed = _searchInChat.feed()) { // #feed
-			//	controller()->showSection(HistoryFeed::Memento(feed));
+			//	controller()->showSection(std::make_shared<HistoryFeed::Memento>(feed));
 			} else {
 				Unexpected("Empty key in onCancelSearchInPeer().");
 			}
 		}
 		setSearchInChat(Key());
 	}
-	_inner->clearFilter();
-	_filter->clear();
-	_filter->updatePlaceholder();
-	applyFilterUpdate();
+	applyFilterUpdate(true);
 	if (!Adaptive::OneColumn() && !controller()->selectingPeer()) {
 		emit cancelled();
 	}

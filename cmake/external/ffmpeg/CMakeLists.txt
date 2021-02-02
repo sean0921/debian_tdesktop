@@ -68,13 +68,13 @@ else()
             va-drm
             va
             vdpau
-            Xi
+            Xv
             Xext
             Xfixes
-            Xrender
         )
         target_link_libraries(external_ffmpeg
         INTERFACE
+            X11
             drm
             pthread
         )

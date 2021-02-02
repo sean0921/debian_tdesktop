@@ -57,7 +57,6 @@ public:
 	void peerListSetAdditionalTitle(rpl::producer<QString> title) override;
 	bool peerListIsRowChecked(not_null<PeerListRow*> row) override;
 	int peerListSelectedRowsCount() override;
-	std::vector<not_null<PeerData*>> peerListCollectSelectedRows() override;
 	void peerListScrollToTop() override;
 	void peerListAddSelectedPeerInBunch(
 		not_null<PeerData*> peer) override;
@@ -128,11 +127,6 @@ bool ListDelegate::peerListIsRowChecked(not_null<PeerListRow*> row) {
 
 int ListDelegate::peerListSelectedRowsCount() {
 	return 0;
-}
-
-auto ListDelegate::peerListCollectSelectedRows()
--> std::vector<not_null<PeerData*>> {
-	return {};
 }
 
 void ListDelegate::peerListScrollToTop() {
@@ -281,7 +275,7 @@ void ListController::loadMoreRows() {
 			for (const auto &vote : data.vvotes().v) {
 				vote.match([&](const auto &data) {
 					const auto user = owner.user(data.vuser_id().v);
-					if (user->loadedStatus != PeerData::NotLoaded) {
+					if (user->isMinimalLoaded()) {
 						if (add) {
 							appendRow(user);
 							--add;
@@ -501,10 +495,10 @@ ListController *CreateAnswerRows(
 		container,
 		st::boxLittleSkip));
 
+	controller->setStyleOverrides(&st::infoCommonGroupsList);
 	const auto content = container->add(object_ptr<PeerListContent>(
 		container,
-		controller,
-		st::infoCommonGroupsList));
+		controller));
 	delegate->setContent(content);
 	controller->setDelegate(delegate);
 

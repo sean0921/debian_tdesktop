@@ -24,18 +24,29 @@ public:
 	void setMinimumSize(QSize size) override;
 	void setFixedSize(QSize size) override;
 	void setGeometry(QRect rect) override;
+	void close() override;
 
 private:
 	class Private;
 	friend class Private;
 
-	void init();
-	void toggleCustomTitle(bool visible);
+	void setupBodyTitleAreaEvents() override;
 
-	const not_null<RpWidget*> _window;
+	void init();
+	void updateCustomTitleVisibility(bool force = false);
+
 	const std::unique_ptr<Private> _private;
 	const not_null<TitleWidget*> _title;
 	const not_null<RpWidget*> _body;
+	bool _titleVisible = true;
+
+#ifdef OS_OSX
+	struct WindowDrag {
+		QPoint windowStartPosition;
+		QPoint dragStartPosition;
+	};
+	std::optional<WindowDrag> _drag;
+#endif // OS_OSX
 
 };
 

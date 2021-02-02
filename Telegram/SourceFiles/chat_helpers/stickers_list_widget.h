@@ -22,6 +22,7 @@ class SessionController;
 
 namespace Ui {
 class LinkButton;
+class PopupMenu;
 class RippleAnimation;
 class BoxContent;
 } // namespace Ui
@@ -51,7 +52,7 @@ public:
 
 	Main::Session &session() const;
 
-	rpl::producer<not_null<DocumentData*>> chosen() const;
+	rpl::producer<TabbedSelector::FileChosen> chosen() const;
 	rpl::producer<> scrollUpdated() const;
 	rpl::producer<> checkForHide() const;
 
@@ -81,6 +82,10 @@ public:
 	void searchForSets(const QString &query);
 
 	std::shared_ptr<Lottie::FrameRenderer> getLottieRenderer();
+
+	void fillContextMenu(
+		not_null<Ui::PopupMenu*> menu,
+		SendMenu::Type type) override;
 
 	~StickersListWidget();
 
@@ -116,30 +121,46 @@ private:
 		int section = 0;
 		int index = 0;
 		bool overDelete = false;
+
+		inline bool operator==(OverSticker other) const {
+			return (section == other.section)
+				&& (index == other.index)
+				&& (overDelete == other.overDelete);
+		}
+		inline bool operator!=(OverSticker other) const {
+			return !(*this == other);
+		}
 	};
 	struct OverSet {
 		int section = 0;
+
+		inline bool operator==(OverSet other) const {
+			return (section == other.section);
+		}
+		inline bool operator!=(OverSet other) const {
+			return !(*this == other);
+		}
 	};
 	struct OverButton {
 		int section = 0;
+
+		inline bool operator==(OverButton other) const {
+			return (section == other.section);
+		}
+		inline bool operator!=(OverButton other) const {
+			return !(*this == other);
+		}
 	};
 	struct OverGroupAdd {
+		inline bool operator==(OverGroupAdd other) const {
+			return true;
+		}
+		inline bool operator!=(OverGroupAdd other) const {
+			return !(*this == other);
+		}
 	};
-	friend inline bool operator==(OverSticker a, OverSticker b) {
-		return (a.section == b.section)
-			&& (a.index == b.index)
-			&& (a.overDelete == b.overDelete);
-	}
-	friend inline bool operator==(OverSet a, OverSet b) {
-		return (a.section == b.section);
-	}
-	friend inline bool operator==(OverButton a, OverButton b) {
-		return (a.section == b.section);
-	}
-	friend inline bool operator==(OverGroupAdd a, OverGroupAdd b) {
-		return true;
-	}
-	using OverState = base::optional_variant<
+	using OverState = std::variant<
+		v::null_t,
 		OverSticker,
 		OverSet,
 		OverButton,
@@ -298,6 +319,8 @@ private:
 	void setColumnCount(int count);
 	void refreshFooterIcons();
 
+	void showStickerSetBox(not_null<DocumentData*> document);
+
 	void cancelSetsSearch();
 	void showSearchResults();
 	void searchResultsDone(const MTPmessages_FoundStickerSets &result);
@@ -358,7 +381,7 @@ private:
 	QString _searchQuery, _searchNextQuery;
 	mtpRequestId _searchRequestId = 0;
 
-	rpl::event_stream<not_null<DocumentData*>> _chosen;
+	rpl::event_stream<TabbedSelector::FileChosen> _chosen;
 	rpl::event_stream<> _scrollUpdated;
 	rpl::event_stream<> _checkForHide;
 
