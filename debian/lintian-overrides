@@ -1,0 +1,3 @@
+# libsrtp comes from libtg_owt.a, custom fork of WebRTC, which uses private
+# headers of the library. And due to this, there is no easy way to unbundle it.
+telegram-desktop: embedded-library usr/bin/telegram-desktop: srtp
