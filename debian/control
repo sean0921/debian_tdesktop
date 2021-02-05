@@ -19,6 +19,8 @@ Build-Depends-Arch:
  libmsgsl-dev (>=3.0.0),
  libopenal-dev,
  libopus-dev (>=1.1),
+# protobuf was lacking in libtgowt-dev, fixing here
+ libprotobuf-dev,
  libqrcodegencpp-dev,
  libqt5waylandclient5-dev [linux-any],
  librange-v3-dev (>=0.10.0),
