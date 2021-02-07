@@ -1,0 +1,17 @@
+Description: Do not force custom scheme registration in user's directory
+ A user still can call to this method via "registertg" cheat code in Settings.
+Discussion: https://github.com/telegramdesktop/tdesktop/pull/8627#issuecomment-720578885
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Last-Update: Sun, 07 Feb 2021 10:55:30 +0300
+
+--- a/Telegram/SourceFiles/platform/linux/specific_linux.cpp
++++ b/Telegram/SourceFiles/platform/linux/specific_linux.cpp
+@@ -1113,7 +1113,7 @@ void InstallLauncher(bool force) {
+ }
+ 
+ void RegisterCustomScheme(bool force) {
+-	if (cExeName().isEmpty()) {
++	if (cExeName().isEmpty() || !IsStaticBinary() && !force) {
+ 		return;
+ 	}
+ 
