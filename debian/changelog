@@ -1,3 +1,30 @@
+telegram-desktop (2.5.8+ds-1) unstable; urgency=medium
+
+  * New upstream release (closes: #981444).
+    - Video calls, voice chats, channel comments, anonymous administrators.
+    - New GTK powered file dialog (closes: #968448).
+  * Import sources from tgcalls repository, commit bea2e21.
+  * Update patches.
+    - Delete taken from the upstream repository:
+      + Check-xcb-screensaver-extension.patch
+      + Skip-check-result-of-sws_scale.patch
+    - Delete no longer needed:
+      + Replace-mapbox-variant.patch
+      + Static-libtgvoip.patch
+    - Delete because the feature was implemented by upstream authors:
+      + Wayland-free-build.patch
+    - Refreshed and resolved conflicts:
+      + No-random-popups.patch
+      + Packed-resources.patch
+    - Added with Debian specific fixes:
+      + Avoid-NDEBUG.patch
+      + Disable-register-custom-scheme.patch
+  * New Lintian override tag: embedded-library.
+  * Add upstream metadata related to the application.
+  * Bump Standards-Version to 4.5.1, no required changes.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sun, 07 Feb 2021 12:42:12 +0300
+
 telegram-desktop (2.2.0+ds-5) unstable; urgency=medium
 
   * Targeted crash fixes:
