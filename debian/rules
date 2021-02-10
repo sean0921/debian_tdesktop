@@ -38,6 +38,8 @@ ifeq ($(DEB_HOST_ARCH_BITS),32)
   export DEB_CXXFLAGS_MAINT_STRIP = -g
   export DEB_CXXFLAGS_MAINT_PREPEND = -g1
  endif
+ # Attempt to reduce RAM consumption even more.
+ export DEB_LDFLAGS_MAINT_APPEND = -Wl,--no-keep-memory
 endif
 
 CPPLIBS_PACKAGES = libexpected-dev libmsgsl-dev librange-v3-dev libtgowt-dev libtgvoip-dev
