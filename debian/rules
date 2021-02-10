@@ -15,6 +15,9 @@ DEB_CPPFLAGS_MAINT_APPEND += -DDESKTOP_APP_USE_PACKAGED_RLOTTIE
 # Reveal any errors with pre-compiled headers.
 DEB_CPPFLAGS_MAINT_APPEND += -Werror=invalid-pch
 
+# Print full stack trace of template instantiations.
+DEB_CXXFLAGS_MAINT_APPEND += -ftemplate-backtrace-limit=0
+
 ifeq ($(filter terse,$(DEB_BUILD_OPTIONS)),)
  # Print entire arguments of moc invocation.
  EXTRA_CMAKE_VARIABLES += CMAKE_AUTOGEN_VERBOSE=ON
