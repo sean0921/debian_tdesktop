@@ -1,3 +1,14 @@
+telegram-desktop (2.5.8+ds-2) unstable; urgency=medium
+
+  * Add MIPS-build-flags.patch with the -mxgot compiler flag.
+  * Use --no-keep-memory linker option on 32bit arches.
+    - This may help with "memory exhausted" build failure.
+  * Do not limit template backtrace, pass -ftemplate-backtrace-limit=0.
+  * Remove temporally added missing libprotobuf-dev build dependency.
+  * Print a warning about the fonts-open-sans package.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sat, 13 Feb 2021 08:45:01 +0300
+
 telegram-desktop (2.5.8+ds-1) unstable; urgency=medium
 
   * New upstream release (closes: #981444).
