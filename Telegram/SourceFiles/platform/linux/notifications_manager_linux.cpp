@@ -272,6 +272,7 @@ public:
 private:
 	GDBusConnection *_dbusConnection = nullptr;
 	base::weak_ptr<Manager> _manager;
+	GCancellable *_cancellable = nullptr;
 
 	QString _title;
 	QString _body;
@@ -316,6 +317,7 @@ NotificationData::NotificationData(
 	NotificationId id,
 	bool hideReplyButton)
 : _manager(manager)
+, _cancellable(g_cancellable_new())
 , _title(title)
 , _imageKey(GetImageKey(CurrentServerInformationValue().specVersion))
 , _id(id) {
@@ -361,10 +363,10 @@ NotificationData::NotificationData(
 
 			_notificationRepliedSignalId = g_dbus_connection_signal_subscribe(
 				_dbusConnection,
-				kService.utf8(),
-				kInterface.utf8(),
+				kService.utf8().constData(),
+				kInterface.utf8().constData(),
 				"NotificationReplied",
-				kObjectPath.utf8(),
+				kObjectPath.utf8().constData(),
 				nullptr,
 				G_DBUS_SIGNAL_FLAGS_NONE,
 				signalEmitted,
@@ -378,10 +380,10 @@ NotificationData::NotificationData(
 
 		_actionInvokedSignalId = g_dbus_connection_signal_subscribe(
 			_dbusConnection,
-			kService.utf8(),
-			kInterface.utf8(),
+			kService.utf8().constData(),
+			kInterface.utf8().constData(),
 			"ActionInvoked",
-			kObjectPath.utf8(),
+			kObjectPath.utf8().constData(),
 			nullptr,
 			G_DBUS_SIGNAL_FLAGS_NONE,
 			signalEmitted,
@@ -418,14 +420,14 @@ NotificationData::NotificationData(
 
 	_hints.emplace(
 		qsl("desktop-entry"),
-		g_variant_new_string(GetLauncherBasename().toUtf8()));
+		g_variant_new_string(GetLauncherBasename().toUtf8().constData()));
 
 	_notificationClosedSignalId = g_dbus_connection_signal_subscribe(
 		_dbusConnection,
-		kService.utf8(),
-		kInterface.utf8(),
+		kService.utf8().constData(),
+		kInterface.utf8().constData(),
 		"NotificationClosed",
-		kObjectPath.utf8(),
+		kObjectPath.utf8().constData(),
 		nullptr,
 		G_DBUS_SIGNAL_FLAGS_NONE,
 		signalEmitted,
@@ -461,6 +463,9 @@ NotificationData::~NotificationData() {
 			g_variant_unref(value);
 		}
 	}
+
+	g_cancellable_cancel(_cancellable);
+	g_object_unref(_cancellable);
 }
 
 void NotificationData::show() {
@@ -492,9 +497,9 @@ void NotificationData::show() {
 
 	g_dbus_connection_call(
 		_dbusConnection,
-		kService.utf8(),
-		kObjectPath.utf8(),
-		kInterface.utf8(),
+		kService.utf8().constData(),
+		kObjectPath.utf8().constData(),
+		kInterface.utf8().constData(),
 		"Notify",
 		g_variant_new(
 			"(susssasa{sv}i)",
@@ -509,7 +514,7 @@ void NotificationData::show() {
 		nullptr,
 		G_DBUS_CALL_FLAGS_NONE,
 		-1,
-		nullptr,
+		_cancellable,
 		notificationShown,
 		this);
 }
@@ -518,19 +523,24 @@ void NotificationData::notificationShown(
 		GObject *source_object,
 		GAsyncResult *res,
 		gpointer user_data) {
+	GError *error = nullptr;
+
+	auto reply = g_dbus_connection_call_finish(
+		reinterpret_cast<GDBusConnection*>(source_object),
+		res,
+		&error);
+
+	if (error && error->code == G_IO_ERROR_CANCELLED) {
+		g_error_free(error);
+		return;
+	}
+
 	const auto notificationData = reinterpret_cast<NotificationData*>(
 		user_data);
 
 	if (!notificationData) {
 		return;
 	}
-
-	GError *error = nullptr;
-
-	auto reply = g_dbus_connection_call_finish(
-		notificationData->_dbusConnection,
-		res,
-		&error);
 
 	if (!error) {
 		g_variant_get(reply, "(u)", &notificationData->_notificationId);
@@ -549,9 +559,9 @@ void NotificationData::notificationShown(
 void NotificationData::close() {
 	g_dbus_connection_call(
 		_dbusConnection,
-		kService.utf8(),
-		kObjectPath.utf8(),
-		kInterface.utf8(),
+		kService.utf8().constData(),
+		kObjectPath.utf8().constData(),
+		kInterface.utf8().constData(),
 		"CloseNotification",
 		g_variant_new("(u)", _notificationId),
 		nullptr,
@@ -580,11 +590,7 @@ void NotificationData::setImage(const QString &imagePath) {
 		g_variant_new_from_data(
 			G_VARIANT_TYPE("ay"),
 			_image.constBits(),
-#if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
-			_image.byteCount(),
-#else // Qt < 5.10.0
 			_image.sizeInBytes(),
-#endif // Qt >= 5.10.0
 			true,
 			nullptr,
 			nullptr)));
@@ -712,13 +718,13 @@ void Create(Window::Notifications::System *system) {
 		using ManagerType = Window::Notifications::ManagerType;
 		if ((Core::App().settings().nativeNotifications() && Supported())
 			|| Enforced()) {
-			if (*system->managerType() != ManagerType::Native) {
+			if (!system->managerType().has_value()
+				|| *system->managerType() != ManagerType::Native) {
 				system->setManager(std::make_unique<Manager>(system));
 			}
-		} else {
-			if (*system->managerType() != ManagerType::Default) {
-				system->setManager(nullptr);
-			}
+		} else if (!system->managerType().has_value()
+			|| *system->managerType() != ManagerType::Default) {
+			system->setManager(nullptr);
 		}
 	};
 

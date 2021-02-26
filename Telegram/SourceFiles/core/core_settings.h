@@ -8,7 +8,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "window/themes/window_themes_embedded.h"
-#include "window/window_controls_layout.h"
 #include "ui/chat/attach/attach_send_files_way.h"
 #include "platform/platform_notifications_manager.h"
 
@@ -27,6 +26,18 @@ enum class Backend;
 } // namespace Webrtc
 
 namespace Core {
+
+struct WindowPosition {
+	WindowPosition() = default;
+
+	int32 moncrc = 0;
+	int maximized = 0;
+	int scale = 0;
+	int x = 0;
+	int y = 0;
+	int w = 0;
+	int h = 0;
+};
 
 class Settings final {
 public:
@@ -491,26 +502,25 @@ public:
 	[[nodiscard]] rpl::producer<bool> systemDarkModeEnabledChanges() const {
 		return _systemDarkModeEnabled.changes();
 	}
-	void setWindowControlsLayout(Window::ControlsLayout value) {
-		_windowControlsLayout = value;
+	[[nodiscard]] const WindowPosition &windowPosition() const {
+		return _windowPosition;
 	}
-	[[nodiscard]] Window::ControlsLayout windowControlsLayout() const {
-		return _windowControlsLayout.current();
-	}
-	[[nodiscard]] rpl::producer<Window::ControlsLayout> windowControlsLayoutValue() const {
-		return _windowControlsLayout.value();
-	}
-	[[nodiscard]] rpl::producer<Window::ControlsLayout> windowControlsLayoutChanges() const {
-		return _windowControlsLayout.changes();
+	void setWindowPosition(const WindowPosition &position) {
+		_windowPosition = position;
 	}
 
 	[[nodiscard]] static bool ThirdColumnByDefault();
 	[[nodiscard]] float64 DefaultDialogsWidthRatio();
 	[[nodiscard]] static qint32 SerializePlaybackSpeed(float64 speed) {
-		return int(std::round(std::clamp(speed * 4., 2., 8.))) - 2;
+		return int(std::round(std::clamp(speed, 0.5, 2.0) * 100));
 	}
 	[[nodiscard]] static float64 DeserializePlaybackSpeed(qint32 speed) {
-		return (std::clamp(speed, 0, 6) + 2) / 4.;
+		if (speed < 10) {
+			// The old values in settings.
+			return (std::clamp(speed, 0, 6) + 2) / 4.;
+		} else {
+			return std::clamp(speed, 50, 200) / 100.;
+		}
 	}
 
 	void resetOnLastLogout();
@@ -579,7 +589,7 @@ private:
 	rpl::variable<bool> _nativeWindowFrame = false;
 	rpl::variable<std::optional<bool>> _systemDarkMode = std::nullopt;
 	rpl::variable<bool> _systemDarkModeEnabled = false;
-	rpl::variable<Window::ControlsLayout> _windowControlsLayout;
+	WindowPosition _windowPosition; // per-window
 
 	bool _tabbedReplacedWithInfo = false; // per-window
 	rpl::event_stream<bool> _tabbedReplacedWithInfoValue; // per-window

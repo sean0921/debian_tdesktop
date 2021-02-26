@@ -6,13 +6,19 @@
 //
 #include "base/platform/linux/base_info_linux.h"
 
-#include "base/platform/linux/base_xcb_utilities_linux.h"
+#include "base/platform/linux/base_linux_gtk_integration.h"
+
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+#include "base/platform/linux/base_linux_xcb_utilities.h"
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 #include <QtCore/QJsonObject>
 #include <QtCore/QLocale>
 #include <QtCore/QVersionNumber>
 #include <QtCore/QDate>
 #include <QtGui/QGuiApplication>
+
+#include <glib.h>
 
 // this file is used on both Linux & BSD
 #ifdef Q_OS_LINUX
@@ -23,12 +29,13 @@ namespace Platform {
 namespace {
 
 QString GetDesktopEnvironment() {
-	const auto value = qgetenv("XDG_CURRENT_DESKTOP");
+	const auto value = qEnvironmentVariable("XDG_CURRENT_DESKTOP");
 	return value.contains(':')
 		? value.left(value.indexOf(':'))
 		: value;
 }
 
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
 QString GetWindowManager() {
 	base::Platform::XCB::CustomConnection connection;
 	if (xcb_connection_has_error(connection)) {
@@ -86,6 +93,7 @@ QString GetWindowManager() {
 	free(reply);
 	return name;
 }
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 } // namespace
 
@@ -112,14 +120,16 @@ QString SystemVersionPretty() {
 		if (const auto desktopEnvironment = GetDesktopEnvironment();
 			!desktopEnvironment.isEmpty()) {
 			resultList << desktopEnvironment;
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
 		} else if (const auto windowManager = GetWindowManager();
 			!windowManager.isEmpty()) {
 			resultList << windowManager;
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 		}
 
 		if (IsWayland()) {
 			resultList << "Wayland";
-		} else {
+		} else if (IsX11()) {
 			resultList << "X11";
 		}
 
@@ -205,6 +215,12 @@ QString GetLibcVersion() {
 	return QString();
 }
 
+bool IsX11() {
+	return QGuiApplication::instance()
+		? QGuiApplication::platformName() == "xcb"
+		: qEnvironmentVariableIsSet("DISPLAY");
+}
+
 bool IsWayland() {
 	return QGuiApplication::instance()
 		? QGuiApplication::platformName().startsWith(
@@ -214,6 +230,13 @@ bool IsWayland() {
 }
 
 void Start(QJsonObject options) {
+	using base::Platform::GtkIntegration;
+	if (const auto integration = GtkIntegration::Instance()) {
+		integration->prepareEnvironment();
+		integration->load();
+	} else {
+		g_warning("GTK integration is disabled, some feature unavailable. ");
+	}
 }
 
 void Finish() {

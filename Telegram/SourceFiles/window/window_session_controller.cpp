@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_session_controller.h"
 
+#include "boxes/add_contact_box.h"
 #include "boxes/peers/edit_peer_info_box.h"
 #include "boxes/peer_list_controllers.h"
 #include "window/window_controller.h"
@@ -939,7 +940,7 @@ void SessionController::startOrJoinGroupCall(
 	const auto channel = peer->asChannel();
 	if (channel && channel->amAnonymous()) {
 		Ui::ShowMultilineToast({
-			.text = tr::lng_group_call_no_anonymous(tr::now),
+			.text = { tr::lng_group_call_no_anonymous(tr::now) },
 		});
 		return;
 	}
@@ -1072,6 +1073,17 @@ void SessionController::clearPassportForm() {
 	_passportForm = nullptr;
 }
 
+void SessionController::showChooseReportMessages(
+		not_null<PeerData*> peer,
+		Ui::ReportReason reason,
+		Fn<void(MessageIdsList)> done) {
+	content()->showChooseReportMessages(peer, reason, std::move(done));
+}
+
+void SessionController::clearChooseReportMessages() {
+	content()->clearChooseReportMessages();
+}
+
 void SessionController::updateColumnLayout() {
 	content()->updateColumnLayout();
 }
@@ -1138,6 +1150,24 @@ void SessionController::setActiveChatsFilter(FilterId id) {
 	if (Adaptive::OneColumn()) {
 		Ui::showChatsList(&session());
 	}
+}
+
+void SessionController::showAddContact() {
+	_window->show(
+		Box<AddContactBox>(&session()),
+		Ui::LayerOption::KeepOther);
+}
+
+void SessionController::showNewGroup() {
+	_window->show(
+		Box<GroupInfoBox>(this, GroupInfoBox::Type::Group),
+		Ui::LayerOption::KeepOther);
+}
+
+void SessionController::showNewChannel() {
+	_window->show(
+		Box<GroupInfoBox>(this, GroupInfoBox::Type::Channel),
+		Ui::LayerOption::KeepOther);
 }
 
 SessionController::~SessionController() = default;
