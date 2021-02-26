@@ -6,12 +6,12 @@ Last-Update: Sun, 07 Feb 2021 10:55:30 +0300
 
 --- a/Telegram/SourceFiles/platform/linux/specific_linux.cpp
 +++ b/Telegram/SourceFiles/platform/linux/specific_linux.cpp
-@@ -1113,7 +1113,7 @@ void InstallLauncher(bool force) {
+@@ -787,7 +787,7 @@ void InstallLauncher(bool force) {
  }
  
  void RegisterCustomScheme(bool force) {
 -	if (cExeName().isEmpty()) {
-+	if (cExeName().isEmpty() || !IsStaticBinary() && !force) {
++	if (cExeName().isEmpty() || !AreQtPluginsBundled() && !force) {
  		return;
  	}
  
