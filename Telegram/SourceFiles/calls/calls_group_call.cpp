@@ -74,6 +74,28 @@ constexpr auto kPlayConnectingEach = crl::time(1056) + 2 * crl::time(1000);
 
 } // namespace
 
+[[nodiscard]] bool IsGroupCallAdmin(
+		not_null<PeerData*> peer,
+		not_null<UserData*> user) {
+	if (const auto chat = peer->asChat()) {
+		return chat->admins.contains(user)
+			|| (chat->creator == user->bareId());
+	} else if (const auto group = peer->asMegagroup()) {
+		if (const auto mgInfo = group->mgInfo.get()) {
+			if (mgInfo->creator == user) {
+				return true;
+			}
+			const auto i = mgInfo->lastAdmins.find(user);
+			if (i == mgInfo->lastAdmins.end()) {
+				return false;
+			}
+			const auto &rights = i->second.rights;
+			return rights.c_chatAdminRights().is_manage_call();
+		}
+	}
+	return false;
+}
+
 GroupCall::GroupCall(
 	not_null<Delegate*> delegate,
 	not_null<PeerData*> peer,
@@ -230,7 +252,7 @@ void GroupCall::start() {
 		hangup();
 		if (error.type() == u"GROUPCALL_ANONYMOUS_FORBIDDEN"_q) {
 			Ui::ShowMultilineToast({
-				.text = tr::lng_group_call_no_anonymous(tr::now),
+				.text = { tr::lng_group_call_no_anonymous(tr::now) },
 			});
 		}
 	}).send();
@@ -346,13 +368,13 @@ void GroupCall::rejoin() {
 
 				hangup();
 				Ui::ShowMultilineToast({
-					.text = (type == u"GROUPCALL_ANONYMOUS_FORBIDDEN"_q
+					.text = { type == u"GROUPCALL_ANONYMOUS_FORBIDDEN"_q
 						? tr::lng_group_call_no_anonymous(tr::now)
 						: type == u"GROUPCALL_PARTICIPANTS_TOO_MUCH"_q
 						? tr::lng_group_call_too_many(tr::now)
 						: type == u"GROUPCALL_FORBIDDEN"_q
 						? tr::lng_group_not_accessible(tr::now)
-						: Lang::Hard::ServerError()),
+						: Lang::Hard::ServerError() },
 				});
 			}).send();
 		});
@@ -377,10 +399,15 @@ void GroupCall::applySelfInCallLocally() {
 	const auto lastActive = (i != end(participants))
 		? i->lastActive
 		: TimeId(0);
+	const auto volume = (i != end(participants))
+		? i->volume
+		: Group::kDefaultVolume;
 	const auto canSelfUnmute = (muted() != MuteState::ForceMuted);
 	const auto flags = (canSelfUnmute ? Flag::f_can_self_unmute : Flag(0))
 		| (lastActive ? Flag::f_active_date : Flag(0))
 		| (_mySsrc ? Flag(0) : Flag::f_left)
+		| Flag::f_volume // Without flag the volume is reset to 100%.
+		| Flag::f_volume_by_admin // Self volume can only be set by admin.
 		| ((muted() != MuteState::Active) ? Flag::f_muted : Flag(0));
 	call->applyUpdateChecked(
 		MTP_updateGroupCallParticipants(
@@ -393,7 +420,7 @@ void GroupCall::applySelfInCallLocally() {
 					MTP_int(date),
 					MTP_int(lastActive),
 					MTP_int(_mySsrc),
-					MTP_int(Group::kDefaultVolume))), // volume
+					MTP_int(volume))),
 			MTP_int(0)).c_updateGroupCallParticipants());
 }
 
@@ -405,17 +432,22 @@ void GroupCall::applyParticipantLocally(
 	if (!participant || !participant->ssrc) {
 		return;
 	}
-	const auto canSelfUnmute = participant->canSelfUnmute;
+	const auto canManageCall = _peer->canManageGroupCall();
+	const auto isMuted = participant->muted || (mute && canManageCall);
+	const auto canSelfUnmute = !canManageCall
+		? participant->canSelfUnmute
+		: (!mute || IsGroupCallAdmin(_peer, user));
+	const auto isMutedByYou = mute && !canManageCall;
 	const auto mutedCount = 0/*participant->mutedCount*/;
 	using Flag = MTPDgroupCallParticipant::Flag;
 	const auto flags = (canSelfUnmute ? Flag::f_can_self_unmute : Flag(0))
 		| Flag::f_volume // Without flag the volume is reset to 100%.
+		| ((participant->applyVolumeFromMin && !volume)
+			? Flag::f_volume_by_admin
+			: Flag(0))
 		| (participant->lastActive ? Flag::f_active_date : Flag(0))
-		| (!mute
-			? Flag(0)
-			: _peer->canManageGroupCall()
-			? Flag::f_muted
-			: Flag::f_muted_by_you);
+		| (isMuted ? Flag::f_muted : Flag(0))
+		| (isMutedByYou ? Flag::f_muted_by_you : Flag(0));
 	_peer->groupCall()->applyUpdateChecked(
 		MTP_updateGroupCallParticipants(
 			inputCall(),
@@ -595,6 +627,10 @@ void GroupCall::handleUpdate(const MTPDupdateGroupCallParticipants &data) {
 
 	const auto handleOtherParticipants = [=](
 			const MTPDgroupCallParticipant &data) {
+		if (data.is_min()) {
+			// No real information about mutedByMe or my custom volume.
+			return;
+		}
 		const auto user = _peer->owner().user(data.vuser_id().v);
 		const auto participant = LookupParticipant(_peer, _id, user);
 		if (!participant) {

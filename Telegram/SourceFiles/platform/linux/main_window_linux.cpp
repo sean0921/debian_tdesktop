@@ -24,18 +24,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "base/platform/base_platform_info.h"
-#include "base/platform/linux/base_xcb_utilities_linux.h"
 #include "base/call_delayed.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/input_fields.h"
 #include "facades.h"
 #include "app.h"
 
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+#include "base/platform/linux/base_linux_xcb_utilities.h"
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
+
 #include <QtCore/QSize>
+#include <QtCore/QTemporaryFile>
 #include <QtGui/QWindow>
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-#include <QtCore/QTemporaryFile>
 #include <QtDBus/QDBusInterface>
 #include <QtDBus/QDBusConnection>
 #include <QtDBus/QDBusConnectionInterface>
@@ -82,6 +85,7 @@ base::flat_map<int, QImage> TrayIconImageBack;
 QIcon TrayIcon;
 QString TrayIconThemeName, TrayIconName;
 
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
 bool XCBSkipTaskbar(QWindow *window, bool set) {
 	const auto connection = base::Platform::XCB::GetConnectionFromQt();
 	if (!connection) {
@@ -131,11 +135,14 @@ bool XCBSkipTaskbar(QWindow *window, bool set) {
 
 	return true;
 }
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 bool SkipTaskbar(QWindow *window, bool set) {
-	if (!IsWayland()) {
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+	if (IsX11()) {
 		return XCBSkipTaskbar(window, set);
 	}
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 	return false;
 }
@@ -537,9 +544,9 @@ void MainWindow::initHook() {
 		G_BUS_TYPE_SESSION,
 		G_DBUS_PROXY_FLAGS_NONE,
 		nullptr,
-		kSNIWatcherService.utf8(),
-		kSNIWatcherObjectPath.utf8(),
-		kSNIWatcherInterface.utf8(),
+		kSNIWatcherService.utf8().constData(),
+		kSNIWatcherObjectPath.utf8().constData(),
+		kSNIWatcherInterface.utf8().constData(),
 		nullptr,
 		nullptr);
 
@@ -601,12 +608,6 @@ void MainWindow::initHook() {
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 	LOG(("System tray available: %1").arg(Logs::b(trayAvailable())));
-
-	updateWaylandDecorationColors();
-	style::PaletteChanged(
-	) | rpl::start_with_next([=] {
-		updateWaylandDecorationColors();
-	}, lifetime());
 }
 
 bool MainWindow::hasTrayIcon() const {
@@ -627,11 +628,6 @@ void MainWindow::psShowTrayMenu() {
 }
 
 void MainWindow::psTrayMenuUpdated() {
-#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-	if (_sniTrayIcon && trayIconMenu) {
-		_sniTrayIcon->setContextMenu(trayIconMenu);
-	}
-#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 }
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
@@ -691,7 +687,6 @@ void MainWindow::attachToSNITrayIcon() {
 				handleTrayIconActication(QSystemTrayIcon::MiddleClick);
 			});
 	});
-	updateTrayMenu();
 }
 
 void MainWindow::sniSignalEmitted(
@@ -803,6 +798,7 @@ void MainWindow::psSetupTrayIcon() {
 				this);
 
 			_sniTrayIcon->setTitle(AppName.utf16());
+			_sniTrayIcon->setContextMenu(trayIconMenu);
 			setSNITrayIcon(counter, muted);
 
 			attachToSNITrayIcon();
@@ -896,26 +892,6 @@ void MainWindow::updateIconCounters() {
 	}
 }
 
-void MainWindow::updateWaylandDecorationColors() {
-	windowHandle()->setProperty(
-		"__material_decoration_backgroundColor",
-		st::titleBgActive->c);
-
-	windowHandle()->setProperty(
-		"__material_decoration_foregroundColor",
-		st::titleFgActive->c);
-
-	windowHandle()->setProperty(
-		"__material_decoration_backgroundInactiveColor",
-		st::titleBg->c);
-	windowHandle()->setProperty(
-		"__material_decoration_foregroundInactiveColor",
-		st::titleFg->c);
-
-	// Trigger a QtWayland client-side decoration update
-	windowHandle()->resize(windowHandle()->size());
-}
-
 void MainWindow::initTrayMenuHook() {
 	_trayIconMenuXEmbed.emplace(nullptr, trayIconMenu);
 	_trayIconMenuXEmbed->deleteOnHide(false);
@@ -932,14 +908,23 @@ void MainWindow::updateGlobalMenuHook() {
 #else // DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 void MainWindow::createGlobalMenu() {
+	const auto ensureWindowShown = [=] {
+		if (isHidden()) {
+			showFromTray();
+		}
+	};
+
 	psMainMenu = new QMenu(this);
 
 	auto file = psMainMenu->addMenu(tr::lng_mac_menu_file(tr::now));
 
-	psLogout = file->addAction(tr::lng_mac_menu_logout(tr::now));
-	connect(psLogout, &QAction::triggered, psLogout, [] {
-		if (App::wnd()) App::wnd()->showLogoutConfirmation();
-	});
+	psLogout = file->addAction(
+		tr::lng_mac_menu_logout(tr::now),
+		this,
+		[=] {
+			ensureWindowShown();
+			controller().showLogoutConfirmation();
+		});
 
 	auto quit = file->addAction(
 		tr::lng_mac_menu_quit_telegram(tr::now, lt_telegram, qsl("Telegram")),
@@ -1037,8 +1022,11 @@ void MainWindow::createGlobalMenu() {
 
 	auto prefs = edit->addAction(
 		tr::lng_mac_menu_preferences(tr::now),
-		App::wnd(),
-		[=] { App::wnd()->showSettings(); },
+		this,
+		[=] {
+			ensureWindowShown();
+			controller().showSettings();
+		},
 		QKeySequence(Qt::ControlModifier | Qt::Key_Comma));
 
 	prefs->setMenuRole(QAction::PreferencesRole);
@@ -1061,20 +1049,32 @@ void MainWindow::createGlobalMenu() {
 
 	psAddContact = tools->addAction(
 		tr::lng_mac_menu_add_contact(tr::now),
-		App::wnd(),
-		[=] { App::wnd()->showAddContact(); });
+		this,
+		[=] {
+			Expects(sessionController() != nullptr);
+			ensureWindowShown();
+			sessionController()->showAddContact();
+		});
 
 	tools->addSeparator();
 
 	psNewGroup = tools->addAction(
 		tr::lng_mac_menu_new_group(tr::now),
-		App::wnd(),
-		[=] { App::wnd()->showNewGroup(); });
+		this,
+		[=] {
+			Expects(sessionController() != nullptr);
+			ensureWindowShown();
+			sessionController()->showNewGroup();
+		});
 
 	psNewChannel = tools->addAction(
 		tr::lng_mac_menu_new_channel(tr::now),
-		App::wnd(),
-		[=] { App::wnd()->showNewChannel(); });
+		this,
+		[=] {
+			Expects(sessionController() != nullptr);
+			ensureWindowShown();
+			sessionController()->showNewChannel();
+		});
 
 	auto help = psMainMenu->addMenu(tr::lng_linux_menu_help(tr::now));
 
@@ -1083,12 +1083,9 @@ void MainWindow::createGlobalMenu() {
 			tr::now,
 			lt_telegram,
 			qsl("Telegram")),
-		[] {
-			if (App::wnd() && App::wnd()->isHidden()) {
-				App::wnd()->showFromTray();
-			}
-
-			Ui::show(Box<AboutBox>());
+		[=] {
+			ensureWindowShown();
+			controller().show(Box<AboutBox>());
 		});
 
 	about->setMenuRole(QAction::AboutQtRole);

@@ -53,9 +53,6 @@ public:
 	void setupMain();
 
 	void showSettings();
-	void showAddContact();
-	void showNewGroup();
-	void showNewChannel();
 
 	void setInnerFocus();
 
@@ -82,7 +79,7 @@ public:
 	}
 
 	void showMainMenu();
-	void updateTrayMenu(bool force = false) override;
+	void updateTrayMenu() override;
 	void fixOrder() override;
 
 	void showSpecialLayer(
@@ -105,8 +102,6 @@ public:
 		Data::FileOrigin origin,
 		not_null<PhotoData*> photo);
 	void hideMediaPreview();
-
-	void showLogoutConfirmation();
 
 	void updateControlsGeometry() override;
 
