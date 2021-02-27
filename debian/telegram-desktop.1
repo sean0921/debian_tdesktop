@@ -1,7 +1,7 @@
 .\"                                      Hey, EMACS: -*- nroff -*-
-.\" (C) Copyright 2017 Nicholas Guriev <guriev-ns@ya.ru>
+.\" (C) Copyright 2017-2021 Nicholas Guriev <guriev-ns@ya.ru>
 
-.TH TELEGRAM-DESKTOP 1 "2020-08-29"
+.TH TELEGRAM-DESKTOP 1 "2021-02-27"
 
 .SH NAME
 \fBtelegram\-desktop\fR \- fast and secure messaging application
@@ -55,25 +55,26 @@ There are also some other hidden options not intended for direct use.
 
 .SH ENVIRONMENT
 .TP
-.B TDESKTOP_DISABLE_TRAY_COUNTER
-If set to anything Telegram Desktop will not render message or chat counter over
-its icon in the system tray.
-.TP
-.B TDESKTOP_FORCE_PANEL_ICON
-If set to anything Telegram Desktop will use for the tray icon
-\fBtelegram-panel\fR, \fBtelegram-attention-panel\fR, or
-\fBtelegram-mute-panel\fR icons from the system theme.
-This does not work along with the tray counter mentioned above.
-.TP
 .B TDESKTOP_USE_PORTAL
 Set this to something to make Telegram Desktop always use XDG Desktop portals to
-open file dialogs. By default the portal is used if available on KDE.
+open file dialogs. By default, the portal is used if available on KDE.
+.TP
+.B DESKTOP_APP_I_KNOW_ABOUT_GTK_INCOMPATIBILITY
+Allows the app to load any Qt styles and platform themes. Telegram will not
+clear global settings related to Qt. It is known this mode may cause a crash.
+.TP
+.B DESKTOP_APP_DISABLE_GTK_INTEGRATION
+Do not initialize GTK by Telegram itself, leave that to a Qt platform plugin.
+You may try to set this variable if the crash mentioned above happens.
 .TP
 .B XDG_DATA_HOME
 Used to automatically determine working directory unless set by hand.
 .TP
 .B HOME
 User home directory where the app stores downloaded files and configuration.
+
+There is plenty of other environment variables that affect Telegram Desktop
+behaviour and appearance.
 
 .SH SEE ALSO
 .UR https://github.com/telegramdesktop/tdesktop/wiki
