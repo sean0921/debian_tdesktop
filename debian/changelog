@@ -1,3 +1,11 @@
+telegram-desktop (2.6.1+ds-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Update manual page.
+  * Import sources from tgcalls repository, commit 71addf5.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sat, 27 Feb 2021 21:48:45 +0300
+
 telegram-desktop (2.5.8+ds-2) unstable; urgency=medium
 
   * Add MIPS-build-flags.patch with the -mxgot compiler flag.
