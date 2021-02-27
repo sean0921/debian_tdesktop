@@ -1,9 +1,10 @@
 Description: Internal setting for hide popups overlapping other controls
  Create an empty "nopopupdropdown" file in the "tdata" directory to activate
  the changes: `touch ~/.local/share/TelegramDesktop/tdata/nopopupdropdown`.
+ There is a cheat code of the same name on the Settings page.
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Forwarded: https://github.com/telegramdesktop/tdesktop/pull/8009
-Last-Update: Sat, 19 Sep 2020 08:13:17 +0300
+Last-Update: Sat, 27 Feb 2021 09:51:39 +0300
 
 --- a/Telegram/SourceFiles/chat_helpers/tabbed_panel.cpp
 +++ b/Telegram/SourceFiles/chat_helpers/tabbed_panel.cpp
@@ -97,6 +98,26 @@ Last-Update: Sat, 19 Sep 2020 08:13:17 +0300
  
  inline void cChangeTimeFormat(const QString &newFormat) {
  	if (!newFormat.isEmpty()) cSetTimeFormat(newFormat);
+--- a/Telegram/SourceFiles/settings/settings_codes.cpp
++++ b/Telegram/SourceFiles/settings/settings_codes.cpp
+@@ -140,6 +140,17 @@ auto GenerateCodes() {
+ 		Platform::RegisterCustomScheme(true);
+ 		Ui::Toast::Show("Forced custom scheme register.");
+ 	});
++	codes.emplace(qsl("nopopupdropdown"), [](SessionController *window) {
++		if (cPopupDropdown()) {
++			cSetPopupDropdown(false);
++			QFile(cWorkingDir() + u"tdata/nopopupdropdown"_q).open(QIODevice::WriteOnly);
++			Ui::Toast::Show("PopupDropdown = FALSE");
++		} else {
++			cSetPopupDropdown(true);
++			QFile(cWorkingDir() + u"tdata/nopopupdropdown"_q).remove();
++			Ui::Toast::Show("PopupDropdown = TRUE");
++		}
++	});
+ 
+ #if defined Q_OS_WIN || defined Q_OS_MAC
+ 	codes.emplace(qsl("freetype"), [](SessionController *window) {
 --- a/Telegram/SourceFiles/ui/filter_icon_panel.cpp
 +++ b/Telegram/SourceFiles/ui/filter_icon_panel.cpp
 @@ -282,7 +282,9 @@ void FilterIconPanel::leaveEventHook(QEv
