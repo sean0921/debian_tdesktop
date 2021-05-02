@@ -6,21 +6,22 @@ Last-Update: Thu, 01 Oct 2020 08:59:43 +0300
 
 --- a/Telegram/CMakeLists.txt
 +++ b/Telegram/CMakeLists.txt
-@@ -35,7 +35,20 @@ include(cmake/td_scheme.cmake)
- include(cmake/td_ui.cmake)
- include(cmake/generate_appdata_changelog.cmake)
+@@ -45,7 +45,21 @@ if (WIN32)
+     generate_midl(Telegram ${src_loc}/platform/win/windows_quiethours.idl)
+ endif()
  
 -set_target_properties(Telegram PROPERTIES AUTOMOC ON AUTORCC ON)
 +set_target_properties(Telegram PROPERTIES AUTOMOC ON)
 +if (TDESKTOP_RESOURCES STREQUAL "Bundled")
 +    set_target_properties(Telegram PROPERTIES AUTORCC ON)
 +elseif (TDESKTOP_RESOURCES STREQUAL "Packed")
++    set(rcc_flags --binary "$<TARGET_PROPERTY:Telegram,AUTORCC_OPTIONS>")
 +    set(qrc_files "$<FILTER:$<TARGET_PROPERTY:Telegram,SOURCES>,INCLUDE,\\.qrc$>")
 +    target_compile_definitions(Telegram PRIVATE TDESKTOP_USE_PACKED_RESOURCES)
 +    target_sources(Telegram PRIVATE "${CMAKE_BINARY_DIR}/tresources.rcc")
 +    add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/tresources.rcc"
-+        DEPENDS "${qrc_files}"  # FIXME: incomplete dependencies list, missing qrc content
-+        COMMAND rcc --binary -o "${CMAKE_BINARY_DIR}/tresources.rcc" "${qrc_files}"
++        DEPENDS ${qrc_files}  # FIXME: incomplete dependencies list, missing qrc content
++        COMMAND Qt5::rcc ${rcc_flags} -o "${CMAKE_BINARY_DIR}/tresources.rcc" ${qrc_files}
 +        COMMAND_EXPAND_LISTS VERBATIM
 +    )
 +    set_target_properties(Telegram PROPERTIES RESOURCE "${CMAKE_BINARY_DIR}/tresources.rcc")
@@ -28,7 +29,7 @@ Last-Update: Thu, 01 Oct 2020 08:59:43 +0300
  
  target_link_libraries(Telegram
  PRIVATE
-@@ -1371,7 +1384,11 @@ if (LINUX AND DESKTOP_APP_USE_PACKAGED)
+@@ -1491,7 +1505,11 @@ if (LINUX AND DESKTOP_APP_USE_PACKAGED)
      include(GNUInstallDirs)
      configure_file("../lib/xdg/telegramdesktop.appdata.xml.in" "${CMAKE_CURRENT_BINARY_DIR}/telegramdesktop.appdata.xml" @ONLY)
      generate_appdata_changelog(Telegram "${CMAKE_SOURCE_DIR}/changelog.txt" "${CMAKE_CURRENT_BINARY_DIR}/telegramdesktop.appdata.xml")
@@ -43,9 +44,9 @@ Last-Update: Thu, 01 Oct 2020 08:59:43 +0300
      install(FILES "Resources/art/icon48.png" DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/48x48/apps" RENAME "telegram.png")
 --- a/Telegram/Resources/qrc/telegram/telegram.qrc
 +++ b/Telegram/Resources/qrc/telegram/telegram.qrc
-@@ -60,9 +60,6 @@
-     <file alias="night.tdesktop-theme">../../night.tdesktop-theme</file>
-     <file alias="night-green.tdesktop-theme">../../night-green.tdesktop-theme</file>
+@@ -62,9 +62,6 @@
+     <file alias="icons/calls/hands.lottie">../../icons/calls/hands.lottie</file>
+     <file alias="icons/calls/voice.lottie">../../icons/calls/voice.lottie</file>
    </qresource>
 -  <qresource prefix="/qt-project.org">
 -    <file>../qmime/freedesktop.org.xml</file>
@@ -98,16 +99,16 @@ Last-Update: Thu, 01 Oct 2020 08:59:43 +0300
 +} // namespace Resources
 --- a/Telegram/SourceFiles/core/launcher.cpp
 +++ b/Telegram/SourceFiles/core/launcher.cpp
-@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesk
- #include "ui/ui_utility.h"
+@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesk
+ #include "ui/main_queue_processor.h"
  #include "core/crash_reports.h"
  #include "core/update_checker.h"
 +#include "core/file_utilities.h"
  #include "core/sandbox.h"
  #include "base/concurrent_timer.h"
  
-@@ -296,6 +297,7 @@ void Launcher::init() {
- 	});
+@@ -286,6 +287,7 @@ void Launcher::init() {
+ 	initQtMessageLogging();
  
  	QApplication::setApplicationName(qsl("TelegramDesktop"));
 +	Resources::LoadAllData();  // should be called after setting an application name
@@ -116,7 +117,7 @@ Last-Update: Thu, 01 Oct 2020 08:59:43 +0300
  	QApplication::setAttribute(Qt::AA_DisableHighDpiScaling, true);
 --- a/Telegram/cmake/telegram_options.cmake
 +++ b/Telegram/cmake/telegram_options.cmake
-@@ -10,6 +10,9 @@ set(TDESKTOP_API_ID "0" CACHE STRING "Pr
+@@ -9,6 +9,9 @@ set(TDESKTOP_API_ID "0" CACHE STRING "Pr
  set(TDESKTOP_API_HASH "" CACHE STRING "Provide 'api_hash' for the Telegram API access.")
  set(TDESKTOP_LAUNCHER_BASENAME "" CACHE STRING "Desktop file base name (Linux only).")
  

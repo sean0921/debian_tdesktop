@@ -8,7 +8,7 @@ Last-Update: Sat, 27 Feb 2021 09:51:39 +0300
 
 --- a/Telegram/SourceFiles/chat_helpers/tabbed_panel.cpp
 +++ b/Telegram/SourceFiles/chat_helpers/tabbed_panel.cpp
-@@ -232,7 +232,9 @@ void TabbedPanel::leaveEventHook(QEvent
+@@ -231,7 +231,9 @@ void TabbedPanel::leaveEventHook(QEvent
  }
  
  void TabbedPanel::otherEnter() {
@@ -21,7 +21,7 @@ Last-Update: Sat, 27 Feb 2021 09:51:39 +0300
  void TabbedPanel::otherLeave() {
 --- a/Telegram/SourceFiles/core/application.cpp
 +++ b/Telegram/SourceFiles/core/application.cpp
-@@ -199,6 +199,7 @@ void Application::run() {
+@@ -213,6 +213,7 @@ void Application::run() {
  		App::quit();
  		return;
  	}
@@ -31,7 +31,7 @@ Last-Update: Sat, 27 Feb 2021 09:51:39 +0300
  	QCoreApplication::instance()->installTranslator(_translator.get());
 --- a/Telegram/SourceFiles/history/history_widget.cpp
 +++ b/Telegram/SourceFiles/history/history_widget.cpp
-@@ -857,7 +857,11 @@ void HistoryWidget::initTabbedSelector()
+@@ -842,7 +842,11 @@ void HistoryWidget::initTabbedSelector()
  	refreshTabbedPanel();
  
  	_tabbedSelectorToggle->addClickHandler([=] {
@@ -46,7 +46,7 @@ Last-Update: Sat, 27 Feb 2021 09:51:39 +0300
  	const auto selector = controller()->tabbedSelector();
 --- a/Telegram/SourceFiles/history/view/controls/history_view_compose_controls.cpp
 +++ b/Telegram/SourceFiles/history/view/controls/history_view_compose_controls.cpp
-@@ -1488,7 +1488,11 @@ void ComposeControls::initTabbedSelector
+@@ -1490,7 +1490,11 @@ void ComposeControls::initTabbedSelector
  	}
  
  	_tabbedSelectorToggle->addClickHandler([=] {
@@ -61,26 +61,26 @@ Last-Update: Sat, 27 Feb 2021 09:51:39 +0300
  	const auto selector = _window->tabbedSelector();
 --- a/Telegram/SourceFiles/media/view/media_view_overlay_widget.cpp
 +++ b/Telegram/SourceFiles/media/view/media_view_overlay_widget.cpp
-@@ -1314,7 +1314,7 @@ void OverlayWidget::dropdownHidden() {
+@@ -1401,7 +1401,7 @@ void OverlayWidget::dropdownHidden() {
  	_ignoringDropdown = true;
- 	_lastMouseMovePos = mapFromGlobal(QCursor::pos());
+ 	_lastMouseMovePos = _widget->mapFromGlobal(QCursor::pos());
  	updateOver(_lastMouseMovePos);
 -	_ignoringDropdown = false;
 +	_ignoringDropdown = !cPopupDropdown();
  	if (!_controlsHideTimer.isActive()) {
- 		onHideControls(true);
+ 		hideControls(true);
  	}
-@@ -2142,6 +2142,7 @@ void OverlayWidget::clearControlsState()
+@@ -2201,6 +2201,7 @@ void OverlayWidget::clearControlsState()
  	if (!_animationOpacities.empty()) {
  		_animationOpacities.clear();
  	}
 +	_ignoringDropdown = !cPopupDropdown();
  }
  
- void OverlayWidget::showPhoto(
+ not_null<QWindow*> OverlayWidget::window() const {
 --- a/Telegram/SourceFiles/settings.cpp
 +++ b/Telegram/SourceFiles/settings.cpp
-@@ -75,6 +75,7 @@ float64 gRetinaFactor = 1.;
+@@ -63,6 +63,7 @@ float64 gRetinaFactor = 1.;
  int32 gIntRetinaFactor = 1;
  
  int gOtherOnline = 0;
@@ -90,7 +90,7 @@ Last-Update: Sat, 27 Feb 2021 09:51:39 +0300
  int32 gAutoDownloadAudio = 0;
 --- a/Telegram/SourceFiles/settings.h
 +++ b/Telegram/SourceFiles/settings.h
-@@ -119,6 +119,7 @@ DeclareSetting(QStringList, SendPaths);
+@@ -108,6 +108,7 @@ DeclareSetting(QStringList, SendPaths);
  DeclareSetting(QString, StartUrl);
  
  DeclareSetting(int, OtherOnline);
@@ -101,7 +101,7 @@ Last-Update: Sat, 27 Feb 2021 09:51:39 +0300
 --- a/Telegram/SourceFiles/settings/settings_codes.cpp
 +++ b/Telegram/SourceFiles/settings/settings_codes.cpp
 @@ -140,6 +140,17 @@ auto GenerateCodes() {
- 		Platform::RegisterCustomScheme(true);
+ 		Core::Application::RegisterUrlScheme();
  		Ui::Toast::Show("Forced custom scheme register.");
  	});
 +	codes.emplace(qsl("nopopupdropdown"), [](SessionController *window) {

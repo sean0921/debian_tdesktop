@@ -4,14 +4,15 @@ Discussion: https://github.com/telegramdesktop/tdesktop/pull/8627#issuecomment-7
 Author: Nicholas Guriev <guriev-ns@ya.ru>
 Last-Update: Sun, 07 Feb 2021 10:55:30 +0300
 
---- a/Telegram/SourceFiles/platform/linux/specific_linux.cpp
-+++ b/Telegram/SourceFiles/platform/linux/specific_linux.cpp
-@@ -787,7 +787,7 @@ void InstallLauncher(bool force) {
- }
+--- a/Telegram/SourceFiles/core/application.cpp
++++ b/Telegram/SourceFiles/core/application.cpp
+@@ -198,7 +198,9 @@ void Application::run() {
+ 	ValidateScale();
  
- void RegisterCustomScheme(bool force) {
--	if (cExeName().isEmpty()) {
-+	if (cExeName().isEmpty() || !AreQtPluginsBundled() && !force) {
- 		return;
+ 	if (Local::oldSettingsVersion() < AppVersion) {
++#ifndef DESKTOP_APP_USE_PACKAGED
+ 		RegisterUrlScheme();
++#endif // DESKTOP_APP_USE_PACKAGED
+ 		psNewVersion();
  	}
  
