@@ -7,6 +7,7 @@
 #include "AudioDeviceHelper.h"
 #include "Message.h"
 #include "platform/PlatformInterface.h"
+#include "StaticThreads.h"
 
 #include "api/audio_codecs/audio_decoder_factory_template.h"
 #include "api/audio_codecs/audio_encoder_factory_template.h"
@@ -34,12 +35,6 @@ constexpr uint32_t ssrcVideoOutgoing = 4;
 constexpr uint32_t ssrcVideoFecIncoming = 7;
 constexpr uint32_t ssrcVideoFecOutgoing = 8;
 
-rtc::Thread *makeWorkerThread() {
-	static std::unique_ptr<rtc::Thread> value = rtc::Thread::Create();
-	value->SetName("WebRTC-Worker", nullptr);
-	value->Start();
-	return value.get();
-}
 
 VideoCaptureInterfaceObject *GetVideoCaptureAssumingSameThread(VideoCaptureInterface *videoCapture) {
 	return videoCapture
@@ -152,11 +147,6 @@ public:
     }
 };
 
-rtc::Thread *MediaManager::getWorkerThread() {
-	static rtc::Thread *value = makeWorkerThread();
-	return value;
-}
-
 MediaManager::MediaManager(
 	rtc::Thread *thread,
 	bool isOutgoing,
@@ -213,6 +203,7 @@ _enableHighBitrateVideo(enableHighBitrateVideo) {
 		"WebRTC-Audio-OpusMinPacketLossRate/Enabled-1/"
 		"WebRTC-FlexFEC-03/Enabled/"
 		"WebRTC-FlexFEC-03-Advertised/Enabled/"
+        "WebRTC-Turn-AllowSystemPorts/Enabled/"
 	);
 
 	PlatformInterface::SharedInstance()->configurePlatformAudio();
@@ -398,7 +389,7 @@ void MediaManager::start() {
 
     beginStatsTimer(3000);
     if (_audioLevelUpdated != nullptr) {
-        beginLevelsTimer(50);
+        beginLevelsTimer(100);
     }
 }
 
@@ -511,7 +502,7 @@ void MediaManager::beginLevelsTimer(int timeoutMs) {
         float effectiveLevel = fmaxf(strong->_currentAudioLevel, strong->_currentMyAudioLevel);
         strong->_audioLevelUpdated(effectiveLevel);
 
-        strong->beginLevelsTimer(50);
+        strong->beginLevelsTimer(100);
     }, timeoutMs);
 }
 
@@ -753,7 +744,9 @@ void MediaManager::checkIsReceivingVideoChanged(bool wasReceiving) {
         const auto codecs = {
             cricket::kFlexfecCodecName,
             cricket::kH264CodecName,
+#ifndef WEBRTC_DISABLE_H265
             cricket::kH265CodecName,
+#endif
             cricket::kVp8CodecName,
             cricket::kVp9CodecName,
             cricket::kAv1CodecName,
