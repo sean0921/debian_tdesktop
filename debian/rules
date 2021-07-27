@@ -71,9 +71,9 @@ execute_after_dh_auto_clean:
 override_dh_installchangelogs:
 	dh_installchangelogs changelog.txt
 
-# Double up the limit of debug information entries.
+# Maximize the limit of debug information entries and ignore possible overflow errors.
 override_dh_dwz:
-	dh_dwz -- -L 100000000
+	-dh_dwz -- -L 2147483647
 
 override_dh_gencontrol:
 	dh_gencontrol -- $(EXTRA_SUBSTVARS:%="-V%")
