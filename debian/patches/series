@@ -5,3 +5,5 @@ Exclude-QWaylandXdgShellIntegration.patch
 Ignore-emoji-pack.patch
 No-random-popups.patch
 Packed-resources.patch
+Skip-jemalloc.patch
+Skip-RNNoise.patch

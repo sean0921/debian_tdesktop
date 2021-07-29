@@ -1,0 +1,39 @@
+Description: RNNoise free build
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Forwarded: https://github.com/desktop-app/cmake_helpers/pull/112
+Last-Update: Thu, 29 Jul 2021 22:17:46 +0300
+
+--- a/cmake/external/rnnoise/CMakeLists.txt
++++ b/cmake/external/rnnoise/CMakeLists.txt
+@@ -9,9 +9,18 @@ if (DESKTOP_APP_USE_PACKAGED)
+     add_library(desktop-app::external_rnnoise ALIAS external_rnnoise)
+ 
+     find_package(PkgConfig REQUIRED)
+-    pkg_check_modules(RNNOISE REQUIRED IMPORTED_TARGET rnnoise)
++    if (NOT DEFINED DESKTOP_APP_USE_RNNOISE)
++        pkg_check_modules(RNNOISE IMPORTED_TARGET rnnoise)
++    elseif (DESKTOP_APP_USE_RNNOISE)
++        pkg_check_modules(RNNOISE REQUIRED IMPORTED_TARGET rnnoise)
++    endif()
++    set(DESKTOP_APP_USE_RNNOISE ${RNNOISE_FOUND} CACHE BOOL "Compile against RNNoise or not?")
+ 
+-    target_link_libraries(external_rnnoise INTERFACE PkgConfig::RNNOISE)
++    if (RNNOISE_FOUND)
++        target_link_libraries(external_rnnoise INTERFACE PkgConfig::RNNOISE)
++    else()
++        target_compile_definitions(external_rnnoise INTERFACE USE_RNNOISE=0)
++    endif()
+ else()
+     add_library(external_rnnoise STATIC IMPORTED GLOBAL)
+     add_library(desktop-app::external_rnnoise ALIAS external_rnnoise)
+--- a/debian/tgcalls/tgcalls/group/GroupInstanceCustomImpl.cpp
++++ b/debian/tgcalls/tgcalls/group/GroupInstanceCustomImpl.cpp
+@@ -829,6 +829,8 @@ private:
+     std::vector<float> *_externalAudioSamples = nullptr;
+     webrtc::Mutex *_externalAudioSamplesMutex = nullptr;
+ };
++#else
++class AudioCapturePostProcessor : public webrtc::CustomProcessing {};
+ #endif
+ 
+ class ExternalAudioRecorder : public FakeAudioDeviceModule::Recorder {

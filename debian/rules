@@ -6,6 +6,7 @@ EXTRA_CMAKE_VARIABLES += \
 	TDESKTOP_API_ID=50322 \
 	TDESKTOP_API_HASH=9ff1a639196c0779c86dd661af8522ba \
 	TDESKTOP_RESOURCES=Packed \
+	DESKTOP_APP_REQUIRE_JEMALLOC=OFF \
 	CMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
 
 # Built against package rlottie is currently broken due to incorrect order of
