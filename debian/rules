@@ -9,10 +9,6 @@ EXTRA_CMAKE_VARIABLES += \
 	DESKTOP_APP_REQUIRE_JEMALLOC=OFF \
 	CMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
 
-# Built against package rlottie is currently broken due to incorrect order of
-# macro definitions. We try to fix the issue here.
-DEB_CPPFLAGS_MAINT_APPEND += -DDESKTOP_APP_USE_PACKAGED_RLOTTIE
-
 # Reveal any errors with pre-compiled headers.
 DEB_CPPFLAGS_MAINT_APPEND += -Werror=invalid-pch
 
