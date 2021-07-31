@@ -77,8 +77,6 @@ int ReportFileNo = -1;
 std::atomic<Qt::HANDLE> ReportingThreadId = nullptr;
 bool SkipWriteReportHeader = false;
 bool ReportingHeaderWritten = false;
-std::array<char, 65536> ReportingHeaderData;
-int ReportingHeaderLength = 0;
 QMutex ReportingMutex;
 
 #ifdef Q_OS_WIN
@@ -103,8 +101,6 @@ const char *PlatformString() {
 		return "Windows64Bit";
 	} else if (Platform::IsMacStoreBuild()) {
 		return "MacAppStore";
-	} else if (Platform::IsOSXBuild()) {
-		return "OSX";
 	} else if (Platform::IsMac()) {
 		return "MacOS";
 	} else if (Platform::IsLinux32Bit()) {

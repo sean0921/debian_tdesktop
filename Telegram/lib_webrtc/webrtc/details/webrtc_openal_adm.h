@@ -9,6 +9,7 @@
 #include "modules/audio_device/include/audio_device.h"
 #include "modules/audio_device/audio_device_buffer.h"
 
+#include <crl/crl_time.h>
 #include <al.h>
 #include <alc.h>
 #include <atomic>
@@ -23,7 +24,6 @@ class AudioDeviceOpenAL : public webrtc::AudioDeviceModule {
 public:
 	explicit AudioDeviceOpenAL(webrtc::TaskQueueFactory *taskQueueFactory);
 	~AudioDeviceOpenAL();
-
 
 	int32_t ActiveAudioLayer(AudioLayer *audioLayer) const override;
 	int32_t RegisterAudioCallback(
@@ -119,6 +119,10 @@ public:
 
 private:
 	struct Data;
+	struct ExactQueuedTime {
+		crl::time now = 0;
+		crl::time queued = 0;
+	};
 
 	template <typename Callback>
 	std::invoke_result_t<Callback> sync(Callback &&callback);
@@ -126,7 +130,11 @@ private:
 	void openRecordingDevice();
 	void openPlayoutDevice();
 	void closeRecordingDevice();
+
+	// NB! stopPlayingOnThread should be called before this,
+	// to clear the thread local context and event callback.
 	void closePlayoutDevice();
+
 	int restartPlayout();
 	int restartRecording();
 	void restartRecordingQueued();
@@ -138,6 +146,9 @@ private:
 	void startCaptureOnThread();
 	void stopCaptureOnThread();
 	void startPlayingOnThread();
+
+	// NB! closePlayoutDevice should be called after this, so that next time
+	// we start playing, we set the thread local context and event callback.
 	void stopPlayingOnThread();
 
 	void processData();
@@ -156,6 +167,11 @@ private:
 		ALsizei length,
 		const ALchar *message);
 
+	[[nodiscard]] crl::time countExactQueuedMsForLatency(
+		crl::time now,
+		bool playing);
+	[[nodiscard]] crl::time queryRecordingLatencyMs();
+
 	rtc::Thread *_thread = nullptr;
 	webrtc::AudioDeviceBuffer _audioDeviceBuffer;
 	std::unique_ptr<Data> _data;
@@ -163,11 +179,13 @@ private:
 	ALCdevice *_playoutDevice = nullptr;
 	ALCcontext *_playoutContext = nullptr;
 	std::string _playoutDeviceId;
+	crl::time _playoutLatency = 0;
 	bool _playoutInitialized = false;
 	bool _playoutFailed = false;
 
 	ALCdevice *_recordingDevice = nullptr;
 	std::string _recordingDeviceId;
+	crl::time _recordingLatency = 0;
 	bool _recordingInitialized = false;
 	bool _recordingFailed = false;
 

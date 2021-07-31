@@ -130,6 +130,7 @@ public:
 		setNumbersText(QString::number(numbers), numbers);
 	}
 	void setWidthChangedCallback(Fn<void()> callback);
+	void setBrushOverride(std::optional<QBrush> brush);
 	void finishNumbersAnimation();
 
 	int contentWidth() const;
@@ -165,6 +166,7 @@ private:
 	int _fullWidthOverride = 0;
 
 	const style::RoundButton &_st;
+	std::optional<QBrush> _brushOverride;
 	RoundRect _roundRect;
 	RoundRect _roundRectOver;
 
@@ -252,6 +254,7 @@ public:
 		QWidget *parent,
 		rpl::producer<QString> &&text,
 		const style::SettingsButton &st);
+	~SettingsButton();
 
 	SettingsButton *toggleOn(rpl::producer<bool> &&toggled);
 	bool toggled() const;

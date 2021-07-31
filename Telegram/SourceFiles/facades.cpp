@@ -31,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/view/media/history_view_media.h"
+#include "payments/payments_checkout_process.h"
 #include "data/data_session.h"
 #include "styles/style_chat.h"
 
@@ -57,15 +58,6 @@ namespace {
 
 namespace App {
 
-void sendBotCommand(
-		not_null<PeerData*> peer,
-		UserData *bot,
-		const QString &cmd, MsgId replyTo) {
-	if (const auto m = CheckMainWidget(&peer->session())) {
-		m->sendBotCommand(peer, bot, cmd, replyTo);
-	}
-}
-
 void hideSingleUseKeyboard(not_null<const HistoryItem*> message) {
 	if (const auto m = CheckMainWidget(&message->history()->session())) {
 		m->hideSingleUseKeyboard(message->history()->peer, message->id);
@@ -80,6 +72,7 @@ bool insertBotCommand(const QString &cmd) {
 }
 
 void activateBotCommand(
+		Window::SessionController *sessionController,
 		not_null<const HistoryItem*> msg,
 		int row,
 		int column) {
@@ -97,12 +90,15 @@ void activateBotCommand(
 	case ButtonType::Default: {
 		// Copy string before passing it to the sending method
 		// because the original button can be destroyed inside.
-		MsgId replyTo = (msg->id > 0) ? msg->id : 0;
-		sendBotCommand(
-			msg->history()->peer,
-			msg->fromOriginal()->asUser(),
-			QString(button->text),
-			replyTo);
+		if (sessionController) {
+			MsgId replyTo = (msg->id > 0) ? msg->id : 0;
+			sessionController->content()->sendBotCommand({
+				.peer = msg->history()->peer,
+				.command = QString(button->text),
+				.context = msg->fullId(),
+				.replyTo = replyTo,
+			});
+		}
 	} break;
 
 	case ButtonType::Callback:
@@ -121,7 +117,10 @@ void activateBotCommand(
 	} break;
 
 	case ButtonType::Buy: {
-		Ui::show(Box<InformBox>(tr::lng_payments_not_supported(tr::now)));
+		Payments::CheckoutProcess::Start(
+			msg,
+			Payments::Mode::Payment,
+			crl::guard(App::wnd(), [] { App::wnd()->activate(); }));
 	} break;
 
 	case ButtonType::Url: {
@@ -211,24 +210,6 @@ void activateBotCommand(
 	}
 }
 
-void searchByHashtag(const QString &tag, PeerData *inPeer) {
-	const auto m = inPeer
-		? CheckMainWidget(&inPeer->session())
-		: App::main(); // multi good
-	if (m) {
-		if (m->controller()->openedFolder().current()) {
-			m->controller()->closeFolder();
-		}
-		Ui::hideSettingsAndLayer();
-		Core::App().hideMediaView();
-		m->searchMessages(
-			tag + ' ',
-			(inPeer && !inPeer->isUser())
-			? inPeer->owner().history(inPeer).get()
-			: Dialogs::Key());
-	}
-}
-
 } // namespace App
 
 namespace Ui {
@@ -260,13 +241,9 @@ void showChatsList(not_null<Main::Session*> session) {
 	if (const auto m = CheckMainWidget(session)) {
 		m->ui_showPeerHistory(
 			0,
-			Window::SectionShow::Way::ClearStack,
+			::Window::SectionShow::Way::ClearStack,
 			0);
 	}
-}
-
-void showPeerHistoryAtItem(not_null<const HistoryItem*> item) {
-	showPeerHistory(item->history()->peer, item->id);
 }
 
 void showPeerHistory(not_null<const History*> history, MsgId msgId) {
@@ -277,13 +254,9 @@ void showPeerHistory(not_null<const PeerData*> peer, MsgId msgId) {
 	if (const auto m = CheckMainWidget(&peer->session())) {
 		m->ui_showPeerHistory(
 			peer->id,
-			Window::SectionShow::Way::ClearStack,
+			::Window::SectionShow::Way::ClearStack,
 			msgId);
 	}
-}
-
-PeerData *getPeerForMouseAction() {
-	return Core::App().ui_getPeerForMouseAction();
 }
 
 bool skipPaintEvent(QWidget *widget, QPaintEvent *event) {
@@ -314,87 +287,3 @@ bool switchInlineBotButtonReceived(
 }
 
 } // namespace Notify
-
-#define DefineReadOnlyVar(Namespace, Type, Name) const Type &Name() { \
-	AssertCustom(Namespace##Data != nullptr, #Namespace "Data != nullptr in " #Namespace "::" #Name); \
-	return Namespace##Data->Name; \
-}
-#define DefineRefVar(Namespace, Type, Name) DefineReadOnlyVar(Namespace, Type, Name) \
-Type &Ref##Name() { \
-	AssertCustom(Namespace##Data != nullptr, #Namespace "Data != nullptr in " #Namespace "::Ref" #Name); \
-	return Namespace##Data->Name; \
-}
-#define DefineVar(Namespace, Type, Name) DefineRefVar(Namespace, Type, Name) \
-void Set##Name(const Type &Name) { \
-	AssertCustom(Namespace##Data != nullptr, #Namespace "Data != nullptr in " #Namespace "::Set" #Name); \
-	Namespace##Data->Name = Name; \
-}
-
-namespace Global {
-namespace internal {
-
-struct Data {
-	bool ScreenIsLocked = false;
-	Adaptive::WindowLayout AdaptiveWindowLayout = Adaptive::WindowLayout::Normal;
-	Adaptive::ChatLayout AdaptiveChatLayout = Adaptive::ChatLayout::Normal;
-	base::Observable<void> AdaptiveChanged;
-
-	bool NotificationsDemoIsShown = false;
-
-	bool TryIPv6 = !Platform::IsWindows();
-	std::vector<MTP::ProxyData> ProxiesList;
-	MTP::ProxyData SelectedProxy;
-	MTP::ProxyData::Settings ProxySettings = MTP::ProxyData::Settings::System;
-	bool UseProxyForCalls = false;
-	base::Observable<void> ConnectionTypeChanged;
-
-	bool LocalPasscode = false;
-	base::Observable<void> LocalPasscodeChanged;
-
-	base::Variable<DBIWorkMode> WorkMode = { dbiwmWindowAndTray };
-
-	base::Observable<void> PeerChooseCancel;
-};
-
-} // namespace internal
-} // namespace Global
-
-Global::internal::Data *GlobalData = nullptr;
-
-namespace Global {
-
-bool started() {
-	return GlobalData != nullptr;
-}
-
-void start() {
-	GlobalData = new internal::Data();
-}
-
-void finish() {
-	delete GlobalData;
-	GlobalData = nullptr;
-}
-
-DefineVar(Global, bool, ScreenIsLocked);
-DefineVar(Global, Adaptive::WindowLayout, AdaptiveWindowLayout);
-DefineVar(Global, Adaptive::ChatLayout, AdaptiveChatLayout);
-DefineRefVar(Global, base::Observable<void>, AdaptiveChanged);
-
-DefineVar(Global, bool, NotificationsDemoIsShown);
-
-DefineVar(Global, bool, TryIPv6);
-DefineVar(Global, std::vector<MTP::ProxyData>, ProxiesList);
-DefineVar(Global, MTP::ProxyData, SelectedProxy);
-DefineVar(Global, MTP::ProxyData::Settings, ProxySettings);
-DefineVar(Global, bool, UseProxyForCalls);
-DefineRefVar(Global, base::Observable<void>, ConnectionTypeChanged);
-
-DefineVar(Global, bool, LocalPasscode);
-DefineRefVar(Global, base::Observable<void>, LocalPasscodeChanged);
-
-DefineRefVar(Global, base::Variable<DBIWorkMode>, WorkMode);
-
-DefineRefVar(Global, base::Observable<void>, PeerChooseCancel);
-
-} // namespace Global

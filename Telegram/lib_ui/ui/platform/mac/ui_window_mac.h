@@ -23,6 +23,7 @@ public:
 	void setTitleStyle(const style::WindowTitle &st) override;
 	void setMinimumSize(QSize size) override;
 	void setFixedSize(QSize size) override;
+	void setStaysOnTop(bool enabled) override;
 	void setGeometry(QRect rect) override;
 	void close() override;
 
@@ -39,14 +40,6 @@ private:
 	const not_null<TitleWidget*> _title;
 	const not_null<RpWidget*> _body;
 	bool _titleVisible = true;
-
-#ifdef OS_OSX
-	struct WindowDrag {
-		QPoint windowStartPosition;
-		QPoint dragStartPosition;
-	};
-	std::optional<WindowDrag> _drag;
-#endif // OS_OSX
 
 };
 

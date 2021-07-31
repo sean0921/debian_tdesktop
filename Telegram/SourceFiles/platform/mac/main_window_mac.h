@@ -39,7 +39,7 @@ public:
 
 	class Private;
 
-public slots:
+public Q_SLOTS:
 	void psMacUndo();
 	void psMacRedo();
 	void psMacCut();
@@ -62,7 +62,6 @@ protected:
 	void handleActiveChangedHook() override;
 	void stateChangedHook(Qt::WindowState state) override;
 	void initHook() override;
-	void titleVisibilityChangedHook() override;
 	void unreadCounterChangedHook() override;
 
 	bool hasTrayIcon() const override {
@@ -71,7 +70,7 @@ protected:
 
 	void updateGlobalMenuHook() override;
 
-	void workmodeUpdated(DBIWorkMode mode) override;
+	void workmodeUpdated(Core::Settings::WorkMode mode) override;
 
 	QSystemTrayIcon *trayIcon = nullptr;
 	QMenu *trayIconMenu = nullptr;
@@ -80,9 +79,6 @@ protected:
 	void psSetupTrayIcon();
 	virtual void placeSmallCounter(QImage &img, int size, int count, style::color bg, const QPoint &shift, style::color color) = 0;
 
-	QTimer psUpdatedPositionTimer;
-
-	void initShadows() override;
 	void closeWithoutDestroy() override;
 	void createGlobalMenu() override;
 
@@ -90,7 +86,6 @@ private:
 	friend class Private;
 
 	void hideAndDeactivate();
-	void updateTitleCounter();
 	void updateIconCounters();
 	[[nodiscard]] QIcon generateIconForTray(int counter, bool muted) const;
 

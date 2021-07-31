@@ -6,8 +6,6 @@
 //
 #pragma once
 
-#include "ffmpeg/ffmpeg_utility.h"
-
 #include <rpl/variable.h>
 #include <QtCore/QSize>
 #include <QtGui/QImage>
@@ -22,6 +20,8 @@ class VideoFrame;
 } // namespace webrtc
 
 namespace Webrtc {
+
+using SinkInterface = rtc::VideoSinkInterface<webrtc::VideoFrame>;
 
 struct FrameRequest {
 	QSize resize;
@@ -61,19 +61,47 @@ enum class VideoState {
 	Active,
 };
 
+enum class FrameFormat {
+	None,
+	ARGB32,
+	YUV420,
+};
+
+struct FrameChannel {
+	const void *data = nullptr;
+	int stride = 0;
+};
+
+struct FrameYUV420 {
+	QSize size;
+	QSize chromaSize;
+	FrameChannel y;
+	FrameChannel u;
+	FrameChannel v;
+};
+
+struct FrameWithInfo {
+	QImage original;
+	FrameYUV420 *yuv420 = nullptr;
+	FrameFormat format = FrameFormat::None;
+	int rotation = 0;
+	int index = -1;
+};
+
 class VideoTrack final {
 public:
 	// Called from the main thread.
-	explicit VideoTrack(VideoState state);
+	explicit VideoTrack(
+		VideoState state,
+		bool requireARGB32 = true);
 	~VideoTrack();
 
 	void markFrameShown();
 	[[nodiscard]] QImage frame(const FrameRequest &request);
-	[[nodiscard]] std::pair<QImage, int> frameOriginalWithRotation() const;
+	[[nodiscard]] FrameWithInfo frameWithInfo(bool requireARGB32) const;
 	[[nodiscard]] QSize frameSize() const;
 	[[nodiscard]] rpl::producer<> renderNextFrame() const;
-	[[nodiscard]] auto sink()
-		-> std::shared_ptr<rtc::VideoSinkInterface<webrtc::VideoFrame>>;
+	[[nodiscard]] std::shared_ptr<SinkInterface> sink();
 
 	[[nodiscard]] VideoState state() const;
 	[[nodiscard]] rpl::producer<VideoState> stateValue() const;
@@ -82,22 +110,12 @@ public:
 
 private:
 	class Sink;
-
-	struct Frame {
-		FFmpeg::FramePointer decoded = FFmpeg::MakeFramePointer();
-		QImage original;
-		QImage prepared;
-		FrameRequest request = FrameRequest::NonStrict();
-
-		int rotation = 0;
-		bool displayed = false;
-		bool alpha = false;
-	};
+	struct Frame;
 
 	static void PrepareFrameByRequests(not_null<Frame*> frame, int rotation);
 
 	std::shared_ptr<Sink> _sink;
-	crl::time _disabledFrom = 0;
+	crl::time _inactiveFrom = 0;
 	rpl::variable<VideoState> _state;
 };
 

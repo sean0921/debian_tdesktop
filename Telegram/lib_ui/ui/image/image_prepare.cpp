@@ -124,7 +124,7 @@ QImage prepareBlur(QImage img) {
 
 	uchar *pix = img.bits();
 	if (pix) {
-		int w = img.width(), h = img.height(), wold = w, hold = h;
+		int w = img.width(), h = img.height();
 		const int radius = 3;
 		const int r1 = radius + 1;
 		const int div = radius * 2 + 1;
@@ -274,8 +274,8 @@ QImage BlurLargeImage(QImage image, int radius) {
 	const auto rgb = take(widthxheight * 3).data();
 	const auto dvs = take(dvcount);
 
-	auto &&ints = ranges::view::ints;
-	for (auto &&[value, index] : ranges::view::zip(dvs, ints(0, ranges::unreachable))) {
+	auto &&ints = ranges::views::ints;
+	for (auto &&[value, index] : ranges::views::zip(dvs, ints(0, ranges::unreachable))) {
 		value = (index / divsum);
 	}
 	const auto dv = dvs.data();

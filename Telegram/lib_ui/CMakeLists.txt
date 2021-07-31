@@ -51,12 +51,28 @@ PRIVATE
     ui/effects/numbers_animation.h
     ui/effects/panel_animation.cpp
     ui/effects/panel_animation.h
+    ui/effects/path_shift_gradient.cpp
+    ui/effects/path_shift_gradient.h
     ui/effects/radial_animation.cpp
     ui/effects/radial_animation.h
     ui/effects/ripple_animation.cpp
     ui/effects/ripple_animation.h
     ui/effects/slide_animation.cpp
     ui/effects/slide_animation.h
+    ui/gl/gl_detection.cpp
+    ui/gl/gl_detection.h
+    ui/gl/gl_image.cpp
+    ui/gl/gl_image.h
+    ui/gl/gl_math.cpp
+    ui/gl/gl_math.h
+    ui/gl/gl_primitives.cpp
+    ui/gl/gl_primitives.h
+    ui/gl/gl_shader.cpp
+    ui/gl/gl_shader.h
+    ui/gl/gl_surface.cpp
+    ui/gl/gl_surface.h
+    ui/gl/gl_window.cpp
+    ui/gl/gl_window.h
     ui/image/image_prepare.cpp
     ui/image/image_prepare.h
     ui/layers/box_content.cpp
@@ -119,7 +135,6 @@ PRIVATE
     ui/style/style_core_scale.h
     ui/style/style_core_types.cpp
     ui/style/style_core_types.h
-    ui/text/qtextitemint.cpp
     ui/text/text.cpp
     ui/text/text.h
     ui/text/text_block.cpp
@@ -141,8 +156,6 @@ PRIVATE
     ui/widgets/buttons.h
     ui/widgets/call_button.cpp
     ui/widgets/call_button.h
-    ui/widgets/call_mute_button.cpp
-    ui/widgets/call_mute_button.h
     ui/widgets/checkbox.cpp
     ui/widgets/checkbox.h
     ui/widgets/dropdown_menu.cpp
@@ -167,6 +180,8 @@ PRIVATE
     ui/widgets/menu/menu_toggle.h
     ui/widgets/popup_menu.cpp
     ui/widgets/popup_menu.h
+    ui/widgets/rp_window.cpp
+    ui/widgets/rp_window.h
     ui/widgets/scroll_area.cpp
     ui/widgets/scroll_area.h
     ui/widgets/side_bar_button.cpp
@@ -175,8 +190,6 @@ PRIVATE
     ui/widgets/shadow.h
     ui/widgets/tooltip.cpp
     ui/widgets/tooltip.h
-    ui/widgets/window.cpp
-    ui/widgets/window.h
     ui/wrap/fade_wrap.cpp
     ui/wrap/fade_wrap.h
     ui/wrap/padding_wrap.cpp
@@ -213,8 +226,6 @@ PRIVATE
     ui/round_rect.h
     ui/rp_widget.cpp
     ui/rp_widget.h
-    ui/ui_log.cpp
-    ui/ui_log.h
     ui/ui_utility.cpp
     ui/ui_utility.h
 
@@ -225,7 +236,9 @@ PRIVATE
     emoji_suggestions/emoji_suggestions_helper.h
 )
 
-if (NOT DESKTOP_APP_USE_PACKAGED)
+if (DESKTOP_APP_USE_PACKAGED)
+    nice_target_sources(lib_ui ${src_loc} PRIVATE ui/text/qtextitemint.cpp)
+else()
     nice_target_sources(lib_ui ${src_loc} PRIVATE qt_conf/linux.qrc)
 endif()
 
@@ -236,6 +249,12 @@ endif()
 if (DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
     remove_target_sources(Telegram ${src_loc} ui/platform/linux/ui_linux_wayland_integration.cpp)
     nice_target_sources(Telegram ${src_loc} PRIVATE ui/platform/linux/ui_linux_wayland_integration_dummy.cpp)
+elseif(LINUX)
+    target_link_libraries(lib_ui
+    PUBLIC
+        desktop-app::lib_waylandshells
+        desktop-app::external_kwayland
+    )
 endif()
 
 target_include_directories(lib_ui

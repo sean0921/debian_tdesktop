@@ -18,14 +18,6 @@ inline constexpr bool IsMac() {
 	return true;
 }
 
-inline constexpr bool IsOSXBuild() {
-#ifdef OS_OSX
-	return true;
-#else // OS_OSX
-	return false;
-#endif // OS_OSX
-}
-
 inline constexpr bool IsMacStoreBuild() {
 #ifdef OS_MAC_STORE
 	return true;
@@ -51,8 +43,10 @@ inline bool IsX11() { return false; }
 inline bool IsWayland() { return false; }
 inline QString GetLibcName() { return QString(); }
 inline QString GetLibcVersion() { return QString(); }
+inline QString GetWindowManager() { return QString(); }
 
 void OpenInputMonitoringPrivacySettings();
+void OpenDesktopCapturePrivacySettings();
 void OpenAccessibilityPrivacySettings();
 
 } // namespace Platform

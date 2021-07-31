@@ -6,8 +6,6 @@
 //
 #include "base/platform/linux/base_info_linux.h"
 
-#include "base/platform/linux/base_linux_gtk_integration.h"
-
 #ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
 #include "base/platform/linux/base_linux_xcb_utilities.h"
 #endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
@@ -17,8 +15,6 @@
 #include <QtCore/QVersionNumber>
 #include <QtCore/QDate>
 #include <QtGui/QGuiApplication>
-
-#include <glib.h>
 
 // this file is used on both Linux & BSD
 #ifdef Q_OS_LINUX
@@ -34,66 +30,6 @@ QString GetDesktopEnvironment() {
 		? value.left(value.indexOf(':'))
 		: value;
 }
-
-#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
-QString GetWindowManager() {
-	base::Platform::XCB::CustomConnection connection;
-	if (xcb_connection_has_error(connection)) {
-		return {};
-	}
-
-	const auto root = base::Platform::XCB::GetRootWindow(connection);
-	if (!root.has_value()) {
-		return {};
-	}
-
-	const auto nameAtom = base::Platform::XCB::GetAtom(
-		connection,
-		"_NET_WM_NAME");
-
-	const auto utf8Atom = base::Platform::XCB::GetAtom(
-		connection,
-		"UTF8_STRING");
-
-	const auto supportingWindow = base::Platform::XCB::GetSupportingWMCheck(
-		connection,
-		*root);
-
-	if (!nameAtom.has_value()
-		|| !utf8Atom.has_value()
-		|| !supportingWindow.has_value()
-		|| *supportingWindow == XCB_WINDOW_NONE) {
-		return {};
-	}
-	const auto cookie = xcb_get_property(
-		connection,
-		false,
-		*supportingWindow,
-		*nameAtom,
-		*utf8Atom,
-		0,
-		1024);
-
-	auto reply = xcb_get_property_reply(
-		connection,
-		cookie,
-		nullptr);
-
-	if (!reply) {
-		return {};
-	}
-
-	const auto name = (reply->format == 8 && reply->type == *utf8Atom)
-		? QString::fromUtf8(
-			reinterpret_cast<const char*>(
-				xcb_get_property_value(reply)),
-			xcb_get_property_value_length(reply))
-		: QString();
-
-	free(reply);
-	return name;
-}
-#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 } // namespace
 
@@ -215,6 +151,67 @@ QString GetLibcVersion() {
 	return QString();
 }
 
+QString GetWindowManager() {
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+	base::Platform::XCB::CustomConnection connection;
+	if (xcb_connection_has_error(connection)) {
+		return {};
+	}
+
+	const auto root = base::Platform::XCB::GetRootWindow(connection);
+	if (!root.has_value()) {
+		return {};
+	}
+
+	const auto nameAtom = base::Platform::XCB::GetAtom(
+		connection,
+		"_NET_WM_NAME");
+
+	const auto utf8Atom = base::Platform::XCB::GetAtom(
+		connection,
+		"UTF8_STRING");
+
+	const auto supportingWindow = base::Platform::XCB::GetSupportingWMCheck(
+		connection,
+		*root);
+
+	if (!nameAtom.has_value()
+		|| !utf8Atom.has_value()
+		|| !supportingWindow.has_value()
+		|| *supportingWindow == XCB_WINDOW_NONE) {
+		return {};
+	}
+
+	const auto cookie = xcb_get_property(
+		connection,
+		false,
+		*supportingWindow,
+		*nameAtom,
+		*utf8Atom,
+		0,
+		1024);
+
+	const auto reply = base::Platform::XCB::MakeReplyPointer(
+		xcb_get_property_reply(
+			connection,
+			cookie,
+			nullptr));
+
+	if (!reply) {
+		return {};
+	}
+
+	return (reply->format == 8 && reply->type == *utf8Atom)
+		? QString::fromUtf8(
+			reinterpret_cast<const char*>(
+				xcb_get_property_value(reply.get())),
+			xcb_get_property_value_length(reply.get()))
+		: QString();
+#else // !DESKTOP_APP_DISABLE_X11_INTEGRATION
+	return QString();
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
+}
+
 bool IsX11() {
 	return QGuiApplication::instance()
 		? QGuiApplication::platformName() == "xcb"
@@ -230,13 +227,6 @@ bool IsWayland() {
 }
 
 void Start(QJsonObject options) {
-	using base::Platform::GtkIntegration;
-	if (const auto integration = GtkIntegration::Instance()) {
-		integration->prepareEnvironment();
-		integration->load();
-	} else {
-		g_warning("GTK integration is disabled, some feature unavailable. ");
-	}
 }
 
 void Finish() {

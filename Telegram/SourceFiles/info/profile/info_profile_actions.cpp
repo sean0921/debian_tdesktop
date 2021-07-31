@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/text/text_utilities.h" // Ui::Text::ToUpper
 #include "history/history_location_manager.h" // LocationClickHandler.
+#include "history/view/history_view_context_menu.h" // HistoryView::ShowReportPeerBox
 #include "boxes/abstract_box.h"
 #include "boxes/confirm_box.h"
 #include "boxes/peer_list_box.h"
@@ -45,6 +46,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwindow.h" // MainWindow::controller.
 #include "main/main_session.h"
 #include "core/application.h"
+#include "core/click_handler_types.h"
 #include "apiwrap.h"
 #include "facades.h"
 #include "styles/style_info.h"
@@ -177,37 +179,6 @@ private:
 	object_ptr<Ui::VerticalLayout> _wrap = { nullptr };
 
 };
-// // #feed
-//class FeedDetailsFiller {
-//public:
-//	FeedDetailsFiller(
-//		not_null<Controller*> controller,
-//		not_null<Ui::RpWidget*> parent,
-//		not_null<Data::Feed*> feed);
-//
-//	object_ptr<Ui::RpWidget> fill();
-//
-//private:
-//	object_ptr<Ui::RpWidget> setupDefaultToggle();
-//
-//	template <
-//		typename Widget,
-//		typename = std::enable_if_t<
-//		std::is_base_of_v<Ui::RpWidget, Widget>>>
-//	Widget *add(
-//			object_ptr<Widget> &&child,
-//			const style::margins &margin = style::margins()) {
-//		return _wrap->add(
-//			std::move(child),
-//			margin);
-//	}
-//
-//	not_null<Controller*> _controller;
-//	not_null<Ui::RpWidget*> _parent;
-//	not_null<Data::Feed*> _feed;
-//	object_ptr<Ui::VerticalLayout> _wrap;
-//
-//};
 
 DetailsFiller::DetailsFiller(
 	not_null<Controller*> controller,
@@ -219,9 +190,46 @@ DetailsFiller::DetailsFiller(
 , _wrap(_parent) {
 }
 
+template <typename T>
+bool SetClickContext(
+		const ClickHandlerPtr &handler,
+		const ClickContext &context) {
+	if (const auto casted = std::dynamic_pointer_cast<T>(handler)) {
+		casted->T::onClick(context);
+		return true;
+	}
+	return false;
+}
+
 object_ptr<Ui::RpWidget> DetailsFiller::setupInfo() {
 	auto result = object_ptr<Ui::VerticalLayout>(_wrap);
 	auto tracker = Ui::MultiSlideTracker();
+
+	// Fill context for a mention / hashtag / bot command link.
+	const auto infoClickFilter = [=,
+		peer = _peer.get(),
+		window = _controller->parentController()](
+			const ClickHandlerPtr &handler,
+			Qt::MouseButton button) {
+		const auto context = ClickContext{
+			button,
+			QVariant::fromValue(ClickHandlerContext{
+				.sessionWindow = base::make_weak(window.get()),
+				.peer = peer,
+			})
+		};
+		if (SetClickContext<BotCommandClickHandler>(handler, context)) {
+			return false;
+		} else if (SetClickContext<MentionClickHandler>(handler, context)) {
+			return false;
+		} else if (SetClickContext<HashtagClickHandler>(handler, context)) {
+			return false;
+		} else if (SetClickContext<CashtagClickHandler>(handler, context)) {
+			return false;
+		}
+		return true;
+	};
+
 	auto addInfoLineGeneric = [&](
 			rpl::producer<QString> &&label,
 			rpl::producer<TextWithEntities> &&text,
@@ -233,6 +241,8 @@ object_ptr<Ui::RpWidget> DetailsFiller::setupInfo() {
 			textSt,
 			st::infoProfileLabeledPadding);
 		tracker.track(result->add(std::move(line.wrap)));
+
+		line.text->setClickHandlerFilter(infoClickFilter);
 		return line.text;
 	};
 	auto addInfoLine = [&](
@@ -488,7 +498,6 @@ ActionsFiller::ActionsFiller(
 
 void ActionsFiller::addInviteToGroupAction(
 		not_null<UserData*> user) {
-	const auto controller = _controller;
 	AddActionButton(
 		_wrap,
 		tr::lng_profile_invite_to_group(),
@@ -545,10 +554,10 @@ void ActionsFiller::addBotCommandActions(not_null<UserData*> user) {
 		if (!user->isBot()) {
 			return QString();
 		}
-		for_const (auto &data, user->botInfo->commands) {
-			auto isSame = data.command.compare(
+		for (const auto &data : user->botInfo->commands) {
+			const auto isSame = !data.command.compare(
 				command,
-				Qt::CaseInsensitive) == 0;
+				Qt::CaseInsensitive);
 			if (isSame) {
 				return data.command;
 			}
@@ -563,12 +572,19 @@ void ActionsFiller::addBotCommandActions(not_null<UserData*> user) {
 			return !findBotCommand(command).isEmpty();
 		});
 	};
-	auto sendBotCommand = [=](const QString &command) {
-		auto original = findBotCommand(command);
-		if (!original.isEmpty()) {
-			Ui::showPeerHistory(user, ShowAtTheEndMsgId);
-			App::sendBotCommand(user, user, '/' + original);
+	auto sendBotCommand = [=, window = _controller->parentController()](
+			const QString &command) {
+		const auto original = findBotCommand(command);
+		if (original.isEmpty()) {
+			return;
 		}
+		BotCommandClickHandler('/' + original).onClick(ClickContext{
+			Qt::LeftButton,
+			QVariant::fromValue(ClickHandlerContext{
+				.sessionWindow = base::make_weak(window.get()),
+				.peer = user,
+			})
+		});
 	};
 	auto addBotCommand = [=](
 			rpl::producer<QString> text,
@@ -586,8 +602,9 @@ void ActionsFiller::addBotCommandActions(not_null<UserData*> user) {
 
 void ActionsFiller::addReportAction() {
 	const auto peer = _peer;
+	const auto controller = _controller->parentController();
 	const auto report = [=] {
-
+		HistoryView::ShowReportPeerBox(controller, peer);
 	};
 	AddActionButton(
 		_wrap,
@@ -742,48 +759,6 @@ object_ptr<Ui::RpWidget> ActionsFiller::fill() {
 	}
 	return { nullptr };
 }
-// // #feed
-//FeedDetailsFiller::FeedDetailsFiller(
-//	not_null<Controller*> controller,
-//	not_null<Ui::RpWidget*> parent,
-//	not_null<Data::Feed*> feed)
-//: _controller(controller)
-//, _parent(parent)
-//, _feed(feed)
-//, _wrap(_parent) {
-//}
-//
-//object_ptr<Ui::RpWidget> FeedDetailsFiller::fill() {
-//	add(object_ptr<Ui::BoxContentDivider>(_wrap));
-//	add(CreateSkipWidget(_wrap));
-//	add(setupDefaultToggle());
-//	add(CreateSkipWidget(_wrap));
-//	return std::move(_wrap);
-//}
-//
-//object_ptr<Ui::RpWidget> FeedDetailsFiller::setupDefaultToggle() {
-//	using namespace rpl::mappers;
-//	const auto feed = _feed;
-//	const auto feedId = feed->id();
-//	auto result = object_ptr<Ui::SettingsButton>(
-//		_wrap,
-//		tr::lng_info_feed_is_default(),
-//		st::infoNotificationsButton);
-//	result->toggleOn(
-//		feed->owner().defaultFeedIdValue(
-//		) | rpl::map(_1 == feedId)
-//	)->addClickHandler([=] {
-//		const auto makeDefault = (feed->owner().defaultFeedId() != feedId);
-//		const auto defaultFeedId = makeDefault ? feedId : 0;
-//		feed->owner().setDefaultFeedId(defaultFeedId);
-////		feed->session().api().saveDefaultFeedId(feedId, makeDefault); // #feed
-//	});
-//	object_ptr<FloatingIcon>(
-//		result,
-//		st::infoIconNotifications,
-//		st::infoNotificationsIconPosition);
-//	return result;
-//}
 
 } // namespace
 
@@ -838,9 +813,9 @@ object_ptr<Ui::RpWidget> SetupChannelMembers(
 
 	auto membersShown = rpl::combine(
 		MembersCountValue(channel),
-		Data::PeerFullFlagValue(
+		Data::PeerFlagValue(
 			channel,
-			MTPDchannelFull::Flag::f_can_view_participants),
+			ChannelDataFlag::CanViewParticipants),
 			(_1 > 0) && _2);
 	auto membersText = tr::lng_chat_status_subscribers(
 		lt_count_decimal,
@@ -879,14 +854,6 @@ object_ptr<Ui::RpWidget> SetupChannelMembers(
 
 	return result;
 }
-// // #feed
-//object_ptr<Ui::RpWidget> SetupFeedDetails(
-//		not_null<Controller*> controller,
-//		not_null<Ui::RpWidget*> parent,
-//		not_null<Data::Feed*> feed) {
-//	FeedDetailsFiller filler(controller, parent, feed);
-//	return filler.fill();
-//}
 
 } // namespace Profile
 } // namespace Info

@@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/themes/window_theme_preview.h"
 
-#include "window/themes/window_theme.h"
 #include "lang/lang_keys.h"
 #include "platform/platform_window_title.h"
 #include "ui/text/text_options.h"
@@ -32,7 +31,7 @@ QString fillLetters(const QString &name) {
 	auto ch = name.constData(), end = ch + name.size();
 	while (ch != end) {
 		auto emojiLength = 0;
-		if (auto emoji = Ui::Emoji::Find(ch, end, &emojiLength)) {
+		if (Ui::Emoji::Find(ch, end, &emojiLength)) {
 			ch += emojiLength;
 		} else if (ch->isHighSurrogate()) {
 			++ch;
@@ -244,10 +243,8 @@ void Generator::addAudioBubble(QVector<int> waveform, int waveactive, QString wa
 	auto skipBlock = computeSkipBlock(status, date);
 
 	auto width = st::msgFileMinWidth;
-	auto tleft = 0, tright = 0;
 	const auto &st = st::msgFileLayout;
-	tleft = st.padding.left() + st.thumbSize + st.padding.right();
-	tright = st.padding.left();
+	auto tleft = st.padding.left() + st.thumbSize + st.padding.right();
 	accumulate_max(width, tleft + st::normalFont->width(wavestatus) + skipBlock.width() + st::msgPadding.right());
 	accumulate_min(width, st::msgMaxWidth);
 
@@ -419,7 +416,7 @@ void Generator::paintHistoryBackground() {
 	if (background.isNull()) {
 		const auto fakePaper = Data::WallPaper(_current.backgroundId);
 		if (Data::IsThemeWallPaper(fakePaper)) {
-			background.load(qsl(":/gui/art/bg.jpg"));
+			background.load(qsl(":/gui/art/background.jpg"));
 			tiled = false;
 		} else {
 			background = std::move(_current.backgroundImage);
@@ -505,10 +502,11 @@ void Generator::paintComposeArea() {
 	const auto emojiIconTop = (st::historyAttachEmoji.iconPosition.y() < 0)
 		? ((st::historyAttachEmoji.height - st::historyAttachEmoji.icon.height()) / 2)
 		: st::historyAttachEmoji.iconPosition.y();
+	const auto &emojiIcon = st::historyAttachEmoji.icon[_palette];
 	right += st::historyAttachEmoji.width;
 	auto attachEmojiLeft = _composeArea.x() + _composeArea.width() - right;
 	_p->fillRect(attachEmojiLeft, controlsTop, st::historyAttachEmoji.width, st::historyAttachEmoji.height, st::historyComposeAreaBg[_palette]);
-	st::historyAttachEmoji.icon[_palette].paint(*_p, attachEmojiLeft + emojiIconLeft, controlsTop + emojiIconTop, _rect.width());
+	emojiIcon.paint(*_p, attachEmojiLeft + emojiIconLeft, controlsTop + emojiIconTop, _rect.width());
 
 	auto pen = st::historyEmojiCircleFg[_palette]->p;
 	pen.setWidth(st::historyEmojiCircleLine);
@@ -517,7 +515,13 @@ void Generator::paintComposeArea() {
 	_p->setBrush(Qt::NoBrush);
 
 	PainterHighQualityEnabler hq(*_p);
-	auto inner = QRect(QPoint(attachEmojiLeft + (st::historyAttachEmoji.width - st::historyEmojiCircle.width()) / 2, controlsTop + st::historyEmojiCircleTop), st::historyEmojiCircle);
+	const auto skipx = emojiIcon.width() / 4;
+	const auto skipy = emojiIcon.height() / 4;
+	const auto inner = QRect(
+		attachEmojiLeft + emojiIconLeft + skipx,
+		controlsTop + emojiIconTop + skipy,
+		emojiIcon.width() - 2 * skipx,
+		emojiIcon.height() - 2 * skipy);
 	_p->drawEllipse(inner);
 
 	auto fieldLeft = _composeArea.x() + st::historyAttach.width;
@@ -766,10 +770,8 @@ void Generator::paintBubble(const Bubble &bubble) {
 	} else if (!bubble.waveform.isEmpty()) {
 		const auto &st = st::msgFileLayout;
 		auto nameleft = x + st.padding.left() + st.thumbSize + st.padding.right();
-		auto nametop = y + st.nameTop;
 		auto nameright = st.padding.left();
 		auto statustop = y + st.statusTop;
-		auto bottom = y + st.padding.top() + st.thumbSize + st.padding.bottom();
 
 		auto inner = style::rtlrect(x + st.padding.left(), y + st.padding.top(), st.thumbSize, st.thumbSize, _rect.width());
 		_p->setPen(Qt::NoPen);
@@ -1000,8 +1002,8 @@ void DefaultPreviewWindowTitle(Painter &p, const style::palette &palette, QRect 
 	auto titleRect = QRect(body.x(), body.y() - st::defaultWindowTitle.height, body.width(), st::defaultWindowTitle.height);
 	p.fillRect(titleRect, QColor(0, 0, 0));
 	p.fillRect(titleRect, st::titleBgActive[palette]);
-	auto right = st::windowTitleButtonClose.width;
-	st::windowTitleButtonClose.icon[palette].paint(p, titleRect.x() + titleRect.width() - right + st::windowTitleButtonClose.iconPosition.x(), titleRect.y() + st::windowTitleButtonClose.iconPosition.y(), outerWidth);
+	auto right = st::defaultWindowTitle.close.width;
+	st::defaultWindowTitle.close.icon[palette].paint(p, titleRect.x() + titleRect.width() - right + st::defaultWindowTitle.close.iconPosition.x(), titleRect.y() + st::windowTitleButtonClose.iconPosition.y(), outerWidth);
 	right += st::defaultWindowTitle.maximize.width;
 	st::defaultWindowTitle.maximize.icon[palette].paint(p, titleRect.x() + titleRect.width() - right + st::defaultWindowTitle.maximize.iconPosition.x(), titleRect.y() + st::defaultWindowTitle.maximize.iconPosition.y(), outerWidth);
 	right += st::defaultWindowTitle.minimize.width;

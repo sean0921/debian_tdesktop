@@ -131,7 +131,7 @@ def addTextSerializeInit(typeList, typeData, idPrefix):
     v = typeData[restype]
     for data in v:
       name = data[0]
-      result += '\tresult.insert(' + idPrefix + name + ', Serialize_' + name + ');\n'
+      result += '\t\t{ ' + idPrefix + name + ', Serialize_' + name + ' },\n'
   return result
 
 def generate(scheme):
@@ -179,6 +179,33 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     return typePrefix + normalizedName(name)
   def fullDataName(name):
     return dataPrefix + normalizedName(name)
+  def handleTemplate(name):
+    templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._<>]+)>$', name)
+    if (templ):
+      vectemplate = templ.group(2)
+      if (vectemplate.find('<') >= 0):
+        return templ.group(1) + fullTypeName(handleTemplate(vectemplate)) + '>'
+      elif (re.match(r'^[A-Z]', vectemplate) or re.match(r'^[a-zA-Z0-9]+\.[A-Z]', vectemplate)):
+        return templ.group(1) + fullTypeName(vectemplate) + '>'
+      elif (vectemplate in builtinTypes):
+        return templ.group(1) + fullTypeName(vectemplate) + '>'
+      else:
+        foundmeta = ''
+        for metatype in typesDict:
+          for typedata in typesDict[metatype]:
+            if (typedata[0] == normalizedName(vectemplate)):
+              foundmeta = metatype
+              break
+          if (len(foundmeta) > 0):
+            break
+        if (len(foundmeta) > 0):
+          return templ.group(1) + fullTypeName(foundmeta) + '>'
+        else:
+          print('Bad vector param: ' + vectemplate)
+          sys.exit(1)
+    else:
+      print('Bad template type: ' + name)
+      sys.exit(1)
 
   namespaces = scheme.get('namespaces')
   globalNamespace = namespaces.get('global', '')
@@ -244,6 +271,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   typesDict = {}
   TypesDict = {}
   typesList = []
+  TypeConstructors = {}
   boxed = {}
   funcsText = ''
   typesText = ''
@@ -330,30 +358,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     params = nametype.group(3)
     restype = nametype.group(4)
     if (restype.find('<') >= 0):
-      templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._]+)>$', restype)
-      if (templ):
-        vectemplate = templ.group(2)
-        if (re.match(r'^[A-Z]', vectemplate) or re.match(r'^[a-zA-Z0-9]+\.[A-Z]', vectemplate)):
-          restype = templ.group(1) + fullTypeName(vectemplate) + '>'
-        elif (vectemplate in builtinTypes):
-          restype = templ.group(1) + fullTypeName(vectemplate) + '>'
-        else:
-          foundmeta = ''
-          for metatype in typesDict:
-            for typedata in typesDict[metatype]:
-              if (typedata[0] == vectemplate):
-                foundmeta = metatype
-                break
-            if (len(foundmeta) > 0):
-              break
-          if (len(foundmeta) > 0):
-            ptype = templ.group(1) + fullTypeName(foundmeta) + '>'
-          else:
-            print('Bad vector param: ' + vectemplate)
-            sys.exit(1)
-      else:
-        print('Bad template type: ' + restype)
-        sys.exit(1)
+      restype = handleTemplate(restype)
     resType = normalizedName(restype)
     if (restype.find('.') >= 0):
       parts = re.match(r'([a-zA-Z0-9\.]+)\.([A-Z][A-Za-z0-9<>_]+)', restype)
@@ -416,63 +421,20 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             sys.exit(1)
           ptype = pmasktype.group(3)
           if (ptype.find('<') >= 0):
-            templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._]+)>$', ptype)
-            if (templ):
-              vectemplate = templ.group(2)
-              if (re.match(r'^[A-Z]', vectemplate) or re.match(r'^[a-zA-Z0-9]+\.[A-Z]', vectemplate)):
-                ptype = templ.group(1) + fullTypeName(vectemplate) + '>'
-              elif (vectemplate in builtinTypes):
-                ptype = templ.group(1) + fullTypeName(vectemplate) + '>'
-              else:
-                foundmeta = ''
-                for metatype in typesDict:
-                  for typedata in typesDict[metatype]:
-                    if (typedata[0] == vectemplate):
-                      foundmeta = metatype
-                      break
-                  if (len(foundmeta) > 0):
-                    break
-                if (len(foundmeta) > 0):
-                  ptype = templ.group(1) + fullTypeName(foundmeta) + '>'
-                else:
-                  print('Bad vector param: ' + vectemplate)
-                  sys.exit(1)
-            else:
-              print('Bad template type: ' + ptype)
-              sys.exit(1)
+            ptype = handleTemplate(ptype)
           if (not pname in conditions):
             conditionsList.append(pname)
             conditions[pname] = pmasktype.group(2)
             if (ptype == 'true'):
               trivialConditions[pname] = 1
         elif (ptype.find('<') >= 0):
-          templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._]+)>$', ptype)
-          if (templ):
-            vectemplate = templ.group(2)
-            if (vectemplate in builtinTypes):
-              ptype = templ.group(1) + fullTypeName(vectemplate) + '>'
-            elif (re.match(r'^[A-Z]', vectemplate) or re.match(r'^[a-zA-Z0-9]+\.[A-Z]', vectemplate)):
-              ptype = templ.group(1) + fullTypeName(vectemplate) + '>'
-            else:
-              foundmeta = ''
-              for metatype in typesDict:
-                for typedata in typesDict[metatype]:
-                  if typedata[0] == normalizedName(vectemplate):
-                    foundmeta = metatype
-                    break
-                if (len(foundmeta) > 0):
-                  break
-              if (len(foundmeta) > 0):
-                ptype = templ.group(1) + fullTypeName(foundmeta) + '>'
-              else:
-                print('Found no meta: ' + vectemplate)
-                print('Bad vector param: ' + vectemplate)
-                sys.exit(1)
-          else:
-            print('Bad template type: ' + ptype)
-            sys.exit(1)
+          ptype = handleTemplate(ptype)
       prmsList.append(pname)
-      prms[pname] = normalizedName(ptype)
+      normalizedType = normalizedName(ptype)
+      if (normalizedType in TypeConstructors):
+        prms[pname] = TypeConstructors[normalizedType]['typeBare']
+      else:
+        prms[pname] = normalizedType
 
     if (isTemplate == '' and resType == 'X'):
       print('Bad response type "X" in "' + name +'" in line: ' + line)
@@ -672,6 +634,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       TypesDict[restype] = resType
       typesDict[restype].append([name, typeid, prmsList, prms, hasFlags, conditionsList, conditions, trivialConditions, isTemplate])
 
+      TypeConstructors[name] = {'typeBare': restype, 'typeBoxed': resType}
+
       consts = consts + 1
 
   for typeName in builtinTypes:
@@ -723,7 +687,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             name = data[0]
             prms = data[3]
             trivialConditions = data[7]
-            conversionSource += '\tcase ' + idPrefix + name + ': return tl_from(' + conversionMove(name) + '(std::move(value)));\n'
+            conversionSource += '\tcase uint32(' + conversionName(name) + '::ID): return tl_from(' + conversionMove(name) + '(std::move(value)));\n'
           conversionSource += '\tdefault: Unexpected("Type in ' + fullTypeName(restype) + ' tl_from.");\n\t}\n}\n'
         else:
           conversionType = v[0][0]
@@ -1173,10 +1137,10 @@ bool Serialize_core_message(DumpToTextBuffer &to, int32 stage, int32 lev, Types 
 \n'
 
     textSerializeInit += '\
-	result.insert(' + idPrefix + 'rpc_result, Serialize_rpc_result);\n\
-	result.insert(' + idPrefix + 'msg_container, Serialize_msg_container);\n\
-	result.insert(' + idPrefix + 'core_message, Serialize_core_message);\n'
-    textSerializeSource = '\n\
+	    { ' + idPrefix + 'rpc_result, Serialize_rpc_result },\n\
+	    { ' + idPrefix + 'msg_container, Serialize_msg_container },\n\
+	    { ' + idPrefix + 'core_message, Serialize_core_message },\n'
+    textSerializeSource = '\
 namespace {\n\
 \n\
 using Types = QVector<' + typeIdType + '>;\n\
@@ -1185,13 +1149,11 @@ using StagesFlags = QVector<int32>;\n\
 ' + textSerializeMethods + '\n\
 \n\
 using TextSerializer = bool (*)(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag);\n\
-using TextSerializers = QMap<' + typeIdType + ', TextSerializer>;\n\
 \n\
-QMap<' + typeIdType + ', TextSerializer> CreateTextSerializers() {\n\
-	auto result = QMap<' + typeIdType + ', TextSerializer>();\n\
-\n\
+base::flat_map<' + typeIdType + ', TextSerializer> CreateTextSerializers() {\n\
+	return {\n\
 ' + textSerializeInit + '\n\
-	return result;\n\
+	};\n\
 }\n\
 \n\
 } // namespace\n\
@@ -1225,9 +1187,9 @@ bool DumpToTextType(DumpToTextBuffer &to, const ' + primeType + ' *&from, const 
 		}\n\
 \n\
 		int32 lev = level + types.size() - 1;\n\
-		auto it = kSerializers.constFind(type);\n\
-		if (it != kSerializers.cend()) {\n\
-			if (!(*it.value())(to, stage, lev, types, vtypes, stages, flags, from, end, flag)) {\n\
+		auto it = kSerializers.find(type);\n\
+		if (it != kSerializers.end()) {\n\
+			if (!(*it->second)(to, stage, lev, types, vtypes, stages, flags, from, end, flag)) {\n\
 				to.error();\n\
 				return false;\n\
 			}\n\
@@ -1352,6 +1314,7 @@ struct DumpToTextBuffer;\n\
 #include "' + outputSerializationHeaderBasename + '"\n\
 #include "' + outputHeaderBasename + '"\n\
 #include "' + serializationInclude + '"\n\
+#include "base/flat_map.h"\n\
 \n\
 namespace MTP::details {\n\
 ' + textSerializeSource + '\n\

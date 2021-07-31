@@ -32,14 +32,60 @@ const auto kLineBreak = QByteArrayLiteral("\r\n");
 const auto kLineBreak = QByteArrayLiteral("\n");
 #endif // Q_OS_WIN
 
+struct PathPair {
+	QByteArray aff;
+	QByteArray dic;
+};
+
+[[nodiscard]] PathPair PreparePaths(const QString &aff, const QString &dic) {
+	const auto convert = [&](const QString &path) {
+		const auto result = QDir::toNativeSeparators(path).toUtf8();
+#ifdef Q_OS_WIN
+		return "\\\\?\\" + result;
+#else // Q_OS_WIN
+		return result;
+#endif // !Q_OS_WIN
+	};
+	const auto affPath = convert(aff);
+	const auto dicPath = convert(dic);
+
+	return {
+		.aff = convert(aff),
+		.dic = convert(dic),
+	};
+}
+
 auto LocaleNameFromLangId(int langId) {
 	return ::Spellchecker::LocaleFromLangId(langId).name();
 }
 
 QString CustomDictionaryPath() {
-	return QStringLiteral("%1/%2")
-		.arg(::Spellchecker::WorkingDirPath())
-		.arg("custom");
+	return QStringLiteral("%1/%2").arg(
+		::Spellchecker::WorkingDirPath(),
+		"custom");
+}
+
+[[nodiscard]] Hunspell LoadUtfInitializer() {
+	const auto full = [&](const QString &name) {
+		return ::Spellchecker::WorkingDirPath() + '/' + name;
+	};
+	const auto aff = full(u"utf_helper.aff"_q);
+	const auto dic = full(u"utf_helper.dic"_q);
+	if (!QFile::exists(aff)) {
+		QDir().mkpath(::Spellchecker::WorkingDirPath());
+		auto f = QFile(aff);
+		if (f.open(QIODevice::WriteOnly)) {
+			f.write("SET UTF-8" + kLineBreak);
+		}
+	}
+	if (!QFile::exists(dic)) {
+		auto f = QFile(dic);
+		if (f.open(QIODevice::WriteOnly)) {
+			f.write("1" + kLineBreak + "Zzz" + kLineBreak);
+		}
+	}
+	const auto prepared = PreparePaths(aff, dic);
+	return Hunspell(prepared.aff.constData(), prepared.dic.constData());
 }
 
 class HunspellEngine {
@@ -68,7 +114,6 @@ private:
 	QTextCodec *_codec;
 
 };
-
 
 class HunspellService {
 public:
@@ -118,25 +163,17 @@ HunspellEngine::HunspellEngine(const QString &lang)
 	if (workingDir.isEmpty()) {
 		return;
 	}
-	const auto rawPath = QString("%1/%2/%2").arg(workingDir).arg(lang);
-	const auto dictPath = QDir::toNativeSeparators(rawPath).toUtf8();
-
-	const auto affPath = dictPath + ".aff";
-	const auto dicPath = dictPath + ".dic";
+	const auto rawPath = QString("%1/%2/%2").arg(workingDir, lang);
+	const auto affPath = rawPath + ".aff";
+	const auto dicPath = rawPath + ".dic";
 
 	if (!QFileInfo(affPath).isFile() || !QFileInfo(dicPath).isFile()) {
 		return;
 	}
-
-#ifdef Q_OS_WIN
+	const auto prepared = PreparePaths(affPath, dicPath);
 	_hunspell = std::make_unique<Hunspell>(
-		("\\\\?\\" + affPath).constData(),
-		("\\\\?\\" + dicPath).constData());
-#else // Q_OS_WIN
-	_hunspell = std::make_unique<Hunspell>(
-		affPath.constData(),
-		dicPath.constData());
-#endif // !Q_OS_WIN
+		prepared.aff.constData(),
+		prepared.dic.constData());
 
 	_codec = QTextCodec::codecForName(_hunspell->get_dic_encoding());
 	if (!_codec) {
@@ -189,6 +226,10 @@ HunspellService::HunspellService()
 , _customDict(std::make_unique<Hunspell>("", ""))
 , _epoch(std::make_shared<std::atomic<int>>(0))
 , _engineMutex(std::make_shared<std::shared_mutex>()) {
+
+	// This is not perfectly safe, but should be mostly fine.
+	static const auto UtfInitializer = LoadUtfInitializer();
+
 	readFile();
 }
 
@@ -231,7 +272,7 @@ void HunspellService::updateLanguages(std::vector<QString> langs) {
 		const auto missedLangs = [&] {
 			std::shared_lock lock(*engineMutex);
 
-			return ranges::view::all(
+			return ranges::views::all(
 				langs
 			) | ranges::views::filter([&](auto &lang) {
 				return !ranges::contains(*engines, lang, engineLang);
@@ -239,7 +280,7 @@ void HunspellService::updateLanguages(std::vector<QString> langs) {
 		}();
 
 		// Added new enabled engines.
-		auto localEngines = ranges::view::all(
+		auto localEngines = ranges::views::all(
 			missedLangs
 		) | ranges::views::transform([&](auto &lang) -> UniqueEngine {
 			if (savedEpoch != epoch.get()->load()) {
@@ -274,7 +315,7 @@ void HunspellService::updateLanguages(std::vector<QString> langs) {
 				return;
 			}
 			*epoch = 0;
-			_activeLanguages = ranges::view::all(
+			_activeLanguages = ranges::views::all(
 				*engines
 			) | ranges::views::transform(&HunspellEngine::lang)
 			| ranges::to_vector;
@@ -313,7 +354,7 @@ void HunspellService::fillSuggestionList(
 	const auto wordScript = ::Spellchecker::WordScript(&wrongWord);
 
 	const auto customGuesses = _customDict->suggest(wrongWord.toStdString());
-	*optionalSuggestions = ranges::view::all(
+	*optionalSuggestions = ranges::views::all(
 		customGuesses
 	) | ranges::views::take(
 		kMaxSuggestions
@@ -363,7 +404,7 @@ bool HunspellService::isWordInDictionary(const QString &word) {
 // Thread: Main.
 void HunspellService::addWord(const QString &word) {
 	const auto count = ranges::accumulate(
-		ranges::view::values(_addedWords),
+		ranges::views::values(_addedWords),
 		0,
 		ranges::plus(),
 		&std::vector<QString>::size);
@@ -390,8 +431,8 @@ void HunspellService::writeToFile() {
 		return;
 	}
 	auto &&temp = ranges::views::join(
-		ranges::view::values(_addedWords)
-	) | ranges::view::transform([&](auto &str) {
+		ranges::views::values(_addedWords)
+	) | ranges::views::transform([&](auto &str) {
 		return str + kLineBreak;
 	});
 	const auto result = ranges::accumulate(std::move(temp), QString{});
@@ -442,23 +483,23 @@ void HunspellService::readFile() {
 	});
 
 	// {{"a"}, {"β"}};
-	auto groupedWords = ranges::view::all(
+	auto groupedWords = ranges::views::all(
 		filteredWords
-	) | ranges::view::group_by([](auto &a, auto &b) {
+	) | ranges::views::group_by([](auto &a, auto &b) {
 		return WordScript(&a) == WordScript(&b);
-	}) | ranges::view::transform([](auto &&rng) {
+	}) | ranges::views::transform([](auto &&rng) {
 		return rng | ranges::to_vector;
 	}) | ranges::to_vector;
 
 	// {QChar::Script_Latin, QChar::Script_Greek};
-	auto scripts = ranges::view::all(
+	auto scripts = ranges::views::all(
 		groupedWords
-	) | ranges::view::transform([](auto &vector) {
+	) | ranges::views::transform([](auto &vector) {
 		return WordScript(&vector.front());
 	}) | ranges::to_vector;
 
 	// {QChar::Script_Latin : {"a"}, QChar::Script_Greek : {"β"}};
-	auto &&zip = ranges::view::zip(
+	auto &&zip = ranges::views::zip(
 		scripts, groupedWords
 	);
 	_addedWords = zip | ranges::to<WordsMap>();
@@ -504,7 +545,7 @@ bool IsWordInDictionary(const QString &wordToCheck) {
 
 void UpdateLanguages(std::vector<int> languages) {
 
-	const auto languageCodes = ranges::view::all(
+	const auto languageCodes = ranges::views::all(
 		languages
 	) | ranges::views::transform(
 		LocaleNameFromLangId

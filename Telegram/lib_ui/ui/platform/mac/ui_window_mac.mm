@@ -7,7 +7,7 @@
 #include "ui/platform/mac/ui_window_mac.h"
 
 #include "ui/platform/mac/ui_window_title_mac.h"
-#include "ui/widgets/window.h"
+#include "ui/widgets/rp_window.h"
 #include "base/platform/base_platform_info.h"
 #include "styles/palette.h"
 
@@ -117,6 +117,7 @@ public:
 	[[nodiscard]] QRect controlsRect() const;
 	[[nodiscard]] bool checkNativeMove(void *nswindow) const;
 	void activateBeforeNativeMove();
+	void setStaysOnTop(bool enabled);
 	void close();
 
 private:
@@ -127,6 +128,7 @@ private:
 
 	[[nodiscard]] Fn<void(bool)> toggleCustomTitleCallback();
 	[[nodiscard]] Fn<void()> enforceStyleCallback();
+	void enforceStyle();
 
 	const not_null<WindowHelper*> _owner;
 	const WindowObserver *_observer = nullptr;
@@ -141,13 +143,14 @@ private:
 };
 
 WindowHelper::Private::Private(not_null<WindowHelper*> owner)
-: _owner(owner)
-, _observer([[WindowObserver alloc] initWithToggle:toggleCustomTitleCallback() enforce:enforceStyleCallback()]) {
+: _owner(owner) {
 	init();
 }
 
 WindowHelper::Private::~Private() {
-	[_observer release];
+	if (_observer) {
+		[_observer release];
+	}
 }
 
 int WindowHelper::Private::customTitleHeight() const {
@@ -201,8 +204,19 @@ void WindowHelper::Private::activateBeforeNativeMove() {
 	[_nativeWindow makeKeyAndOrderFront:_nativeWindow];
 }
 
+void WindowHelper::Private::setStaysOnTop(bool enabled) {
+	_owner->BasicWindowHelper::setStaysOnTop(enabled);
+	resolveWeakPointers();
+	initCustomTitle();
+}
+
 void WindowHelper::Private::close() {
-	[_nativeWindow close];
+	const auto weak = Ui::MakeWeak(_owner->window());
+	QCloseEvent e;
+	qApp->sendEvent(_owner->window(), &e);
+	if (e.isAccepted() && weak && _nativeWindow) {
+		[_nativeWindow close];
+	}
 }
 
 Fn<void(bool)> WindowHelper::Private::toggleCustomTitleCallback() {
@@ -213,11 +227,13 @@ Fn<void(bool)> WindowHelper::Private::toggleCustomTitleCallback() {
 }
 
 Fn<void()> WindowHelper::Private::enforceStyleCallback() {
-	return crl::guard(_owner->window(), [=] {
-		if (_nativeWindow && _customTitleHeight > 0) {
-			[_nativeWindow setStyleMask:[_nativeWindow styleMask] | NSFullSizeContentViewWindowMask];
-		}
-	});
+	return crl::guard(_owner->window(), [=] { enforceStyle(); });
+}
+
+void WindowHelper::Private::enforceStyle() {
+	if (_nativeWindow && _customTitleHeight > 0) {
+		[_nativeWindow setStyleMask:[_nativeWindow styleMask] | NSFullSizeContentViewWindowMask];
+	}
 }
 
 void WindowHelper::Private::initOpenGL() {
@@ -241,6 +257,10 @@ void WindowHelper::Private::initCustomTitle() {
 
 	[_nativeWindow setTitlebarAppearsTransparent:YES];
 
+	if (_observer) {
+		[_observer release];
+	}
+	_observer = [[WindowObserver alloc] initWithToggle:toggleCustomTitleCallback() enforce:enforceStyleCallback()];
 	[[NSNotificationCenter defaultCenter] addObserver:_observer selector:@selector(windowWillEnterFullScreen:) name:NSWindowWillEnterFullScreenNotification object:_nativeWindow];
 	[[NSNotificationCenter defaultCenter] addObserver:_observer selector:@selector(windowWillExitFullScreen:) name:NSWindowWillExitFullScreenNotification object:_nativeWindow];
 	[[NSNotificationCenter defaultCenter] addObserver:_observer selector:@selector(windowDidExitFullScreen:) name:NSWindowDidExitFullScreenNotification object:_nativeWindow];
@@ -337,13 +357,16 @@ void WindowHelper::setFixedSize(QSize size) {
 		(_title ? _title->height() : 0) + size.height());
 }
 
+void WindowHelper::setStaysOnTop(bool enabled) {
+	_private->setStaysOnTop(enabled);
+}
+
 void WindowHelper::setGeometry(QRect rect) {
 	window()->setGeometry(
 		rect.marginsAdded({ 0, (_title ? _title->height() : 0), 0, 0 }));
 }
 
 void WindowHelper::setupBodyTitleAreaEvents() {
-#ifndef OS_OSX
 	const auto controls = _private->controlsRect();
 	qApp->installNativeEventFilter(new EventFilter(window(), [=](void *nswindow) {
 		const auto point = body()->mapFromGlobal(QCursor::pos());
@@ -356,28 +379,6 @@ void WindowHelper::setupBodyTitleAreaEvents() {
 		}
 		return false;
 	}));
-#else // OS_OSX
-	// OS X 10.10 doesn't have performWindowDragWithEvent yet.
-	body()->events() | rpl::start_with_next([=](not_null<QEvent*> e) {
-		const auto hitTest = [&] {
-			return bodyTitleAreaHit(
-				static_cast<QMouseEvent*>(e.get())->pos());
-		};
-		if (e->type() == QEvent::MouseButtonRelease
-			&& (static_cast<QMouseEvent*>(e.get())->button()
-				== Qt::LeftButton)) {
-			_drag = std::nullopt;
-		} else if (e->type() == QEvent::MouseButtonPress
-			&& hitTest()
-			&& (static_cast<QMouseEvent*>(e.get())->button()
-				== Qt::LeftButton)) {
-			_drag = { window()->pos(), static_cast<QMouseEvent*>(e.get())->globalPos() };
-		} else if (e->type() == QEvent::MouseMove && _drag && !window()->isFullScreen()) {
-			const auto delta = static_cast<QMouseEvent*>(e.get())->globalPos() - _drag->dragStartPosition;
-			window()->move(_drag->windowStartPosition + delta);
-		}
-	}, body()->lifetime());
-#endif // OS_OSX
 }
 
 void WindowHelper::close() {
@@ -385,6 +386,11 @@ void WindowHelper::close() {
 }
 
 void WindowHelper::init() {
+	style::PaletteChanged(
+	) | rpl::start_with_next([=] {
+		Ui::ForceFullRepaint(window());
+	}, window()->lifetime());
+
 	rpl::combine(
 		window()->sizeValue(),
 		_title->heightValue(),
@@ -404,6 +410,10 @@ void WindowHelper::init() {
 std::unique_ptr<BasicWindowHelper> CreateSpecialWindowHelper(
 		not_null<RpWidget*> window) {
 	return std::make_unique<WindowHelper>(window);
+}
+
+bool NativeWindowFrameSupported() {
+	return false;
 }
 
 } // namespace Platform

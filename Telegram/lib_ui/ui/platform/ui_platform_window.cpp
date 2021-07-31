@@ -8,7 +8,7 @@
 
 #include "ui/platform/ui_platform_window_title.h"
 #include "ui/platform/ui_platform_utility.h"
-#include "ui/widgets/window.h"
+#include "ui/widgets/rp_window.h"
 #include "ui/widgets/shadow.h"
 #include "ui/painter.h"
 #include "styles/style_widgets.h"
@@ -44,12 +44,19 @@ void BasicWindowHelper::setTitle(const QString &title) {
 void BasicWindowHelper::setTitleStyle(const style::WindowTitle &st) {
 }
 
+void BasicWindowHelper::setNativeFrame(bool enabled) {
+}
+
 void BasicWindowHelper::setMinimumSize(QSize size) {
 	_window->setMinimumSize(size);
 }
 
 void BasicWindowHelper::setFixedSize(QSize size) {
 	_window->setFixedSize(size);
+}
+
+void BasicWindowHelper::setStaysOnTop(bool enabled) {
+	_window->setWindowFlag(Qt::WindowStaysOnTopHint, enabled);
 }
 
 void BasicWindowHelper::setGeometry(QRect rect) {
@@ -111,7 +118,6 @@ void BasicWindowHelper::setupBodyTitleAreaEvents() {
 				== Qt::LeftButton)) {
 			_mousePressed = true;
 		} else if (e->type() == QEvent::MouseMove) {
-			const auto mouseEvent = static_cast<QMouseEvent*>(e.get());
 			if (_mousePressed
 #ifndef Q_OS_WIN // We handle fullscreen startSystemMove() only on Windows.
 				&& !_window->isFullScreen()
@@ -140,14 +146,17 @@ DefaultWindowHelper::DefaultWindowHelper(not_null<RpWidget*> window)
 }
 
 void DefaultWindowHelper::init() {
+	_title->show(); // Be consistent with _nativeFrame == false.
 	window()->setWindowFlag(Qt::FramelessWindowHint);
 
 	if (WindowExtentsSupported()) {
 		window()->setAttribute(Qt::WA_TranslucentBackground);
 	}
 
-	window()->widthValue(
-	) | rpl::start_with_next([=](int width) {
+	rpl::combine(
+		window()->widthValue(),
+		_title->shownValue()
+	) | rpl::start_with_next([=](int width, bool shown) {
 		const auto area = resizeArea();
 		_title->setGeometry(
 			area.left(),
@@ -158,17 +167,21 @@ void DefaultWindowHelper::init() {
 
 	rpl::combine(
 		window()->sizeValue(),
-		_title->heightValue()
-	) | rpl::start_with_next([=](QSize size, int titleHeight) {
+		_title->heightValue(),
+		_title->shownValue()
+	) | rpl::start_with_next([=](
+			QSize size,
+			int titleHeight,
+			bool titleShown) {
 		const auto area = resizeArea();
 
 		const auto sizeWithoutMargins = size
-			.shrunkBy({ 0, titleHeight, 0, 0 })
+			.shrunkBy({ 0, titleShown ? titleHeight : 0, 0, 0 })
 			.shrunkBy(area);
 
 		const auto topLeft = QPoint(
 			area.left(),
-			area.top() + titleHeight);
+			area.top() + (titleShown ? titleHeight : 0));
 
 		_body->setGeometry(QRect(topLeft, sizeWithoutMargins));
 	}, _body->lifetime());
@@ -230,7 +243,9 @@ bool DefaultWindowHelper::hasShadow() const {
 }
 
 QMargins DefaultWindowHelper::resizeArea() const {
-	if (window()->isMaximized() || window()->isFullScreen()) {
+	if (window()->isMaximized()
+		|| window()->isFullScreen()
+		|| _nativeFrame) {
 		return QMargins();
 	}
 
@@ -239,28 +254,36 @@ QMargins DefaultWindowHelper::resizeArea() const {
 
 Qt::Edges DefaultWindowHelper::edgesFromPos(const QPoint &pos) const {
 	const auto area = resizeArea();
+	const auto ignoreHorizontal = (window()->minimumWidth()
+		== window()->maximumWidth());
+	const auto ignoreVertical = (window()->minimumHeight()
+		== window()->maximumHeight());
 
 	if (area.isNull()) {
 		return Qt::Edges();
-	} else if (pos.x() <= area.left()) {
-		if (pos.y() <= area.top()) {
+	} else if (!ignoreHorizontal && pos.x() <= area.left()) {
+		if (!ignoreVertical && pos.y() <= area.top()) {
 			return Qt::LeftEdge | Qt::TopEdge;
-		} else if (pos.y() >= (window()->height() - area.bottom())) {
+		} else if (!ignoreVertical
+			&& pos.y() >= (window()->height() - area.bottom())) {
 			return Qt::LeftEdge | Qt::BottomEdge;
 		}
 
 		return Qt::LeftEdge;
-	} else if (pos.x() >= (window()->width() - area.right())) {
-		if (pos.y() <= area.top()) {
+	} else if (!ignoreHorizontal
+		&& pos.x() >= (window()->width() - area.right())) {
+		if (!ignoreVertical && pos.y() <= area.top()) {
 			return Qt::RightEdge | Qt::TopEdge;
-		} else if (pos.y() >= (window()->height() - area.bottom())) {
+		} else if (!ignoreVertical
+			&& pos.y() >= (window()->height() - area.bottom())) {
 			return Qt::RightEdge | Qt::BottomEdge;
 		}
 
 		return Qt::RightEdge;
-	} else if (pos.y() <= area.top()) {
+	} else if (!ignoreVertical && pos.y() <= area.top()) {
 		return Qt::TopEdge;
-	} else if (pos.y() >= (window()->height() - area.bottom())) {
+	} else if (!ignoreVertical
+		&& pos.y() >= (window()->height() - area.bottom())) {
 		return Qt::BottomEdge;
 	}
 
@@ -271,7 +294,7 @@ bool DefaultWindowHelper::eventFilter(QObject *obj, QEvent *e) {
 	// doesn't work with RpWidget::events() for some reason
 	if (e->type() == QEvent::MouseMove
 		&& obj->isWidgetType()
-		&& static_cast<QWidget*>(window()) == static_cast<QWidget*>(obj)) {
+		&& window()->isAncestorOf(static_cast<QWidget*>(obj))) {
 		const auto mouseEvent = static_cast<QMouseEvent*>(e);
 		const auto currentPoint = mouseEvent->windowPos().toPoint();
 		const auto edges = edgesFromPos(currentPoint);
@@ -299,25 +322,26 @@ void DefaultWindowHelper::setTitleStyle(const style::WindowTitle &st) {
 		_title->st()->height);
 }
 
+void DefaultWindowHelper::setNativeFrame(bool enabled) {
+	_nativeFrame = enabled;
+	window()->windowHandle()->setFlag(Qt::FramelessWindowHint, !enabled);
+	_title->setVisible(!enabled);
+	updateWindowExtents();
+}
+
 void DefaultWindowHelper::setMinimumSize(QSize size) {
-	const auto sizeWithMargins = size
-		.grownBy({ 0, _title->height(), 0, 0 })
-		.grownBy(resizeArea());
+	const auto sizeWithMargins = size.grownBy(bodyPadding());
 	window()->setMinimumSize(sizeWithMargins);
 }
 
 void DefaultWindowHelper::setFixedSize(QSize size) {
-	const auto sizeWithMargins = size
-		.grownBy({ 0, _title->height(), 0, 0 })
-		.grownBy(resizeArea());
+	const auto sizeWithMargins = size.grownBy(bodyPadding());
 	window()->setFixedSize(sizeWithMargins);
 	_title->setResizeEnabled(false);
 }
 
 void DefaultWindowHelper::setGeometry(QRect rect) {
-	window()->setGeometry(rect
-		.marginsAdded({ 0, _title->height(), 0, 0 })
-		.marginsAdded(resizeArea()));
+	window()->setGeometry(rect.marginsAdded(bodyPadding()));
 }
 
 void DefaultWindowHelper::paintBorders(QPainter &p) {
@@ -365,7 +389,7 @@ void DefaultWindowHelper::paintBorders(QPainter &p) {
 }
 
 void DefaultWindowHelper::updateWindowExtents() {
-	if (hasShadow()) {
+	if (hasShadow() && !_nativeFrame) {
 		Platform::SetWindowExtents(
 			window()->windowHandle(),
 			resizeArea());
@@ -375,6 +399,14 @@ void DefaultWindowHelper::updateWindowExtents() {
 		Platform::UnsetWindowExtents(window()->windowHandle());
 		_extentsSet = false;
 	}
+}
+
+int DefaultWindowHelper::titleHeight() const {
+	return _title->isHidden() ? 0 : _title->height();
+}
+
+QMargins DefaultWindowHelper::bodyPadding() const {
+	return resizeArea() + QMargins{ 0, titleHeight(), 0, 0 };
 }
 
 void DefaultWindowHelper::updateCursor(Qt::Edges edges) {
@@ -389,7 +421,7 @@ void DefaultWindowHelper::updateCursor(Qt::Edges edges) {
 	} else if ((edges & Qt::TopEdge) || (edges & Qt::BottomEdge)) {
 		window()->setCursor(QCursor(Qt::SizeVerCursor));
 	} else {
-		window()->unsetCursor();
+		window()->setCursor(QCursor(Qt::ArrowCursor));
 	}
 }
 

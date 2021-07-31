@@ -34,7 +34,7 @@ else()
     )
 
     find_package(PkgConfig REQUIRED)
-    pkg_search_module(GTK REQUIRED gtk+-2.0 gtk+-3.0)
+    pkg_check_modules(GTK REQUIRED gtk+-3.0)
 
     target_include_directories(external_hime_im_client
     PUBLIC
@@ -52,7 +52,22 @@ else()
         UNIX=1
         FREEBSD=0
         CLIENT_LIB=1
+        GTK_DISABLE_DEPRECATED
     )
+
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        add_library(external_hime_im_client_options INTERFACE)
+
+        target_compile_options(external_hime_im_client_options
+        INTERFACE
+            -Wno-sometimes-uninitialized
+        )
+
+        target_link_libraries(external_hime_im_client
+        PRIVATE
+            external_hime_im_client_options
+        )
+    endif()
 
     target_link_libraries(external_hime_im_client
     PRIVATE
@@ -69,7 +84,7 @@ else()
     else()
         pkg_check_modules(X11 REQUIRED x11)
 
-        target_include_directories(external_hime_im_client
+        target_include_directories(external_hime_im_client SYSTEM
         PRIVATE
             ${X11_INCLUDE_DIRS}
         )

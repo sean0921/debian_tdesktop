@@ -36,13 +36,13 @@ class SessionController;
 namespace Ui {
 class PopupMenu;
 enum class ReportReason;
+class PathShiftGradient;
 } // namespace Ui
 
 class HistoryWidget;
 class HistoryInner
 	: public Ui::RpWidget
-	, public Ui::AbstractTooltipShower
-	, private base::Subscriber {
+	, public Ui::AbstractTooltipShower {
 	// The Q_OBJECT meta info is used for qobject_cast!
 	Q_OBJECT
 
@@ -64,6 +64,8 @@ public:
 
 	void touchScrollUpdated(const QPoint &screenPos);
 
+	void setItemsRevealHeight(int revealHeight);
+	void changeItemsRevealHeight(int revealHeight);
 	void checkHistoryActivation();
 	void recountHistoryGeometry();
 	void updateSize();
@@ -89,6 +91,14 @@ public:
 	void elementShowPollResults(
 		not_null<PollData*> poll,
 		FullMsgId context);
+	void elementOpenPhoto(
+		not_null<PhotoData*> photo,
+		FullMsgId context);
+	void elementOpenDocument(
+		not_null<DocumentData*> document,
+		FullMsgId context,
+		bool showInMediaView = false);
+	void elementCancelUpload(const FullMsgId &context);
 	void elementShowTooltip(
 		const TextWithEntities &text,
 		Fn<void()> hiddenCallback);
@@ -97,6 +107,9 @@ public:
 		const QString &command,
 		const FullMsgId &context);
 	void elementHandleViaClick(not_null<UserData*> bot);
+	bool elementIsChatWide();
+	not_null<Ui::PathShiftGradient*> elementPathShiftGradient();
+	void elementReplyTo(const FullMsgId &to);
 
 	void updateBotInfo(bool recount = true);
 
@@ -152,7 +165,7 @@ protected:
 	void keyPressEvent(QKeyEvent *e) override;
 	void contextMenuEvent(QContextMenuEvent *e) override;
 
-public slots:
+public Q_SLOTS:
 	void onParentGeometryChanged();
 
 	void onTouchSelect();
@@ -335,6 +348,7 @@ private:
 	History *_migrated = nullptr;
 	int _contentWidth = 0;
 	int _historyPaddingTop = 0;
+	int _revealHeight = 0;
 
 	// Save visible area coords for painting / pressing userpics.
 	int _visibleAreaTop = 0;
@@ -356,6 +370,9 @@ private:
 	style::cursor _cursor = style::cur_default;
 	SelectedItems _selected;
 	std::optional<Ui::ReportReason> _chooseForReportReason;
+
+	const std::unique_ptr<Ui::PathShiftGradient> _pathGradient;
+	bool _isChatWide = false;
 
 	base::flat_set<not_null<const HistoryItem*>> _animatedStickersPlayed;
 	base::flat_map<

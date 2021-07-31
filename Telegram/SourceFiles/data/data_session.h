@@ -215,8 +215,8 @@ public:
 
 	void userIsBotChanged(not_null<UserData*> user);
 	[[nodiscard]] rpl::producer<not_null<UserData*>> userIsBotChanges() const;
-	void botCommandsChanged(not_null<UserData*> user);
-	[[nodiscard]] rpl::producer<not_null<UserData*>> botCommandsChanges() const;
+	void botCommandsChanged(not_null<PeerData*> peer);
+	[[nodiscard]] rpl::producer<not_null<PeerData*>> botCommandsChanges() const;
 
 	struct ItemVisibilityQuery {
 		not_null<HistoryItem*> item;
@@ -235,8 +235,8 @@ public:
 	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemLayoutChanged() const;
 	void notifyViewLayoutChange(not_null<const ViewElement*> view);
 	[[nodiscard]] rpl::producer<not_null<const ViewElement*>> viewLayoutChanged() const;
-	void notifyUnreadItemAdded(not_null<HistoryItem*> item);
-	[[nodiscard]] rpl::producer<not_null<HistoryItem*>> unreadItemAdded() const;
+	void notifyNewItemAdded(not_null<HistoryItem*> item);
+	[[nodiscard]] rpl::producer<not_null<HistoryItem*>> newItemAdded() const;
 	void requestItemRepaint(not_null<const HistoryItem*> item);
 	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemRepaintRequest() const;
 	void requestViewRepaint(not_null<const ViewElement*> view);
@@ -400,7 +400,7 @@ public:
 
 	HistoryItem *addNewMessage(
 		const MTPMessage &data,
-		MTPDmessage_ClientFlags flags,
+		MessageFlags localFlags,
 		NewMessageType type);
 
 	struct SendActionAnimationUpdate {
@@ -476,7 +476,7 @@ public:
 		TimeId date,
 		const QVector<MTPDocumentAttribute> &attributes,
 		const QString &mime,
-		const QByteArray &inlineThumbnailBytes,
+		const InlineImageLocation &inlineThumbnail,
 		const ImageWithLocation &thumbnail,
 		const ImageWithLocation &videoThumbnail,
 		int32 dc,
@@ -609,9 +609,6 @@ public:
 	[[nodiscard]] Folder *folderLoaded(FolderId id) const;
 	not_null<Folder*> processFolder(const MTPFolder &data);
 	not_null<Folder*> processFolder(const MTPDfolder &data);
-	//void setDefaultFeedId(FeedId id); // #feed
-	//FeedId defaultFeedId() const;
-	//rpl::producer<FeedId> defaultFeedIdValue() const;
 
 	[[nodiscard]] not_null<Dialogs::MainList*> chatsList(
 		Data::Folder *folder = nullptr);
@@ -746,7 +743,7 @@ private:
 		TimeId date,
 		const QVector<MTPDocumentAttribute> &attributes,
 		const QString &mime,
-		const QByteArray &inlineThumbnailBytes,
+		const InlineImageLocation &inlineThumbnail,
 		const ImageWithLocation &thumbnail,
 		const ImageWithLocation &videoThumbnail,
 		int32 dc,
@@ -834,12 +831,12 @@ private:
 	rpl::event_stream<Data::Folder*> _chatsListLoadedEvents;
 	rpl::event_stream<Data::Folder*> _chatsListChanged;
 	rpl::event_stream<not_null<UserData*>> _userIsBotChanges;
-	rpl::event_stream<not_null<UserData*>> _botCommandsChanges;
+	rpl::event_stream<not_null<PeerData*>> _botCommandsChanges;
 	base::Observable<ItemVisibilityQuery> _queryItemVisibility;
 	rpl::event_stream<IdChange> _itemIdChanges;
 	rpl::event_stream<not_null<const HistoryItem*>> _itemLayoutChanges;
 	rpl::event_stream<not_null<const ViewElement*>> _viewLayoutChanges;
-	rpl::event_stream<not_null<HistoryItem*>> _unreadItemAdded;
+	rpl::event_stream<not_null<HistoryItem*>> _newItemAdded;
 	rpl::event_stream<not_null<const HistoryItem*>> _itemRepaintRequest;
 	rpl::event_stream<not_null<const ViewElement*>> _viewRepaintRequest;
 	rpl::event_stream<not_null<const HistoryItem*>> _itemResizeRequest;
@@ -940,7 +937,6 @@ private:
 	base::Timer _pollsClosingTimer;
 
 	base::flat_map<FolderId, std::unique_ptr<Folder>> _folders;
-	//rpl::variable<FeedId> _defaultFeedId = FeedId(); // #feed
 
 	std::unordered_map<
 		not_null<const HistoryItem*>,

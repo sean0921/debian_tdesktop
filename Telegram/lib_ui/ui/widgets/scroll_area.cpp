@@ -76,8 +76,8 @@ void ScrollBar::updateBar(bool force) {
 		if (h >= rh || !area()->scrollTopMax() || rh < _st->minHeight) {
 			if (!isHidden()) hide();
 			bool newTopSh = (_st->topsh < 0), newBottomSh = (_st->bottomsh < 0);
-			if (newTopSh != _topSh || force) emit topShadowVisibility(_topSh = newTopSh);
-			if (newBottomSh != _bottomSh || force) emit bottomShadowVisibility(_bottomSh = newBottomSh);
+			if (newTopSh != _topSh || force) topShadowVisibility(_topSh = newTopSh);
+			if (newBottomSh != _bottomSh || force) bottomShadowVisibility(_bottomSh = newBottomSh);
 			return;
 		}
 
@@ -105,8 +105,8 @@ void ScrollBar::updateBar(bool force) {
 	}
 	if (_vertical) {
 		bool newTopSh = (_st->topsh < 0) || (area()->scrollTop() > _st->topsh), newBottomSh = (_st->bottomsh < 0) || (area()->scrollTop() < area()->scrollTopMax() - _st->bottomsh);
-		if (newTopSh != _topSh || force) emit topShadowVisibility(_topSh = newTopSh);
-		if (newBottomSh != _bottomSh || force) emit bottomShadowVisibility(_bottomSh = newBottomSh);
+		if (newTopSh != _topSh || force) topShadowVisibility(_topSh = newTopSh);
+		if (newBottomSh != _bottomSh || force) bottomShadowVisibility(_bottomSh = newBottomSh);
 	}
 	if (isHidden()) show();
 }
@@ -252,7 +252,7 @@ void ScrollBar::mousePressEvent(QMouseEvent *e) {
 	}
 
 	area()->setMovingByScrollBar(true);
-	emit area()->scrollStarted();
+	area()->scrollStarted();
 }
 
 void ScrollBar::mouseReleaseEvent(QMouseEvent *e) {
@@ -260,7 +260,7 @@ void ScrollBar::mouseReleaseEvent(QMouseEvent *e) {
 		setMoving(false);
 
 		area()->setMovingByScrollBar(false);
-		emit area()->scrollFinished();
+		area()->scrollFinished();
 	}
 	if (!_over) {
 		setMouseTracking(false);
@@ -272,7 +272,7 @@ void ScrollBar::resizeEvent(QResizeEvent *e) {
 }
 
 ScrollArea::ScrollArea(QWidget *parent, const style::ScrollArea &st, bool handleTouch)
-: RpWidgetWrap<QScrollArea>(parent)
+: Parent(parent)
 , _st(st)
 , _horizontalBar(this, false, &_st)
 , _verticalBar(this, true, &_st)
@@ -286,10 +286,13 @@ ScrollArea::ScrollArea(QWidget *parent, const style::ScrollArea &st, bool handle
 	connect(_verticalBar, SIGNAL(bottomShadowVisibility(bool)), _bottomShadow, SLOT(changeVisibility(bool)));
 	_verticalBar->updateBar(true);
 
+	verticalScrollBar()->setSingleStep(style::ConvertScale(verticalScrollBar()->singleStep()));
+	horizontalScrollBar()->setSingleStep(style::ConvertScale(horizontalScrollBar()->singleStep()));
+
 	setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
-	setFrameStyle(QFrame::NoFrame | QFrame::Plain);
+	setFrameStyle(int(QFrame::NoFrame) | QFrame::Plain);
 	viewport()->setAutoFillBackground(false);
 
 	_horizontalValue = horizontalScrollBar()->value();
@@ -342,7 +345,7 @@ void ScrollArea::onScrolled() {
 		}
 	}
 	if (em) {
-		emit scrolled();
+		scrolled();
 		if (!_movingByScrollBar) {
 			SendSynteticMouseEvent(this, QEvent::MouseMove, Qt::NoButton);
 		}
@@ -350,7 +353,7 @@ void ScrollArea::onScrolled() {
 }
 
 void ScrollArea::onInnerResized() {
-	emit innerResized();
+	innerResized();
 }
 
 int ScrollArea::scrollWidth() const {
@@ -601,12 +604,12 @@ void ScrollArea::resizeEvent(QResizeEvent *e) {
 	_verticalBar->recountSize();
 	_topShadow->setGeometry(QRect(0, 0, width(), qAbs(_st.topsh)));
 	_bottomShadow->setGeometry(QRect(0, height() - qAbs(_st.bottomsh), width(), qAbs(_st.bottomsh)));
-	emit geometryChanged();
+	geometryChanged();
 }
 
 void ScrollArea::moveEvent(QMoveEvent *e) {
 	QScrollArea::moveEvent(e);
-	emit geometryChanged();
+	geometryChanged();
 }
 
 void ScrollArea::keyPressEvent(QKeyEvent *e) {
@@ -678,7 +681,7 @@ void ScrollArea::scrollToY(int toTop, int toBottom) {
 	verticalScrollBar()->setValue(scToTop);
 }
 
-void ScrollArea::doSetOwnedWidget(object_ptr<TWidget> w) {
+void ScrollArea::doSetOwnedWidget(object_ptr<QWidget> w) {
 	if (widget() && _touchEnabled) {
 		widget()->removeEventFilter(this);
 		if (!_widgetAcceptsTouch) widget()->setAttribute(Qt::WA_AcceptTouchEvents, false);
@@ -695,7 +698,7 @@ void ScrollArea::doSetOwnedWidget(object_ptr<TWidget> w) {
 	}
 }
 
-object_ptr<TWidget> ScrollArea::doTakeWidget() {
+object_ptr<QWidget> ScrollArea::doTakeWidget() {
 	QScrollArea::takeWidget();
 	return std::move(_widget);
 }

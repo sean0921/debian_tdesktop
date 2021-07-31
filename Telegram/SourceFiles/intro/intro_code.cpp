@@ -13,11 +13,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_checker.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
+#include "ui/text/format_values.h" // Ui::FormatPhone
 #include "ui/text/text_utilities.h"
 #include "boxes/confirm_box.h"
 #include "main/main_account.h"
 #include "mtproto/mtp_instance.h"
-#include "app.h"
 #include "styles/style_intro.h"
 
 namespace Intro {
@@ -99,7 +99,7 @@ CodeWidget::CodeWidget(
 
 	_code->setDigitsCountMax(getData()->codeLength);
 
-	setTitleText(rpl::single(App::formatPhone(getData()->phone)));
+	setTitleText(rpl::single(Ui::FormatPhone(getData()->phone)));
 	updateDescText();
 }
 
@@ -266,8 +266,8 @@ void CodeWidget::codeSubmitDone(const MTPauth_Authorization &result) {
 	});
 }
 
-void CodeWidget::codeSubmitFail(const RPCError &error) {
-	if (MTP::isFloodError(error)) {
+void CodeWidget::codeSubmitFail(const MTP::Error &error) {
+	if (MTP::IsFloodError(error)) {
 		stopCheck();
 		_sentRequest = 0;
 		showCodeError(tr::lng_flood_error());
@@ -288,7 +288,7 @@ void CodeWidget::codeSubmitFail(const RPCError &error) {
 		_sentRequest = api().request(MTPaccount_GetPassword(
 		)).done([=](const MTPaccount_Password &result) {
 			gotPassword(result);
-		}).fail([=](const RPCError &error) {
+		}).fail([=](const MTP::Error &error) {
 			codeSubmitFail(error);
 		}).handleFloodErrors().send();
 	} else if (Logs::DebugEnabled()) { // internal server error
@@ -391,7 +391,7 @@ void CodeWidget::submit() {
 		MTP_string(_sentCode)
 	)).done([=](const MTPauth_Authorization &result) {
 		codeSubmitDone(result);
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		codeSubmitFail(error);
 	}).handleFloodErrors().send();
 }
@@ -405,7 +405,7 @@ void CodeWidget::noTelegramCode() {
 		MTP_bytes(getData()->phoneHash)
 	)).done([=](const MTPauth_SentCode &result) {
 		noTelegramCodeDone(result);
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		noTelegramCodeFail(error);
 	}).handleFloodErrors().send();
 }
@@ -433,10 +433,13 @@ void CodeWidget::noTelegramCodeDone(const MTPauth_SentCode &result) {
 	updateDescText();
 }
 
-void CodeWidget::noTelegramCodeFail(const RPCError &error) {
-	if (MTP::isFloodError(error)) {
+void CodeWidget::noTelegramCodeFail(const MTP::Error &error) {
+	if (MTP::IsFloodError(error)) {
 		_noTelegramCodeRequestId = 0;
 		showCodeError(tr::lng_flood_error());
+		return;
+	} else if (error.type() == u"SEND_CODE_UNAVAILABLE"_q) {
+		_noTelegramCodeRequestId = 0;
 		return;
 	}
 

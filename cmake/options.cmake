@@ -9,7 +9,8 @@ add_library(desktop-app::common_options ALIAS common_options)
 
 target_compile_definitions(common_options
 INTERFACE
-    $<IF:$<CONFIG:Debug>,_DEBUG,NDEBUG>
+    $<$<CONFIG:Debug>:_DEBUG>
+    QT_NO_KEYWORDS
     QT_NO_CAST_FROM_BYTEARRAY
 )
 
@@ -62,10 +63,10 @@ if (DESKTOP_APP_USE_PACKAGED_LAZY)
     )
 endif()
 
-if (DESKTOP_APP_USE_PACKAGED_LAZY_PLATFORMTHEMES)
+if (DESKTOP_APP_DISABLE_WEBKITGTK)
     target_compile_definitions(common_options
     INTERFACE
-        DESKTOP_APP_USE_PACKAGED_LAZY_PLATFORMTHEMES
+        DESKTOP_APP_DISABLE_WEBKITGTK
     )
 endif()
 
@@ -73,13 +74,6 @@ if (DESKTOP_APP_USE_PACKAGED_FONTS)
     target_compile_definitions(common_options
     INTERFACE
         DESKTOP_APP_USE_PACKAGED_FONTS
-    )
-endif()
-
-if (rlottie_FOUND OR RLOTTIE_FOUND)
-    target_compile_definitions(common_options
-    INTERFACE
-        DESKTOP_APP_USE_PACKAGED_RLOTTIE
     )
 endif()
 

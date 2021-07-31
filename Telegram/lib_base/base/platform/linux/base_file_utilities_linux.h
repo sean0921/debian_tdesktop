@@ -8,12 +8,8 @@
 
 namespace base::Platform {
 
-inline QString FileNameFromUserString(QString name) {
+[[nodiscard]] inline QString FileNameFromUserString(QString name) {
 	return name;
 }
-
-bool IsNonExtensionMimeFrom(
-	const QString &path,
-	const flat_set<QString> &mimeTypes);
 
 } // namespace base::Platform

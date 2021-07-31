@@ -133,8 +133,8 @@ QImage QrExact(const Qr::Data &data, int pixel, QColor color) {
 				skip,
 				skip,
 				Intro::details::TelegramLogoImage().scaled(
-					logoSize,
-					logoSize,
+					logoSize * cIntRetinaFactor(),
+					logoSize * cIntRetinaFactor(),
 					Qt::IgnoreAspectRatio,
 					Qt::SmoothTransformation));
 		}
@@ -260,9 +260,9 @@ void Controller::addHeaderBlock(not_null<Ui::VerticalLayout*> container) {
 	const auto editLink = crl::guard(weak, [=] {
 		EditLink(_peer, _data.current());
 	});
-	const auto deleteLink = [=] {
+	const auto deleteLink = crl::guard(weak, [=] {
 		DeleteLink(_peer, admin, link);
-	};
+	});
 
 	const auto createMenu = [=] {
 		auto result = base::make_unique_q<Ui::PopupMenu>(container);
@@ -525,7 +525,7 @@ void Controller::loadMoreRows() {
 		auto slice = Api::ParseJoinedByLinkSlice(_peer, result);
 		_allLoaded = slice.users.empty();
 		appendSlice(slice);
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		_requestId = 0;
 		_allLoaded = true;
 	}).send();
@@ -832,7 +832,6 @@ void CopyInviteLink(const QString &link) {
 }
 
 void ShareInviteLinkBox(not_null<PeerData*> peer, const QString &link) {
-	const auto session = &peer->session();
 	const auto sending = std::make_shared<bool>();
 	const auto box = std::make_shared<QPointer<ShareBox>>();
 
@@ -886,8 +885,6 @@ void ShareInviteLinkBox(not_null<PeerData*> peer, const QString &link) {
 		}
 		const auto owner = &peer->owner();
 		auto &api = peer->session().api();
-		auto &histories = owner->histories();
-		const auto requestType = Data::Histories::RequestType::Send;
 		for (const auto peer : result) {
 			const auto history = owner->history(peer);
 			auto message = ApiWrap::MessageToSend(history);
@@ -901,15 +898,13 @@ void ShareInviteLinkBox(not_null<PeerData*> peer, const QString &link) {
 			(*box)->closeBox();
 		}
 	};
-	auto filterCallback = [](PeerData *peer) {
-		return peer->canWrite();
-	};
 	*box = Ui::show(
-		Box<ShareBox>(
-			App::wnd()->sessionController(),
-			std::move(copyCallback),
-			std::move(submitCallback),
-			std::move(filterCallback)),
+		Box<ShareBox>(ShareBox::Descriptor{
+			.session = &peer->session(),
+			.copyCallback = std::move(copyCallback),
+			.submitCallback = std::move(submitCallback),
+			.filterCallback = [](auto peer) { return peer->canWrite(); },
+			.navigation = App::wnd()->sessionController() }),
 		Ui::LayerOption::KeepOther);
 }
 

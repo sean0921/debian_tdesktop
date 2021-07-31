@@ -14,6 +14,7 @@ class Service;
 } // namespace HistoryView
 
 struct HistoryServiceDependentData {
+	PeerId peerId = 0;
 	MsgId msgId = 0;
 	HistoryItem *msg = nullptr;
 	ClickHandlerPtr lnk;
@@ -34,6 +35,7 @@ struct HistoryServicePayment
 : public RuntimeComponent<HistoryServicePayment, HistoryItem>
 , public HistoryServiceDependentData {
 	QString amount;
+	ClickHandlerPtr invoiceLink;
 };
 
 struct HistoryServiceSelfDestruct
@@ -50,6 +52,7 @@ struct HistoryServiceSelfDestruct
 struct HistoryServiceOngoingCall
 : public RuntimeComponent<HistoryServiceOngoingCall, HistoryItem> {
 	uint64 id = 0;
+	ClickHandlerPtr link;
 	rpl::lifetime lifetime;
 };
 
@@ -67,18 +70,17 @@ public:
 	HistoryService(
 		not_null<History*> history,
 		const MTPDmessage &data,
-		MTPDmessage_ClientFlags clientFlags);
+		MessageFlags localFlags);
 	HistoryService(
 		not_null<History*> history,
 		const MTPDmessageService &data,
-		MTPDmessage_ClientFlags clientFlags);
+		MessageFlags localFlags);
 	HistoryService(
 		not_null<History*> history,
 		MsgId id,
-		MTPDmessage_ClientFlags clientFlags,
+		MessageFlags flags,
 		TimeId date,
 		const PreparedText &message,
-		MTPDmessage::Flags flags = 0,
 		PeerId from = 0,
 		PhotoData *photo = nullptr);
 
@@ -100,6 +102,8 @@ public:
 	crl::time getSelfDestructIn(crl::time now) override;
 
 	Storage::SharedMediaTypesMask sharedMediaTypes() const override;
+
+	void dependencyItemRemoved(HistoryItem *dependency) override;
 
 	bool needCheck() const override;
 	bool serviceMsg() const override {
@@ -156,18 +160,20 @@ private:
 	PreparedText preparePinnedText();
 	PreparedText prepareGameScoreText();
 	PreparedText preparePaymentSentText();
-	PreparedText prepareDiscardedCallText(int duration);
-	PreparedText prepareStartedCallText(uint64 linkCallId);
 	PreparedText prepareInvitedToCallText(
 		const QVector<MTPint> &users,
 		uint64 linkCallId);
+	PreparedText prepareCallScheduledText(
+		TimeId scheduleDate);
 
 	friend class HistoryView::Service;
 
 };
 
-not_null<HistoryService*> GenerateJoinedMessage(
+[[nodiscard]] not_null<HistoryService*> GenerateJoinedMessage(
 	not_null<History*> history,
 	TimeId inviteDate,
-	not_null<UserData*> inviter,
-	MTPDmessage::Flags flags);
+	not_null<UserData*> inviter);
+[[nodiscard]] std::optional<bool> PeerHasThisCall(
+	not_null<PeerData*> peer,
+	uint64 id);

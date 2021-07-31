@@ -28,10 +28,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "webrtc/webrtc_create_adm.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
-#include "facades.h"
 
 #include <tgcalls/Instance.h>
 #include <tgcalls/VideoCaptureInterface.h>
+#include <tgcalls/StaticThreads.h>
 
 namespace tgcalls {
 class InstanceImpl;
@@ -141,7 +141,7 @@ uint64 ComputeFingerprint(bytes::const_span authKey) {
 }
 
 [[nodiscard]] QVector<MTPstring> CollectVersionsForApi() {
-	return WrapVersions(tgcalls::Meta::Versions() | ranges::action::reverse);
+	return WrapVersions(tgcalls::Meta::Versions() | ranges::actions::reverse);
 }
 
 [[nodiscard]] Webrtc::VideoState StartVideoState(bool enabled) {
@@ -160,8 +160,12 @@ Call::Call(
 , _user(user)
 , _api(&_user->session().mtp())
 , _type(type)
-, _videoIncoming(std::make_unique<Webrtc::VideoTrack>(StartVideoState(video)))
-, _videoOutgoing(std::make_unique<Webrtc::VideoTrack>(StartVideoState(video))) {
+, _videoIncoming(
+	std::make_unique<Webrtc::VideoTrack>(
+		StartVideoState(video)))
+, _videoOutgoing(
+	std::make_unique<Webrtc::VideoTrack>(
+		StartVideoState(video))) {
 	_discardByTimeoutTimer.setCallback([=] { hangup(); });
 
 	if (_type == Type::Outgoing) {
@@ -266,7 +270,7 @@ void Call::startOutgoing() {
 		const auto &config = _user->session().serverConfig();
 		_discardByTimeoutTimer.callOnce(config.callReceiveTimeoutMs);
 		handleUpdate(phoneCall);
-	}).fail([this](const RPCError &error) {
+	}).fail([this](const MTP::Error &error) {
 		handleRequestError(error);
 	}).send();
 }
@@ -281,21 +285,13 @@ void Call::startIncoming() {
 		if (_state.current() == State::Starting) {
 			setState(State::WaitingIncoming);
 		}
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		handleRequestError(error);
 	}).send();
 }
 
-void Call::switchVideoOutgoing() {
-	const auto video = _videoOutgoing->state() == Webrtc::VideoState::Active;
-	_delegate->callRequestPermissionsOrFail(crl::guard(this, [=] {
-		videoOutgoing()->setState(StartVideoState(!video));
-	}), true);
-
-}
-
 void Call::answer() {
-	const auto video = _videoOutgoing->state() == Webrtc::VideoState::Active;
+	const auto video = isSharingVideo();
 	_delegate->callRequestPermissionsOrFail(crl::guard(this, [=] {
 		actuallyAnswer();
 	}), video);
@@ -340,7 +336,7 @@ void Call::actuallyAnswer() {
 		}
 
 		handleUpdate(call.vphone_call());
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		handleRequestError(error);
 	}).send();
 }
@@ -362,7 +358,9 @@ void Call::setupOutgoingVideo() {
 	}
 	_videoOutgoing->stateValue(
 	) | rpl::start_with_next([=](Webrtc::VideoState state) {
-		if (state != Webrtc::VideoState::Inactive && !hasDevices()) {
+		if (state != Webrtc::VideoState::Inactive
+			&& !hasDevices()
+			&& !_videoCaptureIsScreencast) {
 			_errors.fire({ ErrorType::NoCamera });
 			_videoOutgoing->setState(Webrtc::VideoState::Inactive);
 		} else if (_state.current() != State::Established
@@ -379,7 +377,8 @@ void Call::setupOutgoingVideo() {
 			// Paused not supported right now.
 			Assert(state == Webrtc::VideoState::Active);
 			if (!_videoCapture) {
-				_videoCapture = _delegate->getVideoCapture();
+				_videoCapture = _delegate->callGetVideoCapture(
+					_videoCaptureDeviceId);
 				_videoCapture->setOutput(_videoOutgoing->sink());
 			}
 			if (_instance) {
@@ -456,7 +455,7 @@ void Call::sendSignalingData(const QByteArray &data) {
 		if (!mtpIsTrue(result)) {
 			finish(FinishType::Failed);
 		}
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		handleRequestError(error);
 	}).send();
 }
@@ -489,13 +488,13 @@ bool Call::handleUpdate(const MTPPhoneCall &call) {
 		auto &data = call.c_phoneCallRequested();
 		if (_type != Type::Incoming
 			|| _id != 0
-			|| peerToUser(_user->id) != data.vadmin_id().v) {
+			|| peerToUser(_user->id) != UserId(data.vadmin_id())) {
 			Unexpected("phoneCallRequested call inside an existing call handleUpdate()");
 		}
-		if (_user->session().userId() != data.vparticipant_id().v) {
+		if (_user->session().userId() != UserId(data.vparticipant_id())) {
 			LOG(("Call Error: Wrong call participant_id %1, expected %2."
 				).arg(data.vparticipant_id().v
-				).arg(_user->session().userId()));
+				).arg(_user->session().userId().bare));
 			finish(FinishType::Failed);
 			return true;
 		}
@@ -631,9 +630,9 @@ bool Call::handleSignalingData(
 	if (data.vphone_call_id().v != _id || !_instance) {
 		return false;
 	}
-	auto prepared = ranges::view::all(
+	auto prepared = ranges::views::all(
 		data.vdata().v
-	) | ranges::view::transform([](char byte) {
+	) | ranges::views::transform([](char byte) {
 		return static_cast<uint8_t>(byte);
 	}) | ranges::to_vector;
 	_instance->receiveSignalingData(std::move(prepared));
@@ -686,7 +685,7 @@ void Call::confirmAcceptedCall(const MTPDphoneCallAccepted &call) {
 		}
 
 		createAndStartController(call.vphone_call().c_phoneCall());
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		handleRequestError(error);
 	}).send();
 }
@@ -800,16 +799,19 @@ void Call::createAndStartController(const MTPDphoneCall &call) {
 		AppendServer(descriptor.rtcServers, connection);
 	}
 
-	if (Global::UseProxyForCalls()
-		&& (Global::ProxySettings() == MTP::ProxyData::Settings::Enabled)) {
-		const auto &selected = Global::SelectedProxy();
-		if (selected.supportsCalls() && !selected.host.isEmpty()) {
-			Assert(selected.type == MTP::ProxyData::Type::Socks5);
-			descriptor.proxy = std::make_unique<tgcalls::Proxy>();
-			descriptor.proxy->host = selected.host.toStdString();
-			descriptor.proxy->port = selected.port;
-			descriptor.proxy->login = selected.user.toStdString();
-			descriptor.proxy->password = selected.password.toStdString();
+	{
+		auto &settingsProxy = Core::App().settings().proxy();
+		using ProxyData = MTP::ProxyData;
+		if (settingsProxy.useProxyForCalls() && settingsProxy.isEnabled()) {
+			const auto &selected = settingsProxy.selected();
+			if (selected.supportsCalls() && !selected.host.isEmpty()) {
+				Assert(selected.type == ProxyData::Type::Socks5);
+				descriptor.proxy = std::make_unique<tgcalls::Proxy>();
+				descriptor.proxy->host = selected.host.toStdString();
+				descriptor.proxy->port = selected.port;
+				descriptor.proxy->login = selected.user.toStdString();
+				descriptor.proxy->password = selected.password.toStdString();
+			}
 		}
 	}
 
@@ -818,9 +820,9 @@ void Call::createAndStartController(const MTPDphoneCall &call) {
 		return data.vlibrary_versions().v;
 	}).value(0, MTP_bytes(kDefaultVersion)).v;
 
-	LOG(("Call Info: Creating instance with version '%1', allowP2P: %2"
-		).arg(QString::fromUtf8(version)
-		).arg(Logs::b(descriptor.config.enableP2P)));
+	LOG(("Call Info: Creating instance with version '%1', allowP2P: %2").arg(
+		QString::fromUtf8(version),
+		Logs::b(descriptor.config.enableP2P)));
 	_instance = tgcalls::Meta::Create(
 		version.toStdString(),
 		std::move(descriptor));
@@ -890,12 +892,12 @@ bool Call::checkCallCommonFields(const T &call) {
 	}
 	auto adminId = (_type == Type::Outgoing) ? _user->session().userId() : peerToUser(_user->id);
 	auto participantId = (_type == Type::Outgoing) ? peerToUser(_user->id) : _user->session().userId();
-	if (call.vadmin_id().v != adminId) {
-		LOG(("Call Error: Wrong call admin_id %1, expected %2.").arg(call.vadmin_id().v).arg(adminId));
+	if (UserId(call.vadmin_id()) != adminId) {
+		LOG(("Call Error: Wrong call admin_id %1, expected %2.").arg(call.vadmin_id().v).arg(adminId.bare));
 		return checkFailed();
 	}
-	if (call.vparticipant_id().v != participantId) {
-		LOG(("Call Error: Wrong call participant_id %1, expected %2.").arg(call.vparticipant_id().v).arg(participantId));
+	if (UserId(call.vparticipant_id()) != participantId) {
+		LOG(("Call Error: Wrong call participant_id %1, expected %2.").arg(call.vparticipant_id().v).arg(participantId.bare));
 		return checkFailed();
 	}
 	return true;
@@ -979,9 +981,12 @@ void Call::setCurrentAudioDevice(bool input, const QString &deviceId) {
 	}
 }
 
-void Call::setCurrentVideoDevice(const QString &deviceId) {
-	if (_videoCapture) {
-		_videoCapture->switchToDevice(deviceId.toStdString());
+void Call::setCurrentCameraDevice(const QString &deviceId) {
+	if (!_videoCaptureIsScreencast) {
+		_videoCaptureDeviceId = deviceId;
+		if (_videoCapture) {
+			_videoCapture->switchToDevice(deviceId.toStdString());
+		}
 	}
 }
 
@@ -999,6 +1004,71 @@ void Call::setAudioDuckingEnabled(bool enabled) {
 	if (_instance) {
 		_instance->setAudioOutputDuckingEnabled(enabled);
 	}
+}
+
+bool Call::isSharingVideo() const {
+	return (_videoOutgoing->state() != Webrtc::VideoState::Inactive);
+}
+
+bool Call::isSharingCamera() const {
+	return !_videoCaptureIsScreencast && isSharingVideo();
+}
+
+bool Call::isSharingScreen() const {
+	return _videoCaptureIsScreencast && isSharingVideo();
+}
+
+QString Call::cameraSharingDeviceId() const {
+	return isSharingCamera() ? _videoCaptureDeviceId : QString();
+}
+
+QString Call::screenSharingDeviceId() const {
+	return isSharingScreen() ? _videoCaptureDeviceId : QString();
+}
+
+void Call::toggleCameraSharing(bool enabled) {
+	if (isSharingCamera() == enabled) {
+		return;
+	} else if (!enabled) {
+		if (_videoCapture) {
+			_videoCapture->setState(tgcalls::VideoState::Inactive);
+		}
+		_videoOutgoing->setState(Webrtc::VideoState::Inactive);
+		_videoCaptureDeviceId = QString();
+		return;
+	}
+	_delegate->callRequestPermissionsOrFail(crl::guard(this, [=] {
+		toggleScreenSharing(std::nullopt);
+		const auto deviceId = Core::App().settings().callVideoInputDeviceId();
+		_videoCaptureDeviceId = deviceId;
+		if (_videoCapture) {
+			_videoCapture->switchToDevice(deviceId.toStdString());
+		}
+		_videoOutgoing->setState(Webrtc::VideoState::Active);
+	}), true);
+}
+
+void Call::toggleScreenSharing(std::optional<QString> uniqueId) {
+	if (!uniqueId) {
+		if (isSharingScreen()) {
+			if (_videoCapture) {
+				_videoCapture->setState(tgcalls::VideoState::Inactive);
+			}
+			_videoOutgoing->setState(Webrtc::VideoState::Inactive);
+		}
+		_videoCaptureDeviceId = QString();
+		_videoCaptureIsScreencast = false;
+		return;
+	} else if (screenSharingDeviceId() == *uniqueId) {
+		return;
+	}
+	toggleCameraSharing(false);
+	_videoCaptureIsScreencast = true;
+	_videoCaptureDeviceId = *uniqueId;
+	if (_videoCapture) {
+		_videoCapture->switchToDevice(uniqueId->toStdString());
+	}
+	_videoOutgoing->setState(Webrtc::VideoState::Active);
 }
 
 void Call::finish(FinishType type, const MTPPhoneCallDiscardReason &reason) {
@@ -1052,7 +1122,7 @@ void Call::finish(FinishType type, const MTPPhoneCallDiscardReason &reason) {
 		// updates being handled, but in a guarded way.
 		crl::on_main(weak, [=] { setState(finalState); });
 		session->api().applyUpdates(result);
-	}).fail(crl::guard(weak, [this, finalState](const RPCError &error) {
+	}).fail(crl::guard(weak, [this, finalState](const MTP::Error &error) {
 		setState(finalState);
 	})).send();
 }
@@ -1069,7 +1139,7 @@ void Call::setFailedQueued(const QString &error) {
 	});
 }
 
-void Call::handleRequestError(const RPCError &error) {
+void Call::handleRequestError(const MTP::Error &error) {
 	if (error.type() == qstr("USER_PRIVACY_RESTRICTED")) {
 		Ui::show(Box<InformBox>(tr::lng_call_error_not_available(tr::now, lt_user, _user->name)));
 	} else if (error.type() == qstr("PARTICIPANT_VERSION_OUTDATED")) {

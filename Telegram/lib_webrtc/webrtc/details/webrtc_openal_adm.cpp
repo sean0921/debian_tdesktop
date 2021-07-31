@@ -19,6 +19,10 @@
 #include <QtCore/QPointer>
 #include <QtCore/QThread>
 
+#ifdef WEBRTC_WIN
+#include "webrtc/win/webrtc_loopback_adm_win.h"
+#endif // WEBRTC_WIN
+
 namespace Webrtc::details {
 namespace {
 
@@ -38,14 +42,25 @@ constexpr auto kRecordingBufferSize = kRecordingPart * sizeof(int16_t)
 constexpr auto kRestartAfterEmptyData = 50; // Half a second with no data.
 constexpr auto kProcessInterval = crl::time(10);
 
-constexpr auto kBuffersFullCount = 10;
-constexpr auto kBuffersKeepReadyCount = 8;
+constexpr auto kBuffersFullCount = 5;
+constexpr auto kBuffersKeepReadyCount = 3;
 
-constexpr auto kAL_EVENT_CALLBACK_FUNCTION_SOFT = 0x19A2;
-constexpr auto kAL_EVENT_CALLBACK_USER_PARAM_SOFT = 0x19A3;
-constexpr auto kAL_EVENT_TYPE_BUFFER_COMPLETED_SOFT = 0x19A4;
-constexpr auto kAL_EVENT_TYPE_SOURCE_STATE_CHANGED_SOFT = 0x19A5;
-constexpr auto kAL_EVENT_TYPE_DISCONNECTED_SOFT = 0x19A6;
+constexpr auto kDefaultRecordingLatency = crl::time(20);
+constexpr auto kDefaultPlayoutLatency = crl::time(20);
+constexpr auto kQueryExactTimeEach = 20;
+
+constexpr auto kALMaxValues = 6;
+auto kAL_EVENT_CALLBACK_FUNCTION_SOFT = ALenum();
+auto kAL_EVENT_CALLBACK_USER_PARAM_SOFT = ALenum();
+auto kAL_EVENT_TYPE_BUFFER_COMPLETED_SOFT = ALenum();
+auto kAL_EVENT_TYPE_SOURCE_STATE_CHANGED_SOFT = ALenum();
+auto kAL_EVENT_TYPE_DISCONNECTED_SOFT = ALenum();
+auto kAL_SAMPLE_OFFSET_CLOCK_SOFT = ALenum();
+auto kAL_SAMPLE_OFFSET_CLOCK_EXACT_SOFT = ALenum();
+
+auto kALC_DEVICE_LATENCY_SOFT = ALenum();
+
+using AL_INT64_TYPE = std::int64_t;
 
 using ALEVENTPROCSOFT = void(*)(
 	ALenum eventType,
@@ -58,9 +73,20 @@ using ALEVENTCALLBACKSOFT = void(*)(
 	ALEVENTPROCSOFT callback,
 	void *userParam);
 using ALCSETTHREADCONTEXT = ALCboolean(*)(ALCcontext *context);
+using ALGETSOURCEI64VSOFT = void(*)(
+	ALuint source,
+	ALenum param,
+	AL_INT64_TYPE *values);
+using ALCGETINTEGER64VSOFT = void(*)(
+	ALCdevice *device,
+	ALCenum pname,
+	ALsizei size,
+	AL_INT64_TYPE *values);
 
 ALEVENTCALLBACKSOFT alEventCallbackSOFT/* = nullptr*/;
 ALCSETTHREADCONTEXT alcSetThreadContext/* = nullptr*/;
+ALGETSOURCEI64VSOFT alGetSourcei64vSOFT/* = nullptr*/;
+ALCGETINTEGER64VSOFT alcGetInteger64vSOFT/* = nullptr*/;
 
 [[nodiscard]] bool Failed(ALCdevice *device) {
 	if (auto code = alcGetError(device); code != ALC_NO_ERROR) {
@@ -100,7 +126,6 @@ void EnumerateDevices(ALCenum specifier, Callback &&callback) {
 		int index,
 		std::string *name,
 		std::string *guid) {
-	auto result = 0;
 	EnumerateDevices(specifier, [&](const char *device) {
 		if (index < 0) {
 			return;
@@ -176,6 +201,9 @@ struct AudioDeviceOpenAL::Data {
 	int queuedBuffersCount = 0;
 	std::array<ALuint, kBuffersFullCount> buffers = { { 0 } };
 	std::array<bool, kBuffersFullCount> queuedBuffers = { { false } };
+	int64_t exactDeviceTimeCounter = 0;
+	int64_t lastExactDeviceTime = 0;
+	crl::time lastExactDeviceTimeWhen = 0;
 	bool playing = false;
 };
 
@@ -239,6 +267,27 @@ int32_t AudioDeviceOpenAL::Init() {
 	alEventCallbackSOFT = (ALEVENTCALLBACKSOFT)alcGetProcAddress(
 		nullptr,
 		"alEventCallbackSOFT");
+
+	alGetSourcei64vSOFT = (ALGETSOURCEI64VSOFT)alcGetProcAddress(
+		nullptr,
+		"alGetSourcei64vSOFT");
+
+	alcGetInteger64vSOFT = (ALCGETINTEGER64VSOFT)alcGetProcAddress(
+		nullptr,
+		"alcGetInteger64vSOFT");
+
+#define RESOLVE_ENUM(ENUM) k##ENUM = alcGetEnumValue(nullptr, #ENUM)
+	RESOLVE_ENUM(AL_EVENT_CALLBACK_FUNCTION_SOFT);
+	RESOLVE_ENUM(AL_EVENT_CALLBACK_FUNCTION_SOFT);
+	RESOLVE_ENUM(AL_EVENT_CALLBACK_USER_PARAM_SOFT);
+	RESOLVE_ENUM(AL_EVENT_TYPE_BUFFER_COMPLETED_SOFT);
+	RESOLVE_ENUM(AL_EVENT_TYPE_SOURCE_STATE_CHANGED_SOFT);
+	RESOLVE_ENUM(AL_EVENT_TYPE_DISCONNECTED_SOFT);
+	RESOLVE_ENUM(AL_SAMPLE_OFFSET_CLOCK_SOFT);
+	RESOLVE_ENUM(AL_SAMPLE_OFFSET_CLOCK_EXACT_SOFT);
+	RESOLVE_ENUM(ALC_DEVICE_LATENCY_SOFT);
+#undef RESOLVE_ENUM
+
 	_initialized = true;
 	return 0;
 }
@@ -556,7 +605,7 @@ void AudioDeviceOpenAL::handleEvent(
 		ALuint param,
 		ALsizei length,
 		const ALchar *message) {
-	if (eventType == kAL_EVENT_TYPE_DISCONNECTED_SOFT) {
+	if (eventType == kAL_EVENT_TYPE_DISCONNECTED_SOFT && _thread) {
 		const auto weak = QPointer<QObject>(&_data->context);
 		_thread->PostTask(RTC_FROM_HERE, [=] {
 			if (weak) {
@@ -585,6 +634,10 @@ void AudioDeviceOpenAL::ensureThreadStarted() {
 		return;
 	}
 	_thread = rtc::Thread::Current();
+	if (_thread && !_thread->IsOwned()) {
+		_thread->UnwrapCurrent();
+		_thread = nullptr;
+	}
 	//	Assert(_thread != nullptr);
 	//	Assert(_thread->IsOwned());
 
@@ -597,11 +650,11 @@ void AudioDeviceOpenAL::ensureThreadStarted() {
 void AudioDeviceOpenAL::processData() {
 	Expects(_data != nullptr);
 
-	if (_data->recording && !_recordingFailed) {
-		processRecordingData();
-	}
 	if (_data->playing && !_playoutFailed) {
 		processPlayoutData();
+	}
+	if (_data->recording && !_recordingFailed) {
+		processRecordingData();
 	}
 }
 
@@ -625,6 +678,9 @@ bool AudioDeviceOpenAL::processRecordedPart(bool firstInCycle) {
 		return false;
 	}
 
+	_recordingLatency = queryRecordingLatencyMs();
+	//RTC_LOG(LS_ERROR) << "RECORDING LATENCY: " << _recordingLatency << "ms";
+
 	_data->emptyRecordingData = 0;
 	if (_data->recordedSamples.size() < kRecordingBufferSize) {
 		_data->recordedSamples.resize(kRecordingBufferSize);
@@ -640,7 +696,7 @@ bool AudioDeviceOpenAL::processRecordedPart(bool firstInCycle) {
 	_audioDeviceBuffer.SetRecordedBuffer(
 		_data->recordedSamples.data(),
 		kRecordingPart);
-	//_audioDeviceBuffer.SetVQEData(playout_delay_ms_, record_delay_ms);
+	_audioDeviceBuffer.SetVQEData(_playoutLatency, _recordingLatency);
 	_audioDeviceBuffer.DeliverRecordedData();
 	return true;
 }
@@ -684,6 +740,76 @@ void AudioDeviceOpenAL::clearProcessedBuffers() {
 	}
 }
 
+crl::time AudioDeviceOpenAL::queryRecordingLatencyMs() {
+#ifdef WEBRTC_WIN
+	if (kALC_DEVICE_LATENCY_SOFT
+		&& kAL_SAMPLE_OFFSET_CLOCK_EXACT_SOFT) { // Check patched build.
+		auto latency = AL_INT64_TYPE();
+		alcGetInteger64vSOFT(
+			_recordingDevice,
+			kALC_DEVICE_LATENCY_SOFT,
+			1,
+			&latency);
+		return latency / 1'000'000;
+	}
+#endif // WEBRTC_WIN
+	return kDefaultRecordingLatency;
+}
+
+crl::time AudioDeviceOpenAL::countExactQueuedMsForLatency(
+		crl::time now,
+		bool playing) {
+	auto values = std::array<AL_INT64_TYPE, kALMaxValues>{};
+	auto &sampleOffset = values[0];
+	auto &clockTime = values[1];
+	auto &exactDeviceTime = values[2];
+	const auto countExact = alGetSourcei64vSOFT
+		&& kAL_SAMPLE_OFFSET_CLOCK_SOFT
+		&& kAL_SAMPLE_OFFSET_CLOCK_EXACT_SOFT;
+	if (countExact) {
+		if (!_data->lastExactDeviceTimeWhen
+			|| !(++_data->exactDeviceTimeCounter % kQueryExactTimeEach)) {
+			alGetSourcei64vSOFT(
+				_data->source,
+				kAL_SAMPLE_OFFSET_CLOCK_EXACT_SOFT,
+				values.data());
+			_data->lastExactDeviceTime = exactDeviceTime;
+			_data->lastExactDeviceTimeWhen = now;
+		} else {
+			alGetSourcei64vSOFT(
+				_data->source,
+				kAL_SAMPLE_OFFSET_CLOCK_SOFT,
+				values.data());
+
+			// The exactDeviceTime is in nanoseconds.
+			exactDeviceTime = _data->lastExactDeviceTime
+				+ (now - _data->lastExactDeviceTimeWhen) * 1'000'000;
+		}
+	} else {
+		auto offset = ALint(0);
+		alGetSourcei(_data->source, AL_SAMPLE_OFFSET, &offset);
+		sampleOffset = (AL_INT64_TYPE(offset) << 32);
+	}
+
+	const auto queuedSamples = (AL_INT64_TYPE(
+		_data->queuedBuffersCount * kPlayoutPart) << 32);
+	const auto processedInOpenAL = playing ? sampleOffset : queuedSamples;
+	const auto secondsQueuedInDevice = std::max(
+		clockTime - exactDeviceTime,
+		AL_INT64_TYPE(0)
+	) / 1'000'000'000.;
+	const auto secondsQueuedInOpenAL
+		= (double((queuedSamples - processedInOpenAL) >> (32 - 10))
+			/ double(kPlayoutFrequency * (1 << 10)));
+
+	const auto queuedTotal = crl::time(
+		std::round((secondsQueuedInDevice + secondsQueuedInOpenAL) * 1'000));
+
+	return countExact
+		? queuedTotal
+		: std::max(queuedTotal, kDefaultPlayoutLatency);
+}
+
 void AudioDeviceOpenAL::processPlayoutData() {
 	Expects(_data != nullptr);
 
@@ -693,6 +819,7 @@ void AudioDeviceOpenAL::processPlayoutData() {
 		return (state == AL_PLAYING);
 	};
 	const auto wasPlaying = playing();
+
 	if (wasPlaying) {
 		clearProcessedBuffers();
 	} else {
@@ -709,6 +836,10 @@ void AudioDeviceOpenAL::processPlayoutData() {
 			//ranges::fill(_data->playoutSamples, 0);
 			break;
 		}
+		const auto now = crl::now();
+		_playoutLatency = countExactQueuedMsForLatency(now, wasPlaying);
+		//RTC_LOG(LS_ERROR) << "PLAYOUT LATENCY: " << _playoutLatency << "ms";
+
 		const auto i = ranges::find(_data->queuedBuffers, false);
 		Assert(i != end(_data->queuedBuffers));
 		const auto index = int(i - begin(_data->queuedBuffers));
@@ -718,6 +849,17 @@ void AudioDeviceOpenAL::processPlayoutData() {
 			_data->playoutSamples.data(),
 			_data->playoutSamples.size(),
 			kPlayoutFrequency);
+
+#ifdef WEBRTC_WIN
+		if (IsLoopbackCaptureActive()) {
+			LoopbackCapturePushFarEnd(
+				now + _playoutLatency,
+				_data->playoutSamples,
+				kPlayoutFrequency,
+				kPlayoutChannels);
+		}
+#endif // WEBRTC_WIN
+
 		_data->queuedBuffers[index] = true;
 		++_data->queuedBuffersCount;
 		if (wasPlaying) {
@@ -840,6 +982,10 @@ void AudioDeviceOpenAL::startPlayingOnThread() {
 			_data->source = source;
 			alGenBuffers(_data->buffers.size(), _data->buffers.data());
 
+			_data->exactDeviceTimeCounter = 0;
+			_data->lastExactDeviceTime = 0;
+			_data->lastExactDeviceTimeWhen = 0;
+
 			_data->playoutSamples = QByteArray(kPlayoutBufferSize, 0);
 			//for (auto i = 0; i != kBuffersKeepReadyCount; ++i) {
 			//	alBufferData(
@@ -867,10 +1013,16 @@ void AudioDeviceOpenAL::startPlayingOnThread() {
 void AudioDeviceOpenAL::stopPlayingOnThread() {
 	Expects(_data != nullptr);
 
-	if (!_data->playing) {
-		return;
-	}
 	sync([&] {
+		const auto guard = gsl::finally([&] {
+			if (alEventCallbackSOFT) {
+				alEventCallbackSOFT(nullptr, nullptr);
+			}
+			alcSetThreadContext(nullptr);
+		});
+		if (!_data->playing) {
+			return;
+		}
 		_data->playing = false;
 		if (_playoutFailed) {
 			return;
@@ -907,7 +1059,7 @@ int32_t AudioDeviceOpenAL::StopRecording() {
 void AudioDeviceOpenAL::restartRecordingQueued() {
 	Expects(_data != nullptr);
 
-	if (!_thread || !_thread->IsOwned()) {
+	if (!_thread) {
 		// We support auto-restarting only when started from rtc::Thread.
 		return;
 	}
@@ -944,7 +1096,7 @@ int AudioDeviceOpenAL::restartRecording() {
 void AudioDeviceOpenAL::restartPlayoutQueued() {
 	Expects(_data != nullptr);
 
-	if (!_thread || !_thread->IsOwned()) {
+	if (!_thread) {
 		// We support auto-restarting only when started from rtc::Thread.
 		return;
 	}

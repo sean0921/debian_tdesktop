@@ -6,47 +6,24 @@
 //
 #pragma once
 
-#include "base/integration.h"
-
-#include <QtCore/QLibrary>
+#include "base/platform/linux/base_linux_library.h"
 
 extern "C" {
-#undef signals
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
-#define signals public
 } // extern "C"
 
-#if defined DESKTOP_APP_USE_PACKAGED && !defined DESKTOP_APP_USE_PACKAGED_LAZY
-#define LINK_TO_GTK
-#endif // DESKTOP_APP_USE_PACKAGED && !DESKTOP_APP_USE_PACKAGED_LAZY
-
-#ifdef LINK_TO_GTK
-#define LOAD_GTK_SYMBOL(lib, name, func) (func = ::func)
-#else // LINK_TO_GTK
-#define LOAD_GTK_SYMBOL base::Platform::Gtk::LoadSymbol
-#endif // !LINK_TO_GTK
+#define LOAD_GTK_SYMBOL LOAD_LIBRARY_SYMBOL
 
 namespace base {
 namespace Platform {
 namespace Gtk {
 
-template <typename Function>
-bool LoadSymbol(QLibrary &lib, const char *name, Function &func) {
-	func = nullptr;
-	if (!lib.isLoaded()) {
-		return false;
-	}
-
-	func = reinterpret_cast<Function>(lib.resolve(name));
-	if (func) {
-		return true;
-	}
-
-	Integration::Instance().logMessage(
-		QString("Error: failed to load '%1' function!").arg(name));
-
-	return false;
+inline bool LoadGtkLibrary(
+		QLibrary &lib,
+		const char *name,
+		std::optional<int> version = std::nullopt) {
+	return LoadLibrary(lib, name, version);
 }
 
 inline gboolean (*gtk_init_check)(int *argc, char ***argv) = nullptr;

@@ -14,181 +14,57 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo_media.h"
 #include "data/data_cloud_file.h"
 #include "data/data_changes.h"
+#include "calls/group/calls_group_common.h"
 #include "calls/calls_emoji_fingerprint.h"
 #include "calls/calls_signal_bars.h"
 #include "calls/calls_userpic.h"
 #include "calls/calls_video_bubble.h"
+#include "calls/calls_video_incoming.h"
 #include "ui/platform/ui_platform_window_title.h"
 #include "ui/widgets/call_button.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/shadow.h"
-#include "ui/widgets/window.h"
+#include "ui/widgets/rp_window.h"
+#include "ui/layers/layer_manager.h"
+#include "ui/layers/generic_box.h"
 #include "ui/image/image.h"
 #include "ui/text/format_values.h"
 #include "ui/wrap/fade_wrap.h"
 #include "ui/wrap/padding_wrap.h"
 #include "ui/platform/ui_platform_utility.h"
+#include "ui/gl/gl_surface.h"
+#include "ui/gl/gl_shader.h"
 #include "ui/toast/toast.h"
 #include "ui/empty_userpic.h"
 #include "ui/emoji_config.h"
 #include "core/application.h"
-#include "mainwindow.h"
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
 #include "apiwrap.h"
 #include "platform/platform_specific.h"
 #include "base/platform/base_platform_info.h"
 #include "window/main_window.h"
-#include "media/view/media_view_pip.h" // Utilities for frame rotation.
 #include "app.h"
 #include "webrtc/webrtc_video_track.h"
+#include "webrtc/webrtc_media_devices.h"
 #include "styles/style_calls.h"
 #include "styles/style_chat.h"
 
 #include <QtWidgets/QDesktopWidget>
 #include <QtWidgets/QApplication>
 #include <QtGui/QWindow>
+#include <QtCore/QTimer>
 
 namespace Calls {
-namespace {
-
-#if defined Q_OS_MAC && !defined OS_MAC_OLD
-#define USE_OPENGL_OVERLAY_WIDGET
-#endif // Q_OS_MAC && !OS_MAC_OLD
-
-#ifdef USE_OPENGL_OVERLAY_WIDGET
-using IncomingParent = Ui::RpWidgetWrap<QOpenGLWidget>;
-#else // USE_OPENGL_OVERLAY_WIDGET
-using IncomingParent = Ui::RpWidget;
-#endif // USE_OPENGL_OVERLAY_WIDGET
-
-} // namespace
-
-class Panel::Incoming final : public IncomingParent {
-public:
-	Incoming(
-		not_null<QWidget*> parent,
-		not_null<Webrtc::VideoTrack*> track);
-
-private:
-	void paintEvent(QPaintEvent *e) override;
-
-	void initBottomShadow();
-	void fillTopShadow(QPainter &p);
-	void fillBottomShadow(QPainter &p);
-
-	const not_null<Webrtc::VideoTrack*> _track;
-	QPixmap _bottomShadow;
-
-};
-
-Panel::Incoming::Incoming(
-	not_null<QWidget*> parent,
-	not_null<Webrtc::VideoTrack*> track)
-: IncomingParent(parent)
-, _track(track) {
-	initBottomShadow();
-	setAttribute(Qt::WA_OpaquePaintEvent);
-	setAttribute(Qt::WA_TransparentForMouseEvents);
-}
-
-void Panel::Incoming::paintEvent(QPaintEvent *e) {
-	QPainter p(this);
-
-	const auto [image, rotation] = _track->frameOriginalWithRotation();
-	if (image.isNull()) {
-		p.fillRect(e->rect(), Qt::black);
-	} else {
-		using namespace Media::View;
-		auto hq = PainterHighQualityEnabler(p);
-		if (UsePainterRotation(rotation)) {
-			if (rotation) {
-				p.save();
-				p.rotate(rotation);
-			}
-			p.drawImage(RotatedRect(rect(), rotation), image);
-			if (rotation) {
-				p.restore();
-			}
-		} else if (rotation) {
-			p.drawImage(rect(), RotateFrameImage(image, rotation));
-		} else {
-			p.drawImage(rect(), image);
-		}
-		fillBottomShadow(p);
-		fillTopShadow(p);
-	}
-	_track->markFrameShown();
-}
-
-void Panel::Incoming::initBottomShadow() {
-	auto image = QImage(
-		QSize(1, st::callBottomShadowSize) * cIntRetinaFactor(),
-		QImage::Format_ARGB32_Premultiplied);
-	const auto colorFrom = uint32(0);
-	const auto colorTill = uint32(74);
-	const auto rows = image.height();
-	const auto step = (uint64(colorTill - colorFrom) << 32) / rows;
-	auto accumulated = uint64();
-	auto bytes = image.bits();
-	for (auto y = 0; y != rows; ++y) {
-		accumulated += step;
-		const auto color = (colorFrom + uint32(accumulated >> 32)) << 24;
-		for (auto x = 0; x != image.width(); ++x) {
-			*(reinterpret_cast<uint32*>(bytes) + x) = color;
-		}
-		bytes += image.bytesPerLine();
-	}
-	_bottomShadow = Images::PixmapFast(std::move(image));
-}
-
-void Panel::Incoming::fillTopShadow(QPainter &p) {
-#ifdef Q_OS_WIN
-	const auto width = parentWidget()->width();
-	const auto position = QPoint(width - st::callTitleShadow.width(), 0);
-	const auto shadowArea = QRect(
-		position,
-		st::callTitleShadow.size());
-	const auto fill = shadowArea.intersected(geometry()).translated(-pos());
-	if (fill.isEmpty()) {
-		return;
-	}
-	p.save();
-	p.setClipRect(fill);
-	st::callTitleShadow.paint(p, position - pos(), width);
-	p.restore();
-#endif // Q_OS_WIN
-}
-
-void Panel::Incoming::fillBottomShadow(QPainter &p) {
-	const auto shadowArea = QRect(
-		0,
-		parentWidget()->height() - st::callBottomShadowSize,
-		parentWidget()->width(),
-		st::callBottomShadowSize);
-	const auto fill = shadowArea.intersected(geometry()).translated(-pos());
-	if (fill.isEmpty()) {
-		return;
-	}
-	const auto factor = cIntRetinaFactor();
-	p.drawPixmap(
-		fill,
-		_bottomShadow,
-		QRect(
-			0,
-			factor * (fill.y() - shadowArea.translated(-pos()).y()),
-			factor,
-			factor * fill.height()));
-}
 
 Panel::Panel(not_null<Call*> call)
 : _call(call)
 , _user(call->user())
-, _window(std::make_unique<Ui::Window>(Core::App().getModalParent()))
+, _layerBg(std::make_unique<Ui::LayerManager>(widget()))
 #ifndef Q_OS_MAC
 , _controls(std::make_unique<Ui::Platform::TitleControls>(
-	_window->body(),
+	widget(),
 	st::callTitle,
 	[=](bool maximized) { toggleFullScreen(maximized); }))
 #endif // !Q_OS_MAC
@@ -196,6 +72,7 @@ Panel::Panel(not_null<Call*> call)
 , _answerHangupRedial(widget(), st::callAnswer, &st::callHangup)
 , _decline(widget(), object_ptr<Ui::CallButton>(widget(), st::callHangup))
 , _cancel(widget(), object_ptr<Ui::CallButton>(widget(), st::callCancel))
+, _screencast(widget(), st::callScreencastOn, &st::callScreencastOff)
 , _camera(widget(), st::callCameraMute, &st::callCameraUnmute)
 , _mute(widget(), st::callMicrophoneMute, &st::callMicrophoneUnmute)
 , _name(widget(), st::callName)
@@ -215,26 +92,26 @@ Panel::Panel(not_null<Call*> call)
 Panel::~Panel() = default;
 
 bool Panel::isActive() const {
-	return _window->isActiveWindow()
-		&& _window->isVisible()
-		&& !(_window->windowState() & Qt::WindowMinimized);
+	return window()->isActiveWindow()
+		&& window()->isVisible()
+		&& !(window()->windowState() & Qt::WindowMinimized);
 }
 
 void Panel::showAndActivate() {
-	if (_window->isHidden()) {
-		_window->show();
+	if (window()->isHidden()) {
+		window()->show();
 	}
-	const auto state = _window->windowState();
+	const auto state = window()->windowState();
 	if (state & Qt::WindowMinimized) {
-		_window->setWindowState(state & ~Qt::WindowMinimized);
+		window()->setWindowState(state & ~Qt::WindowMinimized);
 	}
-	_window->raise();
-	_window->activateWindow();
-	_window->setFocus();
+	window()->raise();
+	window()->activateWindow();
+	window()->setFocus();
 }
 
 void Panel::minimize() {
-	_window->setWindowState(_window->windowState() | Qt::WindowMinimized);
+	window()->setWindowState(window()->windowState() | Qt::WindowMinimized);
 }
 
 void Panel::replaceCall(not_null<Call*> call) {
@@ -243,26 +120,24 @@ void Panel::replaceCall(not_null<Call*> call) {
 }
 
 void Panel::initWindow() {
-	_window->setAttribute(Qt::WA_OpaquePaintEvent);
-	_window->setAttribute(Qt::WA_NoSystemBackground);
-	_window->setWindowIcon(
-		QIcon(QPixmap::fromImage(Image::Empty()->original(), Qt::ColorOnly)));
-	_window->setTitle(u" "_q);
-	_window->setTitleStyle(st::callTitle);
+	window()->setAttribute(Qt::WA_OpaquePaintEvent);
+	window()->setAttribute(Qt::WA_NoSystemBackground);
+	window()->setTitle(_user->name);
+	window()->setTitleStyle(st::callTitle);
 
-	_window->events(
+	window()->events(
 	) | rpl::start_with_next([=](not_null<QEvent*> e) {
 		if (e->type() == QEvent::Close) {
 			handleClose();
 		} else if (e->type() == QEvent::KeyPress) {
 			if ((static_cast<QKeyEvent*>(e.get())->key() == Qt::Key_Escape)
-				&& _window->isFullScreen()) {
-				_window->showNormal();
+				&& window()->isFullScreen()) {
+				window()->showNormal();
 			}
 		}
-	}, _window->lifetime());
+	}, window()->lifetime());
 
-	_window->setBodyTitleArea([=](QPoint widgetPoint) {
+	window()->setBodyTitleArea([=](QPoint widgetPoint) {
 		using Flag = Ui::WindowTitleHitTestFlag;
 		if (!widget()->rect().contains(widgetPoint)) {
 			return Flag::None | Flag(0);
@@ -288,28 +163,31 @@ void Panel::initWindow() {
 			: (Flag::Move | Flag::FullScreen);
 	});
 
-#ifdef Q_OS_WIN
-	// On Windows we replace snap-to-top maximizing with fullscreen.
-	//
-	// We have to switch first to showNormal, so that showFullScreen
-	// will remember correct normal window geometry and next showNormal
-	// will show it instead of a moving maximized window.
-	//
-	// We have to do it in InvokeQueued, otherwise it still captures
-	// the maximized window geometry and saves it.
-	//
-	// I couldn't find a less glitchy way to do that *sigh*.
-	const auto object = _window->windowHandle();
-	const auto signal = &QWindow::windowStateChanged;
-	QObject::connect(object, signal, [=](Qt::WindowState state) {
-		if (state == Qt::WindowMaximized) {
-			InvokeQueued(object, [=] {
-				_window->showNormal();
-				_window->showFullScreen();
-			});
-		}
-	});
-#endif // Q_OS_WIN
+	// Don't do that, it looks awful :(
+//#ifdef Q_OS_WIN
+//	// On Windows we replace snap-to-top maximizing with fullscreen.
+//	//
+//	// We have to switch first to showNormal, so that showFullScreen
+//	// will remember correct normal window geometry and next showNormal
+//	// will show it instead of a moving maximized window.
+//	//
+//	// We have to do it in InvokeQueued, otherwise it still captures
+//	// the maximized window geometry and saves it.
+//	//
+//	// I couldn't find a less glitchy way to do that *sigh*.
+//	const auto object = window()->windowHandle();
+//	const auto signal = &QWindow::windowStateChanged;
+//	QObject::connect(object, signal, [=](Qt::WindowState state) {
+//		if (state == Qt::WindowMaximized) {
+//			InvokeQueued(object, [=] {
+//				window()->showNormal();
+//				InvokeQueued(object, [=] {
+//					window()->showFullScreen();
+//				});
+//			});
+//		}
+//	});
+//#endif // Q_OS_WIN
 }
 
 void Panel::initWidget() {
@@ -333,9 +211,28 @@ void Panel::initControls() {
 			_call->setMuted(!_call->muted());
 		}
 	});
+	_screencast->setClickedCallback([=] {
+		if (!_call) {
+			return;
+		} else if (!Webrtc::DesktopCaptureAllowed()) {
+			if (auto box = Group::ScreenSharingPrivacyRequestBox()) {
+				_layerBg->showBox(std::move(box));
+			}
+		} else if (const auto source = Webrtc::UniqueDesktopCaptureSource()) {
+			if (_call->isSharingScreen()) {
+				_call->toggleScreenSharing(std::nullopt);
+			} else {
+				chooseSourceAccepted(*source, false);
+			}
+		} else {
+			Group::Ui::DesktopCapture::ChooseSource(this);
+		}
+	});
 	_camera->setClickedCallback([=] {
-		if (_call) {
-			_call->switchVideoOutgoing();
+		if (!_call) {
+			return;
+		} else {
+			_call->toggleCameraSharing(!_call->isSharingCamera());
 		}
 	});
 
@@ -346,7 +243,8 @@ void Panel::initControls() {
 	});
 	_updateOuterRippleTimer.setCallback([this] {
 		if (_call) {
-			_answerHangupRedial->setOuterValue(_call->getWaitingSoundPeakValue());
+			_answerHangupRedial->setOuterValue(
+				_call->getWaitingSoundPeakValue());
 		} else {
 			_answerHangupRedial->setOuterValue(0.);
 			_updateOuterRippleTimer.cancel();
@@ -388,12 +286,46 @@ void Panel::setIncomingSize(QSize size) {
 	showControls();
 }
 
+QWidget *Panel::chooseSourceParent() {
+	return window().get();
+}
+
+QString Panel::chooseSourceActiveDeviceId() {
+	return _call->screenSharingDeviceId();
+}
+
+bool Panel::chooseSourceActiveWithAudio() {
+	return false;// _call->screenSharingWithAudio();
+}
+
+bool Panel::chooseSourceWithAudioSupported() {
+//#ifdef Q_OS_WIN
+//	return true;
+//#else // Q_OS_WIN
+	return false;
+//#endif // Q_OS_WIN
+}
+
+rpl::lifetime &Panel::chooseSourceInstanceLifetime() {
+	return lifetime();
+}
+
+void Panel::chooseSourceAccepted(
+		const QString &deviceId,
+		bool withAudio) {
+	_call->toggleScreenSharing(deviceId/*, withAudio*/);
+}
+
+void Panel::chooseSourceStop() {
+	_call->toggleScreenSharing(std::nullopt);
+}
+
 void Panel::refreshIncomingGeometry() {
 	Expects(_call != nullptr);
 	Expects(_incoming != nullptr);
 
 	if (_incomingFrameSize.isEmpty()) {
-		_incoming->hide();
+		_incoming->widget()->hide();
 		return;
 	}
 	const auto to = widget()->size();
@@ -402,7 +334,7 @@ void Panel::refreshIncomingGeometry() {
 		to,
 		Qt::KeepAspectRatioByExpanding);
 
-	// If we cut out no more than 0.33 of the original, let's use expanding.
+	// If we cut out no more than 0.25 of the original, let's use expanding.
 	const auto use = ((big.width() * 3 <= to.width() * 4)
 		&& (big.height() * 3 <= to.height() * 4))
 		? big
@@ -410,8 +342,8 @@ void Panel::refreshIncomingGeometry() {
 	const auto pos = QPoint(
 		(to.width() - use.width()) / 2,
 		(to.height() - use.height()) / 2);
-	_incoming->setGeometry(QRect(pos, use));
-	_incoming->show();
+	_incoming->widget()->setGeometry(QRect(pos, use));
+	_incoming->widget()->show();
 }
 
 void Panel::reinitWithCall(Call *call) {
@@ -447,8 +379,9 @@ void Panel::reinitWithCall(Call *call) {
 		_call->videoOutgoing());
 	_incoming = std::make_unique<Incoming>(
 		widget(),
-		_call->videoIncoming());
-	_incoming->hide();
+		_call->videoIncoming(),
+		_window.backend());
+	_incoming->widget()->hide();
 
 	_call->mutedValue(
 	) | rpl::start_with_next([=](bool mute) {
@@ -459,12 +392,19 @@ void Panel::reinitWithCall(Call *call) {
 	}, _callLifetime);
 
 	_call->videoOutgoing()->stateValue(
-	) | rpl::start_with_next([=](Webrtc::VideoState state) {
-		const auto active = (state == Webrtc::VideoState::Active);
-		_camera->setProgress(active ? 0. : 1.);
-		_camera->setText(active
-			? tr::lng_call_stop_video()
-			: tr::lng_call_start_video());
+	) | rpl::start_with_next([=] {
+		{
+			const auto active = _call->isSharingCamera();
+			_camera->setProgress(active ? 0. : 1.);
+			_camera->setText(active
+				? tr::lng_call_stop_video()
+				: tr::lng_call_start_video());
+		}
+		{
+			const auto active = _call->isSharingScreen();
+			_screencast->setProgress(active ? 0. : 1.);
+			_screencast->setText(tr::lng_call_screencast());
+		}
 	}, _callLifetime);
 
 	_call->stateValue(
@@ -475,19 +415,25 @@ void Panel::reinitWithCall(Call *call) {
 	_call->videoIncoming()->renderNextFrame(
 	) | rpl::start_with_next([=] {
 		const auto track = _call->videoIncoming();
-		const auto [frame, rotation] = track->frameOriginalWithRotation();
-		setIncomingSize((rotation == 90 || rotation == 270)
-			? QSize(frame.height(), frame.width())
-			: frame.size());
-		if (_incoming->isHidden()) {
+		setIncomingSize(track->state() == Webrtc::VideoState::Active
+			? track->frameSize()
+			: QSize());
+		if (_incoming->widget()->isHidden()) {
 			return;
 		}
 		const auto incoming = incomingFrameGeometry();
 		const auto outgoing = outgoingFrameGeometry();
-		_incoming->update();
+		_incoming->widget()->update();
 		if (incoming.intersects(outgoing)) {
 			widget()->update(outgoing);
 		}
+	}, _callLifetime);
+
+	_call->videoIncoming()->stateValue(
+	) | rpl::start_with_next([=](Webrtc::VideoState state) {
+		setIncomingSize((state == Webrtc::VideoState::Active)
+			? _call->videoIncoming()->frameSize()
+			: QSize());
 	}, _callLifetime);
 
 	_call->videoOutgoing()->renderNextFrame(
@@ -496,7 +442,7 @@ void Panel::reinitWithCall(Call *call) {
 		const auto outgoing = outgoingFrameGeometry();
 		widget()->update(outgoing);
 		if (incoming.intersects(outgoing)) {
-			_incoming->update();
+			_incoming->widget()->update();
 		}
 	}, _callLifetime);
 
@@ -540,7 +486,13 @@ void Panel::reinitWithCall(Call *call) {
 	_name->setText(_user->name);
 	updateStatusText(_call->state());
 
-	_incoming->lower();
+	_answerHangupRedial->raise();
+	_decline->raise();
+	_cancel->raise();
+	_camera->raise();
+	_mute->raise();
+
+	_incoming->widget()->lower();
 }
 
 void Panel::createRemoteAudioMute() {
@@ -605,7 +557,7 @@ void Panel::showControls() {
 	_cancel->setVisible(_cancel->toggled());
 
 	const auto shown = !_incomingFrameSize.isEmpty();
-	_incoming->setVisible(shown);
+	_incoming->widget()->setVisible(shown);
 	_name->setVisible(!shown);
 	_status->setVisible(!shown);
 	_userpic->setVisible(!shown);
@@ -615,16 +567,20 @@ void Panel::showControls() {
 }
 
 void Panel::closeBeforeDestroy() {
-	_window->close();
+	window()->close();
 	reinitWithCall(nullptr);
+}
+
+rpl::lifetime &Panel::lifetime() {
+	return window()->lifetime();
 }
 
 void Panel::initGeometry() {
 	const auto center = Core::App().getPointForCallPanelCenter();
 	const auto initRect = QRect(0, 0, st::callWidth, st::callHeight);
-	_window->setGeometry(initRect.translated(center - initRect.center()));
-	_window->setMinimumSize({ st::callWidthMin, st::callHeightMin });
-	_window->show();
+	window()->setGeometry(initRect.translated(center - initRect.center()));
+	window()->setMinimumSize({ st::callWidthMin, st::callHeightMin });
+	window()->show();
 	updateControlsGeometry();
 }
 
@@ -642,16 +598,16 @@ void Panel::refreshOutgoingPreviewInBody(State state) {
 
 void Panel::toggleFullScreen(bool fullscreen) {
 	if (fullscreen) {
-		_window->showFullScreen();
+		window()->showFullScreen();
 	} else {
-		_window->showNormal();
+		window()->showNormal();
 	}
 }
 
 QRect Panel::incomingFrameGeometry() const {
-	return (!_incoming || _incoming->isHidden())
+	return (!_incoming || _incoming->widget()->isHidden())
 		? QRect()
-		: _incoming->geometry();
+		: _incoming->widget()->geometry();
 }
 
 QRect Panel::outgoingFrameGeometry() const {
@@ -667,15 +623,31 @@ void Panel::updateControlsGeometry() {
 	}
 	if (_fingerprint) {
 #ifndef Q_OS_MAC
-		const auto minRight = _controls->geometry().width()
-			+ st::callFingerprintTop;
+		const auto controlsGeometry = _controls->geometry();
+		const auto halfWidth = widget()->width() / 2;
+		const auto minLeft = (controlsGeometry.center().x() < halfWidth)
+			? (controlsGeometry.width() + st::callFingerprintTop)
+			: 0;
+		const auto minRight = (controlsGeometry.center().x() >= halfWidth)
+			? (controlsGeometry.width() + st::callFingerprintTop)
+			: 0;
+		_incoming->setControlsAlignment(minLeft
+			? style::al_left
+			: style::al_right);
 #else // !Q_OS_MAC
+		const auto minLeft = 0;
 		const auto minRight = 0;
 #endif // _controls
 		const auto desired = (widget()->width() - _fingerprint->width()) / 2;
-		_fingerprint->moveToRight(
-			std::max(desired, minRight),
-			st::callFingerprintTop);
+		if (minLeft) {
+			_fingerprint->moveToLeft(
+				std::max(desired, minLeft),
+				st::callFingerprintTop);
+		} else {
+			_fingerprint->moveToRight(
+				std::max(desired, minRight),
+				st::callFingerprintTop);
+		}
 	}
 	const auto innerHeight = std::max(widget()->height(), st::callHeightMin);
 	const auto innerWidth = widget()->width() - 2 * st::callInnerPadding;
@@ -741,9 +713,11 @@ void Panel::updateControlsGeometry() {
 		updateOutgoingVideoBubbleGeometry();
 	}
 
-	auto bothWidth = _answerHangupRedial->width() + st::callCancel.button.width;
-	_decline->moveToLeft((widget()->width() - bothWidth) / 2, _buttonsTop);
-	_cancel->moveToLeft((widget()->width() - bothWidth) / 2, _buttonsTop);
+	auto threeWidth = _answerHangupRedial->width()
+		+ st::callCancel.button.width
+		- _screencast->width();
+	_decline->moveToLeft((widget()->width() - threeWidth) / 2, _buttonsTop);
+	_cancel->moveToLeft((widget()->width() - threeWidth) / 2, _buttonsTop);
 
 	updateHangupGeometry();
 }
@@ -765,16 +739,19 @@ void Panel::updateOutgoingVideoBubbleGeometry() {
 }
 
 void Panel::updateHangupGeometry() {
-	auto singleWidth = _answerHangupRedial->width();
-	auto bothWidth = singleWidth + st::callCancel.button.width;
-	auto rightFrom = (widget()->width() - bothWidth) / 2;
-	auto rightTo = (widget()->width() - singleWidth) / 2;
+	auto twoWidth = _answerHangupRedial->width() + _screencast->width();
+	auto threeWidth = twoWidth + st::callCancel.button.width;
+	auto rightFrom = (widget()->width() - threeWidth) / 2;
+	auto rightTo = (widget()->width() - twoWidth) / 2;
 	auto hangupProgress = _hangupShownProgress.value(_hangupShown ? 1. : 0.);
 	auto hangupRight = anim::interpolate(rightFrom, rightTo, hangupProgress);
 	_answerHangupRedial->moveToRight(hangupRight, _buttonsTop);
 	_answerHangupRedial->setProgress(hangupProgress);
 	_mute->moveToRight(hangupRight - _mute->width(), _buttonsTop);
-	_camera->moveToLeft(hangupRight - _mute->width(), _buttonsTop);
+	_screencast->moveToLeft(hangupRight - _mute->width(), _buttonsTop);
+	_camera->moveToLeft(
+		hangupRight - _mute->width() + _screencast->width(),
+		_buttonsTop);
 }
 
 void Panel::updateStatusGeometry() {
@@ -787,13 +764,13 @@ void Panel::paint(QRect clip) {
 	Painter p(widget());
 
 	auto region = QRegion(clip);
-	if (!_incoming->isHidden()) {
-		region = region.subtracted(QRegion(_incoming->geometry()));
+	if (!_incoming->widget()->isHidden()) {
+		region = region.subtracted(QRegion(_incoming->widget()->geometry()));
 	}
 	for (const auto rect : region) {
 		p.fillRect(rect, st::callBgOpaque);
 	}
-	if (_incoming && _incoming->isHidden()) {
+	if (_incoming && _incoming->widget()->isHidden()) {
 		_call->videoIncoming()->markFrameShown();
 	}
 }
@@ -804,8 +781,12 @@ void Panel::handleClose() {
 	}
 }
 
+not_null<Ui::RpWindow*> Panel::window() const {
+	return _window.window();
+}
+
 not_null<Ui::RpWidget*> Panel::widget() const {
-	return _window->body();
+	return _window.widget();
 }
 
 void Panel::stateChanged(State state) {
@@ -821,7 +802,7 @@ void Panel::stateChanged(State state) {
 		auto toggleButton = [&](auto &&button, bool visible) {
 			button->toggle(
 				visible,
-				_window->isHidden()
+				window()->isHidden()
 				? anim::type::instant
 				: anim::type::normal);
 		};

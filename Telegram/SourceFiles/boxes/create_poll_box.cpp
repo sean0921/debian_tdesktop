@@ -436,7 +436,6 @@ void Options::Option::updateFieldGeometry() {
 	const auto skip = st::defaultRadio.diameter
 		+ st::defaultCheckbox.textPosition.x();
 	const auto left = anim::interpolate(0, skip, shown);
-	const auto width = _content->width() - left;
 	_field->resizeToWidth(_content->width() - left);
 	_field->moveToLeft(left, 0);
 }
@@ -536,8 +535,8 @@ std::vector<PollAnswer> Options::toPollAnswers() const {
 	};
 	ranges::copy(
 		_list
-		| ranges::view::filter(&Option::isGood)
-		| ranges::view::transform(makeAnswer),
+		| ranges::views::filter(&Option::isGood)
+		| ranges::views::transform(makeAnswer),
 		ranges::back_inserter(result));
 	return result;
 }
@@ -593,7 +592,7 @@ void Options::removeEmptyTail() {
 		_list,
 		&Option::hasFocus);
 	const auto end = _list.end();
-	const auto reversed = ranges::view::reverse(_list);
+	const auto reversed = ranges::views::reverse(_list);
 	const auto emptyItem = ranges::find_if(
 		reversed,
 		ranges::not_fn(&Option::isEmpty)).base();
@@ -1085,7 +1084,7 @@ object_ptr<Ui::RpWidget> CreatePollBox::setupContent() {
 		send({ .silent = true });
 	};
 	const auto sendScheduled = [=] {
-		Ui::show(
+		_controller->show(
 			HistoryView::PrepareScheduleBox(
 				this,
 				SendMenu::Type::Scheduled,

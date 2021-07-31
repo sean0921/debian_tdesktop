@@ -54,11 +54,11 @@ enum class InputSubmitSettings {
 	None,
 };
 
-class FlatInput : public RpWidgetWrap<QLineEdit> {
+class FlatInput : public RpWidgetBase<QLineEdit> {
 	// The Q_OBJECT meta info is used for qobject_cast!
 	Q_OBJECT
 
-	using Parent = RpWidgetWrap<QLineEdit>;
+	using Parent = RpWidgetBase<QLineEdit>;
 public:
 	FlatInput(
 		QWidget *parent,
@@ -83,13 +83,13 @@ public:
 		return _oldtext;
 	}
 
-public slots:
+public Q_SLOTS:
 	void onTextChange(const QString &text);
 	void onTextEdited();
 
 	void onTouchTimer();
 
-signals:
+Q_SIGNALS:
 	void changed();
 	void cancelled();
 	void submitted(Qt::KeyboardModifiers);
@@ -189,6 +189,7 @@ public:
 
 	void showError();
 	void showErrorNoFocus();
+	void hideError();
 
 	void setMaxLength(int maxLength);
 	void setMinHeight(int minHeight);
@@ -255,7 +256,10 @@ public:
 		EditLinkSelection selection,
 		const QString &text,
 		const QString &link);
-	static bool IsValidMarkdownLink(const QString &link);
+	static bool IsValidMarkdownLink(const QStringRef &link);
+	static bool IsValidMarkdownLink(const QString &link) {
+		return IsValidMarkdownLink(link.midRef(0));
+	}
 
 	const QString &getLastText() const {
 		return _lastTextWithTags.text;
@@ -336,7 +340,7 @@ public:
 
 	~InputField();
 
-private slots:
+private Q_SLOTS:
 	void onTouchTimer();
 
 	void onDocumentContentsChange(int position, int charsRemoved, int charsAdded);
@@ -347,7 +351,7 @@ private slots:
 
 	void onFocusInner();
 
-signals:
+Q_SIGNALS:
 	void changed();
 	void submitted(Qt::KeyboardModifiers);
 	void cancelled();
@@ -449,6 +453,12 @@ private:
 		int till,
 		const QString &tag,
 		const QString &edge = QString());
+	void addMarkdownTag(int from, int till, const QString &tag);
+	void removeMarkdownTag(int from, int till, const QString &tag);
+	void finishMarkdownTagChange(
+		int from,
+		int till,
+		const TextWithTags &textWithTags);
 	void toggleSelectionMarkdown(const QString &tag);
 	void clearSelectionMarkdown();
 
@@ -544,11 +554,11 @@ private:
 
 };
 
-class MaskedInputField : public RpWidgetWrap<QLineEdit> {
+class MaskedInputField : public RpWidgetBase<QLineEdit> {
 	// The Q_OBJECT meta info is used for qobject_cast!
 	Q_OBJECT
 
-	using Parent = RpWidgetWrap<QLineEdit>;
+	using Parent = RpWidgetBase<QLineEdit>;
 public:
 	MaskedInputField(
 		QWidget *parent,
@@ -557,6 +567,8 @@ public:
 		const QString &val = QString());
 
 	void showError();
+	void showErrorNoFocus();
+	void hideError();
 
 	QRect getTextRect() const;
 
@@ -587,7 +599,7 @@ public:
 		startPlaceholderAnimation();
 	}
 
-public slots:
+public Q_SLOTS:
 	void onTextChange(const QString &text);
 	void onCursorPositionChanged(int oldPosition, int position);
 
@@ -595,7 +607,7 @@ public slots:
 
 	void onTouchTimer();
 
-signals:
+Q_SIGNALS:
 	void changed();
 	void cancelled();
 	void submitted(Qt::KeyboardModifiers);

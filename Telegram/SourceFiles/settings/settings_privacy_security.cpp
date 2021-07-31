@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_common.h"
 #include "settings/settings_privacy_controllers.h"
 #include "base/timer_rpl.h"
+#include "base/unixtime.h"
 #include "boxes/peer_list_box.h"
 #include "boxes/edit_privacy_box.h"
 #include "boxes/passcode_box.h"
@@ -29,6 +30,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/buttons.h"
+#include "ui/widgets/checkbox.h"
+#include "ui/layers/generic_box.h"
 #include "calls/calls_instance.h"
 #include "core/core_cloud_password.h"
 #include "core/update_checker.h"
@@ -37,11 +40,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_chat.h"
 #include "data/data_channel.h"
+#include "main/main_domain.h"
 #include "main/main_session.h"
+#include "storage/storage_domain.h"
 #include "window/window_session_controller.h"
 #include "apiwrap.h"
 #include "facades.h"
 #include "styles/style_settings.h"
+#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 
 #include <QtGui/QGuiApplication>
@@ -52,14 +58,6 @@ namespace {
 constexpr auto kUpdateTimeout = 60 * crl::time(1000);
 
 using Privacy = ApiWrap::Privacy;
-
-rpl::producer<> PasscodeChanges() {
-	return rpl::single(
-		rpl::empty_value()
-	) | rpl::then(base::ObservableViewer(
-		Global::RefLocalPasscodeChanged()
-	));
-}
 
 QString PrivacyBase(Privacy::Key key, Privacy::Option option) {
 	using Key = Privacy::Key;
@@ -143,7 +141,7 @@ void SetupPrivacy(
 				BlockedBoxController::BlockNewPeer(controller);
 			});
 		};
-		Ui::show(Box<PeerListBox>(
+		controller->show(Box<PeerListBox>(
 			std::make_unique<BlockedBoxController>(controller),
 			initBox));
 	});
@@ -176,7 +174,8 @@ void SetupPrivacy(
 	add(
 		tr::lng_settings_forwards_privacy(),
 		Key::Forwards,
-		[=] { return std::make_unique<ForwardsPrivacyController>(controller); });
+		[=] { return std::make_unique<ForwardsPrivacyController>(
+			controller); });
 	add(
 		tr::lng_settings_profile_photo_privacy(),
 		Key::ProfilePhoto,
@@ -239,24 +238,18 @@ void SetupArchiveAndMute(
 	));
 }
 
-not_null<Ui::SlideWrap<Ui::PlainShadow>*> AddSeparator(
-		not_null<Ui::VerticalLayout*> container) {
-	return container->add(
-		object_ptr<Ui::SlideWrap<Ui::PlainShadow>>(
-			container,
-			object_ptr<Ui::PlainShadow>(container),
-			st::settingsSeparatorPadding));
-}
-
 void SetupLocalPasscode(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container) {
 	AddSkip(container);
 	AddSubsectionTitle(container, tr::lng_settings_passcode_title());
 
-	auto has = PasscodeChanges(
-	) | rpl::map([] {
-		return Global::LocalPasscode();
+	auto has = rpl::single(
+		rpl::empty_value()
+	) | rpl::then(
+		controller->session().domain().local().localPasscodeChanged()
+	) | rpl::map([=] {
+		return controller->session().domain().local().hasLocalPasscode();
 	});
 	auto text = rpl::combine(
 		tr::lng_passcode_change(),
@@ -271,7 +264,7 @@ void SetupLocalPasscode(
 			std::move(text),
 			st::settingsButton)
 	)->addClickHandler([=] {
-		Ui::show(Box<PasscodeBox>(&controller->session(), false));
+		controller->show(Box<PasscodeBox>(&controller->session(), false));
 	});
 
 	const auto wrap = container->add(
@@ -285,18 +278,27 @@ void SetupLocalPasscode(
 			tr::lng_settings_passcode_disable(),
 			st::settingsButton)
 	)->addClickHandler([=] {
-		Ui::show(Box<PasscodeBox>(&controller->session(), true));
+		controller->show(Box<PasscodeBox>(&controller->session(), true));
 	});
 
+	const auto autoLockBoxClosing =
+		container->lifetime().make_state<rpl::event_stream<>>();
 	const auto label = base::Platform::LastUserInputTimeSupported()
 		? tr::lng_passcode_autolock_away
 		: tr::lng_passcode_autolock_inactive;
-	auto value = PasscodeChanges(
+	auto value = autoLockBoxClosing->events_starting_with(
+		rpl::empty_value()
 	) | rpl::map([] {
 		const auto autolock = Core::App().settings().autoLock();
 		return (autolock % 3600)
-			? tr::lng_passcode_autolock_minutes(tr::now, lt_count, autolock / 60)
-			: tr::lng_passcode_autolock_hours(tr::now, lt_count, autolock / 3600);
+			? tr::lng_passcode_autolock_minutes(
+				tr::now,
+				lt_count,
+				autolock / 60)
+			: tr::lng_passcode_autolock_hours(
+				tr::now,
+				lt_count,
+				autolock / 3600);
 	});
 
 	AddButtonWithLabel(
@@ -305,7 +307,10 @@ void SetupLocalPasscode(
 		std::move(value),
 		st::settingsButton
 	)->addClickHandler([=] {
-		Ui::show(Box<AutoLockBox>(&controller->session()));
+		const auto box = controller->show(
+			Box<AutoLockBox>(&controller->session()));
+		box->boxClosing(
+		) | rpl::start_to_stream(*autoLockBoxClosing, box->lifetime());
 	});
 
 	wrap->toggleOn(base::duplicate(has));
@@ -355,6 +360,10 @@ void SetupCloudPassword(
 	) | rpl::then(rpl::duplicate(
 		unconfirmed
 	));
+	auto resetAt = session->api().passwordState(
+	) | rpl::map([](const State &state) {
+		return state.pendingResetDate;
+	});
 	const auto label = container->add(
 		object_ptr<Ui::SlideWrap<Ui::FlatLabel>>(
 			container,
@@ -398,9 +407,9 @@ void SetupCloudPassword(
 	))->setDuration(0);
 	change->entity()->addClickHandler([=] {
 		if (CheckEditCloudPassword(session)) {
-			Ui::show(EditCloudPasswordBox(session));
+			controller->show(EditCloudPasswordBox(session));
 		} else {
-			Ui::show(CloudPasswordAppOutdatedBox());
+			controller->show(CloudPasswordAppOutdatedBox());
 		}
 	});
 
@@ -437,14 +446,14 @@ void SetupCloudPassword(
 			session->api().clearUnconfirmedPassword();
 		}, validation.box->lifetime());
 
-		Ui::show(std::move(validation.box));
+		controller->show(std::move(validation.box));
 	});
 
 	const auto remove = [=] {
 		if (CheckEditCloudPassword(session)) {
-			RemoveCloudPassword(session);
+			RemoveCloudPassword(controller);
 		} else {
-			Ui::show(CloudPasswordAppOutdatedBox());
+			controller->show(CloudPasswordAppOutdatedBox());
 		}
 	};
 	const auto disable = container->add(
@@ -459,6 +468,118 @@ void SetupCloudPassword(
 		rpl::duplicate(noconfirmed),
 		_1 && !_2));
 	disable->entity()->addClickHandler(remove);
+
+	auto resetInSeconds = rpl::duplicate(
+		resetAt
+	) | rpl::filter([](TimeId time) {
+		return time != 0;
+	}) | rpl::map([](TimeId time) {
+		return rpl::single(
+			rpl::empty_value()
+		) | rpl::then(base::timer_each(
+			999
+		)) | rpl::map([=] {
+			const auto now = base::unixtime::now();
+			return (time - now);
+		}) | rpl::distinct_until_changed(
+		) | rpl::take_while([](TimeId left) {
+			return left > 0;
+		}) | rpl::then(rpl::single(TimeId(0)));
+	}) | rpl::flatten_latest(
+	) | rpl::start_spawning(container->lifetime());
+
+	auto resetText = rpl::duplicate(
+		resetInSeconds
+	) | rpl::map([](TimeId left) {
+		return (left > 0);
+	}) | rpl::distinct_until_changed(
+	) | rpl::map([](bool waiting) {
+		return waiting
+			? tr::lng_cloud_password_reset_in()
+			: tr::lng_cloud_password_reset_ready();
+	}) | rpl::flatten_latest();
+
+	constexpr auto kMinute = 60;
+	constexpr auto kHour = 3600;
+	constexpr auto kDay = 86400;
+	auto resetLabel = rpl::duplicate(
+		resetInSeconds
+	) | rpl::map([](TimeId left) {
+		return (left >= kDay)
+			? ((left / kDay) * kDay)
+			: (left >= kHour)
+			? ((left / kHour) * kHour)
+			: (left >= kMinute)
+			? ((left / kMinute) * kMinute)
+			: left;
+	}) | rpl::distinct_until_changed(
+	) | rpl::map([](TimeId left) {
+		const auto days = left / kDay;
+		const auto hours = left / kHour;
+		const auto minutes = left / kMinute;
+		return days
+			? tr::lng_group_call_duration_days(tr::now, lt_count, days)
+			: hours
+			? tr::lng_group_call_duration_hours(tr::now, lt_count, hours)
+			: minutes
+			? tr::lng_group_call_duration_minutes(tr::now, lt_count, minutes)
+			: left
+			? tr::lng_group_call_duration_seconds(tr::now, lt_count, left)
+			: QString();
+	});
+
+	const auto reset = container->add(
+		object_ptr<Ui::SlideWrap<Button>>(
+			container,
+			object_ptr<Button>(
+				container,
+				rpl::duplicate(resetText),
+				st::settingsButton))
+	)->setDuration(0);
+	CreateRightLabel(
+		reset->entity(),
+		std::move(resetLabel),
+		st::settingsButton,
+		std::move(resetText));
+
+	reset->toggleOn(rpl::duplicate(
+		resetAt
+	) | rpl::map([](TimeId time) {
+		return time != 0;
+	}));
+	const auto sent = std::make_shared<mtpRequestId>(0);
+	reset->entity()->addClickHandler([=] {
+		const auto api = &session->api();
+		const auto state = api->passwordStateCurrent();
+		const auto date = state ? state->pendingResetDate : TimeId(0);
+		if (!date || *sent) {
+			return;
+		} else if (base::unixtime::now() >= date) {
+			*sent = api->request(MTPaccount_ResetPassword(
+			)).done([=](const MTPaccount_ResetPasswordResult &result) {
+				*sent = 0;
+				api->applyPendingReset(result);
+			}).fail([=](const MTP::Error &error) {
+				*sent = 0;
+			}).send();
+		} else {
+			const auto cancel = [=] {
+				Ui::hideLayer();
+				*sent = api->request(MTPaccount_DeclinePasswordReset(
+				)).done([=] {
+					*sent = 0;
+					api->reloadPasswordState();
+				}).fail([=](const MTP::Error &error) {
+					*sent = 0;
+				}).send();
+			};
+			Ui::show(Box<ConfirmBox>(
+				tr::lng_cloud_password_reset_cancel_sure(tr::now),
+				tr::lng_box_yes(tr::now),
+				tr::lng_box_no(tr::now),
+				cancel));
+		}
+	});
 
 	const auto abort = container->add(
 		object_ptr<Ui::SlideWrap<Button>>(
@@ -558,9 +679,86 @@ void SetupSelfDestruction(
 		label(),
 		st::settingsButton
 	)->addClickHandler([=] {
-		Ui::show(Box<SelfDestructionBox>(
+		controller->show(Box<SelfDestructionBox>(
 			session,
 			session->api().selfDestruct().days()));
+	});
+
+	AddSkip(container);
+}
+
+void ClearPaymentInfoBoxBuilder(
+		not_null<Ui::GenericBox*> box,
+		not_null<Main::Session*> session) {
+	box->setTitle(tr::lng_clear_payment_info_title());
+
+	const auto checkboxPadding = style::margins(
+		st::boxRowPadding.left(),
+		st::boxRowPadding.left(),
+		st::boxRowPadding.right(),
+		st::boxRowPadding.bottom());
+	const auto label = box->addRow(object_ptr<Ui::FlatLabel>(
+		box,
+		tr::lng_clear_payment_info_sure(),
+		st::boxLabel));
+	const auto shipping = box->addRow(
+		object_ptr<Ui::Checkbox>(
+			box,
+			tr::lng_clear_payment_info_shipping(tr::now),
+			true,
+			st::defaultBoxCheckbox),
+		checkboxPadding);
+	const auto payment = box->addRow(
+		object_ptr<Ui::Checkbox>(
+			box,
+			tr::lng_clear_payment_info_payment(tr::now),
+			true,
+			st::defaultBoxCheckbox),
+		checkboxPadding);
+
+	using Flags = MTPpayments_ClearSavedInfo::Flags;
+	const auto flags = box->lifetime().make_state<Flags>();
+
+	box->addButton(tr::lng_clear_payment_info_clear(), [=] {
+		using Flag = Flags::Enum;
+		*flags = (shipping->checked() ? Flag::f_info : Flag(0))
+			| (payment->checked() ? Flag::f_credentials : Flag(0));
+		delete label;
+		delete shipping;
+		delete payment;
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::lng_clear_payment_info_confirm(),
+			st::boxLabel));
+		box->clearButtons();
+		box->addButton(tr::lng_clear_payment_info_clear(), [=] {
+			session->api().request(MTPpayments_ClearSavedInfo(
+				MTP_flags(*flags)
+			)).send();
+			box->closeBox();
+		}, st::attentionBoxButton);
+		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+	}, st::attentionBoxButton);
+	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+}
+
+auto ClearPaymentInfoBox(not_null<Main::Session*> session) {
+	return Box(ClearPaymentInfoBoxBuilder, session);
+}
+
+void SetupBotsAndWebsites(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
+	AddSkip(container);
+	AddSubsectionTitle(container, tr::lng_settings_security_bots());
+
+	const auto session = &controller->session();
+	AddButton(
+		container,
+		tr::lng_settings_clear_payment_info(),
+		st::settingsButton
+	)->addClickHandler([=] {
+		controller->show(ClearPaymentInfoBox(session));
 	});
 
 	AddSkip(container);
@@ -578,6 +776,7 @@ void SetupSessionsList(
 	) | rpl::start_with_next([=] {
 		controller->session().api().authorizations().reload();
 	}, container->lifetime());
+
 	auto count = controller->session().api().authorizations().totalChanges(
 	) | rpl::map([](int count) {
 		return count ? QString::number(count) : QString();
@@ -589,7 +788,7 @@ void SetupSessionsList(
 		std::move(count),
 		st::settingsButton
 	)->addClickHandler([=] {
-		Ui::show(Box<SessionsBox>(&controller->session()));
+		controller->show(Box<SessionsBox>(&controller->session()));
 	});
 	AddSkip(container, st::settingsPrivacySecurityPadding);
 	AddDividerText(container, tr::lng_settings_sessions_about());
@@ -645,7 +844,8 @@ object_ptr<Ui::BoxContent> EditCloudPasswordBox(not_null<Main::Session*> session
 	return result;
 }
 
-void RemoveCloudPassword(not_null<::Main::Session*> session) {
+void RemoveCloudPassword(not_null<Window::SessionController*> controller) {
+	const auto session = &controller->session();
 	const auto current = session->api().passwordStateCurrent();
 	Assert(current.has_value());
 
@@ -655,7 +855,7 @@ void RemoveCloudPassword(not_null<::Main::Session*> session) {
 	}
 	auto fields = PasscodeBox::CloudFields::From(*current);
 	fields.turningOff = true;
-	const auto box = Ui::show(Box<PasscodeBox>(session, fields));
+	auto box = Box<PasscodeBox>(session, fields);
 
 	rpl::merge(
 		box->newPasswordSet() | rpl::to_empty,
@@ -668,6 +868,8 @@ void RemoveCloudPassword(not_null<::Main::Session*> session) {
 	) | rpl::start_with_next([=] {
 		session->api().clearUnconfirmedPassword();
 	}, box->lifetime());
+
+	controller->show(std::move(box));
 }
 
 object_ptr<Ui::BoxContent> CloudPasswordAppOutdatedBox() {
@@ -700,7 +902,7 @@ void AddPrivacyButton(
 		) | rpl::take(
 			1
 		) | rpl::start_with_next([=](const Privacy &value) {
-			Ui::show(
+			controller->show(
 				Box<EditPrivacyBox>(controller, controllerFactory(), value),
 				Ui::LayerOption::KeepOther);
 		});
@@ -735,6 +937,8 @@ void PrivacySecurity::setupContent(
 	AddDivider(content);
 #endif // !OS_MAC_STORE && !OS_WIN_STORE
 	SetupSelfDestruction(controller, content, trigger());
+	AddDivider(content);
+	SetupBotsAndWebsites(controller, content);
 
 	Ui::ResizeFitChild(this, content);
 }

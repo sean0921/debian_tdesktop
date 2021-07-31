@@ -24,6 +24,12 @@ else()
     PRIVATE
         qfcitxplatforminputcontext.cpp
         qfcitxplatforminputcontext.h
+        fcitxcandidatewindow.cpp
+        fcitxcandidatewindow.h
+        fcitxtheme.cpp
+        fcitxtheme.h
+        font.cpp
+        font.h
         qtkey.cpp
         main.cpp
         main.h
@@ -61,7 +67,7 @@ else()
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
 
-        target_include_directories(external_fcitx5_qt5
+        target_include_directories(external_fcitx5_qt5 SYSTEM
         PUBLIC
             ${XKBCOMMON_INCLUDE_DIRS}
         )
