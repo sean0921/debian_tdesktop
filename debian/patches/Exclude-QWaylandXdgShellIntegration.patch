@@ -1,0 +1,57 @@
+Description: Exclude bundled xdg-shell plugin
+ Prefer system-wide Wayland integration instead.
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Last-Update: Sat, 31 Jul 2021 13:23:06 +0300
+
+--- a/Telegram/CMakeLists.txt
++++ b/Telegram/CMakeLists.txt
+@@ -18,9 +18,6 @@ endif()
+ add_subdirectory(lib_storage)
+ add_subdirectory(lib_lottie)
+ add_subdirectory(lib_qr)
+-if (LINUX AND NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
+-    add_subdirectory(lib_waylandshells)
+-endif()
+ add_subdirectory(lib_webrtc)
+ add_subdirectory(lib_webview)
+ add_subdirectory(codegen)
+@@ -1278,7 +1275,6 @@ else()
+     if (NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
+         target_link_libraries(Telegram
+         PRIVATE
+-            desktop-app::lib_waylandshells
+             desktop-app::external_kwayland
+         )
+     endif()
+--- a/Telegram/lib_ui/CMakeLists.txt
++++ b/Telegram/lib_ui/CMakeLists.txt
+@@ -252,7 +252,6 @@ if (DESKTOP_APP_DISABLE_WAYLAND_INTEGRAT
+ elseif(LINUX)
+     target_link_libraries(lib_ui
+     PUBLIC
+-        desktop-app::lib_waylandshells
+         desktop-app::external_kwayland
+     )
+ endif()
+--- a/Telegram/lib_ui/ui/platform/linux/ui_linux_wayland_integration.cpp
++++ b/Telegram/lib_ui/ui/platform/linux/ui_linux_wayland_integration.cpp
+@@ -8,7 +8,6 @@ https://github.com/telegramdesktop/tdesk
+ #include "ui/platform/linux/ui_linux_wayland_integration.h"
+ 
+ #include "base/platform/base_platform_info.h"
+-#include "waylandshells/xdg_shell.h"
+ 
+ #include <QtGui/QWindow>
+ 
+@@ -93,9 +92,9 @@ bool WaylandIntegration::windowExtentsSu
+ 	// initialize shell integration before querying
+ 	if (const auto integration = static_cast<QWaylandIntegration*>(
+ 		QGuiApplicationPrivate::platformIntegration())) {
+-		integration->shellIntegration();
++		return integration->shellIntegration();
+ 	}
+-	return WaylandShells::XdgShell();
++	return false;
+ }
+ 
+ void WaylandIntegration::setWindowExtents(
