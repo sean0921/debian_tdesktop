@@ -3,8 +3,8 @@ Upstream-Name: Telegram Desktop
 Upstream-Contact: John Preston <johnprestonmail@gmail.com>
 Source: https://github.com/telegramdesktop/tdesktop
 Files-Excluded: Telegram/ThirdParty/*
-                Telegram/Patches/*.diff
                 Telegram/lib_ui/fonts/*.ttf
+                Telegram/lib_waylandshells/*
 Comment: Exclude unused third-party modules to reduce code size.
 
 Files: *
