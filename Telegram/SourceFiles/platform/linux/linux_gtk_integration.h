@@ -7,38 +7,43 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "core/file_utilities.h"
-
 namespace Platform {
 namespace internal {
 
 class GtkIntegration {
 public:
+	enum class Type {
+		Base,
+		Webview,
+		TDesktop,
+	};
+
 	static GtkIntegration *Instance();
 
-	void load();
+	void load(const QString &allowedBackends);
+	int exec(const QString &parentDBusName);
 
-	[[nodiscard]] std::optional<int> scaleFactor() const;
-
-	using FileDialogType = ::FileDialog::internal::Type;
-	[[nodiscard]] bool fileDialogSupported() const;
-	[[nodiscard]] bool useFileDialog(
-		FileDialogType type = FileDialogType::ReadFile) const;
-	[[nodiscard]] bool getFileDialog(
-		QPointer<QWidget> parent,
-		QStringList &files,
-		QByteArray &remoteContent,
-		const QString &caption,
-		const QString &filter,
-		FileDialogType type,
-		QString startFile) const;
-	
 	[[nodiscard]] bool showOpenWithDialog(const QString &filepath) const;
 
 	[[nodiscard]] QImage getImageFromClipboard() const;
 
+	static QString AllowedBackends();
+
+	static int Exec(
+		Type type,
+		const QString &parentDBusName,
+		const QString &serviceName);
+
+	static void Start(Type type);
+
+	static void Autorestart(Type type);
+
 private:
 	GtkIntegration();
+	~GtkIntegration();
+
+	class Private;
+	const std::unique_ptr<Private> _private;
 };
 
 } // namespace internal

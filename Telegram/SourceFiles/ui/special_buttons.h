@@ -21,6 +21,7 @@ class CloudImageView;
 } // namespace Data
 
 namespace Window {
+class Controller;
 class SessionController;
 } // namespace Window
 
@@ -68,12 +69,19 @@ public:
 
 	UserpicButton(
 		QWidget *parent,
+		not_null<::Window::Controller*> window,
+		not_null<PeerData*> peer,
+		Role role,
+		const style::UserpicButton &st);
+	UserpicButton(
+		QWidget *parent,
+		not_null<::Window::Controller*> window,
 		const QString &cropTitle,
 		Role role,
 		const style::UserpicButton &st);
 	UserpicButton(
 		QWidget *parent,
-		not_null<Window::SessionController*> controller,
+		not_null<::Window::SessionController*> controller,
 		not_null<PeerData*> peer,
 		Role role,
 		const style::UserpicButton &st);
@@ -85,6 +93,8 @@ public:
 
 	void switchChangePhotoOverlay(bool enabled);
 	void showSavedMessagesOnSelf(bool enabled);
+
+	rpl::producer<> uploadPhotoRequests() const;
 
 	QImage takeResultImage() {
 		return std::move(_result);
@@ -128,11 +138,11 @@ private:
 	void grabOldUserpic();
 	void setClickHandlerByRole();
 	void openPeerPhoto();
-	void changePhotoLazy();
-	void uploadNewPeerPhoto();
+	void changePhotoLocally(bool requestToUpload = false);
 
 	const style::UserpicButton &_st;
-	Window::SessionController *_controller = nullptr;
+	::Window::SessionController *_controller = nullptr;
+	::Window::Controller *_window = nullptr;
 	PeerData *_peer = nullptr;
 	std::shared_ptr<Data::CloudImageView> _userpicView;
 	QString _cropTitle;
@@ -154,34 +164,9 @@ private:
 	bool _changeOverlayEnabled = false;
 	Ui::Animations::Simple _changeOverlayShown;
 
+	rpl::event_stream<> _uploadPhotoRequests;
+
 };
-// // #feed
-//class FeedUserpicButton : public AbstractButton {
-//public:
-//	FeedUserpicButton(
-//		QWidget *parent,
-//		not_null<Window::SessionController*> controller,
-//		not_null<Data::Feed*> feed,
-//		const style::FeedUserpicButton &st);
-//
-//private:
-//	struct Part {
-//		not_null<ChannelData*> channel;
-//		base::unique_qptr<UserpicButton> button;
-//	};
-//
-//	void prepare();
-//	void checkParts();
-//	bool partsAreValid() const;
-//	void refreshParts();
-//	QPoint countInnerPosition() const;
-//
-//	const style::FeedUserpicButton &_st;
-//	not_null<Window::SessionController*> _controller;
-//	not_null<Data::Feed*> _feed;
-//	std::vector<Part> _parts;
-//
-//};
 
 class SilentToggle
 	: public Ui::RippleButton

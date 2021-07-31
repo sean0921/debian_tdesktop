@@ -22,13 +22,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "chat_helpers/stickers_emoji_pack.h"
 #include "window/window_session_controller.h"
+#include "ui/effects/path_shift_gradient.h"
 #include "ui/toast/toast.h"
 #include "ui/toasts/common_toasts.h"
 #include "data/data_session.h"
 #include "data/data_groups.h"
 #include "data/data_media_types.h"
 #include "lang/lang_keys.h"
-#include "layout.h"
+#include "layout/layout_selection.h"
 #include "app.h"
 #include "styles/style_chat.h"
 
@@ -60,10 +61,22 @@ bool IsAttachedToPreviousInSavedMessages(
 
 } // namespace
 
-SimpleElementDelegate::SimpleElementDelegate(
-	not_null<Window::SessionController*> controller)
-: _controller(controller) {
+std::unique_ptr<Ui::PathShiftGradient> MakePathShiftGradient(
+		Fn<void()> update) {
+	return std::make_unique<Ui::PathShiftGradient>(
+		st::msgServiceBg,
+		st::msgServiceBgSelected,
+		std::move(update));
 }
+
+SimpleElementDelegate::SimpleElementDelegate(
+	not_null<Window::SessionController*> controller,
+	Fn<void()> update)
+: _controller(controller)
+, _pathGradient(MakePathShiftGradient(std::move(update))) {
+}
+
+SimpleElementDelegate::~SimpleElementDelegate() = default;
 
 std::unique_ptr<HistoryView::Element> SimpleElementDelegate::elementCreate(
 		not_null<HistoryMessage*> message,
@@ -107,6 +120,20 @@ void SimpleElementDelegate::elementShowPollResults(
 	FullMsgId context) {
 }
 
+void SimpleElementDelegate::elementOpenPhoto(
+	not_null<PhotoData*> photo,
+	FullMsgId context) {
+}
+
+void SimpleElementDelegate::elementOpenDocument(
+	not_null<DocumentData*> document,
+	FullMsgId context,
+	bool showInMediaView) {
+}
+
+void SimpleElementDelegate::elementCancelUpload(const FullMsgId &context) {
+}
+
 void SimpleElementDelegate::elementShowTooltip(
 	const TextWithEntities &text,
 	Fn<void()> hiddenCallback) {
@@ -131,6 +158,18 @@ void SimpleElementDelegate::elementSendBotCommand(
 }
 
 void SimpleElementDelegate::elementHandleViaClick(not_null<UserData*> bot) {
+}
+
+bool SimpleElementDelegate::elementIsChatWide() {
+	return false;
+}
+
+auto SimpleElementDelegate::elementPathShiftGradient()
+-> not_null<Ui::PathShiftGradient*> {
+	return _pathGradient.get();
+}
+
+void SimpleElementDelegate::elementReplyTo(const FullMsgId &to) {
 }
 
 TextSelection UnshiftItemSelection(
@@ -220,7 +259,7 @@ int UnreadBar::marginTop() {
 	return st::lineWidth + st::historyUnreadBarMargin;
 }
 
-void UnreadBar::paint(Painter &p, int y, int w) const {
+void UnreadBar::paint(Painter &p, int y, int w, bool chatWide) const {
 	const auto bottom = y + height();
 	y += marginTop();
 	p.fillRect(
@@ -238,9 +277,8 @@ void UnreadBar::paint(Painter &p, int y, int w) const {
 	p.setFont(st::historyUnreadBarFont);
 	p.setPen(st::historyUnreadBarFg);
 
-	int left = st::msgServiceMargin.left();
 	int maxwidth = w;
-	if (Core::App().settings().chatWide()) {
+	if (chatWide) {
 		maxwidth = qMin(
 			maxwidth,
 			st::msgMaxWidth
@@ -272,8 +310,8 @@ int DateBadge::height() const {
 		+ st::msgServiceMargin.bottom();
 }
 
-void DateBadge::paint(Painter &p, int y, int w) const {
-	ServiceMessagePainter::paintDate(p, text, width, y, w);
+void DateBadge::paint(Painter &p, int y, int w, bool chatWide) const {
+	ServiceMessagePainter::paintDate(p, text, width, y, w, chatWide);
 }
 
 Element::Element(

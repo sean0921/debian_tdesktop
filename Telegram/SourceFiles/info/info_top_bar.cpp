@@ -486,6 +486,7 @@ Ui::StringWithNumbers TopBar::generateSelectedText() const {
 	const auto phrase = [&] {
 		switch (_selectedItems.type) {
 		case Type::Photo: return tr::lng_media_selected_photo;
+		case Type::GIF: return tr::lng_media_selected_gif;
 		case Type::Video: return tr::lng_media_selected_video;
 		case Type::File: return tr::lng_media_selected_file;
 		case Type::MusicFile: return tr::lng_media_selected_song;
@@ -510,11 +511,11 @@ bool TopBar::searchMode() const {
 }
 
 MessageIdsList TopBar::collectItems() const {
-	return ranges::view::all(
+	return ranges::views::all(
 		_selectedItems.list
-	) | ranges::view::transform([](auto &&item) {
+	) | ranges::views::transform([](auto &&item) {
 		return item.msgId;
-	}) | ranges::view::filter([&](FullMsgId msgId) {
+	}) | ranges::views::filter([&](FullMsgId msgId) {
 		return _navigation->session().data().message(msgId) != nullptr;
 	}) | ranges::to_vector;
 }
@@ -540,14 +541,15 @@ void TopBar::performDelete() {
 	if (items.empty()) {
 		_cancelSelectionClicks.fire({});
 	} else {
-		const auto box = Ui::show(Box<DeleteMessagesBox>(
+		auto box = Box<DeleteMessagesBox>(
 			&_navigation->session(),
-			std::move(items)));
+			std::move(items));
 		box->setDeleteConfirmedCallback([weak = Ui::MakeWeak(this)] {
 			if (weak) {
 				weak->_cancelSelectionClicks.fire({});
 			}
 		});
+		_navigation->parentController()->show(std::move(box));
 	}
 }
 
@@ -559,9 +561,7 @@ rpl::producer<QString> TitleValue(
 
 	switch (section.type()) {
 	case Section::Type::Profile:
-		/*if (const auto feed = key.feed()) {
-			return tr::lng_info_feed_title();
-		} else */if (const auto user = peer->asUser()) {
+		if (const auto user = peer->asUser()) {
 			return (user->isBot() && !user->isSupport())
 				? tr::lng_info_bot_title()
 				: tr::lng_info_user_title();
@@ -581,6 +581,8 @@ rpl::producer<QString> TitleValue(
 		switch (section.mediaType()) {
 		case Section::MediaType::Photo:
 			return tr::lng_media_type_photos();
+		case Section::MediaType::GIF:
+			return tr::lng_media_type_gifs();
 		case Section::MediaType::Video:
 			return tr::lng_media_type_videos();
 		case Section::MediaType::MusicFile:
@@ -606,9 +608,6 @@ rpl::producer<QString> TitleValue(
 				: tr::lng_profile_subscribers_section();
 		}
 		return tr::lng_profile_participants_section();
-
-	//case Section::Type::Channels: // #feed
-	//	return tr::lng_info_feed_channels();
 
 	case Section::Type::Settings:
 		switch (section.settingsType()) {

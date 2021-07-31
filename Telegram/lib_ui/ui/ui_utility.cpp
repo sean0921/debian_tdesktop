@@ -6,11 +6,14 @@
 //
 #include "ui/ui_utility.h"
 
+#include "ui/platform/ui_platform_utility.h"
 #include "ui/style/style_core.h"
 
+#include <QtCore/QCoreApplication>
 #include <QtWidgets/QApplication>
 #include <QtGui/QWindow>
 #include <QtGui/QtEvents>
+#include <private/qhighdpiscaling_p.h>
 
 #include <array>
 
@@ -179,11 +182,42 @@ QPixmap PixmapFromImage(QImage &&image) {
 	return QPixmap::fromImage(std::move(image), Qt::ColorOnly);
 }
 
+bool IsContentVisible(
+		not_null<QWidget*> widget,
+		const QRect &rect) {
+	Expects(widget->window()->windowHandle());
+
+	const auto activeOrNotOverlapped = [&] {
+		if (const auto active = widget->isActiveWindow()) {
+			return active;
+		} else if (Integration::Instance().screenIsLocked()) {
+			return false;
+		}
+
+		const auto mappedRect = QHighDpi::toNativePixels(
+			rect.isNull()
+				? QRect(
+					widget->mapToGlobal(QPoint()),
+					widget->mapToGlobal(
+						QPoint(widget->width(), widget->height())))
+				: QRect(
+					widget->mapToGlobal(rect.topLeft()),
+					widget->mapToGlobal(rect.bottomRight())),
+			widget->window()->windowHandle());
+
+		const auto overlapped = Platform::IsOverlapped(widget, mappedRect);
+		return overlapped.has_value() && !*overlapped;
+	}();
+
+	return activeOrNotOverlapped
+		&& widget->isVisible()
+		&& !widget->window()->isMinimized();
+}
+
 void DisableCustomScaling() {
-	qunsetenv("QT_DEVICE_PIXEL_RATIO");
-	qunsetenv("QT_SCALE_FACTOR");
-	qunsetenv("QT_AUTO_SCREEN_SCALE_FACTOR");
-	qunsetenv("QT_SCREEN_SCALE_FACTORS");
+	if (QCoreApplication::testAttribute(Qt::AA_DisableHighDpiScaling)) {
+		QHighDpiScaling::setGlobalFactor(1);
+	}
 }
 
 } // namespace Ui

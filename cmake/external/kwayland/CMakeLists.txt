@@ -19,20 +19,16 @@ else()
         IMPORTED_LOCATION "${KWAYLAND_LIBRARY}"
     )
 
-    target_include_directories(external_kwayland
+    target_include_directories(external_kwayland SYSTEM
     INTERFACE
         /usr/local/include/KF5
         /usr/local/include/KF5/KWayland/Client
     )
 
-    target_link_static_libraries(external_kwayland
-    INTERFACE
-        wayland-client
-        ffi
-    )
-
     target_link_libraries(external_kwayland
     INTERFACE
+        desktop-app::linux_wayland_helper
+        $<TARGET_FILE:desktop-app::linux_wayland_helper>
         ${qt_loc}/lib/libQt5Concurrent.a
         desktop-app::external_qt
     )

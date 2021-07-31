@@ -29,13 +29,13 @@ inline void DeInitOnTopPanel(not_null<QWidget*> panel) {
 inline void ReInitOnTopPanel(not_null<QWidget*> panel) {
 }
 
-inline void StartTranslucentPaint(QPainter &p, const QRegion &region) {
-}
-
 inline void ShowOverAll(not_null<QWidget*> widget, bool canFocus) {
 }
 
 inline void BringToBack(not_null<QWidget*> widget) {
+}
+
+inline void ClearTransientParent(not_null<QWidget*> widget) {
 }
 
 inline constexpr bool UseMainQueueGeneric() {
@@ -46,12 +46,10 @@ inline bool WindowExtentsSupported() {
 	return false;
 }
 
-inline bool SetWindowExtents(QWindow *window, const QMargins &extents) {
-	return false;
+inline void SetWindowExtents(QWindow *window, const QMargins &extents) {
 }
 
-inline bool UnsetWindowExtents(QWindow *window) {
-	return false;
+inline void UnsetWindowExtents(QWindow *window) {
 }
 
 } // namespace Platform

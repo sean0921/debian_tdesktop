@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "storage/localstorage.h"
+#include "window/window_controller.h"
 #include "mainwindow.h"
 #include "history/history_location_manager.h"
 #include "base/platform/mac/base_utilities_mac.h"
@@ -32,31 +33,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <CoreFoundation/CFURL.h>
 #include <IOKit/IOKitLib.h>
 #include <IOKit/hidsystem/ev_keymap.h>
-#include <SPMediaKeyTap.h>
 #include <mach-o/dyld.h>
 #include <AVFoundation/AVFoundation.h>
 
-QRect psDesktopRect() {
-	static QRect _monitorRect;
-	static crl::time _monitorLastGot = 0;
-	auto tnow = crl::now();
-	if (tnow > _monitorLastGot + 1000 || tnow < _monitorLastGot) {
-		_monitorLastGot = tnow;
-		_monitorRect = QApplication::desktop()->availableGeometry(App::wnd());
-	}
-	return _monitorRect;
-}
-
-void psWriteDump() {
-#ifndef DESKTOP_APP_DISABLE_CRASH_REPORTS
-	double v = objc_appkitVersion();
-	CrashReports::dump() << "OS-Version: " << v;
-#endif // DESKTOP_APP_DISABLE_CRASH_REPORTS
-}
-
 void psActivateProcess(uint64 pid) {
 	if (!pid) {
-		objc_activateProgram(App::wnd() ? App::wnd()->winId() : 0);
+		const auto window = Core::App().activeWindow();
+		objc_activateProgram(window ? window->widget()->winId() : 0);
 	}
 }
 
@@ -122,9 +105,11 @@ std::optional<bool> IsDarkMode() {
 		: std::nullopt;
 }
 
-void RegisterCustomScheme(bool force) {
-	OSStatus result = LSSetDefaultHandlerForURLScheme(CFSTR("tg"), (CFStringRef)[[NSBundle mainBundle] bundleIdentifier]);
-	DEBUG_LOG(("App Info: set default handler for 'tg' scheme result: %1").arg(result));
+void WriteCrashDumpDetails() {
+#ifndef DESKTOP_APP_DISABLE_CRASH_REPORTS
+	double v = objc_appkitVersion();
+	CrashReports::dump() << "OS-Version: " << v;
+#endif // DESKTOP_APP_DISABLE_CRASH_REPORTS
 }
 
 // I do check for availability, just not in the exact way clang is content with
@@ -206,7 +191,6 @@ void IgnoreApplicationActivationRightNow() {
 } // namespace Platform
 
 void psNewVersion() {
-	Platform::RegisterCustomScheme();
 }
 
 void psAutoStart(bool start, bool silent) {

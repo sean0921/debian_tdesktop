@@ -51,10 +51,10 @@ JoinedByLinkSlice ParseJoinedByLinkSlice(
 		owner.processUsers(data.vusers());
 		result.count = data.vcount().v;
 		result.users.reserve(data.vimporters().v.size());
-		for (const auto importer : data.vimporters().v) {
+		for (const auto &importer : data.vimporters().v) {
 			importer.match([&](const MTPDchatInviteImporter &data) {
 				result.users.push_back({
-					.user = owner.user(data.vuser_id().v),
+					.user = owner.user(data.vuser_id()),
 					.date = data.vdate().v,
 				});
 			});
@@ -110,7 +110,7 @@ void InviteLinks::performCreate(
 				callback(link);
 			}
 		}
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		_createCallbacks.erase(peer);
 	}).send();
 }
@@ -282,7 +282,7 @@ void InviteLinks::performEdit(
 				prepend(peer, admin, data.vnew_invite());
 			}
 		});
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		_editCallbacks.erase(key);
 	}).send();
 }
@@ -344,7 +344,7 @@ void InviteLinks::destroy(
 			.admin = admin,
 			.was = key.link,
 		});
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		_deleteCallbacks.erase(key);
 	}).send();
 }
@@ -374,7 +374,7 @@ void InviteLinks::destroyAllRevoked(
 			}
 		}
 		_allRevokedDestroyed.fire({ peer, admin });
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 	}).send();
 }
 
@@ -415,7 +415,7 @@ void InviteLinks::requestMyLinks(not_null<PeerData*> peer) {
 			i->second.count = std::max(slice.count, int(existing.size()));
 		}
 		notify(peer);
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		_firstSliceRequests.remove(peer);
 	}).send();
 	_firstSliceRequests.emplace(peer, requestId);
@@ -493,7 +493,7 @@ void InviteLinks::requestJoinedFirstSlice(LinkKey key) {
 		_firstJoinedRequests.remove(key);
 		_firstJoined[key] = ParseJoinedByLinkSlice(key.peer, result);
 		_joinedFirstSliceLoaded.fire_copy(key);
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		_firstJoinedRequests.remove(key);
 	}).send();
 	_firstJoinedRequests.emplace(key, requestId);
@@ -623,7 +623,7 @@ auto InviteLinks::parse(
 	return invite.match([&](const MTPDchatInviteExported &data) {
 		return Link{
 			.link = qs(data.vlink()),
-			.admin = peer->session().data().user(data.vadmin_id().v),
+			.admin = peer->session().data().user(data.vadmin_id()),
 			.date = data.vdate().v,
 			.startDate = data.vstart_date().value_or_empty(),
 			.expireDate = data.vexpire_date().value_or_empty(),
@@ -653,7 +653,7 @@ void InviteLinks::requestMoreLinks(
 		MTP_int(kPerPage)
 	)).done([=](const MTPmessages_ExportedChatInvites &result) {
 		done(parseSlice(peer, result));
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		done(Links());
 	}).send();
 }

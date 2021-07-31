@@ -261,7 +261,7 @@ QString Generator::typeToDefaultValue(structure::Type type) const {
 	case Tag::Struct: {
 		if (auto realType = module_.findStruct(type.name)) {
 			QStringList fields;
-			for (auto field : realType->fields) {
+			for (const auto &field : realType->fields) {
 				fields.push_back(typeToDefaultValue(field.type));
 			}
 			return "{ " + fields.join(", ") + " }";
@@ -298,16 +298,16 @@ QString Generator::valueAssignmentCode(structure::Value value) const {
 	} break;
 	case Tag::Point: {
 		auto v(value.Point());
-		return QString("{ %1, %2 }").arg(pxValueName(v.x)).arg(pxValueName(v.y));
+		return QString("{ %1, %2 }").arg(pxValueName(v.x), pxValueName(v.y));
 	} break;
 	case Tag::Size: {
 		auto v(value.Size());
-		return QString("{ %1, %2 }").arg(pxValueName(v.width)).arg(pxValueName(v.height));
+		return QString("{ %1, %2 }").arg(pxValueName(v.width), pxValueName(v.height));
 	} break;
 	case Tag::Align: return QString("style::al_%1").arg(value.String().c_str());
 	case Tag::Margins: {
 		auto v(value.Margins());
-		return QString("{ %1, %2, %3, %4 }").arg(pxValueName(v.left)).arg(pxValueName(v.top)).arg(pxValueName(v.right)).arg(pxValueName(v.bottom));
+		return QString("{ %1, %2, %3, %4 }").arg(pxValueName(v.left), pxValueName(v.top), pxValueName(v.right), pxValueName(v.bottom));
 	} break;
 	case Tag::Font: {
 		auto v(value.Font());
@@ -333,7 +333,10 @@ QString Generator::valueAssignmentCode(structure::Value value) const {
 			}
 			auto color = valueAssignmentCode(part.color);
 			auto offset = valueAssignmentCode(part.offset);
-			parts.push_back(QString("MonoIcon{ &iconMask%1, %2, %3 }").arg(maskIndex).arg(color).arg(offset));
+			parts.push_back(QString("MonoIcon{ &iconMask%1, %2, %3 }").arg(
+				QString::number(maskIndex),
+				color,
+				offset));
 		}
 		return QString("{ %1 }").arg(parts.join(", "));
 	} break;
@@ -341,7 +344,7 @@ QString Generator::valueAssignmentCode(structure::Value value) const {
 		if (!value.Fields()) return QString();
 
 		QStringList fields;
-		for (auto field : *value.Fields()) {
+		for (const auto &field : *value.Fields()) {
 			fields.push_back(valueAssignmentCode(field.variable.value));
 		}
 		return "{ " + fields.join(", ") + " }";
@@ -387,7 +390,7 @@ bool Generator::writeHeaderRequiredIncludes() {
 	} else if (includes.isEmpty()) {
 		return true;
 	}
-	for (const auto base : includes) {
+	for (const auto &base : includes) {
 		header_->include("styles/" + base + ".h");
 	}
 	header_->newline();
@@ -897,7 +900,6 @@ int getPaletteIndex(QLatin1String name) {\n\
 		auto weContinueOldSwitch = finishChecksTillKey(name);
 		while (chars.size() != name.size()) {
 			auto checking = chars.size();
-			auto partialKey = name.mid(0, checking);
 
 			auto keyChar = name[checking];
 			auto usedIfForCheckCount = 0;
@@ -1146,7 +1148,7 @@ bool Generator::writeFontFamiliesInit() {
 		return true;
 	}
 
-	for (auto familyIndex : fontFamilies_) {
+	for (auto familyIndex : std::as_const(fontFamilies_)) {
 		source_->stream() << "int font" << familyIndex << "index;\n";
 	}
 	source_->stream() << "void initFontFamilies() {\n";
@@ -1214,7 +1216,7 @@ QByteArray iconMaskValuePng(QString filepath) {
 			<< png3x.width() << "x" << png3x.height();
 		return result;
 	}
-	for (const auto modifierName : modifiers) {
+	for (const auto &modifierName : modifiers) {
 		if (const auto modifier = GetModifier(modifierName)) {
 			modifier(png1x);
 			modifier(png2x);
@@ -1249,7 +1251,6 @@ bool Generator::writeIconValues() {
 	for (auto i = iconMasks_.cbegin(), e = iconMasks_.cend(); i != e; ++i) {
 		QString filePath = i.key();
 		QByteArray maskData;
-		QImage png100x, png200x;
 		if (filePath.startsWith("size://")) {
 			QStringList dimensions = filePath.mid(7).split(',');
 			if (dimensions.size() < 2 || dimensions.at(0).toInt() <= 0 || dimensions.at(1).toInt() <= 0) {
@@ -1326,7 +1327,7 @@ bool Generator::collectUniqueValues() {
 				return false;
 			}
 
-			for (auto field : *fields) {
+			for (const auto &field : *fields) {
 				if (!collector(field.variable)) {
 					return false;
 				}

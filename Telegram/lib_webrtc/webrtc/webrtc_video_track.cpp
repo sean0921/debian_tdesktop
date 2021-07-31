@@ -164,18 +164,40 @@ QImage PrepareByRequest(
 
 } // namespace
 
+struct VideoTrack::Frame {
+	QImage original;
+	QImage prepared;
+	rtc::scoped_refptr<webrtc::I420BufferInterface> native;
+	FrameYUV420 yuv420;
+	FrameRequest request = FrameRequest::NonStrict();
+	FrameFormat format = FrameFormat::None;
+
+	int rotation = 0;
+	bool displayed = false;
+	bool alpha = false;
+	bool requireARGB32 = true;
+};
+
 class VideoTrack::Sink final
 	: public rtc::VideoSinkInterface<webrtc::VideoFrame>
 	, public std::enable_shared_from_this<Sink> {
 public:
+	explicit Sink(bool requireARGB32);
+
 	using PrepareFrame = not_null<Frame*>;
 	using PrepareState = bool;
+
+	struct FrameWithIndex {
+		not_null<Frame*> frame;
+		int index = -1;
+	};
 
 	[[nodiscard]] bool firstPresentHappened() const;
 
 	// Called from the main thread.
 	void markFrameShown();
 	[[nodiscard]] not_null<Frame*> frameForPaint();
+	[[nodiscard]] FrameWithIndex frameForPaintWithIndex();
 	[[nodiscard]] rpl::producer<> renderNextFrameOnMain() const;
 	void destroyFrameForPaint();
 
@@ -201,12 +223,21 @@ private:
 
 	std::atomic<int> _counter = 0;
 
+	// Main thread.
+	int _counterCycle = 0;
+
 	static constexpr auto kFramesCount = 3;
 	std::array<Frame, kFramesCount> _frames;
 
 	rpl::event_stream<> _renderNextFrameOnMain;
 
 };
+
+VideoTrack::Sink::Sink(bool requireARGB32) {
+	for (auto &frame : _frames) {
+		frame.requireARGB32 = requireARGB32;
+	}
+}
 
 void VideoTrack::Sink::OnFrame(const webrtc::VideoFrame &nativeVideoFrame) {
 	const auto decode = nextFrameForDecode();
@@ -220,16 +251,15 @@ auto VideoTrack::Sink::nextFrameForDecode() -> FrameForDecode {
 	const auto current = counter();
 	const auto index = ((current + 3) / 2) % kFramesCount;
 	const auto frame = getFrame(index);
-	const auto next = getFrame((index + 1) % kFramesCount);
 	return { frame, current };
 }
 
 void VideoTrack::Sink::presentNextFrame(const FrameForDecode &frame) {
 	// Release this frame to the main thread for rendering.
 	const auto present = [&](int counter) {
-		_counter.store(
-			(counter + 1) % (2 * kFramesCount),
-			std::memory_order_release);
+		Expects(counter + 1 < 2 * kFramesCount);
+
+		_counter.store(counter + 1, std::memory_order_release);
 		notifyFrameDecoded();
 	};
 	switch (frame.counter) {
@@ -251,8 +281,28 @@ bool VideoTrack::Sink::decodeFrame(
 	const auto native = nativeVideoFrame.video_frame_buffer()->ToI420();
 	const auto size = QSize{ native->width(), native->height() };
 	if (size.isEmpty()) {
+		frame->format = FrameFormat::None;
 		return false;
 	}
+	if (!frame->requireARGB32) {
+		if (!frame->original.isNull()) {
+			frame->original = frame->prepared = QImage();
+		}
+		frame->format = FrameFormat::YUV420;
+		frame->native = native;
+		frame->yuv420 = FrameYUV420{
+			.size = size,
+			.chromaSize = { native->ChromaWidth(), native->ChromaHeight() },
+			.y = { native->DataY(), native->StrideY() },
+			.u = { native->DataU(), native->StrideU() },
+			.v = { native->DataV(), native->StrideV() },
+		};
+		return true;
+	}
+	frame->format = FrameFormat::ARGB32;
+	frame->yuv420 = FrameYUV420{
+		.size = size,
+	};
 	if (!FFmpeg::GoodStorageForFrame(frame->original, size)) {
 		frame->original = FFmpeg::CreateFrameStorage(size);
 	}
@@ -311,7 +361,7 @@ not_null<VideoTrack::Frame*> VideoTrack::Sink::getFrame(int index) {
 }
 
 not_null<const VideoTrack::Frame*> VideoTrack::Sink::getFrame(
-	int index) const {
+		int index) const {
 	Expects(index >= 0 && index < kFramesCount);
 
 	return &_frames[index];
@@ -329,6 +379,9 @@ bool VideoTrack::Sink::firstPresentHappened() const {
 
  void VideoTrack::Sink::markFrameShown() {
 	const auto jump = [&](int counter) {
+		if (counter == 2 * kFramesCount - 1) {
+			++_counterCycle;
+		}
 		const auto next = (counter + 1) % (2 * kFramesCount);
 		const auto index = next / 2;
 		const auto frame = getFrame(index);
@@ -352,7 +405,15 @@ bool VideoTrack::Sink::firstPresentHappened() const {
 }
 
 not_null<VideoTrack::Frame*> VideoTrack::Sink::frameForPaint() {
-	return getFrame(counter() / 2);
+	return frameForPaintWithIndex().frame;
+}
+
+VideoTrack::Sink::FrameWithIndex VideoTrack::Sink::frameForPaintWithIndex() {
+	const auto index = counter() / 2;
+	return {
+		.frame = getFrame(index),
+		.index = (_counterCycle * 2 * kFramesCount) + index,
+	};
 }
 
 void VideoTrack::Sink::destroyFrameForPaint() {
@@ -360,14 +421,20 @@ void VideoTrack::Sink::destroyFrameForPaint() {
 	if (!frame->original.isNull()) {
 		frame->original = frame->prepared = QImage();
 	}
+	if (frame->native) {
+		frame->native = nullptr;
+	}
+	frame->yuv420 = FrameYUV420();
+	frame->format = FrameFormat::None;
 }
 
 rpl::producer<> VideoTrack::Sink::renderNextFrameOnMain() const {
 	return _renderNextFrameOnMain.events();
 }
 
-VideoTrack::VideoTrack(VideoState state) : _state(state) {
-	_sink = std::make_shared<Sink>();
+VideoTrack::VideoTrack(VideoState state, bool requireARGB32)
+: _state(state) {
+	_sink = std::make_shared<Sink>(requireARGB32);
 }
 
 VideoTrack::~VideoTrack() {
@@ -397,13 +464,13 @@ auto VideoTrack::sink()
 }
 
 void VideoTrack::setState(VideoState state) {
-	if (state == VideoState::Active) {
-		_disabledFrom = 0;
+	if (state == VideoState::Inactive) {
+		_inactiveFrom = crl::now();
 	} else {
-		_disabledFrom = crl::now();
+		_inactiveFrom = 0;
 	}
 	_state = state;
-	if (state != VideoState::Active) {
+	if (state == VideoState::Inactive) {
 		// save last frame?..
 		_sink->destroyFrameForPaint();
 	}
@@ -414,8 +481,8 @@ void VideoTrack::markFrameShown() {
 }
 
 QImage VideoTrack::frame(const FrameRequest &request) {
-	if (_disabledFrom > 0
-		&& (_disabledFrom + kDropFramesWhileInactive > crl::now())) {
+	if (_inactiveFrom > 0
+		&& (_inactiveFrom + kDropFramesWhileInactive > crl::now())) {
 		_sink->destroyFrameForPaint();
 		return {};
 	}
@@ -445,19 +512,36 @@ QImage VideoTrack::frame(const FrameRequest &request) {
 	return frame->prepared;
 }
 
-std::pair<QImage, int> VideoTrack::frameOriginalWithRotation() const {
-	if (_disabledFrom > 0
-		&& (_disabledFrom + kDropFramesWhileInactive > crl::now())) {
+FrameWithInfo VideoTrack::frameWithInfo(bool requireARGB32) const {
+	if (_inactiveFrom > 0
+		&& (_inactiveFrom + kDropFramesWhileInactive > crl::now())) {
+		_sink->destroyFrameForPaint();
+		return {};
+	}
+	const auto data = _sink->frameForPaintWithIndex();
+	Assert(!requireARGB32
+		|| (data.frame->format == FrameFormat::ARGB32)
+		|| (data.frame->format == FrameFormat::None));
+	if (data.frame->requireARGB32 && !requireARGB32) {
+		data.frame->requireARGB32 = requireARGB32;
+	}
+	return {
+		.original = data.frame->original,
+		.yuv420 = &data.frame->yuv420,
+		.format = data.frame->format,
+		.rotation = data.frame->rotation,
+		.index = data.index,
+	};
+}
+
+QSize VideoTrack::frameSize() const {
+	if (_inactiveFrom > 0
+		&& (_inactiveFrom + kDropFramesWhileInactive > crl::now())) {
 		_sink->destroyFrameForPaint();
 		return {};
 	}
 	const auto frame = _sink->frameForPaint();
-	return { frame->original, frame->rotation };
-}
-
-QSize VideoTrack::frameSize() const {
-	const auto frame = _sink->frameForPaint();
-	const auto size = frame->original.size();
+	const auto size = frame->yuv420.size;
 	const auto rotation = frame->rotation;
 	return (rotation == 90 || rotation == 270)
 		? QSize(size.height(), size.width())
@@ -467,9 +551,13 @@ QSize VideoTrack::frameSize() const {
 void VideoTrack::PrepareFrameByRequests(
 		not_null<Frame*> frame,
 		int rotation) {
-	Expects(!frame->original.isNull());
+	Expects(frame->format != FrameFormat::ARGB32
+		|| !frame->original.isNull());
 
 	frame->rotation = rotation;
+	if (frame->format != FrameFormat::ARGB32) {
+		return;
+	}
 	if (frame->alpha
 		|| !GoodForRequest(frame->original, rotation, frame->request)) {
 		frame->prepared = PrepareByRequest(

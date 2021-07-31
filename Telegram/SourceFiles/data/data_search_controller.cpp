@@ -161,7 +161,7 @@ SearchResult ParseSearchResult(
 	for (const auto &message : *messages) {
 		const auto item = peer->owner().addNewMessage(
 			message,
-			MTPDmessage_ClientFlags(),
+			MessageFlags(),
 			addType);
 		if (item) {
 			const auto itemId = item->id;
@@ -391,7 +391,7 @@ void SearchController::requestMore(
 				parsed.noSkipRange,
 				parsed.fullCount);
 			finish();
-		}).fail([=](const RPCError &error) {
+		}).fail([=](const MTP::Error &error) {
 			finish();
 		}).send();
 	});

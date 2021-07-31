@@ -9,13 +9,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/timer.h"
 #include "base/weak_ptr.h"
+#include "chat_helpers/bot_command.h"
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
 #include "media/player/media_player_float.h"
 #include "mtproto/sender.h"
 #include "data/data_pts_waiter.h"
 
-class RPCError;
 struct HistoryMessageMarkupButton;
 class MainWindow;
 class ConfirmBox;
@@ -24,6 +24,10 @@ class StackItem;
 struct FileLoadResult;
 class History;
 class Image;
+
+namespace MTP {
+class Error;
+} // namespace MTP
 
 namespace Api {
 struct SendAction;
@@ -157,7 +161,6 @@ public:
 
 	void showForwardLayer(MessageIdsList &&items);
 	void showSendPathsLayer();
-	void cancelUploadLayer(not_null<HistoryItem*> item);
 	void shareUrlLayer(const QString &url, const QString &text);
 	void inlineSwitchLayer(const QString &botAndQuery);
 	void hiderLayer(base::unique_qptr<Window::HistoryHider> h);
@@ -166,7 +169,6 @@ public:
 		PeerId peerId,
 		const QString &url,
 		const QString &text);
-	void replyToItem(not_null<HistoryItem*> item);
 	bool inlineSwitchChosen(PeerId peerId, const QString &botAndQuery);
 	bool sendPaths(PeerId peerId);
 	void onFilesOrForwardDrop(const PeerId &peer, const QMimeData *data);
@@ -177,18 +179,13 @@ public:
 	// While HistoryInner is not HistoryView::ListWidget.
 	crl::time highlightStartTime(not_null<const HistoryItem*> item) const;
 
-	void sendBotCommand(
-		not_null<PeerData*> peer,
-		UserData *bot,
-		const QString &cmd,
-		MsgId replyTo);
+	void sendBotCommand(Bot::SendCommandRequest request);
 	void hideSingleUseKeyboard(PeerData *peer, MsgId replyTo);
 	bool insertBotCommand(const QString &cmd);
 
 	void searchMessages(const QString &query, Dialogs::Key inChat);
 
 	QPixmap cachedBackground(const QRect &forRect, int &x, int &y);
-	void updateScrollColors();
 
 	void setChatBackground(
 		const Data::WallPaper &background,
@@ -221,7 +218,6 @@ public:
 		PeerId peer,
 		const SectionShow &params,
 		MsgId msgId);
-	PeerData *ui_getPeerForMouseAction();
 
 	bool notify_switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot, MsgId samePeerReplyTo);
 
@@ -235,7 +231,7 @@ public:
 		Fn<void()> callback,
 		const SectionShow &params) const;
 
-public slots:
+public Q_SLOTS:
 	void inlineResultLoadProgress(FileLoader *loader);
 	void inlineResultLoadFailed(FileLoader *loader, bool started);
 
@@ -316,12 +312,14 @@ private:
 		Window::Column widgetColumn)> callback) override;
 	bool floatPlayerIsVisible(not_null<HistoryItem*> item) override;
 	void floatPlayerClosed(FullMsgId itemId);
+	void floatPlayerDoubleClickEvent(
+		not_null<const HistoryItem*> item) override;
 
 	void viewsIncrementDone(
 		QVector<MTPint> ids,
 		const MTPmessages_MessageViews &result,
 		mtpRequestId requestId);
-	void viewsIncrementFail(const RPCError &error, mtpRequestId requestId);
+	void viewsIncrementFail(const MTP::Error &error, mtpRequestId requestId);
 
 	void refreshResizeAreas();
 	template <typename MoveCallback, typename FinishCallback>
@@ -340,6 +338,10 @@ private:
 		QImage &&image);
 
 	void handleHistoryBack();
+
+	bool isOneColumn() const;
+	bool isNormalColumn() const;
+	bool isThreeColumn() const;
 
 	const not_null<Window::SessionController*> _controller;
 	MTP::Sender _api;

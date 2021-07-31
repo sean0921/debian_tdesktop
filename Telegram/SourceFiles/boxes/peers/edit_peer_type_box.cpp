@@ -129,9 +129,6 @@ private:
 		const QString &text,
 		rpl::producer<QString> about);
 
-	bool inviteLinkShown();
-	QString inviteLinkText();
-
 	not_null<PeerData*> _peer;
 	bool _linkOnly = false;
 
@@ -308,15 +305,6 @@ QString Controller::getUsernameInput() {
 	return _controls.usernameInput->getLastText().trimmed();
 }
 
-QString Controller::inviteLinkText() {
-	if (const auto channel = _peer->asChannel()) {
-		return channel->inviteLink();
-	} else if (const auto chat = _peer->asChat()) {
-		return chat->inviteLink();
-	}
-	return QString();
-}
-
 object_ptr<Ui::RpWidget> Controller::createUsernameEdit() {
 	Expects(_wrap != nullptr);
 
@@ -452,7 +440,7 @@ void Controller::checkUsernameAvailability() {
 		} else {
 			showUsernameGood();
 		}
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		_checkUsernameRequestId = 0;
 		const auto &type = error.type();
 		_usernameState = UsernameState::Normal;
@@ -581,11 +569,6 @@ object_ptr<Ui::RpWidget> Controller::createInviteLinkBlock() {
 			: tr::lng_group_invite_about_permanent_channel()));
 
 	return result;
-}
-
-bool Controller::inviteLinkShown() {
-	return !_controls.privacy
-		|| (_controls.privacy->value() == Privacy::NoUsername);
 }
 
 } // namespace

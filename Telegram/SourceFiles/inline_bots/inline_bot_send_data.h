@@ -41,11 +41,10 @@ public:
 	virtual void addToHistory(
 		const Result *owner,
 		not_null<History*> history,
-		MTPDmessage::Flags flags,
-		MTPDmessage_ClientFlags clientFlags,
+		MessageFlags flags,
 		MsgId msgId,
 		PeerId fromId,
-		MTPint mtpDate,
+		TimeId date,
 		UserId viaBotId,
 		MsgId replyToId,
 		const QString &postAuthor,
@@ -75,21 +74,19 @@ class SendDataCommon : public SendData {
 public:
 	using SendData::SendData;
 
-	struct SentMTPMessageFields {
-		MTPString text = MTP_string();
-		MTPVector<MTPMessageEntity> entities = MTP_vector<MTPMessageEntity>();
+	struct SentMessageFields {
+		TextWithEntities text;
 		MTPMessageMedia media = MTP_messageMediaEmpty();
 	};
-	virtual SentMTPMessageFields getSentMessageFields() const = 0;
+	virtual SentMessageFields getSentMessageFields() const = 0;
 
 	void addToHistory(
 		const Result *owner,
 		not_null<History*> history,
-		MTPDmessage::Flags flags,
-		MTPDmessage_ClientFlags clientFlags,
+		MessageFlags flags,
 		MsgId msgId,
 		PeerId fromId,
-		MTPint mtpDate,
+		TimeId date,
 		UserId viaBotId,
 		MsgId replyToId,
 		const QString &postAuthor,
@@ -118,7 +115,7 @@ public:
 		return !_message.isEmpty();
 	}
 
-	SentMTPMessageFields getSentMessageFields() const override;
+	SentMessageFields getSentMessageFields() const override;
 
 private:
 	QString _message;
@@ -135,12 +132,24 @@ public:
 	: SendDataCommon(session)
 	, _location(point) {
 	}
+	SendGeo(
+		not_null<Main::Session*> session,
+		const MTPDgeoPoint &point,
+		int period,
+		std::optional<int> heading,
+		std::optional<int> proximityNotificationRadius)
+	: SendDataCommon(session)
+	, _location(point)
+	, _period(period)
+	, _heading(heading)
+	, _proximityNotificationRadius(proximityNotificationRadius){
+	}
 
 	bool isValid() const override {
 		return true;
 	}
 
-	SentMTPMessageFields getSentMessageFields() const override;
+	SentMessageFields getSentMessageFields() const override;
 
 	bool hasLocationCoords() const override {
 		return true;
@@ -151,6 +160,9 @@ public:
 
 private:
 	Data::LocationPoint _location;
+	std::optional<int> _period;
+	std::optional<int> _heading;
+	std::optional<int> _proximityNotificationRadius;
 
 };
 
@@ -176,7 +188,7 @@ public:
 		return true;
 	}
 
-	SentMTPMessageFields getSentMessageFields() const override;
+	SentMessageFields getSentMessageFields() const override;
 
 	bool hasLocationCoords() const override {
 		return true;
@@ -209,7 +221,7 @@ public:
 		return (!_firstName.isEmpty() || !_lastName.isEmpty()) && !_phoneNumber.isEmpty();
 	}
 
-	SentMTPMessageFields getSentMessageFields() const override;
+	SentMessageFields getSentMessageFields() const override;
 
 	QString getLayoutDescription(const Result *owner) const override;
 
@@ -239,11 +251,10 @@ public:
 	void addToHistory(
 		const Result *owner,
 		not_null<History*> history,
-		MTPDmessage::Flags flags,
-		MTPDmessage_ClientFlags clientFlags,
+		MessageFlags flags,
 		MsgId msgId,
 		PeerId fromId,
-		MTPint mtpDate,
+		TimeId date,
 		UserId viaBotId,
 		MsgId replyToId,
 		const QString &postAuthor,
@@ -281,11 +292,10 @@ public:
 	void addToHistory(
 		const Result *owner,
 		not_null<History*> history,
-		MTPDmessage::Flags flags,
-		MTPDmessage_ClientFlags clientFlags,
+		MessageFlags flags,
 		MsgId msgId,
 		PeerId fromId,
-		MTPint mtpDate,
+		TimeId date,
 		UserId viaBotId,
 		MsgId replyToId,
 		const QString &postAuthor,
@@ -317,11 +327,10 @@ public:
 	void addToHistory(
 		const Result *owner,
 		not_null<History*> history,
-		MTPDmessage::Flags flags,
-		MTPDmessage_ClientFlags clientFlags,
+		MessageFlags flags,
 		MsgId msgId,
 		PeerId fromId,
-		MTPint mtpDate,
+		TimeId date,
 		UserId viaBotId,
 		MsgId replyToId,
 		const QString &postAuthor,
@@ -333,6 +342,28 @@ public:
 
 private:
 	GameData *_game;
+
+};
+
+class SendInvoice : public SendDataCommon {
+public:
+	SendInvoice(
+		not_null<Main::Session*> session,
+		MTPMessageMedia media)
+	: SendDataCommon(session)
+	, _media(media) {
+	}
+
+	bool isValid() const override {
+		return true;
+	}
+
+	SentMessageFields getSentMessageFields() const override;
+
+	QString getLayoutDescription(const Result *owner) const override;
+
+private:
+	MTPMessageMedia _media;
 
 };
 

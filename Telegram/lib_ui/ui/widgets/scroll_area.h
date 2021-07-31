@@ -56,7 +56,7 @@ public:
 
 	void paintEvent(QPaintEvent *e);
 
-public slots:
+public Q_SLOTS:
 	void changeVisibility(bool shown);
 
 private:
@@ -75,12 +75,12 @@ public:
 
 	void hideTimeout(crl::time dt);
 
-private slots:
+private Q_SLOTS:
 	void onValueChanged();
 	void onRangeChanged();
 	void onHideTimer();
 
-signals:
+Q_SIGNALS:
 	void topShadowVisibility(bool);
 	void bottomShadowVisibility(bool);
 
@@ -125,9 +125,10 @@ private:
 	QRect _bar;
 };
 
-class ScrollArea : public RpWidgetWrap<QScrollArea> {
+class ScrollArea : public RpWidgetBase<QScrollArea> {
 	Q_OBJECT
 
+	using Parent = RpWidgetBase<QScrollArea>;
 public:
 	ScrollArea(QWidget *parent, const style::ScrollArea &st = st::defaultScrollArea, bool handleTouch = true);
 
@@ -180,7 +181,7 @@ protected:
 	void enterEventHook(QEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 
-public slots:
+public Q_SLOTS:
 	void scrollToY(int toTop, int toBottom = -1);
 	void disableScroll(bool dis);
 	void onScrolled();
@@ -189,7 +190,7 @@ public slots:
 	void onTouchTimer();
 	void onTouchScrollTimer();
 
-signals:
+Q_SIGNALS:
 	void scrolled();
 	void innerResized();
 	void scrollStarted();
@@ -200,8 +201,8 @@ protected:
 	void scrollContentsBy(int dx, int dy) override;
 
 private:
-	void doSetOwnedWidget(object_ptr<TWidget> widget);
-	object_ptr<TWidget> doTakeWidget();
+	void doSetOwnedWidget(object_ptr<QWidget> widget);
+	object_ptr<QWidget> doTakeWidget();
 
 	void setWidget(QWidget *widget);
 
@@ -239,7 +240,7 @@ private:
 
 	bool _widgetAcceptsTouch = false;
 
-	object_ptr<TWidget> _widget = { nullptr };
+	object_ptr<QWidget> _widget = { nullptr };
 
 	rpl::event_stream<int> _scrollTopUpdated;
 

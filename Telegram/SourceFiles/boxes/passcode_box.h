@@ -39,6 +39,7 @@ public:
 		QString hint;
 		Core::SecureSecretAlgo newSecureSecretAlgo;
 		bool turningOff = false;
+		TimeId pendingResetDate = 0;
 
 		// Check cloud password for some action.
 		Fn<void(const Core::CloudPasswordResult &)> customCheckCallback;
@@ -55,7 +56,8 @@ public:
 	rpl::producer<> passwordReloadNeeded() const;
 	rpl::producer<> clearUnconfirmedPassword() const;
 
-	bool handleCustomCheckError(const RPCError &error);
+	bool handleCustomCheckError(const MTP::Error &error);
+	bool handleCustomCheckError(const QString &type);
 
 protected:
 	void prepare() override;
@@ -81,18 +83,19 @@ private:
 	bool onlyCheckCurrent() const;
 
 	void setPasswordDone(const QByteArray &newPasswordBytes);
-	void setPasswordFail(const RPCError &error);
+	void setPasswordFail(const MTP::Error &error);
+	void setPasswordFail(const QString &type);
 	void setPasswordFail(
 		const QByteArray &newPasswordBytes,
 		const QString &email,
-		const RPCError &error);
+		const MTP::Error &error);
 	void validateEmail(
 		const QString &email,
 		int codeLength,
 		const QByteArray &newPasswordBytes);
 
 	void recoverStarted(const MTPauth_PasswordRecovery &result);
-	void recoverStartFail(const RPCError &error);
+	void recoverStartFail(const MTP::Error &error);
 
 	void recover();
 	void submitOnlyCheckCloudPassword(const QString &oldPassword);
@@ -155,6 +158,7 @@ private:
 	object_ptr<Ui::InputField> _passwordHint;
 	object_ptr<Ui::InputField> _recoverEmail;
 	object_ptr<Ui::LinkButton> _recover;
+	bool _showRecoverLink = false;
 
 	QString _oldError, _newError, _emailError;
 
@@ -170,7 +174,9 @@ public:
 		QWidget*,
 		not_null<Main::Session*> session,
 		const QString &pattern,
-		bool notEmptyPassport);
+		bool notEmptyPassport,
+		bool hasPendingReset,
+		Fn<void()> closeParent = nullptr);
 
 	rpl::producer<> passwordCleared() const;
 	rpl::producer<> recoveryExpired() const;
@@ -189,7 +195,8 @@ private:
 	void submit();
 	void codeChanged();
 	void codeSubmitDone(const MTPauth_Authorization &result);
-	void codeSubmitFail(const RPCError &error);
+	void codeSubmitFail(const MTP::Error &error);
+	void setError(const QString &error);
 
 	MTP::Sender _api;
 	mtpRequestId _submitRequest = 0;
@@ -198,6 +205,8 @@ private:
 	bool _notEmptyPassport = false;
 
 	object_ptr<Ui::InputField> _recoverCode;
+	object_ptr<Ui::LinkButton> _noEmailAccess;
+	Fn<void()> _closeParent;
 
 	QString _error;
 
@@ -216,6 +225,6 @@ struct RecoveryEmailValidation {
 	const QString &pattern);
 
 [[nodiscard]] object_ptr<Ui::GenericBox> PrePasswordErrorBox(
-	const RPCError &error,
+	const MTP::Error &error,
 	not_null<Main::Session*> session,
 	TextWithEntities &&about);

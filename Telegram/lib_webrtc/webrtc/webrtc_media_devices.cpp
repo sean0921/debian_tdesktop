@@ -8,17 +8,21 @@
 
 #include "webrtc/webrtc_create_adm.h"
 #include "webrtc/mac/webrtc_media_devices_mac.h"
+#include "webrtc/linux/webrtc_media_devices_linux.h"
 #include "api/task_queue/default_task_queue_factory.h"
 #include "modules/video_capture/video_capture_factory.h"
 #include "modules/audio_device/include/audio_device_factory.h"
 #include "base/platform/base_platform_info.h"
 #include "crl/crl_async.h"
-//#include "media/engine/webrtc_media_engine.h"
+
+#ifdef WEBRTC_MAC
+//#define MAC_TRACK_MEDIA_DEVICES
+#endif // WEBRTC_MAC
 
 namespace Webrtc {
 namespace {
 
-#ifndef WEBRTC_MAC
+#ifndef MAC_TRACK_MEDIA_DEVICES
 
 class MediaDevicesSimple final : public MediaDevices {
 public:
@@ -58,7 +62,7 @@ private:
 
 };
 
-#endif // !WEBRTC_MAC
+#endif // !MAC_TRACK_MEDIA_DEVICES
 
 } // namespace
 
@@ -66,8 +70,10 @@ std::vector<VideoInput> GetVideoInputList() {
 #ifdef WEBRTC_MAC
 	return MacGetVideoInputList();
 #else // WEBRTC_MAC
-	const auto info = std::unique_ptr<webrtc::VideoCaptureModule::DeviceInfo>(
-		webrtc::VideoCaptureFactory::CreateDeviceInfo());
+	const auto info = std::unique_ptr<
+		webrtc::VideoCaptureModule::DeviceInfo
+	>(webrtc::VideoCaptureFactory::CreateDeviceInfo());
+
 	auto result = std::vector<VideoInput>();
 	if (!info) {
 		return result;
@@ -115,7 +121,8 @@ std::vector<AudioInput> GetAudioInputList(Backend backend) {
 			const auto utfName = QString::fromUtf8(name);
 			const auto utfId = id[0] ? QString::fromUtf8(id) : utfName;
 #ifdef WEBRTC_WIN
-			if (utfName.startsWith("Default - ") || utfName.startsWith("Communication - ")) {
+			if (utfName.startsWith("Default - ")
+				|| utfName.startsWith("Communication - ")) {
 				continue;
 			}
 #elif defined WEBRTC_MAC
@@ -159,7 +166,8 @@ std::vector<AudioOutput> GetAudioOutputList(Backend backend) {
 			const auto utfName = QString::fromUtf8(name);
 			const auto utfId = id[0] ? QString::fromUtf8(id) : utfName;
 #ifdef WEBRTC_WIN
-			if (utfName.startsWith("Default - ") || utfName.startsWith("Communication - ")) {
+			if (utfName.startsWith("Default - ")
+				|| utfName.startsWith("Communication - ")) {
 				continue;
 			}
 #elif defined WEBRTC_MAC
@@ -186,11 +194,33 @@ std::unique_ptr<MediaDevices> CreateMediaDevices(
 		QString audioInput,
 		QString audioOutput,
 		QString videoInput) {
+#ifdef MAC_TRACK_MEDIA_DEVICES
+	return std::make_unique<MacMediaDevices>(
+		audioInput,
+		audioOutput,
+		videoInput);
+#else // MAC_TRACK_MEDIA_DEVICES
+	return std::make_unique<MediaDevicesSimple>(
+		audioInput,
+		audioOutput,
+		videoInput);
+#endif // MAC_TRACK_MEDIA_DEVICES
+}
+
+bool DesktopCaptureAllowed() {
 #ifdef WEBRTC_MAC
-	return std::make_unique<MacMediaDevices>(audioInput, audioOutput, videoInput);
+	return MacDesktopCaptureAllowed();
 #else // WEBRTC_MAC
-	return std::make_unique<MediaDevicesSimple>(audioInput, audioOutput, videoInput);
-#endif
+	return true;
+#endif // WEBRTC_MAC
+}
+
+std::optional<QString> UniqueDesktopCaptureSource() {
+#ifdef WEBRTC_LINUX
+	return LinuxUniqueDesktopCaptureSource();
+#else // WEBRTC_LINUX
+	return std::nullopt;
+#endif // WEBRTC_LINUX
 }
 
 } // namespace Webrtc

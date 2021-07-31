@@ -11,7 +11,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "boxes/add_contact_box.h"
 #include "boxes/confirm_box.h"
-#include "boxes/single_choice_box.h"
 #include "boxes/peer_list_controllers.h"
 #include "boxes/peers/edit_participants_box.h"
 #include "boxes/peers/edit_peer_type_box.h"
@@ -20,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/peers/edit_peer_invite_links.h"
 #include "boxes/peers/edit_linked_chat_box.h"
 #include "boxes/stickers_box.h"
+#include "ui/boxes/single_choice_box.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "core/application.h"
 #include "core/core_settings.h"
@@ -140,7 +140,7 @@ void AddButtonDelete(
 
 void SaveDefaultRestrictions(
 		not_null<PeerData*> peer,
-		MTPChatBannedRights rights,
+		ChatRestrictions rights,
 		Fn<void()> done) {
 	const auto api = &peer->session().api();
 	const auto key = Api::RequestKey("default_restrictions", peer->id);
@@ -148,12 +148,15 @@ void SaveDefaultRestrictions(
 	const auto requestId = api->request(
 		MTPmessages_EditChatDefaultBannedRights(
 			peer->input,
-			rights)
+			MTP_chatBannedRights(
+				MTP_flags(
+					MTPDchatBannedRights::Flags::from_raw(uint32(rights))),
+				MTP_int(0)))
 	).done([=](const MTPUpdates &result) {
 		api->clearModifyRequest(key);
 		api->applyUpdates(result);
 		done();
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		api->clearModifyRequest(key);
 		if (error.type() != qstr("CHAT_NOT_MODIFIED")) {
 			return;
@@ -186,7 +189,7 @@ void SaveSlowmodeSeconds(
 		api->applyUpdates(result);
 		channel->setSlowmodeSeconds(seconds);
 		done();
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		api->clearModifyRequest(key);
 		if (error.type() != qstr("CHAT_NOT_MODIFIED")) {
 			return;
@@ -201,8 +204,10 @@ void SaveSlowmodeSeconds(
 void ShowEditPermissions(
 		not_null<Window::SessionNavigation*> navigation,
 		not_null<PeerData*> peer) {
-	const auto box = Ui::show(
-		Box<EditPeerPermissionsBox>(navigation, peer),
+	auto content = Box<EditPeerPermissionsBox>(navigation, peer);
+	const auto box = QPointer<EditPeerPermissionsBox>(content.data());
+	navigation->parentController()->show(
+		std::move(content),
 		Ui::LayerOption::KeepOther);
 	const auto saving = box->lifetime().make_state<int>(0);
 	const auto save = [=](
@@ -213,7 +218,7 @@ void ShowEditPermissions(
 		const auto close = crl::guard(box, [=] { box->closeBox(); });
 		SaveDefaultRestrictions(
 			peer,
-			MTP_chatBannedRights(MTP_flags(result.rights), MTP_int(0)),
+			result.rights,
 			close);
 		if (const auto channel = peer->asChannel()) {
 			SaveSlowmodeSeconds(channel, result.slowmodeSeconds, close);
@@ -235,50 +240,7 @@ void ShowEditPermissions(
 		const auto api = &peer->session().api();
 		api->migrateChat(chat, [=](not_null<ChannelData*> channel) {
 			save(channel, result);
-		}, [=](const RPCError &error) {
-			*saving = false;
-		});
-	}, box->lifetime());
-}
-
-void ShowEditInviteLinks(
-		not_null<Window::SessionNavigation*> navigation,
-		not_null<PeerData*> peer) {
-	const auto box = Ui::show(
-		Box<EditPeerPermissionsBox>(navigation, peer),
-		Ui::LayerOption::KeepOther);
-	const auto saving = box->lifetime().make_state<int>(0);
-	const auto save = [=](
-			not_null<PeerData*> peer,
-			EditPeerPermissionsBox::Result result) {
-		Expects(result.slowmodeSeconds == 0 || peer->isChannel());
-
-		const auto close = crl::guard(box, [=] { box->closeBox(); });
-		SaveDefaultRestrictions(
-			peer,
-			MTP_chatBannedRights(MTP_flags(result.rights), MTP_int(0)),
-			close);
-		if (const auto channel = peer->asChannel()) {
-			SaveSlowmodeSeconds(channel, result.slowmodeSeconds, close);
-		}
-	};
-	box->saveEvents(
-	) | rpl::start_with_next([=](EditPeerPermissionsBox::Result result) {
-		if (*saving) {
-			return;
-		}
-		*saving = true;
-
-		const auto saveFor = peer->migrateToOrMe();
-		const auto chat = saveFor->asChat();
-		if (!result.slowmodeSeconds || !chat) {
-			save(saveFor, result);
-			return;
-		}
-		const auto api = &peer->session().api();
-		api->migrateChat(chat, [=](not_null<ChannelData*> channel) {
-			save(channel, result);
-		}, [=](const RPCError &error) {
+		}, [=](const MTP::Error &error) {
 			*saving = false;
 		});
 	}, box->lifetime());
@@ -491,6 +453,7 @@ object_ptr<Ui::RpWidget> Controller::createPhotoEdit() {
 		_wrap,
 		object_ptr<Ui::UserpicButton>(
 			_wrap,
+			&_navigation->parentController()->window(),
 			_peer,
 			Ui::UserpicButton::Role::ChangePhoto,
 			st::defaultUserpicButton),
@@ -612,7 +575,7 @@ object_ptr<Ui::RpWidget> Controller::createStickersEdit() {
 		tr::lng_group_stickers_add(tr::now),
 		st::editPeerInviteLinkButton)
 	)->addClickHandler([=] {
-		Ui::show(
+		_navigation->parentController()->show(
 			Box<StickersBox>(_navigation->parentController(), channel),
 			Ui::LayerOption::KeepOther);
 	});
@@ -649,7 +612,7 @@ void Controller::showEditPeerTypeBox(
 		_usernameSavedValue = publicLink;
 		refreshHistoryVisibility();
 	});
-	Ui::show(
+	_navigation->parentController()->show(
 		Box<EditPeerTypeBox>(
 			_peer,
 			_channelHasLocationOriginalValue,
@@ -681,7 +644,7 @@ void Controller::showEditLinkedChatBox() {
 				|| channel->canEditPreHistoryHidden()));
 
 	if (const auto chat = *_linkedChatSavedValue) {
-		*box = Ui::show(
+		*box = _navigation->parentController()->show(
 			EditLinkedChatBox(
 				_navigation,
 				channel,
@@ -709,14 +672,14 @@ void Controller::showEditLinkedChatBox() {
 		for (const auto &item : list) {
 			chats.emplace_back(_peer->owner().processChat(item));
 		}
-		*box = Ui::show(
+		*box = _navigation->parentController()->show(
 			EditLinkedChatBox(
 				_navigation,
 				channel,
 				std::move(chats),
 				callback),
 			Ui::LayerOption::KeepOther);
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		_linkedChatsRequestId = 0;
 	}).send();
 }
@@ -858,7 +821,7 @@ void Controller::fillHistoryVisibilityButton() {
 		_historyVisibilitySavedValue = checked;
 	});
 	const auto buttonCallback = [=] {
-		Ui::show(
+		_navigation->parentController()->show(
 			Box<EditPeerHistoryVisibilityBox>(
 				_peer,
 				boxCallback,
@@ -1023,9 +986,15 @@ void Controller::fillManageSection() {
 			wrap->entity(),
 			tr::lng_manage_peer_invite_links(),
 			rpl::duplicate(count) | ToPositiveNumberString(),
-			[=] { Ui::show(
-				Box(ManageInviteLinksBox, _peer, _peer->session().user(), 0, 0),
-				Ui::LayerOption::KeepOther);
+			[=] {
+				_navigation->parentController()->show(
+					Box(
+						ManageInviteLinksBox,
+						_peer,
+						_peer->session().user(),
+						0,
+						0),
+					Ui::LayerOption::KeepOther);
 			},
 			st::infoIconInviteLinks);
 
@@ -1290,7 +1259,7 @@ void Controller::saveUsername() {
 			TextUtilities::SingleLine(channel->name),
 			*_savingData.username);
 		continueSave();
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		const auto &type = error.type();
 		if (type == qstr("USERNAME_NOT_MODIFIED")) {
 			channel->setName(
@@ -1343,8 +1312,7 @@ void Controller::saveLinkedChat() {
 	)).done([=](const MTPBool &result) {
 		channel->setLinkedChat(*_savingData.linkedChat);
 		continueSave();
-	}).fail([=](const RPCError &error) {
-		const auto &type = error.type();
+	}).fail([=](const MTP::Error &error) {
 		cancelSave();
 	}).send();
 }
@@ -1358,7 +1326,7 @@ void Controller::saveTitle() {
 		_peer->session().api().applyUpdates(result);
 		continueSave();
 	};
-	const auto onFail = [=](const RPCError &error) {
+	const auto onFail = [=](const MTP::Error &error) {
 		const auto &type = error.type();
 		if (type == qstr("CHAT_NOT_MODIFIED")
 			|| type == qstr("CHAT_TITLE_NOT_MODIFIED")) {
@@ -1397,7 +1365,6 @@ void Controller::saveTitle() {
 }
 
 void Controller::saveDescription() {
-	const auto channel = _peer->asChannel();
 	if (!_savingData.description
 		|| *_savingData.description == _peer->about()) {
 		return continueSave();
@@ -1411,7 +1378,7 @@ void Controller::saveDescription() {
 		MTP_string(*_savingData.description)
 	)).done([=](const MTPBool &result) {
 		successCallback();
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		const auto &type = error.type();
 		if (type == qstr("CHAT_ABOUT_NOT_MODIFIED")) {
 			successCallback();
@@ -1457,9 +1424,9 @@ void Controller::togglePreHistoryHidden(
 		// Update in the result doesn't contain the
 		// channelFull:flags field which holds this value.
 		// So after saving we need to update it manually.
-		const auto flags = channel->fullFlags();
-		const auto flag = MTPDchannelFull::Flag::f_hidden_prehistory;
-		channel->setFullFlags(hidden ? (flags | flag) : (flags & ~flag));
+		const auto flags = channel->flags();
+		const auto flag = ChannelDataFlag::PreHistoryHidden;
+		channel->setFlags(hidden ? (flags | flag) : (flags & ~flag));
 
 		done();
 	};
@@ -1469,7 +1436,7 @@ void Controller::togglePreHistoryHidden(
 	)).done([=](const MTPUpdates &result) {
 		channel->session().api().applyUpdates(result);
 		apply();
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		if (error.type() == qstr("CHAT_NOT_MODIFIED")) {
 			apply();
 		} else {
@@ -1491,7 +1458,7 @@ void Controller::saveSignatures() {
 	)).done([=](const MTPUpdates &result) {
 		channel->session().api().applyUpdates(result);
 		continueSave();
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		if (error.type() == qstr("CHAT_NOT_MODIFIED")) {
 			continueSave();
 		} else {
@@ -1520,7 +1487,7 @@ void Controller::deleteWithConfirmation() {
 	const auto deleteCallback = crl::guard(this, [=] {
 		deleteChannel();
 	});
-	Ui::show(
+	_navigation->parentController()->show(
 		Box<ConfirmBox>(
 			text,
 			tr::lng_box_delete(tr::now),
@@ -1546,7 +1513,7 @@ void Controller::deleteChannel() {
 		channel->inputChannel
 	)).done([=](const MTPUpdates &result) {
 		session->api().applyUpdates(result);
-	//}).fail([=](const RPCError &error) {
+	//}).fail([=](const MTP::Error &error) {
 	//	if (error.type() == qstr("CHANNEL_TOO_LARGE")) {
 	//		Ui::show(Box<InformBox>(tr::lng_cant_delete_channel(tr::now)));
 	//	}

@@ -6,56 +6,67 @@
 //
 #include "base/platform/linux/base_linux_gtk_integration.h"
 
+#ifdef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+#error "GTK integration depends on D-Bus integration."
+#endif // DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+
 #include "base/platform/linux/base_linux_gtk_integration_p.h"
+#include "base/platform/linux/base_linux_glibmm_helper.h"
+#include "base/platform/linux/base_linux_dbus_utilities.h"
 #include "base/platform/base_platform_info.h"
 #include "base/integration.h"
+#include "base/const_string.h"
+#include "base/debug_log.h"
 
-#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
-#include "base/platform/linux/base_linux_xlib_helper.h"
-#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
-
+#include <QtGui/QGuiApplication>
 #include <QtGui/QIcon>
+
+#include <giomm.h>
 
 namespace base {
 namespace Platform {
+namespace {
 
 using namespace Gtk;
 
-namespace {
+constexpr auto kObjectPath = "/org/desktop_app/GtkIntegration"_cs;
+constexpr auto kInterface = "org.desktop_app.GtkIntegration"_cs;
+constexpr auto kPropertiesInterface = "org.freedesktop.DBus.Properties"_cs;
 
-bool TriedToInit = false;
-bool Loaded = false;
+constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
+	<interface name='org.desktop_app.GtkIntegration'>
+		<method name='Load'>
+			<arg type='s' name='allowed-backends' direction='in'/>
+		</method>
+		<method name='CheckVersion'>
+			<arg type='u' name='major' direction='in'/>
+			<arg type='u' name='minor' direction='in'/>
+			<arg type='u' name='micro' direction='in'/>
+			<arg type='b' name='result' direction='out'/>
+		</method>
+		<method name='GetBoolSetting'>
+			<arg type='s' name='property-name' direction='in'/>
+			<arg type='b' name='result' direction='out'/>
+		</method>
+		<method name='GetIntSetting'>
+			<arg type='s' name='property-name' direction='in'/>
+			<arg type='i' name='result' direction='out'/>
+		</method>
+		<method name='GetStringSetting'>
+			<arg type='s' name='property-name' direction='in'/>
+			<arg type='s' name='result' direction='out'/>
+		</method>
+		<method name='ConnectToSetting'>
+			<arg type='s' name='property-name' direction='in'/>
+		</method>
+		<signal name='SettingChanged'>
+			<arg type='s' name='property-name' direction='out'/>
+		</signal>
+		<property name='Loaded' type='b' access='read'/>
+	</interface>
+</node>)INTROSPECTION"_cs;
 
-bool LoadLibrary(QLibrary &lib, const char *name, int version) {
-#ifdef LINK_TO_GTK
-	return true;
-#else // LINK_TO_GTK
-	Integration::Instance().logMessage(
-		QString("Loading '%1' with version %2...")
-			.arg(QLatin1String(name))
-			.arg(version));
-	lib.setFileNameAndVersion(QLatin1String(name), version);
-	if (lib.load()) {
-		Integration::Instance().logMessage(
-			QString("Loaded '%1' with version %2!")
-				.arg(QLatin1String(name))
-				.arg(version));
-		return true;
-	}
-	lib.setFileNameAndVersion(QLatin1String(name), QString());
-	if (lib.load()) {
-		Integration::Instance().logMessage(
-			QString("Loaded '%1' without version!")
-				.arg(QLatin1String(name)));
-		return true;
-	}
-	Integration::Instance().logMessage(
-		QString("Could not load '%1' with version %2 :(")
-			.arg(QLatin1String(name))
-			.arg(version));
-	return false;
-#endif // !LINK_TO_GTK
-}
+Glib::ustring ServiceNameVar;
 
 void GtkMessageHandler(
 		const gchar *log_domain,
@@ -69,48 +80,6 @@ void GtkMessageHandler(
 		// For other messages, call the default handler.
 		g_log_default_handler(log_domain, log_level, message, unused_data);
 	}
-}
-
-bool SetupGtkBase(QLibrary &lib) {
-	if (!LOAD_GTK_SYMBOL(lib, "gtk_init_check", gtk_init_check)) return false;
-
-	if (LOAD_GTK_SYMBOL(lib, "gdk_set_allowed_backends", gdk_set_allowed_backends)) {
-		// We work only with Wayland and X11 GDK backends.
-		// Otherwise we get segfault in Ubuntu 17.04 in gtk_init_check() call.
-		// See https://github.com/telegramdesktop/tdesktop/issues/3176
-		// See https://github.com/telegramdesktop/tdesktop/issues/3162
-		if(::Platform::IsWayland()) {
-			Integration::Instance().logMessage(
-				"Limit allowed GDK backends to wayland,x11");
-			gdk_set_allowed_backends("wayland,x11");
-		} else {
-			Integration::Instance().logMessage(
-				"Limit allowed GDK backends to x11,wayland");
-			gdk_set_allowed_backends("x11,wayland");
-		}
-	}
-
-#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
-	// gtk_init will reset the Xlib error handler,
-	// and that causes Qt applications to quit on X errors.
-	// Therefore, we need to manually restore it.
-	XErrorHandlerRestorer handlerRestorer;
-#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
-
-	Integration::Instance().logMessage("Library gtk functions loaded!");
-	TriedToInit = true;
-	if (!gtk_init_check(0, 0)) {
-		gtk_init_check = nullptr;
-		Integration::Instance().logMessage(
-			"Failed to gtk_init_check(0, 0)!");
-		return false;
-	}
-	Integration::Instance().logMessage("Checked gtk with gtk_init_check!");
-
-	// Use our custom log handler.
-	g_log_set_handler("Gtk", G_LOG_LEVEL_MESSAGE, GtkMessageHandler, nullptr);
-
-	return true;
 }
 
 template <typename T>
@@ -169,18 +138,15 @@ void SetIconTheme() {
 			return;
 		}
 
-		Integration::Instance().logMessage("Setting GTK icon theme");
+		DEBUG_LOG(("Setting GTK icon theme"));
 
 		QIcon::setThemeName(*themeName);
 		QIcon::setFallbackThemeName(*fallbackThemeName);
 
-		Integration::Instance().logMessage(
-			QString("New icon theme: %1")
-				.arg(QIcon::themeName()));
+		DEBUG_LOG(("New icon theme: %1").arg(QIcon::themeName()));
 
-		Integration::Instance().logMessage(
-			QString("New fallback icon theme: %1")
-				.arg(QIcon::fallbackThemeName()));
+		DEBUG_LOG(("New fallback icon theme: %1")
+			.arg(QIcon::fallbackThemeName()));
 	};
 
 	if (QCoreApplication::instance()) {
@@ -204,10 +170,9 @@ void SetCursorSize() {
 			return;
 		}
 
-		Integration::Instance().logMessage("Setting GTK cursor size");
+		DEBUG_LOG(("Setting GTK cursor size"));
 		qputenv("XCURSOR_SIZE", QByteArray::number(*newCursorSize));
-		Integration::Instance().logMessage(
-			QString("New cursor size: %1").arg(*newCursorSize));
+		DEBUG_LOG(("New cursor size: %1").arg(*newCursorSize));
 	};
 
 	if (QCoreApplication::instance()) {
@@ -219,92 +184,417 @@ void SetCursorSize() {
 
 } // namespace
 
-GtkIntegration::GtkIntegration() {
+class GtkIntegration::Private {
+public:
+	Private()
+	: dbusConnection([] {
+		try {
+			return Gio::DBus::Connection::get_sync(
+				Gio::DBus::BusType::BUS_TYPE_SESSION);
+		} catch (...) {
+			return Glib::RefPtr<Gio::DBus::Connection>();
+		}
+	}())
+	, interfaceVTable(
+		sigc::mem_fun(this, &Private::handleMethodCall),
+		sigc::mem_fun(this, &Private::handleGetProperty)) {
+	}
+
+	bool setupBase(QLibrary &lib, const QString &allowedBackends);
+
+	void handleMethodCall(
+		const Glib::RefPtr<Gio::DBus::Connection> &connection,
+		const Glib::ustring &sender,
+		const Glib::ustring &object_path,
+		const Glib::ustring &interface_name,
+		const Glib::ustring &method_name,
+		const Glib::VariantContainerBase &parameters,
+		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation);
+
+	void handleGetProperty(
+		Glib::VariantBase &property,
+		const Glib::RefPtr<Gio::DBus::Connection> &connection,
+		const Glib::ustring &sender,
+		const Glib::ustring &object_path,
+		const Glib::ustring &interface_name,
+		const Glib::ustring &property_name);
+
+	const Glib::RefPtr<Gio::DBus::Connection> dbusConnection;
+	const Gio::DBus::InterfaceVTable interfaceVTable;
+	Glib::RefPtr<Gio::DBus::NodeInfo> introspectionData;
+	Glib::ustring parentDBusName;
+	QStringList connectedSettings;
+	bool loaded = false;
+	bool triedToInit = false;
+	bool remoting = true;
+	uint registerId = 0;
+	uint parentServiceWatcherId = 0;
+};
+
+bool GtkIntegration::Private::setupBase(
+		QLibrary &lib,
+		const QString &allowedBackends) {
+	if (!LOAD_GTK_SYMBOL(lib, gtk_init_check)) return false;
+
+	if (LOAD_GTK_SYMBOL(lib, gdk_set_allowed_backends)
+		&& !allowedBackends.isEmpty()) {
+		// We work only with Wayland and X11 GDK backends.
+		// Otherwise we get segfault in Ubuntu 17.04 in gtk_init_check() call.
+		// See https://github.com/telegramdesktop/tdesktop/issues/3176
+		// See https://github.com/telegramdesktop/tdesktop/issues/3162
+		DEBUG_LOG(("Limit allowed GDK backends to '%1'").arg(allowedBackends));
+		gdk_set_allowed_backends(allowedBackends.toUtf8().constData());
+	}
+
+	DEBUG_LOG(("Library gtk functions loaded!"));
+	triedToInit = true;
+	if (!gtk_init_check(0, 0)) {
+		gtk_init_check = nullptr;
+		DEBUG_LOG(("Failed to gtk_init_check(0, 0)!"));
+		return false;
+	}
+	DEBUG_LOG(("Checked gtk with gtk_init_check!"));
+
+	// Use our custom log handler.
+	g_log_set_handler("Gtk", G_LOG_LEVEL_MESSAGE, GtkMessageHandler, nullptr);
+
+	return true;
+}
+
+void GtkIntegration::Private::handleMethodCall(
+		const Glib::RefPtr<Gio::DBus::Connection> &connection,
+		const Glib::ustring &sender,
+		const Glib::ustring &object_path,
+		const Glib::ustring &interface_name,
+		const Glib::ustring &method_name,
+		const Glib::VariantContainerBase &parameters,
+		const Glib::RefPtr<Gio::DBus::MethodInvocation> &invocation) {
+	if (sender != parentDBusName) {
+		Gio::DBus::Error error(
+			Gio::DBus::Error::ACCESS_DENIED,
+			"Access denied.");
+
+		invocation->return_error(error);
+		return;
+	}
+
+	try {
+		const auto integration = Instance();
+		if (!integration) {
+			throw std::exception();
+		}
+
+		auto parametersCopy = parameters;
+
+		if (method_name == "Load") {
+			const auto allowedBackends = GlibVariantCast<Glib::ustring>(
+				parametersCopy.get_child(0));
+
+			integration->load(QString::fromStdString(allowedBackends));
+			invocation->return_value({});
+			return;
+		} else if (method_name == "CheckVersion") {
+			const auto major = GlibVariantCast<uint>(
+				parametersCopy.get_child(0));
+
+			const auto minor = GlibVariantCast<uint>(
+				parametersCopy.get_child(1));
+
+			const auto micro = GlibVariantCast<uint>(
+				parametersCopy.get_child(2));
+
+			const auto result = integration->checkVersion(
+				major,
+				minor,
+				micro);
+
+			invocation->return_value(
+				Glib::VariantContainerBase::create_tuple(
+					Glib::Variant<bool>::create(result)));
+
+			return;
+		} else if (method_name == "GetBoolSetting") {
+			const auto propertyName = GlibVariantCast<Glib::ustring>(
+				parametersCopy.get_child(0));
+
+			const auto result = integration->getBoolSetting(
+				QString::fromStdString(propertyName));
+
+			if (result.has_value()) {
+				invocation->return_value(
+					Glib::VariantContainerBase::create_tuple(
+						Glib::Variant<bool>::create(*result)));
+
+				return;
+			}
+		} else if (method_name == "GetIntSetting") {
+			const auto propertyName = GlibVariantCast<Glib::ustring>(
+				parametersCopy.get_child(0));
+
+			const auto result = integration->getIntSetting(
+				QString::fromStdString(propertyName));
+
+			if (result.has_value()) {
+				invocation->return_value(
+					Glib::VariantContainerBase::create_tuple(
+						Glib::Variant<int>::create(*result)));
+
+				return;
+			}
+		} else if (method_name == "GetStringSetting") {
+			const auto propertyName = GlibVariantCast<Glib::ustring>(
+				parametersCopy.get_child(0));
+
+			const auto result = integration->getStringSetting(
+				QString::fromStdString(propertyName));
+
+			if (result.has_value()) {
+				invocation->return_value(
+					Glib::VariantContainerBase::create_tuple(
+						Glib::Variant<Glib::ustring>::create(
+							result->toStdString())));
+
+				return;
+			}
+		} else if (method_name == "ConnectToSetting") {
+			const auto propertyName = QString::fromStdString(
+				GlibVariantCast<Glib::ustring>(
+					parametersCopy.get_child(0)));
+
+			if (connectedSettings.contains(propertyName)) {
+				invocation->return_value({});
+				return;
+			}
+
+			integration->connectToSetting(propertyName, [=] {
+				try {
+					connection->emit_signal(
+						std::string(kObjectPath),
+						std::string(kInterface),
+						"SettingChanged",
+						parentDBusName,
+						MakeGlibVariant(std::tuple{
+							Glib::ustring(propertyName.toStdString()),
+						}));
+				} catch (...) {
+				}
+			});
+
+			connectedSettings << propertyName;
+			invocation->return_value({});
+			return;
+		}
+	} catch (...) {
+	}
+
+	Gio::DBus::Error error(
+		Gio::DBus::Error::UNKNOWN_METHOD,
+		"Method does not exist.");
+
+	invocation->return_error(error);
+}
+
+void GtkIntegration::Private::handleGetProperty(
+		Glib::VariantBase &property,
+		const Glib::RefPtr<Gio::DBus::Connection> &connection,
+		const Glib::ustring &sender,
+		const Glib::ustring &object_path,
+		const Glib::ustring &interface_name,
+		const Glib::ustring &property_name) {
+	if (sender != parentDBusName) {
+		throw Gio::DBus::Error(
+			Gio::DBus::Error::ACCESS_DENIED,
+			"Access denied.");
+	}
+
+	if (property_name == "Loaded") {
+		property = Glib::Variant<bool>::create([] {
+			if (const auto integration = Instance()) {
+				return integration->loaded();
+			}
+			return false;
+		}());
+		return;
+	}
+
+	throw Gio::DBus::Error(
+		Gio::DBus::Error::NO_REPLY,
+		"No reply.");
+}
+
+GtkIntegration::GtkIntegration()
+: _private(std::make_unique<Private>()) {
+}
+
+GtkIntegration::~GtkIntegration() {
+	if (_private->dbusConnection) {
+		if (_private->parentServiceWatcherId != 0) {
+			_private->dbusConnection->signal_unsubscribe(
+				_private->parentServiceWatcherId);
+		}
+
+		if (_private->registerId != 0) {
+			_private->dbusConnection->unregister_object(
+				_private->registerId);
+		}
+	}
 }
 
 GtkIntegration *GtkIntegration::Instance() {
-	static const auto useGtkIntegration = !qEnvironmentVariableIsSet(
-		kDisableGtkIntegration.utf8().constData());
-	
-	if (!useGtkIntegration) {
-		return nullptr;
-	}
-
 	static GtkIntegration instance;
 	return &instance;
 }
 
-void GtkIntegration::prepareEnvironment() {
-#ifdef DESKTOP_APP_USE_PACKAGED // static binary doesn't contain qgtk3/qgtk2
-	// if gtk integration and qgtk3/qgtk2 platformtheme (or qgtk2 style)
-	// is used at the same time, the app will crash
-	if (!qEnvironmentVariableIsSet(
-			kIgnoreGtkIncompatibility.utf8().constData())) {
-		g_warning(
-			"Unfortunately, GTK integration "
-			"conflicts with qgtk2 platformtheme and style. "
-			"Therefore, QT_QPA_PLATFORMTHEME "
-			"and QT_STYLE_OVERRIDE will be unset.");
+void GtkIntegration::load(const QString &allowedBackends, bool force) {
+	Expects(!loaded());
 
-		g_message(
-			"This can be ignored by setting %s environment variable "
-			"to any value, however, if qgtk2 theme or style is used, "
-			"this will lead to a crash.",
-			kIgnoreGtkIncompatibility.utf8().constData());
-
-		g_message(
-			"GTK integration can be disabled by setting %s to any value. "
-			"Keep in mind that this will lead to "
-			"some features being unavailable.",
-			kDisableGtkIntegration.utf8().constData());
-
-		qunsetenv("QT_QPA_PLATFORMTHEME");
-		qunsetenv("QT_STYLE_OVERRIDE");
+	if (force) {
+		_private->remoting = false;
 	}
-#endif // DESKTOP_APP_USE_PACKAGED
+
+	if (_private->remoting) {
+		if (!_private->dbusConnection) {
+			return;
+		}
+
+		try {
+			auto reply = _private->dbusConnection->call_sync(
+				std::string(kObjectPath),
+				std::string(kInterface),
+				"Load",
+				MakeGlibVariant(std::tuple{
+					Glib::ustring(allowedBackends.toStdString()),
+				}),
+				ServiceNameVar);
+		} catch (...) {
+		}
+
+		return;
+	}
+
+	DEBUG_LOG(("Loading GTK"));
+	DEBUG_LOG(("Icon theme: %1").arg(QIcon::themeName()));
+	DEBUG_LOG(("Fallback icon theme: %1").arg(QIcon::fallbackThemeName()));
+
+	if (LoadGtkLibrary(_lib, "gtk-3", 0)) {
+		_private->loaded = _private->setupBase(_lib, allowedBackends);
+	}
+	if (!_private->loaded
+		&& !_private->triedToInit
+		&& LoadGtkLibrary(_lib, "gtk-x11-2.0", 0)) {
+		_private->loaded = _private->setupBase(_lib, allowedBackends);
+	}
+
+	if (_private->loaded) {
+		LOAD_GTK_SYMBOL(_lib, gtk_check_version);
+		LOAD_GTK_SYMBOL(_lib, gtk_settings_get_default);
+	} else {
+		LOG(("Could not load gtk-3 or gtk-x11-2.0!"));
+	}
 }
 
-void GtkIntegration::load() {
-	Expects(!loaded());
-	Integration::Instance().logMessage("Loading GTK");
+int GtkIntegration::exec(const QString &parentDBusName) {
+	_private->remoting = false;
+	_private->parentDBusName = parentDBusName.toStdString();
 
-	Integration::Instance().logMessage(
-		QString("Icon theme: %1")
-			.arg(QIcon::themeName()));
+	_private->introspectionData = Gio::DBus::NodeInfo::create_for_xml(
+		std::string(kIntrospectionXML));
 
-	Integration::Instance().logMessage(
-		QString("Fallback icon theme: %1")
-			.arg(QIcon::fallbackThemeName()));
+	_private->registerId = _private->dbusConnection->register_object(
+		std::string(kObjectPath),
+		_private->introspectionData->lookup_interface(),
+		_private->interfaceVTable);
 
-	_lib.setLoadHints(QLibrary::DeepBindHint);
+	const auto app = Gio::Application::create(ServiceNameVar);
+	app->hold();
+	_private->parentServiceWatcherId = DBus::RegisterServiceWatcher(
+		_private->dbusConnection,
+		parentDBusName.toStdString(),
+		[=](
+			const Glib::ustring &service,
+			const Glib::ustring &oldOwner,
+			const Glib::ustring &newOwner) {
+			if (!newOwner.empty()) {
+				return;
+			}
+			app->quit();
+		});
+	return app->run(0, nullptr);
+}
 
-	if (LoadLibrary(_lib, "gtk-3", 0)) {
-		Loaded = SetupGtkBase(_lib);
+void GtkIntegration::initializeSettings() {
+	if (!loaded()) {
+		return;
 	}
-	if (!Loaded
-		&& !TriedToInit
-		&& LoadLibrary(_lib, "gtk-x11-2.0", 0)) {
-		Loaded = SetupGtkBase(_lib);
-	}
 
-	if (Loaded) {
-		LOAD_GTK_SYMBOL(_lib, "gtk_check_version", gtk_check_version);
-		LOAD_GTK_SYMBOL(_lib, "gtk_settings_get_default", gtk_settings_get_default);
-
-		SetIconTheme();
-		SetCursorSize();
-		connectToSetting("gtk-icon-theme-name", SetIconTheme);
-		connectToSetting("gtk-cursor-theme-size", SetCursorSize);
-	} else {
-		Integration::Instance().logMessage("Could not load gtk-3 or gtk-x11-2.0!");
-	}
+	SetIconTheme();
+	SetCursorSize();
+	connectToSetting("gtk-icon-theme-name", SetIconTheme);
+	connectToSetting("gtk-cursor-theme-size", SetCursorSize);
 }
 
 bool GtkIntegration::loaded() const {
-	return Loaded;
+	if (_private->remoting) {
+		if (!_private->dbusConnection || ServiceNameVar.empty()) {
+			return false;
+		}
+
+		try {
+			auto reply = _private->dbusConnection->call_sync(
+				std::string(kObjectPath),
+				std::string(kPropertiesInterface),
+				"Get",
+				MakeGlibVariant(std::tuple{
+					Glib::ustring(std::string(kInterface)),
+					Glib::ustring("Loaded"),
+				}),
+				ServiceNameVar);
+
+			return GlibVariantCast<bool>(
+				GlibVariantCast<Glib::VariantBase>(
+					reply.get_child(0)));
+		} catch (...) {
+		}
+
+		return false;
+	}
+
+	return _private->loaded;
+}
+
+QString GtkIntegration::ServiceName() {
+	return QString::fromStdString(ServiceNameVar);
+}
+
+void GtkIntegration::SetServiceName(const QString &serviceName) {
+	ServiceNameVar = serviceName.toStdString();
 }
 
 bool GtkIntegration::checkVersion(uint major, uint minor, uint micro) const {
+	if (_private->remoting) {
+		if (!_private->dbusConnection) {
+			return false;
+		}
+
+		try {
+			auto reply = _private->dbusConnection->call_sync(
+				std::string(kObjectPath),
+				std::string(kInterface),
+				"CheckVersion",
+				MakeGlibVariant(std::tuple{
+					major,
+					minor,
+					micro,
+				}),
+				ServiceNameVar);
+
+			return GlibVariantCast<bool>(reply.get_child(0));
+		} catch (...) {
+		}
+
+		return false;
+	}
+
 	return (gtk_check_version != nullptr)
 		? !gtk_check_version(major, minor, micro)
 		: false;
@@ -312,56 +602,203 @@ bool GtkIntegration::checkVersion(uint major, uint minor, uint micro) const {
 
 std::optional<bool> GtkIntegration::getBoolSetting(
 		const QString &propertyName) const {
+	if (_private->remoting) {
+		if (!_private->dbusConnection) {
+			return std::nullopt;
+		}
+
+		try {
+			auto reply = _private->dbusConnection->call_sync(
+				std::string(kObjectPath),
+				std::string(kInterface),
+				"GetBoolSetting",
+				MakeGlibVariant(std::tuple{
+					Glib::ustring(propertyName.toStdString()),
+				}),
+				ServiceNameVar);
+
+			return GlibVariantCast<bool>(reply.get_child(0));
+		} catch (...) {
+		}
+
+		return std::nullopt;
+	}
+
 	const auto value = GtkSetting<gboolean>(propertyName);
 	if (!value.has_value()) {
 		return std::nullopt;
 	}
-	Integration::Instance().logMessage(
-		QString("Getting GTK setting, %1: %2")
-			.arg(propertyName)
-			.arg(*value ? "[TRUE]" : "[FALSE]"));
+	DEBUG_LOG(("Getting GTK setting, %1: %2").arg(
+		propertyName,
+		*value ? "[TRUE]" : "[FALSE]"));
 	return *value;
 }
 
 std::optional<int> GtkIntegration::getIntSetting(
 		const QString &propertyName) const {
+	if (_private->remoting) {
+		if (!_private->dbusConnection) {
+			return std::nullopt;
+		}
+
+		try {
+			auto reply = _private->dbusConnection->call_sync(
+				std::string(kObjectPath),
+				std::string(kInterface),
+				"GetIntSetting",
+				MakeGlibVariant(std::tuple{
+					Glib::ustring(propertyName.toStdString()),
+				}),
+				ServiceNameVar);
+
+			return GlibVariantCast<int>(reply.get_child(0));
+		} catch (...) {
+		}
+
+		return std::nullopt;
+	}
+
 	const auto value = GtkSetting<gint>(propertyName);
 	if (value.has_value()) {
-		Integration::Instance().logMessage(
-			QString("Getting GTK setting, %1: %2")
-				.arg(propertyName)
-				.arg(*value));
+		DEBUG_LOG(("Getting GTK setting, %1: %2")
+			.arg(propertyName)
+			.arg(*value));
 	}
 	return value;
 }
 
 std::optional<QString> GtkIntegration::getStringSetting(
 		const QString &propertyName) const {
+	if (_private->remoting) {
+		if (!_private->dbusConnection) {
+			return std::nullopt;
+		}
+
+		try {
+			auto reply = _private->dbusConnection->call_sync(
+				std::string(kObjectPath),
+				std::string(kInterface),
+				"GetStringSetting",
+				MakeGlibVariant(std::tuple{
+					Glib::ustring(propertyName.toStdString()),
+				}),
+				ServiceNameVar);
+
+			return QString::fromStdString(
+				GlibVariantCast<Glib::ustring>(reply.get_child(0)));
+		} catch (...) {
+		}
+
+		return std::nullopt;
+	}
+
 	auto value = GtkSetting<gchararray>(propertyName);
 	if (!value.has_value()) {
 		return std::nullopt;
 	}
 	const auto str = QString::fromUtf8(*value);
 	g_free(*value);
-	Integration::Instance().logMessage(
-		QString("Getting GTK setting, %1: '%2'")
-			.arg(propertyName)
-			.arg(str));
+	DEBUG_LOG(("Getting GTK setting, %1: '%2'").arg(propertyName, str));
 	return str;
 }
 
 void GtkIntegration::connectToSetting(
 		const QString &propertyName,
-		void (*callback)()) {
+		Fn<void()> callback) {
+	if (_private->remoting) {
+		if (!_private->dbusConnection) {
+			return;
+		}
+
+		try {
+			_private->dbusConnection->call(
+				std::string(kObjectPath),
+				std::string(kInterface),
+				"ConnectToSetting",
+				MakeGlibVariant(std::tuple{
+					Glib::ustring(propertyName.toStdString()),
+				}),
+				{},
+				ServiceNameVar);
+
+			// doesn't emit subscriptions subscribed with
+			// crl::async otherwise for some reason...
+			crl::on_main([=] {
+				_private->dbusConnection->signal_subscribe(
+					[=](
+						const Glib::RefPtr<Gio::DBus::Connection> &connection,
+						const Glib::ustring &sender_name,
+						const Glib::ustring &object_path,
+						const Glib::ustring &interface_name,
+						const Glib::ustring &signal_name,
+						Glib::VariantContainerBase parameters) {
+						try {
+							auto parametersCopy = parameters;
+
+							const auto receivedPropertyName = QString::fromStdString(
+								GlibVariantCast<Glib::ustring>(
+									parametersCopy.get_child(0)));
+
+							if (propertyName == receivedPropertyName) {
+								callback();
+							}
+						} catch (...) {
+						}
+					},
+					ServiceNameVar,
+					std::string(kInterface),
+					"SettingChanged",
+					std::string(kObjectPath));
+			});
+
+			// resubscribe on service restart,
+			// doesn't work on non-main thread as well for some reason
+			crl::on_main([=] {
+				if (!_private->connectedSettings.contains(propertyName)) {
+					DBus::RegisterServiceWatcher(
+						_private->dbusConnection,
+						ServiceNameVar,
+						[=, connection = _private->dbusConnection](
+							const Glib::ustring &service,
+							const Glib::ustring &oldOwner,
+							const Glib::ustring &newOwner) {
+							if (newOwner.empty()) {
+								return;
+							}
+
+							connection->call(
+								std::string(kObjectPath),
+								std::string(kInterface),
+								"ConnectToSetting",
+								MakeGlibVariant(std::tuple{
+									Glib::ustring(propertyName.toStdString()),
+								}),
+								{},
+								service);
+						});
+
+					_private->connectedSettings << propertyName;
+				}
+			});
+		} catch (...) {
+		}
+
+		return;
+	}
+
 	if (gtk_settings_get_default == nullptr) {
 		return;
 	}
 
-	g_signal_connect(
+	auto callbackCopy = new Fn<void()>(callback);
+
+	g_signal_connect_swapped(
 		gtk_settings_get_default(),
 		("notify::" + propertyName).toUtf8().constData(),
-		G_CALLBACK(callback),
-		nullptr);
+		G_CALLBACK(+[](Fn<void()> *callback) {
+			(*callback)();
+		}),
+		callbackCopy);
 }
 
 } // namespace Platform

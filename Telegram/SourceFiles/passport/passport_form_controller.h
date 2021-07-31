@@ -280,6 +280,7 @@ struct PasswordSettings {
 	bool hasRecovery = false;
 	bool notEmptyPassport = false;
 	bool unknownAlgo = false;
+	TimeId pendingResetDate = 0;
 
 	bool operator==(const PasswordSettings &other) const {
 		return (request == other.request)
@@ -296,7 +297,8 @@ struct PasswordSettings {
 			&& (unconfirmedPattern == other.unconfirmedPattern)
 			&& (confirmedEmail == other.confirmedEmail)
 			&& (hasRecovery == other.hasRecovery)
-			&& (unknownAlgo == other.unknownAlgo);
+			&& (unknownAlgo == other.unknownAlgo)
+			&& (pendingResetDate == other.pendingResetDate);
 	}
 	bool operator!=(const PasswordSettings &other) const {
 		return !(*this == other);
@@ -496,7 +498,7 @@ private:
 	QString getPlainTextFromValue(not_null<const Value*> value) const;
 	void startPhoneVerification(not_null<Value*> value);
 	void startEmailVerification(not_null<Value*> value);
-	void valueSaveShowError(not_null<Value*> value, const RPCError &error);
+	void valueSaveShowError(not_null<Value*> value, const MTP::Error &error);
 	void valueSaveFailed(not_null<Value*> value);
 	void requestPhoneCall(not_null<Value*> value);
 	void verificationError(

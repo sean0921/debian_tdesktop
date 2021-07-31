@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/widgets/labels.h"
+#include "ui/text/format_values.h" // Ui::FormatPhone
 #include "ui/text/text_utilities.h"
 #include "core/click_handler_types.h" // UrlClickHandler
 #include "base/qthelp_url.h" // qthelp::url_encode
@@ -18,7 +19,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "mainwidget.h"
 #include "numbers.h"
-#include "app.h"
 #include "lang/lang_keys.h"
 #include "mtproto/facade.h"
 #include "styles/style_layers.h"
@@ -69,14 +69,6 @@ void ShowPhoneBannedError(const QString &phone) {
 		tr::lng_signin_banned_help(tr::now),
 		close,
 		[=] { SendToBannedHelp(phone); close(); }));
-}
-
-QString ExtractPhonePrefix(const QString &phone) {
-	const auto pattern = phoneNumberParse(phone);
-	if (!pattern.isEmpty()) {
-		return phone.mid(0, pattern[0]);
-	}
-	return QString();
 }
 
 SentCodeField::SentCodeField(
@@ -249,7 +241,7 @@ void ConfirmPhoneBox::checkPhoneAndHash() {
 		MTP_codeSettings(MTP_flags(0))
 	)).done([=](const MTPauth_SentCode &result) {
 		sendCodeDone(result);
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		sendCodeFail(error);
 	}).handleFloodErrors().send();
 }
@@ -278,9 +270,9 @@ void ConfirmPhoneBox::sendCodeDone(const MTPauth_SentCode &result) {
 	});
 }
 
-void ConfirmPhoneBox::sendCodeFail(const RPCError &error) {
+void ConfirmPhoneBox::sendCodeFail(const MTP::Error &error) {
 	auto errorText = Lang::Hard::ServerError();
-	if (MTP::isFloodError(error)) {
+	if (MTP::IsFloodError(error)) {
 		errorText = tr::lng_flood_error(tr::now);
 	} else if (error.code() == 400) {
 		errorText = tr::lng_confirm_phone_link_invalid(tr::now);
@@ -304,7 +296,7 @@ void ConfirmPhoneBox::prepare() {
 		this,
 		tr::lng_confirm_phone_about(
 			lt_phone,
-			rpl::single(Ui::Text::Bold(App::formatPhone(_phone))),
+			rpl::single(Ui::Text::Bold(Ui::FormatPhone(_phone))),
 			Ui::Text::WithEntities),
 		st::confirmPhoneAboutLabel);
 
@@ -348,19 +340,19 @@ void ConfirmPhoneBox::sendCode() {
 		MTP_string(code)
 	)).done([=](const MTPBool &result) {
 		confirmDone(result);
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		confirmFail(error);
 	}).handleFloodErrors().send();
 }
 
 void ConfirmPhoneBox::confirmDone(const MTPBool &result) {
 	_sendCodeRequestId = 0;
-	Ui::show(Box<InformBox>(tr::lng_confirm_phone_success(tr::now, lt_phone, App::formatPhone(_phone))));
+	Ui::show(Box<InformBox>(tr::lng_confirm_phone_success(tr::now, lt_phone, Ui::FormatPhone(_phone))));
 }
 
-void ConfirmPhoneBox::confirmFail(const RPCError &error) {
+void ConfirmPhoneBox::confirmFail(const MTP::Error &error) {
 	auto errorText = Lang::Hard::ServerError();
-	if (MTP::isFloodError(error)) {
+	if (MTP::IsFloodError(error)) {
 		errorText = tr::lng_flood_error(tr::now);
 	} else {
 		auto &errorType = error.type();

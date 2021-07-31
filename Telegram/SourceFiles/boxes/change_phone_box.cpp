@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/input_fields.h"
 #include "ui/wrap/fade_wrap.h"
 #include "ui/toast/toast.h"
+#include "ui/text/format_values.h" // Ui::FormatPhone
 #include "ui/text/text_utilities.h"
 #include "ui/special_fields.h"
 #include "boxes/confirm_phone_box.h"
@@ -21,7 +22,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "mtproto/sender.h"
 #include "apiwrap.h"
-#include "app.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 
@@ -78,7 +78,7 @@ protected:
 private:
 	void submit();
 	void sendPhoneDone(const MTPauth_SentCode &result, const QString &phoneNumber);
-	void sendPhoneFail(const RPCError &error, const QString &phoneNumber);
+	void sendPhoneFail(const MTP::Error &error, const QString &phoneNumber);
 	void showError(const QString &text);
 	void hideError() {
 		showError(QString());
@@ -114,7 +114,7 @@ private:
 	void submit();
 	void sendCall();
 	void updateCall();
-	void sendCodeFail(const RPCError &error);
+	void sendCodeFail(const MTP::Error &error);
 	void showError(const QString &text);
 	void hideError() {
 		showError(QString());
@@ -151,7 +151,7 @@ void ChangePhoneBox::EnterPhone::prepare() {
 		this,
 		st::defaultInputField,
 		tr::lng_change_phone_new_title(),
-		ExtractPhonePrefix(_session->user()->phone()),
+		Ui::ExtractPhonePrefix(_session->user()->phone()),
 		phoneValue);
 
 	_phone->resize(st::boxWidth - 2 * st::boxPadding.left(), _phone->height());
@@ -180,7 +180,7 @@ void ChangePhoneBox::EnterPhone::submit() {
 		MTP_codeSettings(MTP_flags(0))
 	)).done([=](const MTPauth_SentCode &result) {
 		sendPhoneDone(result, phoneNumber);
-	}).fail([=](const RPCError &error) {
+	}).fail([=](const MTP::Error &error) {
 		sendPhoneFail(error, phoneNumber);
 	}).handleFloodErrors().send();
 }
@@ -222,9 +222,9 @@ void ChangePhoneBox::EnterPhone::sendPhoneDone(
 		Ui::LayerOption::KeepOther);
 }
 
-void ChangePhoneBox::EnterPhone::sendPhoneFail(const RPCError &error, const QString &phoneNumber) {
+void ChangePhoneBox::EnterPhone::sendPhoneFail(const MTP::Error &error, const QString &phoneNumber) {
 	_requestId = 0;
-	if (MTP::isFloodError(error)) {
+	if (MTP::IsFloodError(error)) {
 		showError(tr::lng_flood_error(tr::now));
 	} else if (error.type() == qstr("PHONE_NUMBER_INVALID")) {
 		showError(tr::lng_bad_phone(tr::now));
@@ -235,7 +235,7 @@ void ChangePhoneBox::EnterPhone::sendPhoneFail(const RPCError &error, const QStr
 			tr::lng_change_phone_occupied(
 				tr::now,
 				lt_phone,
-				App::formatPhone(phoneNumber)),
+				Ui::FormatPhone(phoneNumber)),
 			tr::lng_box_ok(tr::now)));
 	} else {
 		showError(Lang::Hard::ServerError());
@@ -271,7 +271,7 @@ void ChangePhoneBox::EnterCode::prepare() {
 	auto descriptionText = tr::lng_change_phone_code_description(
 		tr::now,
 		lt_phone,
-		Ui::Text::Bold(App::formatPhone(_phone)),
+		Ui::Text::Bold(Ui::FormatPhone(_phone)),
 		Ui::Text::WithEntities);
 	auto description = object_ptr<Ui::FlatLabel>(this, rpl::single(descriptionText), st::changePhoneLabel);
 	description->moveToLeft(st::boxPadding.left(), 0);
@@ -320,7 +320,7 @@ void ChangePhoneBox::EnterCode::submit() {
 			Ui::hideLayer();
 		}
 		Ui::Toast::Show(tr::lng_change_phone_success(tr::now));
-	}).fail(crl::guard(this, [=](const RPCError &error) {
+	}).fail(crl::guard(this, [=](const MTP::Error &error) {
 		sendCodeFail(error);
 	})).handleFloodErrors().send();
 }
@@ -354,9 +354,9 @@ void ChangePhoneBox::EnterCode::showError(const QString &text) {
 	}
 }
 
-void ChangePhoneBox::EnterCode::sendCodeFail(const RPCError &error) {
+void ChangePhoneBox::EnterCode::sendCodeFail(const MTP::Error &error) {
 	_requestId = 0;
-	if (MTP::isFloodError(error)) {
+	if (MTP::IsFloodError(error)) {
 		showError(tr::lng_flood_error(tr::now));
 	} else if (error.type() == qstr("PHONE_CODE_EMPTY") || error.type() == qstr("PHONE_CODE_INVALID")) {
 		showError(tr::lng_bad_code(tr::now));

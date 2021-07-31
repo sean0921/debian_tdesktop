@@ -53,6 +53,11 @@ struct Error {
 	QString details;
 };
 
+enum class CallType {
+	Incoming,
+	Outgoing,
+};
+
 class Call : public base::has_weak_ptr {
 public:
 	class Delegate {
@@ -72,7 +77,7 @@ public:
 			Fn<void()> onSuccess,
 			bool video) = 0;
 
-		virtual auto getVideoCapture()
+		virtual auto callGetVideoCapture(const QString &deviceId)
 			-> std::shared_ptr<tgcalls::VideoCaptureInterface> = 0;
 
 		virtual ~Delegate() = default;
@@ -81,11 +86,12 @@ public:
 
 	static constexpr auto kSoundSampleMs = 100;
 
-	enum class Type {
-		Incoming,
-		Outgoing,
-	};
-	Call(not_null<Delegate*> delegate, not_null<UserData*> user, Type type, bool video);
+	using Type = CallType;
+	Call(
+		not_null<Delegate*> delegate,
+		not_null<UserData*> user,
+		Type type,
+		bool video);
 
 	[[nodiscard]] Type type() const {
 		return _type;
@@ -168,7 +174,6 @@ public:
 	crl::time getDurationMs() const;
 	float64 getWaitingSoundPeakValue() const;
 
-	void switchVideoOutgoing();
 	void answer();
 	void hangup();
 	void redial();
@@ -179,9 +184,21 @@ public:
 	QString getDebugLog() const;
 
 	void setCurrentAudioDevice(bool input, const QString &deviceId);
-	void setCurrentVideoDevice(const QString &deviceId);
 	//void setAudioVolume(bool input, float level);
 	void setAudioDuckingEnabled(bool enabled);
+
+	void setCurrentCameraDevice(const QString &deviceId);
+	[[nodiscard]] QString videoDeviceId() const {
+		return _videoCaptureDeviceId;
+	}
+
+	[[nodiscard]] bool isSharingVideo() const;
+	[[nodiscard]] bool isSharingCamera() const;
+	[[nodiscard]] bool isSharingScreen() const;
+	[[nodiscard]] QString cameraSharingDeviceId() const;
+	[[nodiscard]] QString screenSharingDeviceId() const;
+	void toggleCameraSharing(bool enabled);
+	void toggleScreenSharing(std::optional<QString> uniqueId);
 
 	[[nodiscard]] rpl::lifetime &lifetime() {
 		return _lifetime;
@@ -196,7 +213,7 @@ private:
 		Failed,
 	};
 
-	void handleRequestError(const RPCError &error);
+	void handleRequestError(const MTP::Error &error);
 	void handleControllerError(const QString &error);
 	void finish(
 		FinishType type,
@@ -262,6 +279,8 @@ private:
 
 	std::unique_ptr<tgcalls::Instance> _instance;
 	std::shared_ptr<tgcalls::VideoCaptureInterface> _videoCapture;
+	QString _videoCaptureDeviceId;
+	bool _videoCaptureIsScreencast = false;
 	const std::unique_ptr<Webrtc::VideoTrack> _videoIncoming;
 	const std::unique_ptr<Webrtc::VideoTrack> _videoOutgoing;
 

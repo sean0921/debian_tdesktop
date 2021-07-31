@@ -256,8 +256,8 @@ RoundButton::RoundButton(
 : RippleButton(parent, st.ripple)
 , _textFull(std::move(text))
 , _st(st)
-, _roundRect(st::buttonRadius, _st.textBg)
-, _roundRectOver(st::buttonRadius, _st.textBgOver) {
+, _roundRect(st.radius ? st.radius : st::buttonRadius, _st.textBg)
+, _roundRectOver(st.radius ? st.radius : st::buttonRadius, _st.textBgOver) {
 	_textFull.value(
 	) | rpl::start_with_next([=](const QString &text) {
 		resizeToText(text);
@@ -294,6 +294,11 @@ void RoundButton::setWidthChangedCallback(Fn<void()> callback) {
 		});
 	}
 	_numbers->setWidthChangedCallback(std::move(callback));
+}
+
+void RoundButton::setBrushOverride(std::optional<QBrush> brush) {
+	_brushOverride = std::move(brush);
+	update();
 }
 
 void RoundButton::finishNumbersAnimation() {
@@ -367,7 +372,12 @@ void RoundButton::paintEvent(QPaintEvent *e) {
 			const auto radius = rounded.height() / 2;
 			PainterHighQualityEnabler hq(p);
 			p.setPen(Qt::NoPen);
-			p.setBrush(rect.color());
+			p.setBrush(_brushOverride ? *_brushOverride : rect.color()->b);
+			p.drawRoundedRect(fill, radius, radius);
+		} else if (_brushOverride) {
+			p.setPen(Qt::NoPen);
+			p.setBrush(*_brushOverride);
+			const auto radius = _st.radius ? _st.radius : st::buttonRadius;
 			p.drawRoundedRect(fill, radius, radius);
 		} else {
 			rect.paint(p, fill);
@@ -377,7 +387,7 @@ void RoundButton::paintEvent(QPaintEvent *e) {
 
 	auto over = isOver();
 	auto down = isDown();
-	if (over || down) {
+	if (!_brushOverride && (over || down)) {
 		drawRect(_roundRectOver);
 	}
 
@@ -427,7 +437,11 @@ QImage RoundButton::prepareRippleMask() const {
 	}
 	return RippleAnimation::roundRectMask(
 		rounded.size(),
-		_fullRadius ? (rounded.height() / 2) : st::buttonRadius);
+		(_fullRadius
+			? (rounded.height() / 2)
+			: _st.radius
+			? _st.radius
+			: st::buttonRadius));
 }
 
 QPoint RoundButton::prepareRippleStartPosition() const {
@@ -672,6 +686,8 @@ SettingsButton::SettingsButton(
 		setText(std::move(value));
 	}, lifetime());
 }
+
+SettingsButton::~SettingsButton() = default;
 
 SettingsButton *SettingsButton::toggleOn(rpl::producer<bool> &&toggled) {
 	Expects(_toggle == nullptr);

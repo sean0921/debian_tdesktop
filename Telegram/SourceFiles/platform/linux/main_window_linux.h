@@ -14,17 +14,6 @@ namespace Ui {
 class PopupMenu;
 } // namespace Ui
 
-#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-class QTemporaryFile;
-class DBusMenuExporter;
-class StatusNotifierItem;
-
-typedef void* gpointer;
-typedef char gchar;
-typedef struct _GVariant GVariant;
-typedef struct _GDBusProxy GDBusProxy;
-#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-
 namespace Platform {
 
 class MainWindow : public Window::MainWindow {
@@ -52,12 +41,11 @@ protected:
 	void initHook() override;
 	void unreadCounterChangedHook() override;
 	void updateGlobalMenuHook() override;
-	void handleVisibleChangedHook(bool visible) override;
 
 	void initTrayMenuHook() override;
 	bool hasTrayIcon() const override;
 
-	void workmodeUpdated(DBIWorkMode mode) override;
+	void workmodeUpdated(Core::Settings::WorkMode mode) override;
 	void createGlobalMenu() override;
 
 	QSystemTrayIcon *trayIcon = nullptr;
@@ -75,18 +63,12 @@ protected:
 		style::color color) = 0;
 
 private:
+	class Private;
+	friend class Private;
+	const std::unique_ptr<Private> _private;
+
 	bool _sniAvailable = false;
 	base::unique_qptr<Ui::PopupMenu> _trayIconMenuXEmbed;
-
-	void updateIconCounters();
-
-#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-	StatusNotifierItem *_sniTrayIcon = nullptr;
-	GDBusProxy *_sniDBusProxy = nullptr;
-	std::unique_ptr<QTemporaryFile> _trayIconFile;
-
-	bool _appMenuSupported = false;
-	DBusMenuExporter *_mainMenuExporter = nullptr;
 
 	QMenu *psMainMenu = nullptr;
 	QAction *psLogout = nullptr;
@@ -109,19 +91,8 @@ private:
 	QAction *psMonospace = nullptr;
 	QAction *psClearFormat = nullptr;
 
-	void setSNITrayIcon(int counter, bool muted);
-	void attachToSNITrayIcon();
-	void handleSNIHostRegistered();
-
-	void handleSNIOwnerChanged(
-		const QString &service,
-		const QString &oldOwner,
-		const QString &newOwner);
-
-	void handleAppMenuOwnerChanged(
-		const QString &service,
-		const QString &oldOwner,
-		const QString &newOwner);
+	void updateIconCounters();
+	void handleNativeSurfaceChanged(bool exist);
 
 	void psLinuxUndo();
 	void psLinuxRedo();
@@ -137,14 +108,6 @@ private:
 	void psLinuxStrikeOut();
 	void psLinuxMonospace();
 	void psLinuxClearFormat();
-
-	static void sniSignalEmitted(
-		GDBusProxy *proxy,
-		gchar *sender_name,
-		gchar *signal_name,
-		GVariant *parameters,
-		gpointer user_data);
-#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 };
 

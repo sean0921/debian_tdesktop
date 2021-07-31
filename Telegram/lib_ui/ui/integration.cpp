@@ -6,8 +6,10 @@
 //
 #include "ui/integration.h"
 
+#include "ui/gl/gl_detection.h"
 #include "ui/text/text_entity.h"
 #include "ui/basic_click_handlers.h"
+#include "base/platform/base_platform_info.h"
 
 namespace Ui {
 namespace {
@@ -18,6 +20,10 @@ Integration *IntegrationInstance = nullptr;
 
 void Integration::Set(not_null<Integration*> instance) {
 	IntegrationInstance = instance;
+
+	if constexpr (Platform::IsWindows()) {
+		GL::ConfigureANGLE();
+	}
 }
 
 Integration &Integration::Instance() {
@@ -36,10 +42,8 @@ void Integration::textActionsUpdated() {
 void Integration::activationFromTopPanel() {
 }
 
-void Integration::startFontsBegin() {
-}
-
-void Integration::startFontsEnd() {
+bool Integration::screenIsLocked() {
+	return false;
 }
 
 QString Integration::timeFormat() {

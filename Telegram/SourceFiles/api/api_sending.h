@@ -30,11 +30,10 @@ bool SendDice(Api::MessageToSend &message);
 void FillMessagePostFlags(
 	const SendAction &action,
 	not_null<PeerData*> peer,
-	MTPDmessage::Flags &flags);
+	MessageFlags &flags);
 
 void SendConfirmedFile(
 	not_null<Main::Session*> session,
-	const std::shared_ptr<FileLoadResult> &file,
-	const std::optional<FullMsgId> &oldId);
+	const std::shared_ptr<FileLoadResult> &file);
 
 } // namespace Api

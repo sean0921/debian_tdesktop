@@ -7,10 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "window/window_title.h"
-#include "ui/rp_widget.h"
+#include "ui/widgets/rp_window.h"
 #include "base/timer.h"
 #include "base/object_ptr.h"
+#include "core/core_settings.h"
 
 #include <QtWidgets/QSystemTrayIcon>
 
@@ -36,11 +36,10 @@ QImage LoadLogoNoMargin();
 QIcon CreateIcon(Main::Session *session = nullptr);
 void ConvertIconToBlack(QImage &image);
 
-class MainWindow : public Ui::RpWidget, protected base::Subscriber {
-	Q_OBJECT
-
+class MainWindow : public Ui::RpWindow {
 public:
 	explicit MainWindow(not_null<Controller*> controller);
+	virtual ~MainWindow();
 
 	[[nodiscard]] Window::Controller &controller() const {
 		return *_controller;
@@ -57,15 +56,16 @@ public:
 		showFromTray();
 	}
 
+	[[nodiscard]] QRect desktopRect() const;
+
 	void init();
-	HitTestResult hitTest(const QPoint &p) const;
 
 	void updateIsActive();
 
-	bool isActive() const {
+	[[nodiscard]] bool isActive() const {
 		return _isActive;
 	}
-	virtual bool isActiveForTrayMenu() {
+	[[nodiscard]] virtual bool isActiveForTrayMenu() {
 		updateIsActive();
 		return isActive();
 	}
@@ -74,12 +74,6 @@ public:
 		return _positionInited;
 	}
 	void positionUpdated();
-
-	bool titleVisible() const;
-	void setTitleVisible(bool visible);
-	QString titleText() const {
-		return _titleText;
-	}
 
 	void reActivateWindow();
 
@@ -94,17 +88,15 @@ public:
 	}
 	virtual void fixOrder() {
 	}
-
-	virtual ~MainWindow();
+	virtual void setInnerFocus() {
+		setFocus();
+	}
 
 	Ui::RpWidget *bodyWidget() {
 		return _body.data();
 	}
 
-	void launchDrag(std::unique_ptr<QMimeData> data);
-	base::Observable<void> &dragFinished() {
-		return _dragFinished;
-	}
+	void launchDrag(std::unique_ptr<QMimeData> data, Fn<void()> &&callback);
 
 	rpl::producer<> leaveEvents() const;
 
@@ -112,23 +104,18 @@ public:
 
 	void clearWidgets();
 
-	QRect inner() const;
 	int computeMinWidth() const;
 	int computeMinHeight() const;
 
 	void recountGeometryConstraints();
 	virtual void updateControlsGeometry();
 
-	bool hasShadow() const;
-
-public slots:
 	bool minimizeToTray();
 	void updateGlobalMenu() {
 		updateGlobalMenuHook();
 	}
 
 protected:
-	void paintEvent(QPaintEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 
@@ -140,7 +127,7 @@ protected:
 	virtual void initHook() {
 	}
 
-	virtual void updateIsActiveHook() {
+	virtual void activeChangedHook() {
 	}
 
 	virtual void handleActiveChangedHook() {
@@ -153,9 +140,6 @@ protected:
 	}
 
 	virtual void stateChangedHook(Qt::WindowState state) {
-	}
-
-	virtual void titleVisibilityChangedHook() {
 	}
 
 	virtual void unreadCounterChangedHook() {
@@ -176,14 +160,10 @@ protected:
 	virtual void showTrayTooltip() {
 	}
 
-	virtual void workmodeUpdated(DBIWorkMode mode) {
+	virtual void workmodeUpdated(Core::Settings::WorkMode mode) {
 	}
 
 	virtual void createGlobalMenu() {
-	}
-	virtual void initShadows() {
-	}
-	virtual void firstShadowsUpdate() {
 	}
 
 	virtual bool initSizeFromSystem() {
@@ -199,10 +179,11 @@ protected:
 		QSystemTrayIcon::ActivationReason reason) = 0;
 	void updateUnreadCounter();
 
+	virtual QRect computeDesktopRect() const;
+
 private:
 	void refreshTitleWidget();
 	void updateMinimumSize();
-	void updateShadowSize();
 	void updatePalette();
 	void initSize();
 
@@ -213,7 +194,6 @@ private:
 	base::Timer _positionUpdatedTimer;
 	bool _positionInited = false;
 
-	object_ptr<TitleWidget> _title = { nullptr };
 	object_ptr<Ui::PlainShadow> _titleShadow = { nullptr };
 	object_ptr<Ui::RpWidget> _outdated;
 	object_ptr<Ui::RpWidget> _body;
@@ -221,15 +201,15 @@ private:
 
 	QIcon _icon;
 	bool _usingSupportIcon = false;
-	QString _titleText;
-	style::margins _padding;
 
 	bool _isActive = false;
 
-	base::Observable<void> _dragFinished;
 	rpl::event_stream<> _leaveEvents;
 
 	bool _maximizedBeforeHide = false;
+
+	mutable QRect _monitorRect;
+	mutable crl::time _monitorLastGot = 0;
 
 };
 

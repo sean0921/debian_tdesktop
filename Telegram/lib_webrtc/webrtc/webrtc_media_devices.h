@@ -7,6 +7,7 @@
 #pragma once
 
 #include <rpl/producer.h>
+#include <optional>
 
 namespace Webrtc {
 
@@ -50,5 +51,8 @@ public:
 	QString audioInput,
 	QString audioOutput,
 	QString videoInput);
+
+[[nodiscard]] bool DesktopCaptureAllowed();
+[[nodiscard]] std::optional<QString> UniqueDesktopCaptureSource();
 
 } // namespace Webrtc

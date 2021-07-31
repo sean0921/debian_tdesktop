@@ -15,7 +15,7 @@ else()
         )
     endif()
     if (NOT DESKTOP_APP_USE_PACKAGED)
-        target_include_directories(common_options
+        target_include_directories(common_options SYSTEM
         INTERFACE
             /usr/local/macos/include
         )
@@ -28,6 +28,7 @@ INTERFACE
     -Wall
     -W
     -fPIE
+    $<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-weak>
     -Wno-deprecated-declarations # temp for range-v3
     -Wno-unused-variable
     -Wno-unused-parameter
@@ -71,11 +72,14 @@ INTERFACE
     AVFoundation
     CoreAudio
     CoreVideo
+    CoreMediaIO
     QuartzCore
     AppKit
     CoreWLAN
+    WebKit
     IOKit
     GSS
+    MediaPlayer
 )
 
 if (NOT build_osx)

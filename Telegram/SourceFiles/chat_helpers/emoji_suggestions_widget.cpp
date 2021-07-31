@@ -109,18 +109,18 @@ auto SuggestionsWidget::getRowsByQuery() const -> std::vector<Row> {
 		return {};
 	}
 	using Entry = ChatHelpers::EmojiKeywords::Result;
-	auto result = ranges::view::all(
+	auto result = ranges::views::all(
 		list
-	) | ranges::view::transform([](const Entry &result) {
+	) | ranges::views::transform([](const Entry &result) {
 		return Row(result.emoji, result.replacement);
 	}) | ranges::to_vector;
 
 	auto lastRecent = begin(result);
-	const auto &recent = GetRecentEmoji();
+	const auto &recent = Core::App().settings().recentEmoji();
 	for (const auto &item : recent) {
-		const auto emoji = item.first->original()
-			? item.first->original()
-			: item.first;
+		const auto emoji = item.emoji->original()
+			? item.emoji->original()
+			: item.emoji;
 		const auto it = ranges::find(result, emoji, [](const Row &row) {
 			return row.emoji.get();
 		});
@@ -133,12 +133,12 @@ auto SuggestionsWidget::getRowsByQuery() const -> std::vector<Row> {
 	for (auto &item : result) {
 		item.emoji = [&] {
 			const auto result = item.emoji;
-			const auto &variants = cEmojiVariants();
+			const auto &variants = Core::App().settings().emojiVariants();
 			const auto i = result->hasVariants()
-				? variants.constFind(result->nonColoredId())
-				: variants.cend();
-			return (i != variants.cend())
-				? result->variant(i.value())
+				? variants.find(result->nonColoredId())
+				: end(variants);
+			return (i != end(variants))
+				? result->variant(i->second)
 				: result.get();
 		}();
 	}
@@ -526,14 +526,14 @@ SuggestionsController::SuggestionsController(
 	setReplaceCallback(nullptr);
 
 	const auto fieldCallback = [=](not_null<QEvent*> event) {
-		return fieldFilter(event)
+		return (_container && fieldFilter(event))
 			? base::EventFilterResult::Cancel
 			: base::EventFilterResult::Continue;
 	};
 	_fieldFilter.reset(base::install_event_filter(_field, fieldCallback));
 
 	const auto outerCallback = [=](not_null<QEvent*> event) {
-		return outerFilter(event)
+		return (_container && outerFilter(event))
 			? base::EventFilterResult::Cancel
 			: base::EventFilterResult::Continue;
 	};
