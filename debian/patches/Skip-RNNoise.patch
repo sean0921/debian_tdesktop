@@ -26,3 +26,14 @@ Last-Update: Thu, 29 Jul 2021 22:17:46 +0300
  else()
      add_library(external_rnnoise STATIC IMPORTED GLOBAL)
      add_library(desktop-app::external_rnnoise ALIAS external_rnnoise)
+--- a/Telegram/ThirdParty/tgcalls/tgcalls/group/GroupInstanceCustomImpl.cpp
++++ b/Telegram/ThirdParty/tgcalls/tgcalls/group/GroupInstanceCustomImpl.cpp
+@@ -829,6 +829,8 @@ private:
+     std::vector<float> *_externalAudioSamples = nullptr;
+     webrtc::Mutex *_externalAudioSamplesMutex = nullptr;
+ };
++#else
++class AudioCapturePostProcessor : public webrtc::CustomProcessing {};
+ #endif
+ 
+ class ExternalAudioRecorder : public FakeAudioDeviceModule::Recorder {
