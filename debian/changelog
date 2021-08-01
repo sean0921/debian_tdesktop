@@ -1,3 +1,16 @@
+telegram-desktop (2.9.0+ds-1) experimental; urgency=medium
+
+  * New upstream release.
+    - Fixes flaws in MtProto implementation. Closes: #991493, CVE-2021-36769.
+  * Update tgcalls subproject to commit 6f2746e.
+  * New build dependencies, jemalloc, glibmm, and WebKitGTK
+  * New Exclude-QWaylandXdgShellIntegration.patch.
+  * New Skip-*.patch'es to ignore unneeded dependencies.
+  * Increase limit of DIEs for dwz(1) up to 2 ³¹ - 1.
+  * Update copyright info.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sun, 01 Aug 2021 15:59:00 +0300
+
 telegram-desktop (2.6.1+ds-1) unstable; urgency=medium
 
   * New upstream release.
