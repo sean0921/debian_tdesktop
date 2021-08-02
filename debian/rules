@@ -57,12 +57,7 @@ print-%:
 	dh $@
 
 override_dh_auto_configure:
-	ln -s -f -n -r debian Telegram/ThirdParty
 	dh_auto_configure -- $(EXTRA_CMAKE_VARIABLES:%=-D%)
-
-# Remove symbolic link for access to StatusNotifierItem and tgcalls modules.
-execute_after_dh_auto_clean:
-	rm -f Telegram/ThirdParty
 
 override_dh_installchangelogs:
 	dh_installchangelogs changelog.txt
