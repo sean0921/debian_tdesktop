@@ -2,7 +2,23 @@ Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Telegram Desktop
 Upstream-Contact: John Preston <johnprestonmail@gmail.com>
 Source: https://github.com/telegramdesktop/tdesktop
-Files-Excluded: Telegram/ThirdParty/*
+Files-Excluded: Telegram/ThirdParty/Catch
+                Telegram/ThirdParty/expected
+                Telegram/ThirdParty/fcitx5-qt
+                Telegram/ThirdParty/fcitx-qt5
+                Telegram/ThirdParty/GSL
+                Telegram/ThirdParty/hime
+                Telegram/ThirdParty/hunspell
+                Telegram/ThirdParty/jemalloc
+                Telegram/ThirdParty/libdbusmenu-qt
+                Telegram/ThirdParty/libtgvoip/webrtc_dsp
+                Telegram/ThirdParty/lz4
+                Telegram/ThirdParty/minizip
+                Telegram/ThirdParty/nimf
+                Telegram/ThirdParty/QR
+                Telegram/ThirdParty/range-v3
+                Telegram/ThirdParty/rlottie
+                Telegram/ThirdParty/xxHash
                 Telegram/lib_ui/fonts/*.ttf
                 Telegram/lib_waylandshells/*
 Comment: Exclude unused third-party modules to reduce code size.
@@ -37,17 +53,27 @@ Copyright: 2016-2021 Nicholas Guriev <guriev-ns@ya.ru>
 License: Public-domain
 Comment: Contributing policy - https://cla-assistant.io/telegramdesktop/tdesktop
 
-Files: debian/tgcalls/*
+Files: Telegram/ThirdParty/libtgvoip/*
+Copyright: 2017-2019 Gregory Klyushnikov <grishka93@gmail.com>
+           2020 John Preston <johnprestonmail@gmail.com>
+           2020 overtake <overtakeful@gmail.com>
+           2020 Ali
+License: Unlicense
+
+Files: Telegram/ThirdParty/tgcalls/*
 Copyright: 2017 The WebRTC project authors
            2020 The Telegram Calls Library Authors
            2020,2021 Mikhail Filimonov
 License: LGPL-3.0
 
-Files: debian/tgcalls/tgcalls/third-party/json11.cpp
+Files: Telegram/ThirdParty/libtgvoip/json11.cpp
+       Telegram/ThirdParty/libtgvoip/json11.hpp
+       Telegram/ThirdParty/tgcalls/tgcalls/third-party/json11.cpp
+       Telegram/ThirdParty/tgcalls/tgcalls/third-party/json11.hpp
 Copyright: 2013 Dropbox, Inc.
 License: Expat
 
-Files: debian/statusnotifieritem/*
+Files: Telegram/ThirdParty/statusnotifieritem/*
 Source: https://github.com/lxqt/lxqt-qtplugin
 Copyright: 2013-2019 LXQt team
            2010-2012 Razor team
@@ -162,3 +188,24 @@ License: Public-domain
     information I submit with it, including my sign-off) is maintained
     indefinitely and may be redistributed.
  c) I am granting this work into the public domain.
+
+License: Unlicense
+ This is free and unencumbered software released into the public domain.
+ .
+ Anyone is free to copy, modify, publish, use, compile, sell, or distribute this
+ software, either in source code form or as a compiled binary, for any purpose,
+ commercial or non-commercial, and by any means.
+ .
+ In jurisdictions that recognize copyright laws, the author or authors of this
+ software dedicate any and all copyright interest in the software to the public
+ domain. We make this dedication for the benefit of the public at large and to
+ the detriment of our heirs and successors. We intend this dedication to be an
+ overt act of relinquishment in perpetuity of all present and future rights to
+ this software under copyright law.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+ AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
