@@ -15,6 +15,9 @@ DEB_CPPFLAGS_MAINT_APPEND += -Werror=invalid-pch
 # Print full stack trace of template instantiations.
 DEB_CXXFLAGS_MAINT_APPEND += -ftemplate-backtrace-limit=0
 
+# Do linking against private libatomic from GCC.
+export DEB_LDFLAGS_MAINT_APPEND += -latomic
+
 ifeq ($(filter terse,$(DEB_BUILD_OPTIONS)),)
  # Print entire arguments of moc invocation.
  EXTRA_CMAKE_VARIABLES += CMAKE_AUTOGEN_VERBOSE=ON
