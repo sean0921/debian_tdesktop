@@ -1,0 +1,1 @@
+debian/apport/telegram-desktop.py usr/share/apport/package-hooks
