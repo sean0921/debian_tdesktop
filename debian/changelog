@@ -1,3 +1,17 @@
+telegram-desktop (2.9.0+ds1-2) experimental; urgency=medium
+
+  * Repack upstream source changing suffix for one time.
+    - Move bundled subporjects from the debian/ folder to Telegram/ThirdParty.
+    - Adjust paths in the debian/copyright file accordingly.
+    - Apply Skip-RNNoise.patch to the moved tgcalls subproject.
+  * Link against libatomic to fix build on RISC-V 64-bit.
+  * Thin intermediate static archives to speed up build a little.
+  * Mention missing direct build dependencies, Python, GLib, and XCB.
+  * Remove Ignore-emoji-pack.patch that tried to fix build on IA-64.
+  * Install Apport hook to collect logs from Ubuntu installations.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Wed, 04 Aug 2021 09:25:04 +0300
+
 telegram-desktop (2.9.0+ds-1) experimental; urgency=medium
 
   * New upstream release.
