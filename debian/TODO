@@ -1,4 +1,14 @@
-TODO List for for Debian package
---------------------------------
+TODO List for Debian package
+----------------------------
 
- * Activate an autorestart button just after a new version has been installed.
+ * Activate an autorestart button just after a new version of the package has
+   been automatically installed.
+ * Optionally preload jemalloc allocator if only available. Telegram Desktop
+   does not properly configure default memory allocator from glibc. And so
+   there is a heavy heap fragmentation in chats and channels with many videos.
+ * Better Wayland integration. XWayland is still preferred due to a bug[1] with
+   window edges. Keep in mind Telegram Desktop on Wayland has less features
+   than on X.org. In particular, it is not allowed to set a global key for fast
+   unmuting microphone in voice chats.
+
+ [1]: https://bugs.debian.org/991799

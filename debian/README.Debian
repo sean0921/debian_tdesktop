@@ -4,7 +4,7 @@ Telegram Desktop for Debian
 Telegram is a secure messenger from Pavel Durov. This package contains a
 dynamically linked Telegram Desktop client. There are some observable
 differences from the original binary bundle:
- * Due to compatibility requirements with rlottie, a default pack is always used
+ * Due to compatibility requirements with rLottie, a default pack is always used
    for large animated emojis.
  * For more privacy, auto-sync of wallpaper after updating is disabled. To send
    your current wallpaper to the cloud, choose it again in the app settings.

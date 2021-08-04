@@ -1,19 +1,24 @@
 .\"                                      Hey, EMACS: -*- nroff -*-
 .\" (C) Copyright 2017-2021 Nicholas Guriev <guriev-ns@ya.ru>
 
-.TH TELEGRAM-DESKTOP 1 "2021-02-27"
+.TH TELEGRAM-DESKTOP 1 "2021-08-04"
 
 .SH NAME
 \fBtelegram\-desktop\fR \- fast and secure messaging application
 
 .SH SYNOPSIS
 .SY telegram-desktop
-.OP \-autostart
 .OP \-startintray
 .OP \-debug
 .OP \-scale INT
 .OP \-workdir PATH
 .OP \-\- URI
+.YS
+.SY telegram-desktop
+.B \-autostart
+.YS
+.SY telegram-desktop
+.B \-cleanup
 .YS
 
 .SH DESCRIPTION
@@ -33,48 +38,27 @@ tray if the corresponding checkbox has been set.
 Do not show the main window, just start in the system tray. Useful for automatic
 unconditional launching.
 .TP
+.B \-cleanup
+Remove an autostart shortcut effectively disabling the feature then exit.
+.TP
 .B \-debug
 Run in debug mode immediately. See full logs in working directory or in standard
 location at \fB~/\.local/share/TelegramDesktop/DebugLogs\fR.
 .TP
 .B \-scale INT
 Set initial interface scale factor. Possible values are measured in percents
-from 75 up to 300 inclusive.
+from 75 up to 300 inclusive. The application remembers last used value.
 .TP
 .B \-workdir PATH
 Change current working directory to specified path before start. All Telegram
-data will be stored encrypted in this folder. You can pass this option to
-partition different app instances that run simultaneously.
+data will be stored encrypted in this folder. It must exist before start. You
+can pass this option to partition different app instances that run in parallel.
 .TP
 .I URI
-Specify Telegram URI. It is used for automatically opening chats by
-.B t.me
-site.
+Specify Telegram link in tg:// scheme. Double dash is mandatory. This is for
+opening chats by \fBt.me\fR site.
 .LP
 There are also some other hidden options not intended for direct use.
-
-.SH ENVIRONMENT
-.TP
-.B TDESKTOP_USE_PORTAL
-Set this to something to make Telegram Desktop always use XDG Desktop portals to
-open file dialogs. By default, the portal is used if available on KDE.
-.TP
-.B DESKTOP_APP_I_KNOW_ABOUT_GTK_INCOMPATIBILITY
-Allows the app to load any Qt styles and platform themes. Telegram will not
-clear global settings related to Qt. It is known this mode may cause a crash.
-.TP
-.B DESKTOP_APP_DISABLE_GTK_INTEGRATION
-Do not initialize GTK by Telegram itself, leave that to a Qt platform plugin.
-You may try to set this variable if the crash mentioned above happens.
-.TP
-.B XDG_DATA_HOME
-Used to automatically determine working directory unless set by hand.
-.TP
-.B HOME
-User home directory where the app stores downloaded files and configuration.
-
-There is plenty of other environment variables that affect Telegram Desktop
-behaviour and appearance.
 
 .SH SEE ALSO
 .UR https://github.com/telegramdesktop/tdesktop/wiki

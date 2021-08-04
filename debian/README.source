@@ -1,13 +1,17 @@
 Notes about telegram-desktop source package
 -------------------------------------------
 
-There is a patched copy of the _lxqt-qtplugin_ package in debian/ folder. All
-internal changes can be seen in the commit [e15e78c][1]. If you choose to
-refresh the source, please make sure you correctly apply these fixes. Although,
-they are likely would be present in the latest update, since the modifications
-have been already merged by upstream. There is a [request][2] to package the
-StatusNotifierItem plugin as a separate package to get rid in future of the
-bundled copy here.
+Telegram Desktop source code comes with many bundled third-party modules. We
+remove most of them during repacking by mk-origtargz(1) which uscan(1) calls to
+after downloading an original tarball. They indeed are free software in line
+with DFSG, but anyway we remove them primarily for simplicity of the
+d/copyright file. And to make sure we do not rely on them according to Debian
+Policy Manual, § 4.13.
 
- [1]: https://salsa.debian.org/debian/telegram-desktop/commit/e15e78c26c4076814888bea32e8a3f5b5a4a8f5f
- [2]: https://bugs.debian.org/951833
+One of such third-party modules still remains, through, statusnotifieritem/
+which is part of LXQt plugin for Qt. Because the lxqt-qtplugin package does not
+provide necessary headers yet. See request at <https://bugs.debian.org/951833>.
+
+Other directories in the ThirdParty/ folder are not really belong to some
+third-party modules. Both libtgvoip and tgcalls had been specially written by
+Telegram team.
