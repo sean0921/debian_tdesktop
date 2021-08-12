@@ -1,17 +1,16 @@
 Description: Ignore emoji pack in super-large emoji rendering
- It is necessary to build against the unpatched rlottie lib.
+ It is necessary to build against the unpatched rLottie lib.
  .
  Although latest versions of the library already support theme overriding, we
- have to patch the rlottie call here due to a stale version still available on
- IA-64 platform.
+ patch the rLottie calls here for easy backporing to buster.
 Bug-Samsung: https://github.com/Samsung/rlottie/pull/252
 Forwarded: not-needed
 Author: Nicholas Guriev <guriev-ns@ya.ru>
-Last-Update: Tue, 25 Aug 2020 23:14:30 +0300
+Last-Update: Thu, 12 Aug 2021 22:56:23 +0300
 
 --- a/Telegram/lib_lottie/lottie/lottie_animation.cpp
 +++ b/Telegram/lib_lottie/lottie/lottie_animation.cpp
-@@ -146,11 +146,7 @@ std::unique_ptr<rlottie::Animation> CreateFromContent(
+@@ -145,11 +145,7 @@ std::unique_ptr<rlottie::Animation> Crea
  			? replacements->replacements
  			: std::vector<std::pair<std::uint32_t, std::uint32_t>>()));
  #else
@@ -20,7 +19,22 @@ Last-Update: Tue, 25 Aug 2020 23:14:30 +0300
 -		std::string(),
 -		std::string(),
 -		false);
-+	auto result = rlottie::Animation::loadFromData(string, "");
++	auto result = rlottie::Animation::loadFromData(std::move(string), "");
+ #endif
+ 	return result;
+ }
+--- a/Telegram/lib_lottie/lottie/lottie_icon.cpp
++++ b/Telegram/lib_lottie/lottie/lottie_icon.cpp
+@@ -37,11 +37,7 @@ namespace {
+ 		false,
+ 		std::move(list));
+ #else
+-	auto result = rlottie::Animation::loadFromData(
+-		std::move(string),
+-		std::string(),
+-		std::string(),
+-		false);
++	auto result = rlottie::Animation::loadFromData(std::move(string), "");
  #endif
  	return result;
  }
