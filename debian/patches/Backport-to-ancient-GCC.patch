@@ -1,0 +1,579 @@
+Description: Add necessary conversions for GCC 8.3.0.
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
+
+--- a/Telegram/SourceFiles/calls/calls_panel.cpp
++++ b/Telegram/SourceFiles/calls/calls_panel.cpp
+@@ -225,7 +225,7 @@ void Panel::initControls() {
+ 				chooseSourceAccepted(*source, false);
+ 			}
+ 		} else {
+-			Group::Ui::DesktopCapture::ChooseSource(this);
++			Group::Ui::DesktopCapture::ChooseSource(static_cast<ChooseSourceDelegate*>(this));
+ 		}
+ 	});
+ 	_camera->setClickedCallback([=] {
+--- a/Telegram/SourceFiles/calls/group/calls_choose_join_as.cpp
++++ b/Telegram/SourceFiles/calls/group/calls_choose_join_as.cpp
+@@ -358,7 +358,7 @@ void ChooseJoinAsProcess::start(
+ 			for (const auto &peer : peers) {
+ 				const auto peerId = peerFromMTP(peer);
+ 				if (const auto peer = session->data().peerLoaded(peerId)) {
+-					if (!ranges::contains(list, not_null{ peer })) {
++					if (!ranges::contains(list, not_null<PeerData*>{ peer })) {
+ 						list.push_back(peer);
+ 					}
+ 				}
+@@ -375,10 +375,10 @@ void ChooseJoinAsProcess::start(
+ 				? session->data().peerLoaded(selectedId)
+ 				: nullptr;
+ 			return (changingJoinAsFrom
+-				&& ranges::contains(list, not_null{ changingJoinAsFrom }))
+-				? not_null(changingJoinAsFrom)
+-				: (loaded && ranges::contains(list, not_null{ loaded }))
+-				? not_null(loaded)
++				&& ranges::contains(list, not_null<PeerData*>{ changingJoinAsFrom }))
++				? not_null<PeerData*>(changingJoinAsFrom)
++				: (loaded && ranges::contains(list, not_null<PeerData*>{ loaded }))
++				? not_null<PeerData*>(loaded)
+ 				: ranges::contains(list, self)
+ 				? self
+ 				: list.front();
+--- a/Telegram/SourceFiles/calls/group/calls_group_call.cpp
++++ b/Telegram/SourceFiles/calls/group/calls_group_call.cpp
+@@ -550,7 +550,7 @@ GroupCall::GroupCall(
+ 		}) | rpl::filter([](Data::GroupCall *real) {
+ 			return real != nullptr;
+ 		}) | rpl::map([](Data::GroupCall *real) {
+-			return not_null{ real };
++			return not_null<Data::GroupCall*>{ real };
+ 		}) | rpl::take(
+ 			1
+ 		) | rpl::start_with_next([=](not_null<Data::GroupCall*> real) {
+@@ -933,7 +933,7 @@ Data::GroupCall *GroupCall::lookupReal()
+ 
+ rpl::producer<not_null<Data::GroupCall*>> GroupCall::real() const {
+ 	if (const auto real = lookupReal()) {
+-		return rpl::single(not_null{ real });
++		return rpl::single(not_null<Data::GroupCall*>{ real });
+ 	}
+ 	return _realChanges.events();
+ }
+@@ -955,7 +955,7 @@ void GroupCall::start(TimeId scheduleDat
+ 			).arg(error.type()));
+ 		hangup();
+ 		if (error.type() == u"GROUPCALL_ANONYMOUS_FORBIDDEN"_q) {
+-			Ui::ShowMultilineToast({
++			Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 				.text = { tr::lng_group_call_no_anonymous(tr::now) },
+ 			});
+ 		}
+@@ -1290,7 +1290,7 @@ void GroupCall::rejoin(not_null<PeerData
+ 				}
+ 
+ 				hangup();
+-				Ui::ShowMultilineToast({
++				Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 					.text = { type == u"GROUPCALL_ANONYMOUS_FORBIDDEN"_q
+ 						? tr::lng_group_call_no_anonymous(tr::now)
+ 						: type == u"GROUPCALL_PARTICIPANTS_TOO_MUCH"_q
+--- a/Telegram/SourceFiles/calls/group/calls_group_panel.cpp
++++ b/Telegram/SourceFiles/calls/group/calls_group_panel.cpp
+@@ -1127,7 +1127,7 @@ void Panel::chooseShareScreenSource() {
+ 				chooseSourceAccepted(*source, false);
+ 			}
+ 		} else {
+-			Ui::DesktopCapture::ChooseSource(this);
++			Ui::DesktopCapture::ChooseSource(static_cast<ChooseSourceDelegate*>(this));
+ 		}
+ 	};
+ 	const auto screencastFromPeer = [&]() -> PeerData* {
+--- a/Telegram/SourceFiles/calls/group/calls_group_toasts.cpp
++++ b/Telegram/SourceFiles/calls/group/calls_group_toasts.cpp
+@@ -87,7 +87,7 @@ void Toasts::setupAllowedToSpeak() {
+ 			const auto name = (real && !real->title().isEmpty())
+ 				? real->title()
+ 				: _call->peer()->name;
+-			Ui::ShowMultilineToast({
++			Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 				.text = tr::lng_group_call_can_speak(
+ 					tr::now,
+ 					lt_chat,
+--- a/Telegram/SourceFiles/calls/group/calls_group_viewport_opengl.cpp
++++ b/Telegram/SourceFiles/calls/group/calls_group_viewport_opengl.cpp
+@@ -1275,7 +1275,7 @@ void Viewport::RendererGL::validateDatas
+ 			request.updating = true;
+ 		} else {
+ 			// This invalidates maybeStale*, but they're already equal.
+-			_tileData.push_back({
++			_tileData.push_back(TileData{
+ 				.id = id,
+ 				.peer = peer,
+ 				.pause = paused,
+--- a/Telegram/SourceFiles/data/data_channel.cpp
++++ b/Telegram/SourceFiles/data/data_channel.cpp
+@@ -313,7 +313,7 @@ void ChannelData::applyEditBanned(
+ 			if (isKicked) {
+ 				auto i = ranges::find(
+ 					mgInfo->lastParticipants,
+-					not_null{ user });
++					not_null<UserData*>{ user });
+ 				if (i != mgInfo->lastParticipants.end()) {
+ 					mgInfo->lastParticipants.erase(i);
+ 				}
+--- a/Telegram/SourceFiles/data/data_group_call.cpp
++++ b/Telegram/SourceFiles/data/data_group_call.cpp
+@@ -882,7 +882,7 @@ void GroupCall::requestUnknownParticipan
+ 			if (const auto participantPeer = _peer->owner().peerLoaded(id)) {
+ 				const auto isParticipant = ranges::contains(
+ 					_participants,
+-					not_null{ participantPeer },
++					not_null<PeerData*>{ participantPeer },
+ 					&Participant::peer);
+ 				if (isParticipant) {
+ 					applyActiveUpdate(id, when, participantPeer);
+--- a/Telegram/SourceFiles/data/data_peer.cpp
++++ b/Telegram/SourceFiles/data/data_peer.cpp
+@@ -182,7 +182,7 @@ void PeerClickHandler::onClick(ClickCont
+ 			&& !clickedChannel->amIn()
+ 			&& (!currentPeer->isChannel()
+ 				|| currentPeer->asChannel()->linkedChat() != clickedChannel)) {
+-			Ui::ShowMultilineToast({
++			Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 				.text = { _peer->isMegagroup()
+ 					? tr::lng_group_not_accessible(tr::now)
+ 					: tr::lng_channel_not_accessible(tr::now) },
+--- a/Telegram/SourceFiles/history/history.cpp
++++ b/Telegram/SourceFiles/history/history.cpp
+@@ -1047,7 +1047,7 @@ void History::applyServiceChanges(
+ 						using Payments::CheckoutProcess;
+ 						if (CheckoutProcess::TakePaymentStarted(message)) {
+ 							// Toast on a current active window.
+-							Ui::ShowMultilineToast({
++							Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 								.text = tr::lng_payments_success(
+ 									tr::now,
+ 									lt_amount,
+--- a/Telegram/SourceFiles/history/history_widget.cpp
++++ b/Telegram/SourceFiles/history/history_widget.cpp
+@@ -2497,7 +2497,7 @@ void HistoryWidget::messagesFailed(const
+ 		|| error.type() == qstr("USER_BANNED_IN_CHANNEL")) {
+ 		auto was = _peer;
+ 		controller()->showBackFromStack();
+-		Ui::ShowMultilineToast({
++		Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 			.text = { (was && was->isMegagroup())
+ 				? tr::lng_group_not_accessible(tr::now)
+ 				: tr::lng_channel_not_accessible(tr::now) },
+@@ -3221,7 +3221,7 @@ void HistoryWidget::send(Api::SendOption
+ 			message.textWithTags,
+ 			options.scheduled);
+ 		if (!error.isEmpty()) {
+-			Ui::ShowMultilineToast({
++			Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 				.text = { error },
+ 			});
+ 			return;
+@@ -3528,7 +3528,7 @@ void HistoryWidget::chooseAttach() {
+ 	} else if (const auto error = Data::RestrictionError(
+ 			_peer,
+ 			ChatRestriction::SendMedia)) {
+-		Ui::ShowMultilineToast({
++		Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 			.text = { *error },
+ 		});
+ 		return;
+@@ -4320,7 +4320,7 @@ bool HistoryWidget::showSendingFilesErro
+ 		return false;
+ 	}
+ 
+-	Ui::ShowMultilineToast({
++	Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 		.text = { text },
+ 	});
+ 	return true;
+@@ -5411,7 +5411,7 @@ bool HistoryWidget::showSlowmodeError()
+ 	if (text.isEmpty()) {
+ 		return false;
+ 	}
+-	Ui::ShowMultilineToast({
++	Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 		.text = { text },
+ 	});
+ 	return true;
+--- a/Telegram/SourceFiles/history/view/controls/history_view_ttl_button.cpp
++++ b/Telegram/SourceFiles/history/view/controls/history_view_ttl_button.cpp
+@@ -45,7 +45,7 @@ void ShowAutoDeleteToast(not_null<PeerDa
+ 	const auto text = peer->isBroadcast()
+ 		? tr::lng_ttl_about_tooltip_channel(tr::now, lt_duration, duration)
+ 		: tr::lng_ttl_about_tooltip(tr::now, lt_duration, duration);
+-	Ui::ShowMultilineToast({
++	Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 		.text = { text },
+ 		.duration = kToastDuration,
+ 	});
+--- a/Telegram/SourceFiles/history/view/history_view_element.cpp
++++ b/Telegram/SourceFiles/history/view/history_view_element.cpp
+@@ -573,7 +573,7 @@ ClickHandlerPtr Element::fromLink() cons
+ 	if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
+ 		if (forwarded->imported) {
+ 			static const auto imported = std::make_shared<LambdaClickHandler>([] {
+-				Ui::ShowMultilineToast({
++				Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 					.text = { tr::lng_forwarded_imported(tr::now) },
+ 				});
+ 			});
+--- a/Telegram/SourceFiles/history/view/history_view_list_widget.cpp
++++ b/Telegram/SourceFiles/history/view/history_view_list_widget.cpp
+@@ -563,7 +563,7 @@ void ListWidget::checkUnreadBarCreation(
+ 			_bar = std::move(data.bar);
+ 			_barText = std::move(data.text);
+ 			_bar.element->createUnreadBar(_barText.value());
+-			const auto i = ranges::find(_items, not_null{ _bar.element });
++			const auto i = ranges::find(_items, not_null<Element*>{ _bar.element });
+ 			Assert(i != end(_items));
+ 			refreshAttachmentsAtIndex(i - begin(_items));
+ 		}
+--- a/Telegram/SourceFiles/history/view/history_view_replies_section.cpp
++++ b/Telegram/SourceFiles/history/view/history_view_replies_section.cpp
+@@ -542,7 +542,7 @@ void RepliesWidget::chooseAttach() {
+ 	if (const auto error = Data::RestrictionError(
+ 			_history->peer,
+ 			ChatRestriction::SendMedia)) {
+-		Ui::ShowMultilineToast({
++		Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 			.text = { *error },
+ 		});
+ 		return;
+@@ -739,7 +739,7 @@ bool RepliesWidget::showSlowmodeError()
+ 	if (text.isEmpty()) {
+ 		return false;
+ 	}
+-	Ui::ShowMultilineToast({
++	Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 		.text = { text },
+ 	});
+ 	return true;
+@@ -849,7 +849,7 @@ bool RepliesWidget::showSendingFilesErro
+ 		return false;
+ 	}
+ 
+-	Ui::ShowMultilineToast({
++	Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 		.text = { text },
+ 	});
+ 	return true;
+--- a/Telegram/SourceFiles/history/view/history_view_schedule_box.cpp
++++ b/Telegram/SourceFiles/history/view/history_view_schedule_box.cpp
+@@ -76,7 +76,7 @@ void ScheduleBox(
+ 		box->closeBox();
+ 		copy(result);
+ 	};
+-	auto descriptor = Ui::ChooseDateTimeBox(box, {
++	auto descriptor = Ui::ChooseDateTimeBox(box, Ui::ChooseDateTimeBoxArgs{
+ 		.title = (type == SendMenu::Type::Reminder
+ 			? tr::lng_remind_title()
+ 			: tr::lng_schedule_title()),
+--- a/Telegram/SourceFiles/history/view/history_view_scheduled_section.cpp
++++ b/Telegram/SourceFiles/history/view/history_view_scheduled_section.cpp
+@@ -284,7 +284,7 @@ void ScheduledWidget::chooseAttach() {
+ 	if (const auto error = Data::RestrictionError(
+ 			_history->peer,
+ 			ChatRestriction::SendMedia)) {
+-		Ui::ShowMultilineToast({
++		Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 			.text = { *error },
+ 		});
+ 		return;
+@@ -497,7 +497,7 @@ bool ScheduledWidget::showSendingFilesEr
+ 		return false;
+ 	}
+ 
+-	Ui::ShowMultilineToast({
++	Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 		.text = { text },
+ 	});
+ 	return true;
+--- a/Telegram/SourceFiles/inline_bots/inline_bot_send_data.cpp
++++ b/Telegram/SourceFiles/inline_bots/inline_bot_send_data.cpp
+@@ -72,7 +72,7 @@ SendDataCommon::SentMessageFields SendTe
+ SendDataCommon::SentMessageFields SendGeo::getSentMessageFields() const {
+ 	if (_period) {
+ 		using Flag = MTPDmessageMediaGeoLive::Flag;
+-		return { .media = MTP_messageMediaGeoLive(
++		return SentMessageFields{ .media = MTP_messageMediaGeoLive(
+ 			MTP_flags((_heading ? Flag::f_heading : Flag(0))
+ 				| (_proximityNotificationRadius
+ 					? Flag::f_proximity_notification_radius
+@@ -82,12 +82,12 @@ SendDataCommon::SentMessageFields SendGe
+ 			MTP_int(*_period),
+ 			MTP_int(_proximityNotificationRadius.value_or(0))) };
+ 	}
+-	return { .media = MTP_messageMediaGeo(_location.toMTP()) };
++	return SentMessageFields{ .media = MTP_messageMediaGeo(_location.toMTP()) };
+ }
+ 
+ SendDataCommon::SentMessageFields SendVenue::getSentMessageFields() const {
+ 	const auto venueType = QString();
+-	return { .media = MTP_messageMediaVenue(
++	return SentMessageFields{ .media = MTP_messageMediaVenue(
+ 		_location.toMTP(),
+ 		MTP_string(_title),
+ 		MTP_string(_address),
+@@ -97,7 +97,7 @@ SendDataCommon::SentMessageFields SendVe
+ }
+ 
+ SendDataCommon::SentMessageFields SendContact::getSentMessageFields() const {
+-	return { .media = MTP_messageMediaContact(
++	return SentMessageFields{ .media = MTP_messageMediaContact(
+ 		MTP_string(_phoneNumber),
+ 		MTP_string(_firstName),
+ 		MTP_string(_lastName),
+@@ -226,7 +226,7 @@ QString SendGame::getErrorOnSend(
+ }
+ 
+ SendDataCommon::SentMessageFields SendInvoice::getSentMessageFields() const {
+-	return { .media = _media };
++	return SentMessageFields{ .media = _media };
+ }
+ 
+ QString SendInvoice::getLayoutDescription(const Result *owner) const {
+--- a/Telegram/SourceFiles/intro/intro_widget.cpp
++++ b/Telegram/SourceFiles/intro/intro_widget.cpp
+@@ -178,13 +178,13 @@ not_null<Ui::RpWidget*> Widget::floatPla
+ 
+ auto Widget::floatPlayerGetSection(Window::Column column)
+ -> not_null<Media::Player::FloatSectionDelegate*> {
+-	return this;
++	return static_cast<FloatSectionDelegate*>(this);
+ }
+ 
+ void Widget::floatPlayerEnumerateSections(Fn<void(
+ 		not_null<Media::Player::FloatSectionDelegate*> widget,
+ 		Window::Column widgetColumn)> callback) {
+-	callback(this, Window::Column::Second);
++	callback(static_cast<FloatSectionDelegate*>(this), Window::Column::Second);
+ }
+ 
+ bool Widget::floatPlayerIsVisible(not_null<HistoryItem*> item) {
+--- a/Telegram/SourceFiles/main/main_account.cpp
++++ b/Telegram/SourceFiles/main/main_account.cpp
+@@ -231,7 +231,7 @@ rpl::producer<Session*> Account::session
+ 
+ rpl::producer<not_null<MTP::Instance*>> Account::mtpValue() const {
+ 	return _mtpValue.value() | rpl::map([](MTP::Instance *instance) {
+-		return not_null{ instance };
++		return not_null<MTP::Instance*>{ instance };
+ 	});
+ }
+ 
+--- a/Telegram/SourceFiles/main/main_domain.cpp
++++ b/Telegram/SourceFiles/main/main_domain.cpp
+@@ -173,7 +173,7 @@ Account &Domain::active() const {
+ 
+ rpl::producer<not_null<Account*>> Domain::activeChanges() const {
+ 	return _active.changes() | rpl::map([](Account *value) {
+-		return not_null{ value };
++		return not_null<Account*>{ value };
+ 	});
+ }
+ 
+--- a/Telegram/SourceFiles/mainwidget.cpp
++++ b/Telegram/SourceFiles/mainwidget.cpp
+@@ -1417,7 +1417,7 @@ void MainWidget::showChooseReportMessage
+ 		peer->id,
+ 		SectionShow::Way::Forward,
+ 		ShowForChooseMessagesMsgId);
+-	Ui::ShowMultilineToast({
++	Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 		.text = { tr::lng_report_please_select_messages(tr::now) },
+ 	});
+ }
+--- a/Telegram/SourceFiles/media/streaming/media_streaming_video_track.cpp
++++ b/Telegram/SourceFiles/media/streaming/media_streaming_video_track.cpp
+@@ -1145,7 +1145,7 @@ FrameWithInfo VideoTrack::frameWithInfo(
+ 		_wrapped.with([=](Implementation &unwrapped) {
+ 			unwrapped.updateFrameRequest(
+ 				instance,
+-				{ .requireARGB32 = false });
++				FrameRequest{ .requireARGB32 = false });
+ 		});
+ 	}
+ 	return {
+--- a/Telegram/SourceFiles/payments/ui/payments_edit_card.cpp
++++ b/Telegram/SourceFiles/payments/ui/payments_edit_card.cpp
+@@ -291,7 +291,7 @@ not_null<RpWidget*> EditCard::setupConte
+ 		inner->add(result->ownedWidget(), st::paymentsFieldPadding);
+ 		return result;
+ 	};
+-	_number = add({
++	_number = add(FieldConfig{
+ 		.type = FieldType::CardNumber,
+ 		.placeholder = tr::lng_payments_card_number(),
+ 		.validator = CardNumberValidator(),
+@@ -301,12 +301,12 @@ not_null<RpWidget*> EditCard::setupConte
+ 			inner,
+ 			_number->widget()->height()),
+ 		st::paymentsFieldPadding);
+-	_expire = make(container, {
++	_expire = make(container, FieldConfig{
+ 		.type = FieldType::CardExpireDate,
+ 		.placeholder = tr::lng_payments_card_expire_date(),
+ 		.validator = ExpireDateValidator(),
+ 	});
+-	_cvc = make(container, {
++	_cvc = make(container, FieldConfig{
+ 		.type = FieldType::CardCVC,
+ 		.placeholder = tr::lng_payments_card_cvc(),
+ 		.validator = CvcValidator([=] { return _number->value(); }),
+@@ -322,7 +322,7 @@ not_null<RpWidget*> EditCard::setupConte
+ 	}, container->lifetime());
+ 
+ 	if (_native.needCardholderName) {
+-		_name = add({
++		_name = add(FieldConfig{
+ 			.type = FieldType::Text,
+ 			.placeholder = tr::lng_payments_card_holder(),
+ 			.validator = CardHolderNameValidator(),
+@@ -338,7 +338,7 @@ not_null<RpWidget*> EditCard::setupConte
+ 			st::paymentsBillingInformationTitlePadding);
+ 	}
+ 	if (_native.needCountry) {
+-		_country = add({
++		_country = add(FieldConfig{
+ 			.type = FieldType::Country,
+ 			.placeholder = tr::lng_payments_billing_country(),
+ 			.validator = RequiredFinishedValidator(),
+@@ -347,7 +347,7 @@ not_null<RpWidget*> EditCard::setupConte
+ 		});
+ 	}
+ 	if (_native.needZip) {
+-		_zip = add({
++		_zip = add(FieldConfig{
+ 			.type = FieldType::Text,
+ 			.placeholder = tr::lng_payments_billing_zip_code(),
+ 			.validator = RequiredValidator(),
+--- a/Telegram/SourceFiles/payments/ui/payments_edit_information.cpp
++++ b/Telegram/SourceFiles/payments/ui/payments_edit_information.cpp
+@@ -125,26 +125,26 @@ not_null<RpWidget*> EditInformation::set
+ 		return result;
+ 	};
+ 	if (_invoice.isShippingAddressRequested) {
+-		_street1 = add({
++		_street1 = add(FieldConfig{
+ 			.placeholder = tr::lng_payments_address_street1(),
+ 			.value = _information.shippingAddress.address1,
+ 			.validator = RangeLengthValidator(1, kMaxStreetSize),
+ 		});
+-		_street2 = add({
++		_street2 = add(FieldConfig{
+ 			.placeholder = tr::lng_payments_address_street2(),
+ 			.value = _information.shippingAddress.address2,
+ 			.validator = MaxLengthValidator(kMaxStreetSize),
+ 		});
+-		_city = add({
++		_city = add(FieldConfig{
+ 			.placeholder = tr::lng_payments_address_city(),
+ 			.value = _information.shippingAddress.city,
+ 			.validator = RangeLengthValidator(kMinCitySize, kMaxCitySize),
+ 		});
+-		_state = add({
++		_state = add(FieldConfig{
+ 			.placeholder = tr::lng_payments_address_state(),
+ 			.value = _information.shippingAddress.state,
+ 		});
+-		_country = add({
++		_country = add(FieldConfig{
+ 			.type = FieldType::Country,
+ 			.placeholder = tr::lng_payments_address_country(),
+ 			.value = _information.shippingAddress.countryIso2,
+@@ -152,21 +152,21 @@ not_null<RpWidget*> EditInformation::set
+ 			.showBox = showBox,
+ 			.defaultCountry = _information.defaultCountry,
+ 		});
+-		_postcode = add({
++		_postcode = add(FieldConfig{
+ 			.placeholder = tr::lng_payments_address_postcode(),
+ 			.value = _information.shippingAddress.postcode,
+ 			.validator = RangeLengthValidator(1, kMaxPostcodeSize),
+ 		});
+ 	}
+ 	if (_invoice.isNameRequested) {
+-		_name = add({
++		_name = add(FieldConfig{
+ 			.placeholder = tr::lng_payments_info_name(),
+ 			.value = _information.name,
+ 			.validator = RangeLengthValidator(1, kMaxNameSize),
+ 		});
+ 	}
+ 	if (_invoice.isEmailRequested) {
+-		_email = add({
++		_email = add(FieldConfig{
+ 			.type = FieldType::Email,
+ 			.placeholder = tr::lng_payments_info_email(),
+ 			.value = _information.email,
+@@ -174,7 +174,7 @@ not_null<RpWidget*> EditInformation::set
+ 		});
+ 	}
+ 	if (_invoice.isPhoneRequested) {
+-		_phone = add({
++		_phone = add(FieldConfig{
+ 			.type = FieldType::Phone,
+ 			.placeholder = tr::lng_payments_info_phone(),
+ 			.value = _information.phone,
+--- a/Telegram/SourceFiles/ui/boxes/edit_invite_link.cpp
++++ b/Telegram/SourceFiles/ui/boxes/edit_invite_link.cpp
+@@ -201,7 +201,7 @@ void EditInviteLinkBox(
+ 				: (state->expireValue < 0)
+ 				? (now - state->expireValue)
+ 				: (now + kDay);
+-			ChooseDateTimeBox(box, {
++			ChooseDateTimeBox(box, ChooseDateTimeBoxArgs{
+ 				.title = tr::lng_group_invite_expire_after(),
+ 				.submit = tr::lng_settings_save(),
+ 				.done = save,
+--- a/Telegram/SourceFiles/window/window_peer_menu.cpp
++++ b/Telegram/SourceFiles/window/window_peer_menu.cpp
+@@ -1021,7 +1021,7 @@ QPointer<Ui::RpWidget> ShowSendNowMessag
+ 		session->data().idsToItems(items),
+ 		TextWithTags());
+ 	if (!error.isEmpty()) {
+-		Ui::ShowMultilineToast({
++		Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 			.text = { error },
+ 		});
+ 		return { nullptr };
+--- a/Telegram/SourceFiles/window/window_session_controller.cpp
++++ b/Telegram/SourceFiles/window/window_session_controller.cpp
+@@ -159,7 +159,7 @@ void SessionNavigation::resolveChannelBy
+ 		return;
+ 	}
+ 	const auto fail = [=] {
+-		Ui::ShowMultilineToast({
++		Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 			.text = { tr::lng_error_post_link_invalid(tr::now) }
+ 		});
+ 	};
+@@ -199,7 +199,7 @@ void SessionNavigation::showPeerByLinkRe
+ 
+ 		// Then try to join the voice chat.
+ 		const auto bad = [=] {
+-			Ui::ShowMultilineToast({
++			Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 				.text = { tr::lng_group_invite_bad_link(tr::now) }
+ 			});
+ 		};
+--- a/Telegram/lib_base/base/global_shortcuts_generic.cpp
++++ b/Telegram/lib_base/base/global_shortcuts_generic.cpp
+@@ -105,7 +105,10 @@ GlobalShortcutManagerGeneric::GlobalShor
+ 
+ GlobalShortcutManagerGeneric::~GlobalShortcutManagerGeneric() {
+ 	std::unique_lock lock{ GlobalMutex };
+-	Managers.erase(ranges::remove(Managers, not_null{ this }), end(Managers));
++	Managers.erase(ranges::remove(
++		Managers,
++		not_null<GlobalShortcutManagerGeneric*>{ this }),
++		end(Managers));
+ 	const auto stop = Managers.empty();
+ 	lock.unlock();
+ 

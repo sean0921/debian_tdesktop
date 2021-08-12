@@ -3,7 +3,12 @@ Disable-register-custom-scheme.patch
 Do-not-sync-wallpaper.patch
 Exclude-QWaylandXdgShellIntegration.patch
 Ignore-emoji-pack.patch
+Missing-includes.patch
 No-random-popups.patch
 Packed-resources.patch
+Really-disable-crash-reports.patch
 Skip-jemalloc.patch
 Skip-RNNoise.patch
+Backport-to-ancient-GCC.patch
+Backport-to-legacy-GSL.patch
+Backport-to-stable-Qt.patch

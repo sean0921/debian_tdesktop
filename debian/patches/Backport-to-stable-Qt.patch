@@ -1,0 +1,552 @@
+Description: Conditional build against old Qt versions.
+ Some features of the app work only with most recent Qt. That means custom
+ window frame and Wayland integration are not available in backports-sloppy.
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
+
+--- a/Telegram/SourceFiles/api/api_media.cpp
++++ b/Telegram/SourceFiles/api/api_media.cpp
+@@ -72,6 +72,20 @@ MTPVector<MTPDocumentAttribute> ComposeS
+ 	return MTP_vector<MTPDocumentAttribute>(attributes);
+ }
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
++#define ranges_to_QVector ranges::to<QVector>
++#else  // Qt >= 5.14
++template<typename T>
++QVector<T> ranges_to_QVector(const std::vector<T>& data) {
++	QVector<T> result;
++	result.reserve(data.size());
++	for (const T& el : data) {
++		result.append(el);
++	}
++	return result;
++}
++#endif  // Qt >= 5.14
++
+ } // namespace
+ 
+ MTPInputMedia PrepareUploadedPhoto(
+@@ -83,7 +97,7 @@ MTPInputMedia PrepareUploadedPhoto(
+ 	return MTP_inputMediaUploadedPhoto(
+ 		MTP_flags(flags),
+ 		file,
+-		MTP_vector<MTPInputDocument>(ranges::to<QVector>(attachedStickers)),
++		MTP_vector<MTPInputDocument>(ranges_to_QVector(attachedStickers)),
+ 		MTP_int(0));
+ }
+ 
+@@ -108,7 +122,7 @@ MTPInputMedia PrepareUploadedDocument(
+ 		thumb.value_or(MTPInputFile()),
+ 		MTP_string(document->mimeString()),
+ 		ComposeSendingDocumentAttributes(document),
+-		MTP_vector<MTPInputDocument>(ranges::to<QVector>(attachedStickers)),
++		MTP_vector<MTPInputDocument>(ranges_to_QVector(attachedStickers)),
+ 		MTP_int(0));
+ }
+ 
+--- a/Telegram/SourceFiles/calls/group/calls_group_panel.cpp
++++ b/Telegram/SourceFiles/calls/group/calls_group_panel.cpp
+@@ -794,7 +794,11 @@ void Panel::setupMembers() {
+ void Panel::enlargeVideo() {
+ 	_lastSmallGeometry = window()->geometry();
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 	const auto available = window()->screen()->availableGeometry();
++#else  // Qt >= 5.14
++	const auto available = window()->windowHandle()->screen()->availableGeometry();
++#endif  // Qt >= 5.14
+ 	const auto width = std::max(
+ 		window()->width(),
+ 		std::max(
+@@ -841,7 +845,11 @@ void Panel::minimizeVideo() {
+ 		_lastLargeMaximized = false;
+ 		_lastLargeGeometry = window()->geometry();
+ 	}
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 	const auto available = window()->screen()->availableGeometry();
++#else  // Qt >= 5.14
++	const auto available = window()->windowHandle()->screen()->availableGeometry();
++#endif  // Qt >= 5.14
+ 	const auto width = st::groupCallWidth;
+ 	const auto height = st::groupCallHeight;
+ 	auto geometry = QRect(
+--- a/Telegram/SourceFiles/editor/editor_crop.cpp
++++ b/Telegram/SourceFiles/editor/editor_crop.cpp
+@@ -141,7 +141,11 @@ void Crop::setCropPaint(QRectF &&rect) {
+ 
+ 	updateEdges();
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(5, 13, 0)
+ 	_painterPath.clear();
++#else  // Qt >= 5.13
++	_painterPath = QPainterPath();
++#endif  // Qt >= 5.13
+ 	_painterPath.addRect(_innerRect);
+ 	if (_data.cropType == EditorData::CropType::Ellipse) {
+ 		_painterPath.addEllipse(_cropPaint);
+--- a/Telegram/SourceFiles/media/view/media_view_pip.cpp
++++ b/Telegram/SourceFiles/media/view/media_view_pip.cpp
+@@ -672,12 +672,14 @@ void PipPanel::handleMouseMove(QPoint po
+ void PipPanel::startSystemDrag() {
+ 	Expects(_dragState.has_value());
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+ 	const auto stateEdges = RectPartToQtEdges(*_dragState);
+ 	if (stateEdges) {
+ 		widget()->windowHandle()->startSystemResize(stateEdges);
+ 	} else {
+ 		widget()->windowHandle()->startSystemMove();
+ 	}
++#endif  // Qt >= 5.15
+ }
+ 
+ void PipPanel::processDrag(QPoint point) {
+--- a/Telegram/SourceFiles/payments/payments_form.cpp
++++ b/Telegram/SourceFiles/payments/payments_form.cpp
+@@ -503,7 +503,11 @@ void Form::fillPaymentMethodInformation(
+ 
+ void Form::fillStripeNativeMethod(QJsonObject object) {
+ 	const auto value = [&](QStringView key) {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 		return object.value(key);
++#else  // Qt >= 5.14
++		return object.value(key.toString());
++#endif  // Qt >= 5.14
+ 	};
+ 	const auto key = value(u"publishable_key").toString();
+ 	if (key.isEmpty()) {
+@@ -525,7 +529,11 @@ void Form::fillStripeNativeMethod(QJsonO
+ 
+ void Form::fillSmartGlocalNativeMethod(QJsonObject object) {
+ 	const auto value = [&](QStringView key) {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 		return object.value(key);
++#else  // Qt >= 5.14
++		return object.value(key.toString());
++#endif  // Qt >= 5.14
+ 	};
+ 	const auto key = value(u"public_token").toString();
+ 	if (key.isEmpty()) {
+--- a/Telegram/SourceFiles/payments/smartglocal/smartglocal_card.cpp
++++ b/Telegram/SourceFiles/payments/smartglocal/smartglocal_card.cpp
+@@ -26,7 +26,11 @@ Card Card::Empty() {
+ 
+ Card Card::DecodedObjectFromAPIResponse(QJsonObject object) {
+ 	const auto string = [&](QStringView key) {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 		return object.value(key).toString();
++#else  // Qt >= 5.14
++		return object.value(key.toString()).toString();
++#endif  // Qt >= 5.14
+ 	};
+ 	const auto type = string(u"card_type");
+ 	const auto network = string(u"card_network");
+--- a/Telegram/SourceFiles/payments/smartglocal/smartglocal_error.cpp
++++ b/Telegram/SourceFiles/payments/smartglocal/smartglocal_error.cpp
+@@ -44,7 +44,11 @@ Error Error::DecodedObjectFromResponse(Q
+ 	}
+ 	const auto error = entry.toObject();
+ 	const auto string = [&](QStringView key) {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 		return error.value(key).toString();
++#else  // Qt >= 5.14
++		return error.value(key.toString()).toString();
++#endif  // Qt >= 5.14
+ 	};
+ 	const auto code = string(u"code");
+ 	const auto description = string(u"description");
+--- a/Telegram/SourceFiles/payments/stripe/stripe_card.cpp
++++ b/Telegram/SourceFiles/payments/stripe/stripe_card.cpp
+@@ -73,7 +73,11 @@ Card Card::DecodedObjectFromAPIResponse(
+ 	}
+ 
+ 	const auto string = [&](QStringView key) {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 		return object.value(key).toString();
++#else  // Qt >= 5.14
++		return object.value(key.toString()).toString();
++#endif  // Qt >= 5.14
+ 	};
+ 	const auto cardId = string(u"id");
+ 	const auto last4 = string(u"last4");
+--- a/Telegram/SourceFiles/payments/stripe/stripe_decode.cpp
++++ b/Telegram/SourceFiles/payments/stripe/stripe_decode.cpp
+@@ -13,9 +13,12 @@ namespace Stripe {
+ 		const QJsonObject &object,
+ 		std::vector<QStringView> keys) {
+ 	for (const auto &key : keys) {
+-		if (object.value(key).isUndefined()) {
+-			return false;
+-		}
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
++		bool fail = object.value(key).isUndefined();
++#else  // Qt >= 5.14
++		bool fail = object.value(key.toString()).isUndefined();
++#endif  // Qt >= 5.14
++		if (fail) return false;
+ 	}
+ 	return true;
+ }
+--- a/Telegram/SourceFiles/payments/stripe/stripe_error.cpp
++++ b/Telegram/SourceFiles/payments/stripe/stripe_error.cpp
+@@ -38,7 +38,11 @@ Error Error::DecodedObjectFromResponse(Q
+ 	}
+ 	const auto error = entry.toObject();
+ 	const auto string = [&](QStringView key) {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 		return error.value(key).toString();
++#else  // Qt >= 5.14
++		return error.value(key.toString()).toString();
++#endif  // Qt >= 5.14
+ 	};
+ 	const auto type = string(u"type");
+ 	const auto message = string(u"message");
+@@ -54,9 +58,12 @@ Error Error::DecodedObjectFromResponse(Q
+ 		};
+ 	}
+ 
+-	auto parameterWords = parameterSnakeCase.isEmpty()
+-		? QStringList()
+-		: parameterSnakeCase.split('_', Qt::SkipEmptyParts);
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
++	auto parameterWords = parameterSnakeCase.split('_', Qt::SkipEmptyParts);
++#else  // Qt >= 5.14
++	auto parameterWords = parameterSnakeCase.split('_');
++	parameterWords.removeAll("");
++#endif  // Qt >= 5.14
+ 	auto first = true;
+ 	for (auto &word : parameterWords) {
+ 		if (first) {
+--- a/Telegram/SourceFiles/platform/linux/launcher_linux.cpp
++++ b/Telegram/SourceFiles/platform/linux/launcher_linux.cpp
+@@ -76,7 +76,9 @@ int Launcher::exec() {
+ }
+ 
+ void Launcher::initHook() {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 	QApplication::setAttribute(Qt::AA_DisableSessionManager, true);
++#endif  // Qt >= 5.14
+ 	QApplication::setDesktopFileName([] {
+ 		if (!Core::UpdaterDisabled() && !cExeName().isEmpty()) {
+ 			const auto appimagePath = qsl("file://%1%2").arg(
+--- a/Telegram/SourceFiles/ui/widgets/separate_panel.cpp
++++ b/Telegram/SourceFiles/ui/widgets/separate_panel.cpp
+@@ -589,12 +589,11 @@ void SeparatePanel::mousePressEvent(QMou
+ 		st::separatePanelTitleHeight);
+ 	if (e->button() == Qt::LeftButton) {
+ 		if (dragArea.contains(e->pos())) {
+-			const auto dragViaSystem = [&] {
+-				if (windowHandle()->startSystemMove()) {
+-					return true;
+-				}
+-				return false;
+-			}();
++#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
++			bool dragViaSystem = windowHandle()->startSystemMove();
++#else  // Qt >= 5.15
++			bool dragViaSystem = false;
++#endif  // Qt >= 5.15
+ 			if (!dragViaSystem) {
+ 				_dragging = true;
+ 				_dragStartMousePosition = e->globalPos();
+--- a/Telegram/lib_base/base/platform/linux/base_linux_gtk_integration.cpp
++++ b/Telegram/lib_base/base/platform/linux/base_linux_gtk_integration.cpp
+@@ -99,6 +99,7 @@ std::optional<T> GtkSetting(const QStrin
+ bool IconThemeShouldBeSet() {
+ 	// change the icon theme only if
+ 	// it isn't already set by a platformtheme plugin
++#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
+ 	static const auto Result =
+ 		// QGenericUnixTheme
+ 		(QIcon::themeName() == qstr("hicolor")
+@@ -109,6 +110,12 @@ bool IconThemeShouldBeSet() {
+ 		// qt5ct
+ 		|| (QIcon::themeName().isEmpty()
+ 			&& QIcon::fallbackThemeName().isEmpty());
++#else  // Qt >= 5.12
++	static const bool Result =
++		QIcon::themeName() == qstr("hicolor")
++		|| QIcon::themeName() == qstr("Adwaita")
++		|| QIcon::themeName().isEmpty();
++#endif  // Qt >= 5.12
+ 
+ 	return Result;
+ }
+@@ -141,12 +148,16 @@ void SetIconTheme() {
+ 		DEBUG_LOG(("Setting GTK icon theme"));
+ 
+ 		QIcon::setThemeName(*themeName);
++#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
+ 		QIcon::setFallbackThemeName(*fallbackThemeName);
++#endif  // Qt >= 5.12
+ 
+ 		DEBUG_LOG(("New icon theme: %1").arg(QIcon::themeName()));
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
+ 		DEBUG_LOG(("New fallback icon theme: %1")
+ 			.arg(QIcon::fallbackThemeName()));
++#endif  // Qt >= 5.12
+ 	};
+ 
+ 	if (QCoreApplication::instance()) {
+@@ -474,7 +485,9 @@ void GtkIntegration::load(const QString
+ 
+ 	DEBUG_LOG(("Loading GTK"));
+ 	DEBUG_LOG(("Icon theme: %1").arg(QIcon::themeName()));
++#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
+ 	DEBUG_LOG(("Fallback icon theme: %1").arg(QIcon::fallbackThemeName()));
++#endif  // Qt >= 5.12
+ 
+ 	if (LoadGtkLibrary(_lib, "gtk-3", 0)) {
+ 		_private->loaded = _private->setupBase(_lib, allowedBackends);
+--- a/Telegram/lib_base/base/platform/linux/base_url_scheme_linux.cpp
++++ b/Telegram/lib_base/base/platform/linux/base_url_scheme_linux.cpp
+@@ -115,6 +115,98 @@ void SnapDefaultHandler(const QString &p
+ }
+ #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
++#define QProcess_splitCommand QProcess::splitCommand
++#else  // Qt >= 5.15
++/****************************************************************************
++**
++** Copyright (C) 2016 The Qt Company Ltd.
++** Copyright (C) 2016 Intel Corporation.
++** Contact: https://www.qt.io/licensing/
++**
++** This file is part of the QtCore module of the Qt Toolkit.
++**
++** $QT_BEGIN_LICENSE:LGPL$
++** Commercial License Usage
++** Licensees holding valid commercial Qt licenses may use this file in
++** accordance with the commercial license agreement provided with the
++** Software or, alternatively, in accordance with the terms contained in
++** a written agreement between you and The Qt Company. For licensing terms
++** and conditions see https://www.qt.io/terms-conditions. For further
++** information use the contact form at https://www.qt.io/contact-us.
++**
++** GNU Lesser General Public License Usage
++** Alternatively, this file may be used under the terms of the GNU Lesser
++** General Public License version 3 as published by the Free Software
++** Foundation and appearing in the file LICENSE.LGPL3 included in the
++** packaging of this file. Please review the following information to
++** ensure the GNU Lesser General Public License version 3 requirements
++** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
++**
++** GNU General Public License Usage
++** Alternatively, this file may be used under the terms of the GNU
++** General Public License version 2.0 or (at your option) the GNU General
++** Public license version 3 or any later version approved by the KDE Free
++** Qt Foundation. The licenses are as published by the Free Software
++** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
++** included in the packaging of this file. Please review the following
++** information to ensure the GNU General Public License requirements will
++** be met: https://www.gnu.org/licenses/gpl-2.0.html and
++** https://www.gnu.org/licenses/gpl-3.0.html.
++**
++** $QT_END_LICENSE$
++**
++****************************************************************************/
++/*!
++    \since 5.15
++
++    Splits the string \a command into a list of tokens, and returns
++    the list.
++
++    Tokens with spaces can be surrounded by double quotes; three
++    consecutive double quotes represent the quote character itself.
++*/
++QStringList QProcess_splitCommand(QStringView command)
++{
++    QStringList args;
++    QString tmp;
++    int quoteCount = 0;
++    bool inQuote = false;
++
++    // handle quoting. tokens can be surrounded by double quotes
++    // "hello world". three consecutive double quotes represent
++    // the quote character itself.
++    for (int i = 0; i < command.size(); ++i) {
++        if (command.at(i) == QLatin1Char('"')) {
++            ++quoteCount;
++            if (quoteCount == 3) {
++                // third consecutive quote
++                quoteCount = 0;
++                tmp += command.at(i);
++            }
++            continue;
++        }
++        if (quoteCount) {
++            if (quoteCount == 1)
++                inQuote = !inQuote;
++            quoteCount = 0;
++        }
++        if (!inQuote && command.at(i).isSpace()) {
++            if (!tmp.isEmpty()) {
++                args += tmp;
++                tmp.clear();
++            }
++        } else {
++            tmp += command.at(i);
++        }
++    }
++    if (!tmp.isEmpty())
++        args += tmp;
++
++    return args;
++}
++#endif  // Qt >= 5.15
++
+ } // namespace
+ 
+ bool CheckUrlScheme(const UrlSchemeDescriptor &descriptor) {
+@@ -123,7 +215,7 @@ bool CheckUrlScheme(const UrlSchemeDescr
+ 			.arg(descriptor.protocol);
+ 
+ 		QByteArray escapedArguments;
+-		for (const auto &arg : QProcess::splitCommand(descriptor.arguments)) {
++		for (const auto &arg : QProcess_splitCommand(descriptor.arguments)) {
+ 			escapedArguments += ' ' + EscapeShell(QFile::encodeName(arg));
+ 		}
+ 
+@@ -166,7 +258,7 @@ void RegisterUrlScheme(const UrlSchemeDe
+ 			.arg(descriptor.protocol);
+ 
+ 		QByteArray escapedArguments;
+-		for (const auto &arg : QProcess::splitCommand(descriptor.arguments)) {
++		for (const auto &arg : QProcess_splitCommand(descriptor.arguments)) {
+ 			escapedArguments += ' ' + EscapeShell(QFile::encodeName(arg));
+ 		}
+ 
+@@ -193,7 +285,7 @@ void UnregisterUrlScheme(const UrlScheme
+ 		.arg(descriptor.protocol);
+ 
+ 	QByteArray escapedArguments;
+-	for (const auto &arg : QProcess::splitCommand(descriptor.arguments)) {
++	for (const auto &arg : QProcess_splitCommand(descriptor.arguments)) {
+ 		escapedArguments += ' ' + EscapeShell(QFile::encodeName(arg));
+ 	}
+ 
+--- a/Telegram/lib_ui/ui/platform/ui_platform_window.cpp
++++ b/Telegram/lib_ui/ui/platform/ui_platform_window.cpp
+@@ -132,7 +132,9 @@ void BasicWindowHelper::setupBodyTitleAr
+ 				}
+ #endif // Q_OS_WIN
+ 				_mousePressed = false;
++#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+ 				_window->windowHandle()->startSystemMove();
++#endif  // Qt >= 5.15
+ 			}
+ 		}
+ 	}, body()->lifetime());
+@@ -181,9 +183,15 @@ void DefaultWindowHelper::init() {
+ 			bool titleShown) {
+ 		const auto area = resizeArea();
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 		const auto sizeWithoutMargins = size
+ 			.shrunkBy({ 0, titleShown ? titleHeight : 0, 0, 0 })
+ 			.shrunkBy(area);
++#else  // Qt >= 5.14
++		const QSize sizeWithoutMargins(
++			size.width() - area.left() - area.right(),
++			size.height() - area.top() - area.bottom() - (titleShown ? titleHeight : 0));
++#endif  // Qt >= 5.14
+ 
+ 		const auto topLeft = QPoint(
+ 			area.left(),
+@@ -224,6 +232,7 @@ void DefaultWindowHelper::init() {
+ 
+ 	window()->events() | rpl::start_with_next([=](not_null<QEvent*> e) {
+ 		if (e->type() == QEvent::MouseButtonPress) {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+ 			const auto mouseEvent = static_cast<QMouseEvent*>(e.get());
+ 			const auto currentPoint = mouseEvent->windowPos().toPoint();
+ 			const auto edges = edgesFromPos(currentPoint);
+@@ -231,6 +240,7 @@ void DefaultWindowHelper::init() {
+ 			if (mouseEvent->button() == Qt::LeftButton && edges) {
+ 				window()->windowHandle()->startSystemResize(edges);
+ 			}
++#endif  // Qt >= 5.15
+ 		} else if (e->type() == QEvent::WindowStateChange) {
+ 			_windowState = window()->windowState();
+ 		}
+@@ -335,12 +345,26 @@ void DefaultWindowHelper::setNativeFrame
+ }
+ 
+ void DefaultWindowHelper::setMinimumSize(QSize size) {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 	const auto sizeWithMargins = size.grownBy(bodyPadding());
++#else  // Qt >= 5.14
++	const QMargins pad = bodyPadding();
++	const QSize sizeWithMargins(
++		size.width() + pad.left() + pad.right(),
++		size.height() + pad.top() + pad.bottom());
++#endif  // Qt >= 5.14
+ 	window()->setMinimumSize(sizeWithMargins);
+ }
+ 
+ void DefaultWindowHelper::setFixedSize(QSize size) {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+ 	const auto sizeWithMargins = size.grownBy(bodyPadding());
++#else  // Qt >= 5.14
++	const QMargins pad = bodyPadding();
++	const QSize sizeWithMargins(
++		size.width() + pad.left() + pad.right(),
++		size.height() + pad.top() + pad.bottom());
++#endif  // Qt >= 5.14
+ 	window()->setFixedSize(sizeWithMargins);
+ 	_title->setResizeEnabled(false);
+ }
+--- a/Telegram/lib_ui/ui/platform/ui_platform_window_title.cpp
++++ b/Telegram/lib_ui/ui/platform/ui_platform_window_title.cpp
+@@ -368,9 +368,11 @@ void DefaultTitleWidget::mouseReleaseEve
+ }
+ 
+ void DefaultTitleWidget::mouseMoveEvent(QMouseEvent *e) {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+ 	if (_mousePressed) {
+ 		window()->windowHandle()->startSystemMove();
+ 	}
++#endif  // Qt >= 5.15
+ }
+ 
+ void DefaultTitleWidget::mouseDoubleClickEvent(QMouseEvent *e) {
+--- a/Telegram/lib_ui/ui/text/qtextitemint.cpp
++++ b/Telegram/lib_ui/ui/text/qtextitemint.cpp
+@@ -6,6 +6,7 @@
+ //
+ #include <private/qtextengine_p.h>
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+ QTextItemInt::QTextItemInt(
+ 	const QGlyphLayout &g,
+ 	QFont *font,
+@@ -20,6 +21,26 @@ QTextItemInt::QTextItemInt(
+ , glyphs(g)
+ , fontEngine(fe) {
+ }
++#else  // Qt >= 5.15
++QTextItemInt::QTextItemInt(
++	const QGlyphLayout &g,
++	QFont *font,
++	const QChar *chars_,
++	int numChars,
++	QFontEngine *fe,
++	const QTextCharFormat &format)
++: flags(0)
++, justified(false)
++, underlineStyle(QTextCharFormat::NoUnderline)
++, charFormat(format)
++, num_chars(numChars)
++, chars(chars_)
++, logClusters(nullptr)
++, f(font)
++, glyphs(g)
++, fontEngine(fe) {
++}
++#endif  // Qt >= 5.15
+ 
+ void QTextItemInt::initWithScriptItem(const QScriptItem &si) {
+ 	// explicitly initialize flags so that initFontAttributes can be called

@@ -1,0 +1,57 @@
+Description: Exclude crash reports by means of macro
+ Thanks to this I do not worry about backporting eliminated code.
+Forwarded: https://github.com/telegramdesktop/tdesktop/pull/16794
+Author: Nicholas Guriev <guriev-ns@ya.ru>
+Last-Update: Wed, 11 Aug 2021 11:42:33 +0300
+
+--- a/Telegram/SourceFiles/core/crash_report_window.cpp
++++ b/Telegram/SourceFiles/core/crash_report_window.cpp
+@@ -220,6 +220,7 @@ void NotStartedWindow::resizeEvent(QResi
+ 	_close.setGeometry(width() - padding - _close.width(), height() - padding - _close.height(), _close.width(), _close.height());
+ }
+ 
++#ifndef DESKTOP_APP_DISABLE_CRASH_REPORTS
+ LastCrashedWindow::UpdaterData::UpdaterData(QWidget *buttonParent)
+ : check(buttonParent)
+ , skip(buttonParent, false) {
+@@ -1179,3 +1180,4 @@ void NetworkSettingsWindow::updateContro
+ 		setGeometry(_parent->x() + (_parent->width() - w) / 2, _parent->y() + (_parent->height() - h) / 2, w, h);
+ 	}
+ }
++#endif  // !DESKTOP_APP_DISABLE_CRASH_REPORTS
+--- a/Telegram/SourceFiles/core/crash_report_window.h
++++ b/Telegram/SourceFiles/core/crash_report_window.h
+@@ -91,6 +91,7 @@ private:
+ 
+ };
+ 
++#ifndef DESKTOP_APP_DISABLE_CRASH_REPORTS
+ class LastCrashedWindow : public PreLaunchWindow {
+ 
+ public:
+@@ -216,3 +217,4 @@ private:
+ 	rpl::event_stream<MTP::ProxyData> _saveRequests;
+ 
+ };
++#endif  // !DESKTOP_APP_DISABLE_CRASH_REPORTS
+--- a/Telegram/SourceFiles/core/sandbox.cpp
++++ b/Telegram/SourceFiles/core/sandbox.cpp
+@@ -319,6 +319,8 @@ void Sandbox::singleInstanceChecked() {
+ 		new NotStartedWindow();
+ 		return;
+ 	}
++
++#ifndef DESKTOP_APP_DISABLE_CRASH_REPORTS
+ 	const auto result = CrashReports::Start();
+ 	v::match(result, [&](CrashReports::Status status) {
+ 		if (status == CrashReports::CantOpen) {
+@@ -348,6 +350,9 @@ void Sandbox::singleInstanceChecked() {
+ 			refreshGlobalProxy();
+ 		}, window->lifetime());
+ 	});
++#else  // !DESKTOP_APP_DISABLE_CRASH_REPORTS
++	launchApplication();
++#endif  // !DESKTOP_APP_DISABLE_CRASH_REPORTS
+ }
+ 
+ void Sandbox::socketDisconnected() {
