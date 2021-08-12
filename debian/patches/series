@@ -2,6 +2,7 @@ Advise-Open-Sans.patch
 Disable-register-custom-scheme.patch
 Do-not-sync-wallpaper.patch
 Exclude-QWaylandXdgShellIntegration.patch
+Ignore-emoji-pack.patch
 No-random-popups.patch
 Packed-resources.patch
 Skip-jemalloc.patch
