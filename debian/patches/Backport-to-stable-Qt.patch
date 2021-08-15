@@ -71,6 +71,25 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  	const auto width = st::groupCallWidth;
  	const auto height = st::groupCallHeight;
  	auto geometry = QRect(
+--- a/Telegram/SourceFiles/core/core_settings.h
++++ b/Telegram/SourceFiles/core/core_settings.h
+@@ -513,10 +513,16 @@ public:
+ 		return _notifyFromAll;
+ 	}
+ 	void setNativeWindowFrame(bool value) {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+ 		_nativeWindowFrame = value;
++#endif  // Qt >= 5.15
+ 	}
+ 	[[nodiscard]] bool nativeWindowFrame() const {
++#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+ 		return _nativeWindowFrame.current();
++#else  // Qt >= 5.15
++		return true;
++#endif  // Qt >= 5.15
+ 	}
+ 	[[nodiscard]] rpl::producer<bool> nativeWindowFrameChanges() const {
+ 		return _nativeWindowFrame.changes();
 --- a/Telegram/SourceFiles/editor/editor_crop.cpp
 +++ b/Telegram/SourceFiles/editor/editor_crop.cpp
 @@ -141,7 +141,11 @@ void Crop::setCropPaint(QRectF &&rect) {
@@ -230,6 +249,24 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  	QApplication::setDesktopFileName([] {
  		if (!Core::UpdaterDisabled() && !cExeName().isEmpty()) {
  			const auto appimagePath = qsl("file://%1%2").arg(
+--- a/Telegram/SourceFiles/settings/settings_advanced.cpp
++++ b/Telegram/SourceFiles/settings/settings_advanced.cpp
+@@ -406,6 +406,7 @@ void SetupSystemIntegrationContent(
+ 			}, taskbar->lifetime());
+ 		}
+ 	}
++#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+ 	if (Ui::Platform::NativeWindowFrameSupported()) {
+ 		const auto nativeFrame = addCheckbox(
+ 			tr::lng_settings_native_frame(),
+@@ -419,6 +420,7 @@ void SetupSystemIntegrationContent(
+ 			Core::App().saveSettingsDelayed();
+ 		}, nativeFrame->lifetime());
+ 	}
++#endif  // Qt >= 5.15
+ 	if (Platform::AutostartSupported() && controller) {
+ 		const auto minimizedToggled = [=] {
+ 			return cStartMinimized()
 --- a/Telegram/SourceFiles/ui/widgets/separate_panel.cpp
 +++ b/Telegram/SourceFiles/ui/widgets/separate_panel.cpp
 @@ -589,12 +589,11 @@ void SeparatePanel::mousePressEvent(QMou
