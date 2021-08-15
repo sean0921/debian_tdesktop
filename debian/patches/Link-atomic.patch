@@ -1,0 +1,27 @@
+Subject: Link against libatomic from GCC to fix build for 64-bit RISC-V
+Origin: commit:cf40d1e4b8cbe9a51e55d1acd590f087d535626e
+Forwarded: https://github.com/desktop-app/cmake_helpers/pull/90
+From: Nicholas Guriev <nicholas@guriev.su>
+Date: Tue, 20 Apr 2021 19:12:34 +0300
+Last-Update: Sun, 15 Aug 2021 22:05:12 +0300
+
+---
+ options_linux.cmake | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/options_linux.cmake b/options_linux.cmake
+index d586e79..8d50e82 100644
+--- a/cmake/options_linux.cmake
++++ b/cmake/options_linux.cmake
+@@ -49,9 +49,9 @@ if (DESKTOP_APP_SPECIAL_TARGET)
+ endif()
+ 
+ if (DESKTOP_APP_USE_PACKAGED)
+-    find_library(ATOMIC_LIBRARY atomic)
++    set(ATOMIC_LIBRARY atomic)
+ else()
+-    find_library(ATOMIC_LIBRARY libatomic.a)
++    set(ATOMIC_LIBRARY libatomic.a)
+ endif()
+ 
+ if (ATOMIC_LIBRARY)
