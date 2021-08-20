@@ -1,3 +1,14 @@
+telegram-desktop (2.9.2+ds-1) unstable; urgency=medium
+
+  * Upload to unstable.
+  * New upstream release.
+  * Put all backporting patches to the master branch.
+  * Pass the -latomic flag to linker via CMake scripts, not the LDFLAGS
+    environment variable. This should really fix build for RISC-V 64-bit.
+  * Bump Standards-Version to 4.6.0, no related changes.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Fri, 20 Aug 2021 09:04:06 +0300
+
 telegram-desktop (2.9.0+ds1-2) experimental; urgency=medium
 
   * Repack upstream source changing suffix for one time.
