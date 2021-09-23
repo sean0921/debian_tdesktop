@@ -10,6 +10,8 @@ EXTRA_CMAKE_VARIABLES += \
 	CMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON \
 	CMAKE_STATIC_LINKER_FLAGS='-T'
 
+DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
 # Reveal any errors with pre-compiled headers.
 DEB_CPPFLAGS_MAINT_APPEND += -Werror=invalid-pch
 
@@ -36,23 +38,26 @@ endif
 ifeq ($(DEB_HOST_ARCH_BITS),32)
  # Less debug info by default to fit small address space.
  ifneq ($(filter -g,$(CXXFLAGS)),)
-  export DEB_CXXFLAGS_MAINT_STRIP = -g
-  export DEB_CXXFLAGS_MAINT_PREPEND = -g1
+  DEB_CXXFLAGS_MAINT_STRIP = -g
+  DEB_CXXFLAGS_MAINT_PREPEND = -g1
  endif
  # Attempt to reduce RAM consumption even more.
- export DEB_LDFLAGS_MAINT_APPEND = -Wl,--no-keep-memory
+ DEB_LDFLAGS_MAINT_APPEND = -Wl,--no-keep-memory
 endif
 
 CPPLIBS_PACKAGES = libexpected-dev libmsgsl-dev librange-v3-dev libtgowt-dev
 EXTRA_SUBSTVARS += \
 	cpplibs:Built-Using=$(shell dpkg-query -Wf '$${source:Package}(=$${Version}),' $(CPPLIBS_PACKAGES))
 
-export DEB_BUILD_MAINT_OPTIONS = hardening=+all
-export DEB_CPPFLAGS_MAINT_APPEND DEB_CXXFLAGS_MAINT_APPEND
+# Make visible all possible maintainer's flags.
+export DEB_BUILD_MAINT_OPTIONS $(foreach flag,$(DPKG_BUILDFLAGS_LIST),\
+	$(foreach operation,STRIP APPEND PREPEND,DEB_$(flag)_MAINT_$(operation)))
 
 # Make debugging a little easier. https://stackoverflow.com/a/25817631/5000805
+# Print also export line if the variable is being exported.
 print-%:
 	@echo $* = $($*)
+	@env | sed '/^\($*\)=.*/s//export \1/;t;d'
 
 %:
 	dh $@
