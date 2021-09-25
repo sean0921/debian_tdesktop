@@ -1,87 +1,17 @@
-Description: Include missing headers in payments/ directory
-Forwarded: https://github.com/telegramdesktop/tdesktop/pull/16793
+Description: Include a missing header in the codegen subproject
+Forwarded: https://github.com/desktop-app/codegen/pull/11
 Author: Nicholas Guriev <guriev-ns@ya.ru>
-Last-Update: Wed, 11 Aug 2021 11:42:33 +0300
+Last-Update: Thu, 25 Sep 2021 18:13:01 +0300
 
---- a/Telegram/SourceFiles/payments/smartglocal/smartglocal_api_client.h
-+++ b/Telegram/SourceFiles/payments/smartglocal/smartglocal_api_client.h
-@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesk
- #include <QtNetwork/QNetworkAccessManager>
+--- a/Telegram/codegen/codegen/emoji/options.h
++++ b/Telegram/codegen/codegen/emoji/options.h
+@@ -6,8 +6,8 @@
+ //
+ #pragma once
+ 
++#include <vector>
  #include <QtCore/QString>
- #include <map>
-+#include <memory>
+-#include <QtCore/QStringList>
  
- namespace SmartGlocal {
- 
---- a/Telegram/SourceFiles/payments/smartglocal/smartglocal_callbacks.h
-+++ b/Telegram/SourceFiles/payments/smartglocal/smartglocal_callbacks.h
-@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesk
- */
- #pragma once
- 
-+#include <functional>
-+
- namespace SmartGlocal {
- 
- class Token;
---- a/Telegram/SourceFiles/payments/smartglocal/smartglocal_card.cpp
-+++ b/Telegram/SourceFiles/payments/smartglocal/smartglocal_card.cpp
-@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesk
- */
- #include "smartglocal/smartglocal_card.h"
- 
-+#include <QRegularExpression>
-+
- namespace SmartGlocal {
- 
- Card::Card(
---- a/Telegram/SourceFiles/payments/stripe/stripe_api_client.h
-+++ b/Telegram/SourceFiles/payments/stripe/stripe_api_client.h
-@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesk
- #include <QtNetwork/QNetworkAccessManager>
- #include <QtCore/QString>
- #include <map>
-+#include <memory>
- 
- namespace Stripe {
- 
---- a/Telegram/SourceFiles/payments/stripe/stripe_card_validator.cpp
-+++ b/Telegram/SourceFiles/payments/stripe/stripe_card_validator.cpp
-@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesk
- #include "stripe/stripe_card_validator.h"
- 
- #include <QtCore/QDate>
-+#include <QtCore/QRegularExpression>
- 
- namespace Stripe {
- namespace {
---- a/Telegram/SourceFiles/payments/stripe/stripe_card_validator.h
-+++ b/Telegram/SourceFiles/payments/stripe/stripe_card_validator.h
-@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesk
- #pragma once
- 
- #include "stripe/stripe_card.h"
-+#include <vector>
- 
- namespace Stripe {
- 
---- a/Telegram/SourceFiles/payments/stripe/stripe_decode.h
-+++ b/Telegram/SourceFiles/payments/stripe/stripe_decode.h
-@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesk
- #pragma once
- 
- #include <QtCore/QJsonObject>
-+#include <vector>
- 
- namespace Stripe {
- 
---- a/Telegram/SourceFiles/payments/stripe/stripe_form_encoder.cpp
-+++ b/Telegram/SourceFiles/payments/stripe/stripe_form_encoder.cpp
-@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesk
- 
- #include <QStringList>
- #include <QUrl>
-+#include <vector>
- 
- namespace Stripe {
- 
+ namespace codegen {
+ namespace emoji {

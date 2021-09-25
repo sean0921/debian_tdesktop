@@ -5,7 +5,7 @@ Last-Update: Thu, 29 Jul 2021 22:17:46 +0300
 
 --- a/Telegram/SourceFiles/platform/linux/specific_linux.cpp
 +++ b/Telegram/SourceFiles/platform/linux/specific_linux.cpp
-@@ -53,6 +53,7 @@ https://github.com/telegramdesktop/tdesk
+@@ -64,6 +64,7 @@ https://github.com/telegramdesktop/tdesk
  #include <sys/sendfile.h>
  #endif // Q_OS_LINUX
  #include <cstdlib>
@@ -13,7 +13,7 @@ Last-Update: Thu, 29 Jul 2021 22:17:46 +0300
  #include <unistd.h>
  #include <dirent.h>
  #include <pwd.h>
-@@ -598,6 +599,47 @@ void HaikuAutostart(bool start) {
+@@ -618,6 +619,47 @@ void HaikuAutostart(bool start) {
  }
  #endif // __HAIKU__
  
@@ -61,7 +61,7 @@ Last-Update: Thu, 29 Jul 2021 22:17:46 +0300
  } // namespace
  
  QString psAppDataPath() {
-@@ -641,8 +683,10 @@ int psFixPrevious() {
+@@ -661,8 +703,10 @@ int psFixPrevious() {
  namespace Platform {
  
  void start() {
@@ -72,13 +72,13 @@ Last-Update: Thu, 29 Jul 2021 22:17:46 +0300
 +		mallctlLoaded("background_thread", nullptr, nullptr, &backgroundThread, sizeof(bool));
 +	}
  
- 	LOG(("Launcher filename: %1").arg(QGuiApplication::desktopFileName()));
- 
+ 	// Prevent any later calls into setlocale() by Qt
+ 	QCoreApplicationPrivate::initLocale();
 --- a/cmake/external/jemalloc/CMakeLists.txt
 +++ b/cmake/external/jemalloc/CMakeLists.txt
-@@ -7,12 +7,22 @@
- add_library(external_jemalloc INTERFACE IMPORTED GLOBAL)
- add_library(desktop-app::external_jemalloc ALIAS external_jemalloc)
+@@ -11,18 +11,28 @@ if (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD"
+     return()
+ endif()
  
 +set(DESKTOP_APP_REQUIRE_JEMALLOC ON CACHE BOOL "Always prefer jemalloc by FreeBSD or use system memory allocator?")
 +if (DESKTOP_APP_REQUIRE_JEMALLOC)
@@ -90,9 +90,21 @@ Last-Update: Thu, 29 Jul 2021 22:17:46 +0300
      pkg_check_modules(JEMALLOC IMPORTED_TARGET jemalloc)
  
      if (JEMALLOC_FOUND)
--        target_link_libraries(external_jemalloc INTERFACE PkgConfig::JEMALLOC)
+-        target_link_libraries(external_jemalloc
+-        INTERFACE
+-            -Wl,--no-as-needed
+-            PkgConfig::JEMALLOC
+-            ${JEMALLOC_LINK_LIBRARIES}
+-            -Wl,--as-needed
+-        )
 +        if (DESKTOP_APP_REQUIRE_JEMALLOC)
-+            target_link_libraries(external_jemalloc INTERFACE PkgConfig::JEMALLOC)
++            target_link_libraries(external_jemalloc
++            INTERFACE
++                -Wl,--no-as-needed
++                PkgConfig::JEMALLOC
++                ${JEMALLOC_LINK_LIBRARIES}
++                -Wl,--as-needed
++            )
 +        else()
 +            target_compile_definitions(external_jemalloc INTERFACE _GNU_SOURCE)
 +            target_compile_options(external_jemalloc INTERFACE ${JEMALLOC_CFLAGS})

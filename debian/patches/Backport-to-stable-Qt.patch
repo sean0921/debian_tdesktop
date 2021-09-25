@@ -47,7 +47,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  
 --- a/Telegram/SourceFiles/calls/group/calls_group_panel.cpp
 +++ b/Telegram/SourceFiles/calls/group/calls_group_panel.cpp
-@@ -794,7 +794,11 @@ void Panel::setupMembers() {
+@@ -805,7 +805,11 @@ void Panel::setupMembers() {
  void Panel::enlargeVideo() {
  	_lastSmallGeometry = window()->geometry();
  
@@ -59,7 +59,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  	const auto width = std::max(
  		window()->width(),
  		std::max(
-@@ -841,7 +845,11 @@ void Panel::minimizeVideo() {
+@@ -852,7 +856,11 @@ void Panel::minimizeVideo() {
  		_lastLargeMaximized = false;
  		_lastLargeGeometry = window()->geometry();
  	}
@@ -73,7 +73,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  	auto geometry = QRect(
 --- a/Telegram/SourceFiles/core/core_settings.h
 +++ b/Telegram/SourceFiles/core/core_settings.h
-@@ -513,10 +513,16 @@ public:
+@@ -518,10 +518,16 @@ public:
  		return _notifyFromAll;
  	}
  	void setNativeWindowFrame(bool value) {
@@ -239,7 +239,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		if (first) {
 --- a/Telegram/SourceFiles/platform/linux/launcher_linux.cpp
 +++ b/Telegram/SourceFiles/platform/linux/launcher_linux.cpp
-@@ -76,7 +76,9 @@ int Launcher::exec() {
+@@ -77,7 +77,9 @@ int Launcher::exec() {
  }
  
  void Launcher::initHook() {
@@ -249,24 +249,36 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  	QApplication::setDesktopFileName([] {
  		if (!Core::UpdaterDisabled() && !cExeName().isEmpty()) {
  			const auto appimagePath = qsl("file://%1%2").arg(
+--- a/Telegram/SourceFiles/platform/linux/specific_linux.cpp
++++ b/Telegram/SourceFiles/platform/linux/specific_linux.cpp
+@@ -859,7 +859,9 @@ namespace ThirdParty {
+ 
+ void start() {
+ 	LOG(("Icon theme: %1").arg(QIcon::themeName()));
++#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
+ 	LOG(("Fallback icon theme: %1").arg(QIcon::fallbackThemeName()));
++#endif  // Qt >= 5.12
+ 
+ 	// wait for interface announce to know if native window frame is supported
+ 	if (const auto integration = UiWaylandIntegration::Instance()) {
 --- a/Telegram/SourceFiles/settings/settings_advanced.cpp
 +++ b/Telegram/SourceFiles/settings/settings_advanced.cpp
-@@ -406,6 +406,7 @@ void SetupSystemIntegrationContent(
- 			}, taskbar->lifetime());
- 		}
+@@ -430,6 +430,7 @@ void SetupSystemIntegrationContent(
+ 		}, closeToTaskbar->lifetime());
  	}
+ 
 +#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
  	if (Ui::Platform::NativeWindowFrameSupported()) {
  		const auto nativeFrame = addCheckbox(
  			tr::lng_settings_native_frame(),
-@@ -419,6 +420,7 @@ void SetupSystemIntegrationContent(
+@@ -443,6 +444,7 @@ void SetupSystemIntegrationContent(
  			Core::App().saveSettingsDelayed();
  		}, nativeFrame->lifetime());
  	}
 +#endif  // Qt >= 5.15
+ 
  	if (Platform::AutostartSupported() && controller) {
  		const auto minimizedToggled = [=] {
- 			return cStartMinimized()
 --- a/Telegram/SourceFiles/ui/widgets/separate_panel.cpp
 +++ b/Telegram/SourceFiles/ui/widgets/separate_panel.cpp
 @@ -589,12 +589,11 @@ void SeparatePanel::mousePressEvent(QMou
@@ -287,59 +299,9 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			if (!dragViaSystem) {
  				_dragging = true;
  				_dragStartMousePosition = e->globalPos();
---- a/Telegram/lib_base/base/platform/linux/base_linux_gtk_integration.cpp
-+++ b/Telegram/lib_base/base/platform/linux/base_linux_gtk_integration.cpp
-@@ -99,6 +99,7 @@ std::optional<T> GtkSetting(const QStrin
- bool IconThemeShouldBeSet() {
- 	// change the icon theme only if
- 	// it isn't already set by a platformtheme plugin
-+#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
- 	static const auto Result =
- 		// QGenericUnixTheme
- 		(QIcon::themeName() == qstr("hicolor")
-@@ -109,6 +110,12 @@ bool IconThemeShouldBeSet() {
- 		// qt5ct
- 		|| (QIcon::themeName().isEmpty()
- 			&& QIcon::fallbackThemeName().isEmpty());
-+#else  // Qt >= 5.12
-+	static const bool Result =
-+		QIcon::themeName() == qstr("hicolor")
-+		|| QIcon::themeName() == qstr("Adwaita")
-+		|| QIcon::themeName().isEmpty();
-+#endif  // Qt >= 5.12
- 
- 	return Result;
- }
-@@ -141,12 +148,16 @@ void SetIconTheme() {
- 		DEBUG_LOG(("Setting GTK icon theme"));
- 
- 		QIcon::setThemeName(*themeName);
-+#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
- 		QIcon::setFallbackThemeName(*fallbackThemeName);
-+#endif  // Qt >= 5.12
- 
- 		DEBUG_LOG(("New icon theme: %1").arg(QIcon::themeName()));
- 
-+#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
- 		DEBUG_LOG(("New fallback icon theme: %1")
- 			.arg(QIcon::fallbackThemeName()));
-+#endif  // Qt >= 5.12
- 	};
- 
- 	if (QCoreApplication::instance()) {
-@@ -474,7 +485,9 @@ void GtkIntegration::load(const QString
- 
- 	DEBUG_LOG(("Loading GTK"));
- 	DEBUG_LOG(("Icon theme: %1").arg(QIcon::themeName()));
-+#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
- 	DEBUG_LOG(("Fallback icon theme: %1").arg(QIcon::fallbackThemeName()));
-+#endif  // Qt >= 5.12
- 
- 	if (LoadGtkLibrary(_lib, "gtk-3", 0)) {
- 		_private->loaded = _private->setupBase(_lib, allowedBackends);
 --- a/Telegram/lib_base/base/platform/linux/base_url_scheme_linux.cpp
 +++ b/Telegram/lib_base/base/platform/linux/base_url_scheme_linux.cpp
-@@ -115,6 +115,98 @@ void SnapDefaultHandler(const QString &p
+@@ -121,6 +121,98 @@ void SnapDefaultHandler(const QString &p
  }
  #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
  
@@ -438,7 +400,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  } // namespace
  
  bool CheckUrlScheme(const UrlSchemeDescriptor &descriptor) {
-@@ -123,7 +215,7 @@ bool CheckUrlScheme(const UrlSchemeDescr
+@@ -130,7 +222,7 @@ bool CheckUrlScheme(const UrlSchemeDescr
  			.arg(descriptor.protocol);
  
  		QByteArray escapedArguments;
@@ -447,7 +409,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			escapedArguments += ' ' + EscapeShell(QFile::encodeName(arg));
  		}
  
-@@ -166,7 +258,7 @@ void RegisterUrlScheme(const UrlSchemeDe
+@@ -173,7 +265,7 @@ void RegisterUrlScheme(const UrlSchemeDe
  			.arg(descriptor.protocol);
  
  		QByteArray escapedArguments;
@@ -456,7 +418,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			escapedArguments += ' ' + EscapeShell(QFile::encodeName(arg));
  		}
  
-@@ -193,7 +285,7 @@ void UnregisterUrlScheme(const UrlScheme
+@@ -202,7 +294,7 @@ void UnregisterUrlScheme(const UrlScheme
  		.arg(descriptor.protocol);
  
  	QByteArray escapedArguments;
@@ -467,7 +429,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  
 --- a/Telegram/lib_ui/ui/platform/ui_platform_window.cpp
 +++ b/Telegram/lib_ui/ui/platform/ui_platform_window.cpp
-@@ -132,7 +132,9 @@ void BasicWindowHelper::setupBodyTitleAr
+@@ -146,7 +146,9 @@ void BasicWindowHelper::setupBodyTitleAr
  				}
  #endif // Q_OS_WIN
  				_mousePressed = false;
@@ -477,7 +439,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			}
  		}
  	}, body()->lifetime());
-@@ -181,9 +183,15 @@ void DefaultWindowHelper::init() {
+@@ -195,9 +197,15 @@ void DefaultWindowHelper::init() {
  			bool titleShown) {
  		const auto area = resizeArea();
  
@@ -493,7 +455,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  
  		const auto topLeft = QPoint(
  			area.left(),
-@@ -224,6 +232,7 @@ void DefaultWindowHelper::init() {
+@@ -238,6 +246,7 @@ void DefaultWindowHelper::init() {
  
  	window()->events() | rpl::start_with_next([=](not_null<QEvent*> e) {
  		if (e->type() == QEvent::MouseButtonPress) {
@@ -501,7 +463,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			const auto mouseEvent = static_cast<QMouseEvent*>(e.get());
  			const auto currentPoint = mouseEvent->windowPos().toPoint();
  			const auto edges = edgesFromPos(currentPoint);
-@@ -231,6 +240,7 @@ void DefaultWindowHelper::init() {
+@@ -245,6 +254,7 @@ void DefaultWindowHelper::init() {
  			if (mouseEvent->button() == Qt::LeftButton && edges) {
  				window()->windowHandle()->startSystemResize(edges);
  			}
@@ -509,7 +471,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		} else if (e->type() == QEvent::WindowStateChange) {
  			_windowState = window()->windowState();
  		}
-@@ -335,12 +345,26 @@ void DefaultWindowHelper::setNativeFrame
+@@ -355,12 +365,26 @@ void DefaultWindowHelper::setNativeFrame
  }
  
  void DefaultWindowHelper::setMinimumSize(QSize size) {
