@@ -1,3 +1,12 @@
+telegram-desktop (3.1.1+ds-1) unstable; urgency=medium
+
+  * New upstream release. (Closes: #993972)
+  * Update patches.
+  * Lower debug info for the following 64-bit architectures: RISC-V in Debian,
+    ARMv8 and PowerPC in Ubuntu, due to limitation of their build servers.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sat, 25 Sep 2021 20:18:33 +0300
+
 telegram-desktop (2.9.2+ds-1) unstable; urgency=medium
 
   * Upload to unstable.
