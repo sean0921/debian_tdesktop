@@ -15,3 +15,9 @@ provide necessary headers yet. See request at <https://bugs.debian.org/951833>.
 Other directories in the ThirdParty/ folder are not really belong to some
 third-party modules. Both libtgvoip and tgcalls had been specially written by
 Telegram team.
+
+Beyond that, by default debian/rules apply tricks to reduce memory consumption
+on builders known for low-performance. This is achieved by lesser debug info.
+You may need to rebuild the source with the `pkg.telegram-desktop.lotmem`
+build profile if you wish to debug the program. The profile does not affect the
+content of the main binary package.

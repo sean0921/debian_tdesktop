@@ -35,7 +35,15 @@ ifneq ($(DEB_HOST_ARCH_OS),linux)
  DEB_CPPFLAGS_MAINT_APPEND += -UQT_WAYLANDCLIENT_LIB
 endif
 
-ifeq ($(DEB_HOST_ARCH_BITS),32)
+ifeq ($(filter pkg.$(DEB_SOURCE).lotmem,$(DEB_BUILD_PROFILES)),)
+ ifeq ($(DEB_BUILD_ARCH_BITS),32)
+  ATTEMPT_SAVE_MEMORY = 1
+ endif
+ ifneq ($(filter Debian-riscv64 Ubuntu-arm64 Ubuntu-ppc64el,$(DEB_VENDOR)-$(DEB_BUILD_ARCH)),)
+  ATTEMPT_SAVE_MEMORY = 1
+ endif
+endif
+ifdef ATTEMPT_SAVE_MEMORY
  # Less debug info by default to fit small address space.
  ifneq ($(filter -g,$(CXXFLAGS)),)
   DEB_CXXFLAGS_MAINT_STRIP = -g
