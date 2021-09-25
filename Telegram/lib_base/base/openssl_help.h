@@ -13,7 +13,6 @@
 extern "C" {
 #include <openssl/bn.h>
 #include <openssl/sha.h>
-#include <openssl/rand.h>
 #include <openssl/aes.h>
 #include <openssl/modes.h>
 #include <openssl/crypto.h>
@@ -546,23 +545,6 @@ template <
 		args...);
 }
 
-inline void AddRandomSeed(bytes::const_span data) {
-	RAND_seed(data.data(), data.size());
-}
-
-template <
-	typename T,
-	typename = std::enable_if_t<std::is_trivially_copyable_v<T>>>
-[[nodiscard]] inline T RandomValue() {
-	unsigned char buffer[sizeof(T)];
-	if (!RAND_bytes(buffer, sizeof(T))) {
-		Unexpected("Could not generate random bytes!");
-	}
-	auto result = T();
-	memcpy(&result, buffer, sizeof(T));
-	return result;
-}
-
 inline bytes::vector Pbkdf2Sha512(
 		bytes::const_span password,
 		bytes::const_span salt,
@@ -593,15 +575,3 @@ inline bytes::vector HmacSha256(
 }
 
 } // namespace openssl
-
-namespace bytes {
-
-inline void set_random(span destination) {
-	if (!destination.empty()) {
-		RAND_bytes(
-			reinterpret_cast<unsigned char*>(destination.data()),
-			destination.size());
-	}
-}
-
-} // namespace bytes

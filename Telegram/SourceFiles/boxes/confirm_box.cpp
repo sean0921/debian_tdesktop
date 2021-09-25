@@ -41,7 +41,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "mtproto/mtproto_config.h"
 #include "facades.h" // Ui::showChatsList
-#include "app.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 
@@ -282,7 +281,8 @@ void ConfirmBox::confirmed() {
 			}
 		} else if (const auto callbackPtr = std::get_if<2>(confirmed)) {
 			if (auto callback = base::take(*callbackPtr)) {
-				callback([=] { closeBox(); });
+				const auto weak = Ui::MakeWeak(this);
+				callback(crl::guard(weak, [=] { closeBox(); }));
 			}
 		}
 	}
@@ -719,7 +719,7 @@ void DeleteMessagesBox::prepare() {
 }
 
 bool DeleteMessagesBox::hasScheduledMessages() const {
-	for (const auto fullId : std::as_const(_ids)) {
+	for (const auto &fullId : _ids) {
 		if (const auto item = _session->data().message(fullId)) {
 			if (item->isScheduled()) {
 				return true;
@@ -731,7 +731,7 @@ bool DeleteMessagesBox::hasScheduledMessages() const {
 
 PeerData *DeleteMessagesBox::checkFromSinglePeer() const {
 	auto result = (PeerData*)nullptr;
-	for (const auto fullId : std::as_const(_ids)) {
+	for (const auto &fullId : _ids) {
 		if (const auto item = _session->data().message(fullId)) {
 			const auto peer = item->history()->peer;
 			if (!result) {
@@ -881,7 +881,7 @@ void DeleteMessagesBox::deleteAndClear() {
 		if (justClear) {
 			peer->session().api().clearHistory(peer, revoke);
 		} else {
-			for (const auto controller : peer->session().windows()) {
+			for (const auto &controller : peer->session().windows()) {
 				if (controller->activeChatCurrent().peer() == peer) {
 					Ui::showChatsList(&peer->session());
 				}

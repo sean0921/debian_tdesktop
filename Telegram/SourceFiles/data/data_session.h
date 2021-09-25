@@ -17,7 +17,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_location_manager.h"
 #include "base/timer.h"
 #include "base/flags.h"
-#include "ui/effects/animations.h"
 
 class Image;
 class HistoryItem;
@@ -31,7 +30,6 @@ namespace HistoryView {
 struct Group;
 class Element;
 class ElementDelegate;
-class SendActionPainter;
 } // namespace HistoryView
 
 namespace Main {
@@ -52,6 +50,7 @@ class Folder;
 class LocationPoint;
 class WallPaper;
 class ScheduledMessages;
+class SendActionManager;
 class ChatFilters;
 class CloudThemes;
 class Streaming;
@@ -91,6 +90,9 @@ public:
 	}
 	[[nodiscard]] ScheduledMessages &scheduledMessages() const {
 		return *_scheduledMessages;
+	}
+	[[nodiscard]] SendActionManager &sendActionManager() const {
+		return *_sendActionManager;
 	}
 	[[nodiscard]] CloudThemes &cloudThemes() const {
 		return *_cloudThemes;
@@ -191,13 +193,6 @@ public:
 	void deleteConversationLocally(not_null<PeerData*> peer);
 
 	void cancelForwarding(not_null<History*> history);
-
-	void registerSendAction(
-		not_null<History*> history,
-		MsgId rootId,
-		not_null<UserData*> user,
-		const MTPSendMessageAction &action,
-		TimeId when);
 
 	[[nodiscard]] rpl::variable<bool> &contactsLoaded() {
 		return _contactsLoaded;
@@ -403,37 +398,25 @@ public:
 		MessageFlags localFlags,
 		NewMessageType type);
 
-	struct SendActionAnimationUpdate {
-		not_null<History*> history;
-		int width = 0;
-		int height = 0;
-		bool textUpdated = false;
-	};
-	[[nodiscard]] auto sendActionAnimationUpdated() const
-		-> rpl::producer<SendActionAnimationUpdate>;
-	void updateSendActionAnimation(SendActionAnimationUpdate &&update);
-	[[nodiscard]] auto speakingAnimationUpdated() const
-		-> rpl::producer<not_null<History*>>;
-	void updateSpeakingAnimation(not_null<History*> history);
-
-	using SendActionPainter = HistoryView::SendActionPainter;
-	[[nodiscard]] std::shared_ptr<SendActionPainter> repliesSendActionPainter(
-		not_null<History*> history,
-		MsgId rootId);
-	void repliesSendActionPainterRemoved(
-		not_null<History*> history,
-		MsgId rootId);
-	void repliesSendActionPaintersClear(
-		not_null<History*> history,
-		not_null<UserData*> user);
-
 	[[nodiscard]] int unreadBadge() const;
 	[[nodiscard]] bool unreadBadgeMuted() const;
 	[[nodiscard]] int unreadBadgeIgnoreOne(const Dialogs::Key &key) const;
-	[[nodiscard]] bool unreadBadgeMutedIgnoreOne(const Dialogs::Key &key) const;
+	[[nodiscard]] bool unreadBadgeMutedIgnoreOne(
+		const Dialogs::Key &key) const;
 	[[nodiscard]] int unreadOnlyMutedBadge() const;
 	[[nodiscard]] rpl::producer<> unreadBadgeChanges() const;
 	void notifyUnreadBadgeChanged();
+
+	[[nodiscard]] std::optional<int> countUnreadRepliesLocally(
+		not_null<HistoryItem*> root,
+		MsgId afterId) const;
+	struct UnreadRepliesCountRequest {
+		not_null<HistoryItem*> root;
+		MsgId afterId = 0;
+		not_null<std::optional<int>*> result;
+	};
+	[[nodiscard]] auto unreadRepliesCountRequests() const
+		-> rpl::producer<UnreadRepliesCountRequest>;
 
 	void selfDestructIn(not_null<HistoryItem*> item, crl::time delay);
 
@@ -676,7 +659,7 @@ public:
 	bool updateWallpapers(const MTPaccount_WallPapers &data);
 	void removeWallpaper(const WallPaper &paper);
 	const std::vector<WallPaper> &wallpapers() const;
-	int32 wallpapersHash() const;
+	uint64 wallpapersHash() const;
 
 	void clearLocalStorage();
 
@@ -810,12 +793,7 @@ private:
 		const MTPMessageMedia &media,
 		TimeId date);
 
-	bool sendActionsAnimationCallback(crl::time now);
-	[[nodiscard]] SendActionPainter *lookupSendActionPainter(
-		not_null<History*> history,
-		MsgId rootId);
-
-	void setWallpapers(const QVector<MTPWallPaper> &data, int32 hash);
+	void setWallpapers(const QVector<MTPWallPaper> &data, uint64 hash);
 
 	void checkPollsClosings();
 
@@ -855,6 +833,7 @@ private:
 	rpl::event_stream<DialogsRowReplacement> _dialogsRowReplacements;
 	rpl::event_stream<ChatListEntryRefresh> _chatListEntryRefreshes;
 	rpl::event_stream<> _unreadBadgeChanges;
+	rpl::event_stream<UnreadRepliesCountRequest> _unreadRepliesCountRequests;
 
 	Dialogs::MainList _chatsList;
 	Dialogs::IndexedList _contactsList;
@@ -874,12 +853,6 @@ private:
 
 	base::Timer _selfDestructTimer;
 	std::vector<FullMsgId> _selfDestructItems;
-
-	// When typing in this history started.
-	base::flat_map<
-		std::pair<not_null<History*>, MsgId>,
-		crl::time> _sendActions;
-	Ui::Animations::Basic _sendActionsAnimation;
 
 	std::unordered_map<
 		PhotoId,
@@ -970,24 +943,17 @@ private:
 		int>;
 	std::unique_ptr<CredentialsWithGeneration> _passportCredentials;
 
-	rpl::event_stream<SendActionAnimationUpdate> _sendActionAnimationUpdate;
-	rpl::event_stream<not_null<History*>> _speakingAnimationUpdate;
-
 	std::vector<WallPaper> _wallpapers;
-	int32 _wallpapersHash = 0;
+	uint64 _wallpapersHash = 0;
 
 	Groups _groups;
 	std::unique_ptr<ChatFilters> _chatsFilters;
 	std::unique_ptr<ScheduledMessages> _scheduledMessages;
 	std::unique_ptr<CloudThemes> _cloudThemes;
+	std::unique_ptr<SendActionManager> _sendActionManager;
 	std::unique_ptr<Streaming> _streaming;
 	std::unique_ptr<MediaRotation> _mediaRotation;
 	std::unique_ptr<Histories> _histories;
-	base::flat_map<
-		not_null<History*>,
-		base::flat_map<
-			MsgId,
-			std::weak_ptr<SendActionPainter>>> _sendActionPainters;
 	std::unique_ptr<Stickers> _stickers;
 	MsgId _nonHistoryEntryId = ServerMaxMsgId;
 

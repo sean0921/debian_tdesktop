@@ -626,6 +626,7 @@ ComposeControls::ComposeControls(
 
 ComposeControls::~ComposeControls() {
 	saveFieldToHistoryLocalDraft();
+	unregisterDraftSources();
 	setTabbedPanel(nullptr);
 	session().api().request(_inlineBotResolveRequestId).cancel();
 }
@@ -650,7 +651,9 @@ void ComposeControls::setHistory(SetHistoryArgs &&args) {
 	//if (_history == history) {
 	//	return;
 	//}
+	unregisterDraftSources();
 	_history = history;
+	registerDraftSource();
 	_window->tabbedSelector()->setCurrentPeer(
 		history ? history->peer.get() : nullptr);
 	initWebpageProcess();
@@ -877,7 +880,11 @@ TextWithTags ComposeControls::getTextWithAppliedMarkdown() const {
 }
 
 void ComposeControls::clear() {
-	setText({});
+	// Otherwise cancelReplyMessage() will save the draft.
+	const auto saveTextDraft = !replyingToMessage();
+	setFieldText(
+		{},
+		saveTextDraft ? TextUpdateEvent::SaveDraft : TextUpdateEvent());
 	cancelReplyMessage();
 }
 
@@ -993,7 +1000,9 @@ void ComposeControls::init() {
 
 	_header->editMsgId(
 	) | rpl::start_with_next([=](const auto &id) {
+		unregisterDraftSources();
 		updateSendButtonType();
+		registerDraftSource();
 	}, _wrap->lifetime());
 
 	_header->previewCancelled(
@@ -1094,7 +1103,7 @@ void ComposeControls::initKeyHandler() {
 			return;
 		}
 		if (key == Qt::Key_Up && !hasModifiers) {
-			if (!isEditingMessage()) {
+			if (!isEditingMessage() && _field->empty()) {
 				_editLastMessageRequests.fire(std::move(keyEvent));
 				return;
 			}
@@ -1227,6 +1236,15 @@ void ComposeControls::initAutocomplete() {
 		});
 	}, _autocomplete->lifetime());
 
+	_autocomplete->choosingProcesses(
+	) | rpl::start_with_next([=](FieldAutocomplete::Type type) {
+		if (type == FieldAutocomplete::Type::Stickers) {
+			_sendActionUpdates.fire({
+				.type = Api::SendProgressType::ChooseSticker,
+			});
+		}
+	}, _autocomplete->lifetime());
+
 	_autocomplete->setSendMenuType([=] { return sendMenuType(); });
 
 	//_autocomplete->setModerateKeyActivateCallback([=](int key) {
@@ -1261,9 +1279,9 @@ void ComposeControls::initAutocomplete() {
 	_autocomplete->hideFast();
 }
 
-void ComposeControls::updateStickersByEmoji() {
+bool ComposeControls::updateStickersByEmoji() {
 	if (!_history) {
-		return;
+		return false;
 	}
 	const auto emoji = [&] {
 		const auto errorForStickers = Data::RestrictionError(
@@ -1281,6 +1299,7 @@ void ComposeControls::updateStickersByEmoji() {
 		return EmojiPtr(nullptr);
 	}();
 	_autocomplete->showStickers(emoji);
+	return (emoji != nullptr);
 }
 
 void ComposeControls::updateFieldPlaceholder() {
@@ -1325,11 +1344,9 @@ void ComposeControls::updateSilentBroadcast() {
 }
 
 void ComposeControls::fieldChanged() {
-	if (!_inlineBot
+	const auto typing = (!_inlineBot
 		&& !_header->isEditingMessage()
-		&& (_textUpdateEvents & TextUpdateEvent::SendTyping)) {
-		_sendActionUpdates.fire({ Api::SendProgressType::Typing });
-	}
+		&& (_textUpdateEvents & TextUpdateEvent::SendTyping));
 	updateSendButtonType();
 	if (!HasSendText(_field)) {
 		_previewState = Data::PreviewState::Allowed;
@@ -1340,7 +1357,10 @@ void ComposeControls::fieldChanged() {
 	}
 	InvokeQueued(_autocomplete.get(), [=] {
 		updateInlineBotQuery();
-		updateStickersByEmoji();
+		const auto choosingSticker = updateStickersByEmoji();
+		if (!choosingSticker && typing) {
+			_sendActionUpdates.fire({ Api::SendProgressType::Typing });
+		}
 	});
 
 	if (!(_textUpdateEvents & TextUpdateEvent::SaveDraft)) {
@@ -1396,23 +1416,51 @@ void ComposeControls::saveDraft(bool delayed) {
 void ComposeControls::writeDraftTexts() {
 	Expects(_history != nullptr);
 
-	session().local().writeDrafts(
-		_history,
-		draftKeyCurrent(),
-		Storage::MessageDraft{
-			_header->getDraftMessageId(),
-			_field->getTextWithTags(),
-			_previewState,
-		});
+	session().local().writeDrafts(_history);
 }
 
 void ComposeControls::writeDraftCursors() {
 	Expects(_history != nullptr);
 
-	session().local().writeDraftCursors(
-		_history,
-		draftKeyCurrent(),
-		MessageCursor(_field));
+	session().local().writeDraftCursors(_history);
+}
+
+void ComposeControls::unregisterDraftSources() {
+	if (!_history) {
+		return;
+	}
+	const auto normal = draftKey(DraftType::Normal);
+	const auto edit = draftKey(DraftType::Edit);
+	if (normal != Data::DraftKey::None()) {
+		session().local().unregisterDraftSource(_history, normal);
+	}
+	if (edit != Data::DraftKey::None()) {
+		session().local().unregisterDraftSource(_history, edit);
+	}
+}
+
+void ComposeControls::registerDraftSource() {
+	if (!_history) {
+		return;
+	}
+	const auto key = draftKeyCurrent();
+	if (key != Data::DraftKey::None()) {
+		const auto draft = [=] {
+			return Storage::MessageDraft{
+				_header->getDraftMessageId(),
+				_field->getTextWithTags(),
+				_previewState,
+			};
+		};
+		auto draftSource = Storage::MessageDraftSource{
+			.draft = draft,
+			.cursor = [=] { return MessageCursor(_field); },
+		};
+		session().local().registerDraftSource(
+			_history,
+			key,
+			std::move(draftSource));
+	}
 }
 
 void ComposeControls::writeDrafts() {
@@ -1522,6 +1570,14 @@ void ComposeControls::initTabbedSelector() {
 	selector->contextMenuRequested(
 	) | rpl::start_with_next([=] {
 		selector->showMenuWithType(sendMenuType());
+	}, wrap->lifetime());
+
+	selector->choosingStickerUpdated(
+	) | rpl::start_with_next([=](ChatHelpers::TabbedSelector::Action action) {
+		_sendActionUpdates.fire({
+			.type = Api::SendProgressType::ChooseSticker,
+			.cancel = (action == ChatHelpers::TabbedSelector::Action::Cancel),
+		});
 	}, wrap->lifetime());
 }
 

@@ -32,6 +32,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_cloud_file.h"
 #include "data/data_changes.h"
 #include "data/stickers/data_stickers.h"
+#include "data/data_send_action.h"
 #include "base/unixtime.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
@@ -60,7 +61,7 @@ constexpr auto kStartReorderThreshold = 30;
 
 int FixedOnTopDialogsCount(not_null<Dialogs::IndexedList*> list) {
 	auto result = 0;
-	for (const auto row : *list) {
+	for (const auto &row : *list) {
 		if (!row->entry()->fixedOnTopIndex()) {
 			break;
 		}
@@ -73,7 +74,7 @@ int PinnedDialogsCount(
 		FilterId filterId,
 		not_null<Dialogs::IndexedList*> list) {
 	auto result = 0;
-	for (const auto row : *list) {
+	for (const auto &row : *list) {
 		if (row->entry()->fixedOnTopIndex()) {
 			continue;
 		} else if (!row->entry()->isPinnedDialog(filterId)) {
@@ -118,10 +119,7 @@ InnerWidget::InnerWidget(
 })
 , _cancelSearchInChat(this, st::dialogsCancelSearchInPeer)
 , _cancelSearchFromUser(this, st::dialogsCancelSearchInPeer) {
-
-#ifndef OS_MAC_OLD // Qt 5.3.2 build is working with glitches otherwise.
 	setAttribute(Qt::WA_OpaquePaintEvent, true);
-#endif // OS_MAC_OLD
 
 	_cancelSearchInChat->setClickedCallback([=] { cancelSearchInChat(); });
 	_cancelSearchInChat->hide();
@@ -169,11 +167,12 @@ InnerWidget::InnerWidget(
 		}
 	}, lifetime());
 
-	session().data().sendActionAnimationUpdated(
+	session().data().sendActionManager().animationUpdated(
 	) | rpl::start_with_next([=](
-			const Data::Session::SendActionAnimationUpdate &update) {
+			const Data::SendActionManager::AnimationUpdate &update) {
 		using RowPainter = Layout::RowPainter;
 		const auto updateRect = RowPainter::sendActionAnimationRect(
+			update.left,
 			update.width,
 			update.height,
 			width(),
@@ -184,7 +183,7 @@ InnerWidget::InnerWidget(
 			UpdateRowSection::Default | UpdateRowSection::Filtered);
 	}, lifetime());
 
-	session().data().speakingAnimationUpdated(
+	session().data().sendActionManager().speakingAnimationUpdated(
 	) | rpl::start_with_next([=](not_null<History*> history) {
 		updateDialogRowCornerStatus(history);
 	}, lifetime());
@@ -342,7 +341,7 @@ int InnerWidget::dialogsOffset() const {
 
 int InnerWidget::fixedOnTopCount() const {
 	auto result = 0;
-	for (const auto row : *shownDialogs()) {
+	for (const auto &row : *shownDialogs()) {
 		if (row->entry()->fixedOnTopIndex()) {
 			++result;
 		} else {
@@ -1104,7 +1103,7 @@ int InnerWidget::countPinnedIndex(Row *ofRow) {
 		return -1;
 	}
 	auto result = 0;
-	for (const auto row : *shownDialogs()) {
+	for (const auto &row : *shownDialogs()) {
 		if (row->entry()->fixedOnTopIndex()) {
 			continue;
 		} else if (!row->entry()->isPinnedDialog(_filterId)) {

@@ -221,7 +221,7 @@ private:
 
 	void orderControls();
 	void checkAutocomplete();
-	void updateStickersByEmoji();
+	bool updateStickersByEmoji();
 	void updateFieldPlaceholder();
 	void updateSilentBroadcast();
 	void editMessage(not_null<HistoryItem*> item);
@@ -269,6 +269,9 @@ private:
 		TextUpdateEvents events = 0,
 		FieldHistoryAction fieldHistoryAction = FieldHistoryAction::Clear);
 	void saveFieldToHistoryLocalDraft();
+
+	void unregisterDraftSources();
+	void registerDraftSource();
 
 	const not_null<QWidget*> _parent;
 	const not_null<Window::SessionController*> _window;

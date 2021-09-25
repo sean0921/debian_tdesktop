@@ -24,6 +24,9 @@ class SessionController;
 
 namespace Ui {
 class PathShiftGradient;
+struct BubblePattern;
+struct ChatPaintContext;
+class ChatStyle;
 } // namespace Ui
 
 namespace HistoryView {
@@ -33,6 +36,8 @@ enum class InfoDisplayType : char;
 struct StateRequest;
 struct TextState;
 class Media;
+
+using PaintContext = Ui::ChatPaintContext;
 
 enum class Context : char {
 	History,
@@ -85,6 +90,7 @@ public:
 	virtual bool elementIsChatWide() = 0;
 	virtual not_null<Ui::PathShiftGradient*> elementPathShiftGradient() = 0;
 	virtual void elementReplyTo(const FullMsgId &to) = 0;
+	virtual void elementStartInteraction(not_null<const Element*> view) = 0;
 
 	virtual ~ElementDelegate() {
 	}
@@ -92,6 +98,7 @@ public:
 };
 
 [[nodiscard]] std::unique_ptr<Ui::PathShiftGradient> MakePathShiftGradient(
+	not_null<const Ui::ChatStyle*> st,
 	Fn<void()> update);
 
 class SimpleElementDelegate : public ElementDelegate {
@@ -140,6 +147,12 @@ public:
 	bool elementIsChatWide() override;
 	not_null<Ui::PathShiftGradient*> elementPathShiftGradient() override;
 	void elementReplyTo(const FullMsgId &to) override;
+	void elementStartInteraction(not_null<const Element*> view) override;
+
+protected:
+	[[nodiscard]] not_null<Window::SessionController*> controller() const {
+		return _controller;
+	}
 
 private:
 	const not_null<Window::SessionController*> _controller;
@@ -170,7 +183,12 @@ struct UnreadBar : public RuntimeComponent<UnreadBar, Element> {
 	static int height();
 	static int marginTop();
 
-	void paint(Painter &p, int y, int w, bool chatWide) const;
+	void paint(
+		Painter &p,
+		const PaintContext &context,
+		int y,
+		int w,
+		bool chatWide) const;
 
 	QString text;
 	int width = 0;
@@ -184,7 +202,12 @@ struct DateBadge : public RuntimeComponent<DateBadge, Element> {
 	void init(const QString &date);
 
 	int height() const;
-	void paint(Painter &p, int y, int w, bool chatWide) const;
+	void paint(
+		Painter &p,
+		not_null<const Ui::ChatStyle*> st,
+		int y,
+		int w,
+		bool chatWide) const;
 
 	QString text;
 	int width = 0;
@@ -261,11 +284,7 @@ public:
 	bool displayDate() const;
 	bool isInOneDayWithPrevious() const;
 
-	virtual void draw(
-		Painter &p,
-		QRect clip,
-		TextSelection selection,
-		crl::time ms) const = 0;
+	virtual void draw(Painter &p, const PaintContext &context) const = 0;
 	[[nodiscard]] virtual PointState pointState(QPoint point) const = 0;
 	[[nodiscard]] virtual TextState textState(
 		QPoint point,
@@ -273,10 +292,10 @@ public:
 	virtual void updatePressed(QPoint point) = 0;
 	virtual void drawInfo(
 		Painter &p,
+		const PaintContext &context,
 		int right,
 		int bottom,
 		int width,
-		bool selected,
 		InfoDisplayType type) const;
 	virtual bool pointInTime(
 		int right,
@@ -315,6 +334,7 @@ public:
 	virtual std::optional<QSize> rightActionSize() const;
 	virtual void drawRightAction(
 		Painter &p,
+		const PaintContext &context,
 		int left,
 		int top,
 		int outerWidth) const;
@@ -341,6 +361,7 @@ public:
 
 	void paintCustomHighlight(
 		Painter &p,
+		const PaintContext &context,
 		int y,
 		int height,
 		not_null<const HistoryItem*> item) const;
@@ -370,6 +391,7 @@ public:
 protected:
 	void paintHighlight(
 		Painter &p,
+		const PaintContext &context,
 		int geometryHeight) const;
 
 	[[nodiscard]] ClickHandlerPtr fromLink() const;

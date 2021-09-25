@@ -131,10 +131,14 @@ PRIVATE
     ui/style/style_core_font.h
     ui/style/style_core_icon.cpp
     ui/style/style_core_icon.h
+    ui/style/style_core_palette.cpp
+    ui/style/style_core_palette.h
     ui/style/style_core_scale.cpp
     ui/style/style_core_scale.h
     ui/style/style_core_types.cpp
     ui/style/style_core_types.h
+    ui/style/style_palette_colorizer.cpp
+    ui/style/style_palette_colorizer.h
     ui/text/text.cpp
     ui/text/text.h
     ui/text/text_block.cpp
@@ -188,6 +192,8 @@ PRIVATE
     ui/widgets/side_bar_button.h
     ui/widgets/shadow.cpp
     ui/widgets/shadow.h
+    ui/widgets/time_input.cpp
+    ui/widgets/time_input.h
     ui/widgets/tooltip.cpp
     ui/widgets/tooltip.h
     ui/wrap/fade_wrap.cpp
@@ -266,4 +272,6 @@ PUBLIC
 target_link_libraries(lib_ui
 PUBLIC
     desktop-app::lib_base
+PRIVATE
+    desktop-app::external_zlib
 )

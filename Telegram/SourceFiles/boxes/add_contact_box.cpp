@@ -10,9 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "mtproto/sender.h"
 #include "base/flat_set.h"
-#include "base/openssl_help.h"
+#include "base/random.h"
 #include "boxes/confirm_box.h"
-#include "boxes/confirm_phone_box.h" // ExtractPhonePrefix.
 #include "boxes/peer_list_controllers.h"
 #include "boxes/peers/add_participants_box.h"
 #include "boxes/peers/edit_participant_box.h"
@@ -20,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/file_utilities.h"
 #include "core/application.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
+#include "countries/countries_instance.h" // Countries::ExtractPhoneCode.
 #include "window/window_session_controller.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/buttons.h"
@@ -267,7 +267,7 @@ AddContactBox::AddContactBox(
 	this,
 	st::defaultInputField,
 	tr::lng_contact_phone(),
-	Ui::ExtractPhonePrefix(session->user()->phone()),
+	Countries::ExtractPhoneCode(session->user()->phone()),
 	phone)
 , _invertOrder(langFirstNameGoesSecond()) {
 	if (!phone.isEmpty()) {
@@ -383,7 +383,7 @@ void AddContactBox::save() {
 		lastName = QString();
 	}
 	_sentName = firstName;
-	_contactId = openssl::RandomValue<uint64>();
+	_contactId = base::RandomValue<uint64>();
 	_addRequest = _session->api().request(MTPcontacts_ImportContacts(
 		MTP_vector<MTPInputContact>(
 			1,
@@ -1452,7 +1452,7 @@ void RevokePublicLinkBox::Inner::mouseReleaseEvent(QMouseEvent *e) {
 void RevokePublicLinkBox::Inner::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 	p.translate(0, _rowsTop);
-	for_const (auto &row, _rows) {
+	for (const auto &row : _rows) {
 		paintChat(p, row, (row.peer == _selected));
 		p.translate(0, _rowHeight);
 	}

@@ -18,7 +18,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/base_platform_info.h"
 #include "main/main_session.h"
 #include "mainwidget.h"
-#include "numbers.h"
 #include "lang/lang_keys.h"
 #include "mtproto/facade.h"
 #include "styles/style_layers.h"
@@ -107,7 +106,7 @@ void SentCodeField::fix() {
 	auto newPos = -1;
 	auto oldLen = now.size();
 	auto digitCount = 0;
-	for (const auto ch : now) {
+	for (const auto &ch : now) {
 		if (ch.isDigit()) {
 			++digitCount;
 		}
@@ -121,7 +120,7 @@ void SentCodeField::fix() {
 
 	newText.reserve(oldLen);
 	int i = 0;
-	for (const auto ch : now) {
+	for (const auto &ch : now) {
 		if (i++ == oldPos) {
 			newPos = newText.length();
 		}

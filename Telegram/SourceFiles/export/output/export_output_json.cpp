@@ -324,7 +324,7 @@ QByteArray SerializeMessage(
 			const std::vector<UserId> &data,
 			const QByteArray &label = "members") {
 		auto list = std::vector<QByteArray>();
-		for (const auto userId : data) {
+		for (const auto &userId : data) {
 			list.push_back(wrapUserName(userId));
 		}
 		pushBare(label, SerializeArray(context, list));
@@ -517,6 +517,12 @@ QByteArray SerializeMessage(
 		pushActor();
 		pushAction("group_call_scheduled");
 		push("schedule_date", data.date);
+	}, [&](const ActionSetChatTheme &data) {
+		pushActor();
+		pushAction("edit_chat_theme");
+		if (!data.emoji.isEmpty()) {
+			push("emoticon", data.emoji.toUtf8());
+		}
 	}, [](v::null_t) {});
 
 	if (v::is_null(message.action.content)) {

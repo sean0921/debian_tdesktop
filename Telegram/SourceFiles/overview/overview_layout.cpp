@@ -1022,7 +1022,12 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 
 			using namespace HistoryView;
 			const auto coverDrawn = _data->isSongWithCover()
-				&& DrawThumbnailAsSongCover(p, _dataMedia, inner, selected);
+				&& DrawThumbnailAsSongCover(
+					p,
+					st::songCoverOverlayFg,
+					_dataMedia,
+					inner,
+					selected);
 			if (!coverDrawn) {
 				if (selected) {
 					p.setBrush(st::msgFileInBgSelected);
@@ -1552,11 +1557,7 @@ Link::Link(
 		_title = _page->title;
 	}
 
-#ifndef OS_MAC_OLD
 	auto parts = mainUrl.splitRef('/');
-#else // OS_MAC_OLD
-	auto parts = mainUrl.split('/');
-#endif // OS_MAC_OLD
 	if (!parts.isEmpty()) {
 		auto domain = parts.at(0);
 		if (parts.size() > 2 && domain.endsWith(':') && parts.at(1).isEmpty()) { // http:// and others

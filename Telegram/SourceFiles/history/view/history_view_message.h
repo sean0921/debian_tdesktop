@@ -51,11 +51,7 @@ public:
 
 	int marginTop() const override;
 	int marginBottom() const override;
-	void draw(
-		Painter &p,
-		QRect clip,
-		TextSelection selection,
-		crl::time ms) const override;
+	void draw(Painter &p, const PaintContext &context) const override;
 	PointState pointState(QPoint point) const override;
 	TextState textState(
 		QPoint point,
@@ -63,10 +59,10 @@ public:
 	void updatePressed(QPoint point) override;
 	void drawInfo(
 		Painter &p,
+		const PaintContext &context,
 		int right,
 		int bottom,
 		int width,
-		bool selected,
 		InfoDisplayType type) const override;
 	bool pointInTime(
 		int right,
@@ -98,6 +94,7 @@ public:
 	std::optional<QSize> rightActionSize() const override;
 	void drawRightAction(
 		Painter &p,
+		const PaintContext &context,
 		int left,
 		int top,
 		int outerWidth) const override;
@@ -136,13 +133,32 @@ private:
 
 	void toggleCommentsButtonRipple(bool pressed);
 
-	void paintCommentsButton(Painter &p, QRect &g, bool selected) const;
-	void paintFromName(Painter &p, QRect &trect, bool selected) const;
-	void paintForwardedInfo(Painter &p, QRect &trect, bool selected) const;
-	void paintReplyInfo(Painter &p, QRect &trect, bool selected) const;
-	// this method draws "via @bot" if it is not painted in forwarded info or in from name
-	void paintViaBotIdInfo(Painter &p, QRect &trect, bool selected) const;
-	void paintText(Painter &p, QRect &trect, TextSelection selection) const;
+	void paintCommentsButton(
+		Painter &p,
+		QRect &g,
+		const PaintContext &context) const;
+	void paintFromName(
+		Painter &p,
+		QRect &trect,
+		const PaintContext &context) const;
+	void paintForwardedInfo(
+		Painter &p,
+		QRect &trect,
+		const PaintContext &context) const;
+	void paintReplyInfo(
+		Painter &p,
+		QRect &trect,
+		const PaintContext &context) const;
+	// This method draws "via @bot" if it is not painted
+	// in forwarded info or in from name.
+	void paintViaBotIdInfo(
+		Painter &p,
+		QRect &trect,
+		const PaintContext &context) const;
+	void paintText(
+		Painter &p,
+		QRect &trect,
+		const PaintContext &context) const;
 
 	bool getStateCommentsButton(
 		QPoint point,

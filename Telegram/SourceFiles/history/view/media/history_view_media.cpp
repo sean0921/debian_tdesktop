@@ -15,6 +15,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_shared_media.h"
 #include "data/data_document.h"
 #include "ui/item_text_options.h"
+#include "ui/chat/chat_style.h"
+#include "ui/chat/message_bubble.h"
 #include "core/ui_integration.h"
 #include "styles/style_chat.h"
 
@@ -164,6 +166,20 @@ TextSelection Media::skipSelection(TextSelection selection) const {
 
 TextSelection Media::unskipSelection(TextSelection selection) const {
 	return ShiftItemSelection(selection, fullSelectionLength());
+}
+
+auto Media::getBubbleSelectionIntervals(
+	TextSelection selection) const
+-> std::vector<Ui::BubbleSelectionInterval> {
+	return {};
+}
+
+bool Media::usesBubblePattern(const PaintContext &context) const {
+	return (context.selection != FullSelection)
+		&& _parent->hasOutLayout()
+		&& context.bubblesPattern
+		&& !context.viewport.isEmpty()
+		&& !context.bubblesPattern->pixmap.size().isEmpty();
 }
 
 PointState Media::pointState(QPoint point) const {

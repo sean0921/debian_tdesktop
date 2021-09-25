@@ -52,6 +52,14 @@ PRIVATE
     tdesktop::lib_tgcalls_legacy
     tdesktop::lib_tgcalls
     tdesktop::lib_tgvoip
+
+    # Order in this list defines the order of include paths in command line.
+    # We need to place desktop-app::external_minizip this early to have its
+    # include paths (usually ${PREFIX}/include/minizip) before any depend that
+    # would add ${PREFIX}/include. This path may have a different <zip.h>,
+    # for example installed by libzip (https://libzip.org).
+    desktop-app::external_minizip
+
     tdesktop::td_export
     tdesktop::td_mtproto
     tdesktop::td_lang
@@ -71,7 +79,6 @@ PRIVATE
     desktop-app::external_lz4
     desktop-app::external_rlottie
     desktop-app::external_zlib
-    desktop-app::external_minizip
     desktop-app::external_qt_static_plugins
     desktop-app::external_qt
     desktop-app::external_qr_code_generator
@@ -130,6 +137,8 @@ PRIVATE
     api/api_updates.h
     api/api_user_privacy.cpp
     api/api_user_privacy.h
+    api/api_who_read.cpp
+    api/api_who_read.h
     boxes/filters/edit_filter_box.cpp
     boxes/filters/edit_filter_box.h
     boxes/filters/edit_filter_chats_list.cpp
@@ -276,6 +285,8 @@ PRIVATE
     chat_helpers/bot_command.h
     chat_helpers/bot_keyboard.cpp
     chat_helpers/bot_keyboard.h
+    chat_helpers/emoji_interactions.cpp
+    chat_helpers/emoji_interactions.h
     chat_helpers/emoji_keywords.cpp
     chat_helpers/emoji_keywords.h
     chat_helpers/emoji_list_widget.cpp
@@ -345,6 +356,8 @@ PRIVATE
     core/utils.cpp
     core/utils.h
     core/version.h
+    countries/countries_manager.cpp
+    countries/countries_manager.h
     data/stickers/data_stickers_set.cpp
     data/stickers/data_stickers_set.h
     data/stickers/data_stickers.cpp
@@ -352,6 +365,8 @@ PRIVATE
     data/data_abstract_sparse_ids.h
     data/data_abstract_structure.cpp
     data/data_abstract_structure.h
+    data/data_audio_msg_id.cpp
+    data/data_audio_msg_id.h
     data/data_auto_download.cpp
     data/data_auto_download.h
     data/data_chat.cpp
@@ -420,6 +435,8 @@ PRIVATE
     data/data_reply_preview.h
     data/data_search_controller.cpp
     data/data_search_controller.h
+    data/data_send_action.cpp
+    data/data_send_action.h
     data/data_session.cpp
     data/data_session.h
     data/data_scheduled_messages.cpp
@@ -573,6 +590,8 @@ PRIVATE
     history/view/history_view_cursor_state.h
     history/view/history_view_element.cpp
     history/view/history_view_element.h
+    history/view/history_view_emoji_interactions.cpp
+    history/view/history_view_emoji_interactions.h
     history/view/history_view_empty_list_bubble.cpp
     history/view/history_view_empty_list_bubble.h
     history/view/history_view_group_call_tracker.cpp
@@ -854,14 +873,6 @@ PRIVATE
     payments/payments_form.h
     platform/linux/linux_desktop_environment.cpp
     platform/linux/linux_desktop_environment.h
-    platform/linux/linux_gdk_helper.cpp
-    platform/linux/linux_gdk_helper.h
-    platform/linux/linux_gtk_integration_dummy.cpp
-    platform/linux/linux_gtk_integration_p.h
-    platform/linux/linux_gtk_integration.cpp
-    platform/linux/linux_gtk_integration.h
-    platform/linux/linux_gtk_open_with_dialog.cpp
-    platform/linux/linux_gtk_open_with_dialog.h
     platform/linux/linux_wayland_integration_dummy.cpp
     platform/linux/linux_wayland_integration.cpp
     platform/linux/linux_wayland_integration.h
@@ -1164,21 +1175,6 @@ else()
     )
 endif()
 
-if (DESKTOP_APP_DISABLE_GTK_INTEGRATION)
-    remove_target_sources(Telegram ${src_loc}
-        platform/linux/linux_gdk_helper.cpp
-        platform/linux/linux_gdk_helper.h
-        platform/linux/linux_gtk_integration_p.h
-        platform/linux/linux_gtk_integration.cpp
-        platform/linux/linux_gtk_open_with_dialog.cpp
-        platform/linux/linux_gtk_open_with_dialog.h
-    )
-else()
-    remove_target_sources(Telegram ${src_loc}
-        platform/linux/linux_gtk_integration_dummy.cpp
-    )
-endif()
-
 if (DESKTOP_APP_USE_PACKAGED)
     remove_target_sources(Telegram ${src_loc}
         platform/mac/mac_iconv_helper.c
@@ -1260,17 +1256,13 @@ elseif (APPLE)
         endif()
     endif()
 else()
-    target_link_libraries(Telegram
-    PRIVATE
-        desktop-app::external_glibmm
-        desktop-app::external_glib
-    )
-
     if (NOT DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
         target_link_libraries(Telegram
         PRIVATE
             desktop-app::external_statusnotifieritem
             desktop-app::external_dbusmenu_qt
+            desktop-app::external_glibmm
+            desktop-app::external_glib
         )
     endif()
 
@@ -1288,19 +1280,6 @@ else()
             desktop-app::external_kwayland
         )
     endif()
-
-    if (NOT DESKTOP_APP_DISABLE_GTK_INTEGRATION)
-        find_package(PkgConfig REQUIRED)
-
-        pkg_check_modules(GTK REQUIRED gtk+-3.0)
-        target_include_directories(Telegram SYSTEM PRIVATE ${GTK_INCLUDE_DIRS})
-
-        if (NOT DESKTOP_APP_DISABLE_X11_INTEGRATION)
-            target_link_libraries(Telegram PRIVATE X11)
-        endif()
-
-        target_link_libraries(Telegram PRIVATE rt)
-    endif()
 endif()
 
 if (build_macstore)
@@ -1317,10 +1296,6 @@ if (build_macstore)
         COMMAND mkdir -p $<TARGET_FILE_DIR:Telegram>/../Frameworks
         COMMAND cp -a ${libs_loc}/breakpad/src/client/mac/build/Release/Breakpad.framework $<TARGET_FILE_DIR:Telegram>/../Frameworks/Breakpad.framework
     )
-elseif (build_osx)
-    set(bundle_identifier "com.tdesktop.Telegram$<$<CONFIG:Debug>:DebugOsx>")
-    set(bundle_entitlements "Telegram.entitlements")
-    set(output_name "Telegram")
 else()
     set(bundle_identifier "com.tdesktop.Telegram$<$<CONFIG:Debug>:Debug>")
     set(bundle_entitlements "Telegram.entitlements")
@@ -1436,10 +1411,6 @@ if ((NOT DESKTOP_APP_DISABLE_AUTOUPDATE OR APPLE) AND NOT build_macstore AND NOT
         else()
             target_link_options(Updater PRIVATE -municode)
         endif()
-    endif()
-
-    if (LINUX)
-        target_link_options(Updater PRIVATE -static-libstdc++)
     endif()
 
     if (DESKTOP_APP_SPECIAL_TARGET)

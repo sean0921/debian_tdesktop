@@ -21,6 +21,7 @@ class Session;
 
 namespace Ui {
 class PopupMenu;
+class ChatTheme;
 } // namespace Ui
 
 namespace Window {
@@ -52,6 +53,7 @@ struct SelectedItem {
 
 struct MessagesBar {
 	Element *element = nullptr;
+	bool hidden = false;
 	bool focus = false;
 };
 
@@ -91,6 +93,7 @@ public:
 		const QString &command,
 		const FullMsgId &context) = 0;
 	virtual void listHandleViaClick(not_null<UserData*> bot) = 0;
+	virtual not_null<Ui::ChatTheme*> listChatTheme() = 0;
 
 };
 
@@ -257,6 +260,7 @@ public:
 	bool elementIsChatWide() override;
 	not_null<Ui::PathShiftGradient*> elementPathShiftGradient() override;
 	void elementReplyTo(const FullMsgId &to) override;
+	void elementStartInteraction(not_null<const Element*> view) override;
 
 	void setEmptyInfoWidget(base::unique_qptr<Ui::RpWidget> &&w);
 

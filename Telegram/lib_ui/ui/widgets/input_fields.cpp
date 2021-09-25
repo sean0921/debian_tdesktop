@@ -10,7 +10,8 @@
 #include "ui/text/text.h"
 #include "ui/emoji_config.h"
 #include "ui/ui_utility.h"
-#include "base/openssl_help.h"
+#include "base/invoke_queued.h"
+#include "base/random.h"
 #include "base/platform/base_platform_info.h"
 #include "emoji_suggestions_helper.h"
 #include "styles/palette.h"
@@ -1295,7 +1296,6 @@ InputField::InputField(
 , _lastTextWithTags(value)
 , _placeholderFull(std::move(placeholder)) {
 	_inner->setDocument(CreateChild<InputDocument>(_inner.get(), _st));
-
 	_inner->setAcceptRichText(false);
 	resize(_st.width, _minHeight);
 
@@ -1779,12 +1779,12 @@ void InputField::focusInEvent(QFocusEvent *e) {
 	_borderAnimationStart = (e->reason() == Qt::MouseFocusReason)
 		? mapFromGlobal(QCursor::pos()).x()
 		: (width() / 2);
-	QTimer::singleShot(0, this, SLOT(onFocusInner()));
+	InvokeQueued(this, [=] { onFocusInner(); });
 }
 
 void InputField::mousePressEvent(QMouseEvent *e) {
 	_borderAnimationStart = e->pos().x();
-	QTimer::singleShot(0, this, SLOT(onFocusInner()));
+	InvokeQueued(this, [=] { onFocusInner(); });
 }
 
 void InputField::onFocusInner() {
@@ -2976,7 +2976,7 @@ void InputField::inputMethodEventInner(QInputMethodEvent *e) {
 	const auto weak = Ui::MakeWeak(this);
 	_inner->QTextEdit::inputMethodEvent(e);
 
-	if (weak) {
+	if (weak && _inputMethodCommit.has_value()) {
 		const auto text = *base::take(_inputMethodCommit);
 		if (!processMarkdownReplaces(text)) {
 			processInstantReplaces(text);
@@ -3130,7 +3130,7 @@ void InputField::commitInstantReplacement(
 	format.setProperty(kInstantReplaceWithId, replacement);
 	format.setProperty(
 		kInstantReplaceRandomId,
-		openssl::RandomValue<uint32>());
+		base::RandomValue<uint32>());
 	ApplyTagFormat(format, cursor.charFormat());
 	cursor.insertText(replacement, format);
 }

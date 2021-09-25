@@ -14,7 +14,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/image/image_prepare.h"
 #include "ui/chat/attach/attach_extensions.h"
 #include "ui/chat/attach/attach_prepare.h"
-#include "app.h"
 
 #include <QtCore/QSemaphore>
 #include <QtCore/QMimeData>
@@ -41,6 +40,8 @@ bool HasExtensionFrom(const QString &file, const QStringList &extensions) {
 bool ValidPhotoForAlbum(
 		const Image &image,
 		const QString &mime) {
+	Expects(!image.data.isNull());
+
 	if (image.animated
 		|| Core::IsMimeSticker(mime)
 		|| (!mime.isEmpty() && !mime.startsWith(u"image/"))) {
@@ -164,7 +165,7 @@ MimeDataState ComputeMimeDataState(const QMimeData *data) {
 		if (filesize > kFileSizeLimit) {
 			return MimeDataState::None;
 		} else if (allAreSmallImages) {
-			if (filesize > App::kImageSizeLimit) {
+			if (filesize > Images::kReadBytesLimit) {
 				allAreSmallImages = false;
 			} else if (!HasExtensionFrom(file, imageExtensions)) {
 				allAreSmallImages = false;
@@ -229,6 +230,8 @@ PreparedList PrepareMediaFromImage(
 		QImage &&image,
 		QByteArray &&content,
 		int previewWidth) {
+	Expects(!image.isNull());
+
 	auto result = PreparedList();
 	auto file = PreparedFile(QString());
 	file.content = content;
@@ -289,10 +292,12 @@ void PrepareDetails(PreparedFile &file, int previewWidth) {
 	using Song = PreparedFileInformation::Song;
 	if (const auto image = std::get_if<Image>(
 			&file.information->media)) {
+		Assert(!image->data.isNull());
 		if (ValidPhotoForAlbum(*image, file.information->filemime)) {
 			UpdateImageDetails(file, previewWidth);
 			file.type = PreparedFile::Type::Photo;
-		} else if (Core::IsMimeSticker(file.information->filemime)) {
+		} else if (Core::IsMimeSticker(file.information->filemime)
+				|| image->animated) {
 			file.type = PreparedFile::Type::None;
 		}
 	} else if (const auto video = std::get_if<Video>(
@@ -317,19 +322,23 @@ void UpdateImageDetails(PreparedFile &file, int previewWidth) {
 	if (!image) {
 		return;
 	}
-	const auto &preview = image->modifications
+	Assert(!image->data.isNull());
+	auto preview = image->modifications
 		? Editor::ImageModified(image->data, image->modifications)
 		: image->data;
+	Assert(!preview.isNull());
 	file.shownDimensions = PrepareShownDimensions(preview);
-	file.preview = Images::prepareOpaque(preview.scaledToWidth(
-		std::min(previewWidth, style::ConvertScale(preview.width()))
-			* cIntRetinaFactor(),
-		Qt::SmoothTransformation));
+	const auto scaled = preview.scaledToWidth(
+		(std::min(previewWidth, style::ConvertScale(preview.width()))
+			* cIntRetinaFactor()),
+		Qt::SmoothTransformation);
+	Assert(!scaled.isNull());
+	file.preview = Images::prepareOpaque(scaled);
 	Assert(!file.preview.isNull());
 	file.preview.setDevicePixelRatio(cRetinaFactor());
 }
 
-bool ApplyModifications(const PreparedList &list) {
+bool ApplyModifications(PreparedList &list) {
 	auto applied = false;
 	for (auto &file : list.files) {
 		const auto image = std::get_if<Image>(&file.information->media);
@@ -337,6 +346,9 @@ bool ApplyModifications(const PreparedList &list) {
 			continue;
 		}
 		applied = true;
+		if (!file.path.isEmpty()) {
+			file.path = QString();
+		}
 		image->data = Editor::ImageModified(
 			std::move(image->data),
 			image->modifications);

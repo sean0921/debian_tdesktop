@@ -30,6 +30,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
+#include "ui/chat/chat_theme.h"
+#include "ui/chat/chat_style.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/image/image.h"
 #include "ui/text/text_utilities.h"
@@ -235,12 +237,23 @@ InnerWidget::InnerWidget(
 , _channel(channel)
 , _history(channel->owner().history(channel))
 , _api(&_channel->session().mtp())
-, _pathGradient(HistoryView::MakePathShiftGradient([=] { update(); }))
+, _pathGradient(
+	HistoryView::MakePathShiftGradient(
+		controller->chatStyle(),
+		[=] { update(); }))
 , _scrollDateCheck([=] { scrollDateCheck(); })
 , _emptyText(
 		st::historyAdminLogEmptyWidth
 		- st::historyAdminLogEmptyPadding.left()
 		- st::historyAdminLogEmptyPadding.left()) {
+	Window::ChatThemeValueFromPeer(
+		controller,
+		channel
+	) | rpl::start_with_next([=](std::shared_ptr<Ui::ChatTheme> &&theme) {
+		_theme = std::move(theme);
+		controller->setChatStyleTheme(_theme);
+	}, lifetime());
+
 	setMouseTracking(true);
 	_scrollDateHideTimer.setCallback([=] { scrollDateHideByTimer(); });
 	session().data().viewRepaintRequest(
@@ -421,14 +434,15 @@ void InnerWidget::applySearch(const QString &query) {
 }
 
 void InnerWidget::requestAdmins() {
-	auto participantsHash = 0;
+	const auto offset = 0;
+	const auto participantsHash = uint64(0);
 	_api.request(MTPchannels_GetParticipants(
 		_channel->inputChannel,
 		MTP_channelParticipantsAdmins(),
-		MTP_int(0),
+		MTP_int(offset),
 		MTP_int(kMaxChannelAdmins),
-		MTP_int(participantsHash)
-	)).done([this](const MTPchannels_ChannelParticipants &result) {
+		MTP_long(participantsHash)
+	)).done([=](const MTPchannels_ChannelParticipants &result) {
 		session().api().parseChannelParticipants(_channel, result, [&](
 				int availableCount,
 				const QVector<MTPChannelParticipant> &list) {
@@ -658,6 +672,9 @@ not_null<Ui::PathShiftGradient*> InnerWidget::elementPathShiftGradient() {
 }
 
 void InnerWidget::elementReplyTo(const FullMsgId &to) {
+}
+
+void InnerWidget::elementStartInteraction(not_null<const Element*> view) {
 }
 
 void InnerWidget::saveState(not_null<SectionMemento*> memento) {
@@ -895,11 +912,16 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 
 	Painter p(this);
 
-	auto ms = crl::now();
 	auto clip = e->rect();
-
+	auto context = _controller->preparePaintContext({
+		.theme = _theme.get(),
+		.visibleAreaTop = _visibleTop,
+		.visibleAreaTopGlobal = mapToGlobal(QPoint(0, _visibleTop)).y(),
+		.visibleAreaWidth = width(),
+		.clip = clip,
+	});
 	if (_items.empty() && _upLoaded && _downLoaded) {
-		paintEmpty(p);
+		paintEmpty(p, context.st);
 	} else {
 		_pathGradient->startFrame(
 			0,
@@ -915,15 +937,20 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		});
 		if (from != end) {
 			auto top = itemTop(from->get());
+			context.translate(0, -top);
 			p.translate(0, top);
 			for (auto i = from; i != to; ++i) {
 				const auto view = i->get();
-				const auto selection = (view == _selectedItem)
+				context.outbg = view->hasOutLayout();
+				context.selection = (view == _selectedItem)
 					? _selectedText
 					: TextSelection();
-				view->draw(p, clip.translated(0, -top), selection, ms);
-				auto height = view->height();
+				view->draw(p, context);
+
+				const auto height = view->height();
 				top += height;
+				context.viewport.translate(0, -height);
+				context.clip.translate(0, -height);
 				p.translate(0, height);
 			}
 			p.translate(0, -top);
@@ -982,10 +1009,11 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 						const auto chatWide =
 							_controller->adaptive().isChatWide();
 						if (const auto date = view->Get<HistoryView::DateBadge>()) {
-							date->paint(p, dateY, width, chatWide);
+							date->paint(p, context.st, dateY, width, chatWide);
 						} else {
-							HistoryView::ServiceMessagePainter::paintDate(
+							HistoryView::ServiceMessagePainter::PaintDate(
 								p,
+								context.st,
 								view->dateTime(),
 								dateY,
 								width,
@@ -1025,19 +1053,14 @@ auto InnerWidget::viewForItem(const HistoryItem *item) -> Element* {
 	return nullptr;
 }
 
-void InnerWidget::paintEmpty(Painter &p) {
+void InnerWidget::paintEmpty(Painter &p, not_null<const Ui::ChatStyle*> st) {
 	auto rectWidth = st::historyAdminLogEmptyWidth;
 	auto innerWidth = rectWidth - st::historyAdminLogEmptyPadding.left() - st::historyAdminLogEmptyPadding.right();
 	auto rectHeight = st::historyAdminLogEmptyPadding.top() + _emptyText.countHeight(innerWidth) + st::historyAdminLogEmptyPadding.bottom();
 	auto rect = QRect((width() - rectWidth) / 2, (height() - rectHeight) / 3, rectWidth, rectHeight);
-	HistoryView::ServiceMessagePainter::paintBubble(
-		p,
-		rect.x(),
-		rect.y(),
-		rect.width(),
-		rect.height());
+	HistoryView::ServiceMessagePainter::PaintBubble(p, st, rect);
 
-	p.setPen(st::msgServiceFg);
+	p.setPen(st->msgServiceFg());
 	_emptyText.draw(p, rect.x() + st::historyAdminLogEmptyPadding.left(), rect.y() + st::historyAdminLogEmptyPadding.top(), innerWidth, style::al_top);
 }
 

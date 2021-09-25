@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_changes.h"
 #include "data/data_chat_filters.h"
 #include "data/data_scheduled_messages.h"
+#include "data/data_send_action.h"
 #include "data/data_folder.h"
 #include "data/data_photo.h"
 #include "data/data_channel.h"
@@ -335,16 +336,27 @@ void History::draftSavedToCloud() {
 	session().local().writeDrafts(this);
 }
 
-HistoryItemsList History::validateForwardDraft() {
-	auto result = owner().idsToItems(_forwardDraft);
-	if (result.size() != _forwardDraft.size()) {
-		setForwardDraft(owner().itemsToIds(result));
+Data::ResolvedForwardDraft History::resolveForwardDraft(
+		const Data::ForwardDraft &draft) const {
+	return Data::ResolvedForwardDraft{
+		.items = owner().idsToItems(draft.ids),
+		.options = draft.options,
+	};
+}
+
+Data::ResolvedForwardDraft History::resolveForwardDraft() {
+	auto result = resolveForwardDraft(_forwardDraft);
+	if (result.items.size() != _forwardDraft.ids.size()) {
+		setForwardDraft({
+			.ids = owner().itemsToIds(result.items),
+			.options = result.options,
+		});
 	}
 	return result;
 }
 
-void History::setForwardDraft(MessageIdsList &&items) {
-	_forwardDraft = std::move(items);
+void History::setForwardDraft(Data::ForwardDraft &&draft) {
+	_forwardDraft = std::move(draft);
 }
 
 HistoryItem *History::createItem(
@@ -458,7 +470,7 @@ void History::unpinAllMessages() {
 		Storage::SharedMediaRemoveAll(
 			peer->id,
 			Storage::SharedMediaType::Pinned));
-	peer->setHasPinnedMessages(false);
+	setHasPinnedMessages(false);
 	for (const auto &message : _messages) {
 		if (message->isPinned()) {
 			message->setIsPinned(false);
@@ -475,6 +487,19 @@ not_null<HistoryItem*> History::addNewItem(
 	} else if (!item->isHistoryEntry()) {
 		return item;
 	}
+
+	// In case we've loaded a new 'last' message
+	// and it is not in blocks and we think that
+	// we have all the messages till the bottom
+	// we should unload known history or mark
+	// currently loaded slice as not reaching bottom.
+	const auto shouldMarkBottomNotLoaded = loadedAtBottom()
+		&& !unread
+		&& !isEmpty();
+	if (shouldMarkBottomNotLoaded) {
+		setNotLoadedAtBottom();
+	}
+
 	if (!loadedAtBottom() || peer->migrateTo()) {
 		setLastMessage(item);
 		if (unread) {
@@ -751,7 +776,7 @@ not_null<HistoryItem*> History::addNewToBack(
 				item->id,
 				{ from, till }));
 			if (sharedMediaTypes.test(Storage::SharedMediaType::Pinned)) {
-				peer->setHasPinnedMessages(true);
+				setHasPinnedMessages(true);
 			}
 		}
 	}
@@ -1023,7 +1048,7 @@ void History::applyServiceChanges(
 						Storage::SharedMediaType::Pinned,
 						{ id },
 						{ id, ServerMaxMsgId }));
-					peer->setHasPinnedMessages(true);
+					setHasPinnedMessages(true);
 				}
 			});
 		}
@@ -1061,6 +1086,8 @@ void History::applyServiceChanges(
 				}
 			}
 		}
+	}, [&](const MTPDmessageActionSetChatTheme &data) {
+		peer->setThemeEmoji(qs(data.vemoticon()));
 	}, [](const auto &) {
 	});
 }
@@ -1086,7 +1113,7 @@ void History::newItemAdded(not_null<HistoryItem*> item) {
 	if (const auto from = item->from() ? item->from()->asUser() : nullptr) {
 		if (from == item->author()) {
 			_sendActionPainter.clear(from);
-			owner().repliesSendActionPaintersClear(this, from);
+			owner().sendActionManager().repliesPaintersClear(this, from);
 		}
 		from->madeAction(item->date());
 	}
@@ -1222,7 +1249,7 @@ void History::addOlderSlice(const QVector<MTPMessage> &slice) {
 
 	if (const auto added = createItems(slice); !added.empty()) {
 		startBuildingFrontBlock(added.size());
-		for (const auto item : added) {
+		for (const auto &item : added) {
 			addItemToBlock(item);
 		}
 		finishBuildingFrontBlock();
@@ -1255,7 +1282,7 @@ void History::addNewerSlice(const QVector<MTPMessage> &slice) {
 	if (const auto added = createItems(slice); !added.empty()) {
 		Assert(!isBuildingFrontBlock());
 
-		for (const auto item : added) {
+		for (const auto &item : added) {
 			addItemToBlock(item);
 		}
 
@@ -1301,7 +1328,7 @@ void History::addItemsToLists(
 		// lastParticipants are displayed in Profile as members list.
 		markupSenders = &peer->asChannel()->mgInfo->markupSenders;
 	}
-	for (const auto item : ranges::views::reverse(items)) {
+	for (const auto &item : ranges::views::reverse(items)) {
 		item->addToUnreadMentions(UnreadMentionType::Existing);
 		if (item->from()->id) {
 			if (lastAuthors) { // chats
@@ -1375,7 +1402,7 @@ void History::checkAddAllToUnreadMentions() {
 void History::addToSharedMedia(
 		const std::vector<not_null<HistoryItem*>> &items) {
 	std::vector<MsgId> medias[Storage::kSharedMediaTypeCount];
-	for (const auto item : items) {
+	for (const auto &item : items) {
 		if (const auto types = item->sharedMediaTypes()) {
 			for (auto i = 0; i != Storage::kSharedMediaTypeCount; ++i) {
 				const auto type = static_cast<Storage::SharedMediaType>(i);
@@ -1399,7 +1426,7 @@ void History::addToSharedMedia(
 				std::move(medias[i]),
 				{ from, till }));
 			if (type == Storage::SharedMediaType::Pinned) {
-				peer->setHasPinnedMessages(true);
+				setHasPinnedMessages(true);
 			}
 		}
 	}
@@ -1445,7 +1472,7 @@ bool History::readInboxTillNeedsRequest(MsgId tillId) {
 
 void History::readClientSideMessages() {
 	auto &histories = owner().histories();
-	for (const auto item : _localMessages) {
+	for (const auto &item : _localMessages) {
 		histories.readClientSideMessage(item);
 	}
 }
@@ -1631,7 +1658,16 @@ void History::setUnreadCount(int newUnreadCount) {
 	const auto notifier = unreadStateChangeNotifier(true);
 	_unreadCount = newUnreadCount;
 
-	if (newUnreadCount == 1) {
+	const auto lastOutgoing = [&] {
+		const auto last = lastMessage();
+		return last
+			&& IsServerMsgId(last->id)
+			&& loadedAtBottom()
+			&& !isEmpty()
+			&& blocks.back()->messages.back()->data() == last
+			&& last->out();
+	}();
+	if (newUnreadCount == 1 && !lastOutgoing) {
 		if (loadedAtBottom()) {
 			_firstUnreadView = !isEmpty()
 				? blocks.back()->messages.back().get()
@@ -3017,12 +3053,12 @@ void History::clear(ClearType type) {
 	} else {
 		// Leave the 'sending' messages in local messages.
 		auto local = base::flat_set<not_null<HistoryItem*>>();
-		for (const auto item : _localMessages) {
+		for (const auto &item : _localMessages) {
 			if (!item->isSending()) {
 				local.emplace(item);
 			}
 		}
-		for (const auto item : local) {
+		for (const auto &item : local) {
 			item->destroy();
 		}
 		_notifications.clear();
@@ -3110,6 +3146,15 @@ void History::removeBlock(not_null<HistoryBlock*> block) {
 	} else if (!blocks.empty() && !blocks.back()->messages.empty()) {
 		blocks.back()->messages.back()->nextInBlocksRemoved();
 	}
+}
+
+bool History::hasPinnedMessages() const {
+	return _hasPinnedMessages;
+}
+
+void History::setHasPinnedMessages(bool has) {
+	_hasPinnedMessages = has;
+	session().changes().historyUpdated(this, UpdateFlag::PinnedMessages);
 }
 
 History::~History() = default;
