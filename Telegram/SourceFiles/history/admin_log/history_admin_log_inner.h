@@ -36,6 +36,7 @@ enum class PointState : char;
 
 namespace Ui {
 class PopupMenu;
+class ChatStyle;
 } // namespace Ui
 
 namespace Window {
@@ -58,6 +59,9 @@ public:
 		not_null<ChannelData*> channel);
 
 	[[nodiscard]] Main::Session &session() const;
+	[[nodiscard]] not_null<Ui::ChatTheme*> theme() const {
+		return _theme.get();
+	}
 
 	[[nodiscard]] rpl::producer<> showSearchSignal() const;
 	[[nodiscard]] rpl::producer<int> scrollToSignal() const;
@@ -133,6 +137,8 @@ public:
 	bool elementIsChatWide() override;
 	not_null<Ui::PathShiftGradient*> elementPathShiftGradient() override;
 	void elementReplyTo(const FullMsgId &to) override;
+	void elementStartInteraction(
+		not_null<const HistoryView::Element*> view) override;
 
 	~InnerWidget();
 
@@ -210,7 +216,7 @@ private:
 	void updateSize();
 	void updateMinMaxIds();
 	void updateEmptyText();
-	void paintEmpty(Painter &p);
+	void paintEmpty(Painter &p, not_null<const Ui::ChatStyle*> st);
 	void clearAfterFilterChange();
 	void clearAndRequestLog();
 	void addEvents(Direction direction, const QVector<MTPChannelAdminLogEvent> &events);
@@ -253,6 +259,7 @@ private:
 	MTP::Sender _api;
 
 	const std::unique_ptr<Ui::PathShiftGradient> _pathGradient;
+	std::shared_ptr<Ui::ChatTheme> _theme;
 
 	std::vector<OwnedItem> _items;
 	std::set<uint64> _eventIds;

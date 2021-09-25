@@ -9,9 +9,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "core/crash_reports.h"
 #include "core/update_checker.h"
-#include "platform/linux/linux_gtk_integration.h"
+
+#ifndef DESKTOP_APP_DISABLE_WEBKITGTK
+#include "webview/platform/linux/webview_linux_webkit2gtk.h"
+#endif // !DESKTOP_APP_DISABLE_WEBKITGTK
 
 #include <QtWidgets/QApplication>
+
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+#include <glibmm.h>
+#include <giomm.h>
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -23,8 +31,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Platform {
 namespace {
-
-using Platform::internal::GtkIntegration;
 
 class Arguments {
 public:
@@ -53,24 +59,19 @@ Launcher::Launcher(int argc, char *argv[])
 }
 
 int Launcher::exec() {
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+	Glib::init();
+	Gio::init();
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+
+#ifndef DESKTOP_APP_DISABLE_WEBKITGTK
 	for (auto i = begin(_arguments), e = end(_arguments); i != e; ++i) {
-		if (*i == "-basegtkintegration" && std::distance(i, e) > 2) {
-			return GtkIntegration::Exec(
-				GtkIntegration::Type::Base,
-				QString::fromStdString(*(i + 1)),
-				QString::fromStdString(*(i + 2)));
-		} else if (*i == "-webviewhelper" && std::distance(i, e) > 2) {
-			return GtkIntegration::Exec(
-				GtkIntegration::Type::Webview,
-				QString::fromStdString(*(i + 1)),
-				QString::fromStdString(*(i + 2)));
-		} else if (*i == "-gtkintegration" && std::distance(i, e) > 2) {
-			return GtkIntegration::Exec(
-				GtkIntegration::Type::TDesktop,
-				QString::fromStdString(*(i + 1)),
-				QString::fromStdString(*(i + 2)));
+		if (*i == "-webviewhelper" && std::distance(i, e) > 2) {
+			Webview::WebKit2Gtk::SetServiceName(*(i + 2));
+			return Webview::WebKit2Gtk::Exec(*(i + 1));
 		}
 	}
+#endif // !DESKTOP_APP_DISABLE_WEBKITGTK
 
 	return Core::Launcher::exec();
 }
@@ -124,11 +125,6 @@ bool Launcher::launchUpdater(UpdaterLaunch action) {
 	if (cStartInTray()) {
 		argumentsList.push("-startintray");
 	}
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
-	if (Core::UpdaterDisabled()) {
-		argumentsList.push("-externalupdater");
-	}
-#endif // !TDESKTOP_DISABLE_AUTOUPDATE
 	if (cDataFile() != qsl("data")) {
 		argumentsList.push("-key");
 		argumentsList.push(QFile::encodeName(cDataFile()));

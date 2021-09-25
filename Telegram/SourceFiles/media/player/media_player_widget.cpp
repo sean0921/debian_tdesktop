@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/continuous_sliders.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/buttons.h"
+#include "ui/widgets/popup_menu.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/text/format_values.h"
 #include "ui/text/format_song_document_name.h"
@@ -59,6 +60,154 @@ private:
 	PlayButtonLayout _layout;
 
 };
+
+class Widget::SpeedButton : public Ui::IconButton {
+public:
+	SpeedButton(QWidget *parent, const style::IconButton &st);
+
+	[[nodiscard]] rpl::producer<> saved() const;
+
+protected:
+	void contextMenuEvent(QContextMenuEvent *e) override;
+
+private:
+	class SpeedController final {
+	public:
+		SpeedController() {
+			setSpeed(Core::App().settings().voicePlaybackSpeed());
+			_speed = Core::App().settings().voicePlaybackSpeed(true);
+		}
+
+		[[nodiscard]] rpl::producer<float64> speedValue() const {
+			return _speedChanged.events_starting_with(speed());
+		}
+		[[nodiscard]] rpl::producer<> saved() const {
+			return _saved.events();
+		}
+		[[nodiscard]] float64 speed() const {
+			return _isDefault ? 1. : _speed;
+		}
+		[[nodiscard]] bool isDefault() const {
+			return _isDefault;
+		}
+		[[nodiscard]] float64 lastNonDefaultSpeed() const {
+			return _speed;
+		}
+		void toggleDefault() {
+			_isDefault = !_isDefault;
+			_speedChanged.fire(speed());
+		}
+		void setSpeed(float64 newSpeed) {
+			if (!(_isDefault = (newSpeed == 1.))) {
+				_speed = newSpeed;
+			}
+			_speedChanged.fire(speed());
+		}
+		void save() {
+			Core::App().settings().setVoicePlaybackSpeed(speed());
+			Core::App().saveSettingsDelayed();
+			_saved.fire({});
+		}
+
+	private:
+		float64 _speed = 2.;
+		bool _isDefault = true;
+		rpl::event_stream<float64> _speedChanged;
+		rpl::event_stream<> _saved;
+	};
+
+	SpeedController _speed;
+
+	base::unique_qptr<Ui::PopupMenu> _menu;
+
+};
+
+Widget::SpeedButton::SpeedButton(QWidget *parent, const style::IconButton &st)
+: IconButton(parent, st) {
+	setClickedCallback([=] {
+		_speed.toggleDefault();
+		_speed.save();
+	});
+
+	struct Icons {
+		const style::icon *icon = nullptr;
+		const style::icon *over = nullptr;
+	};
+
+	_speed.speedValue(
+	) | rpl::start_with_next([=](float64 speed) {
+		const auto isDefaultSpeed = _speed.isDefault();
+		const auto nonDefaultSpeed = _speed.lastNonDefaultSpeed();
+
+		const auto icons = [&]() -> Icons {
+			if (nonDefaultSpeed == .5) {
+				return {
+					.icon = isDefaultSpeed
+						? &st::mediaPlayerSpeedSlowDisabledIcon
+						: &st::mediaPlayerSpeedSlowIcon,
+					.over = isDefaultSpeed
+						? &st::mediaPlayerSpeedSlowDisabledIconOver
+						: &st::mediaPlayerSpeedSlowIcon,
+				};
+			} else if (nonDefaultSpeed == 1.5) {
+				return {
+					.icon = isDefaultSpeed
+						? &st::mediaPlayerSpeedFastDisabledIcon
+						: &st::mediaPlayerSpeedFastIcon,
+					.over = isDefaultSpeed
+						? &st::mediaPlayerSpeedFastDisabledIconOver
+						: &st::mediaPlayerSpeedFastIcon,
+				};
+			} else {
+				return {
+					.icon = isDefaultSpeed
+						? &st::mediaPlayerSpeedDisabledIcon
+						: nullptr, // 2x icon.
+					.over = isDefaultSpeed
+						? &st::mediaPlayerSpeedDisabledIconOver
+						: nullptr, // 2x icon.
+				};
+			}
+		}();
+
+		setIconOverride(icons.icon, icons.over);
+		setRippleColorOverride(isDefaultSpeed
+			? &st::mediaPlayerSpeedDisabledRippleBg
+			: nullptr);
+	}, lifetime());
+}
+
+void Widget::SpeedButton::contextMenuEvent(QContextMenuEvent *e) {
+	_menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		st::mediaPlayerPopupMenu);
+
+	const auto setPlaybackSpeed = [=](float64 speed) {
+		_speed.setSpeed(speed);
+		_speed.save();
+	};
+
+	const auto currentSpeed = _speed.speed();
+	const auto addSpeed = [&](float64 speed, QString text = QString()) {
+		if (text.isEmpty()) {
+			text = QString::number(speed);
+		}
+		_menu->addAction(
+			text,
+			[=] { setPlaybackSpeed(speed); },
+			(speed == currentSpeed) ? &st::mediaPlayerMenuCheck : nullptr);
+	};
+	addSpeed(0.5, tr::lng_voice_speed_slow(tr::now));
+	addSpeed(1., tr::lng_voice_speed_normal(tr::now));
+	addSpeed(1.5, tr::lng_voice_speed_fast(tr::now));
+	addSpeed(2., tr::lng_voice_speed_very_fast(tr::now));
+
+	_menu->popup(e->globalPos());
+}
+
+rpl::producer<> Widget::SpeedButton::saved() const {
+	return _speed.saved();
+}
 
 Widget::PlayButton::PlayButton(QWidget *parent) : Ui::RippleButton(parent, st::mediaPlayerButton.ripple)
 , _layout(st::mediaPlayerButton, [this] { update(); }) {
@@ -146,14 +295,10 @@ Widget::Widget(QWidget *parent, not_null<Main::Session*> session)
 		instance()->toggleRepeat(AudioMsgId::Type::Song);
 	});
 
-	updatePlaybackSpeedIcon();
-	_playbackSpeed->setClickedCallback([=] {
-		const auto doubled = !Core::App().settings().voiceMsgPlaybackDoubled();
-		Core::App().settings().setVoiceMsgPlaybackDoubled(doubled);
+	_playbackSpeed->saved(
+	) | rpl::start_with_next([=] {
 		instance()->updateVoicePlaybackSpeed();
-		updatePlaybackSpeedIcon();
-		Core::App().saveSettingsDelayed();
-	});
+	}, lifetime());
 
 	subscribe(instance()->repeatChangedNotifier(), [this](AudioMsgId::Type type) {
 		if (type == _type) {
@@ -163,6 +308,8 @@ Widget::Widget(QWidget *parent, not_null<Main::Session*> session)
 	subscribe(instance()->trackChangedNotifier(), [this](AudioMsgId::Type type) {
 		if (type == _type) {
 			handleSongChange();
+			updateControlsVisibility();
+			updateLabelsGeometry();
 		}
 	});
 	subscribe(instance()->tracksFinishedNotifier(), [this](AudioMsgId::Type type) {
@@ -277,6 +424,10 @@ void Widget::handleSeekFinished(float64 progress) {
 }
 
 void Widget::resizeEvent(QResizeEvent *e) {
+	updateControlsGeometry();
+}
+
+void Widget::updateControlsGeometry() {
 	auto right = st::mediaPlayerCloseRight;
 	_close->moveToRight(right, st::mediaPlayerPlayTop); right += _close->width();
 	if (hasPlaybackSpeedControl()) {
@@ -370,7 +521,8 @@ int Widget::getLabelsRight() const {
 	auto result = st::mediaPlayerCloseRight + _close->width();
 	if (_type == AudioMsgId::Type::Song) {
 		result += _repeatTrack->width() + _volumeToggle->width();
-	} else if (hasPlaybackSpeedControl()) {
+	}
+	if (hasPlaybackSpeedControl()) {
 		result += _playbackSpeed->width();
 	}
 	result += st::mediaPlayerPadding;
@@ -395,16 +547,6 @@ void Widget::updateRepeatTrackIcon() {
 	_repeatTrack->setRippleColorOverride(repeating ? nullptr : &st::mediaPlayerRepeatDisabledRippleBg);
 }
 
-void Widget::updatePlaybackSpeedIcon() {
-	const auto doubled = Core::App().settings().voiceMsgPlaybackDoubled();
-	const auto isDefaultSpeed = !doubled;
-	_playbackSpeed->setIconOverride(
-		isDefaultSpeed ? &st::mediaPlayerSpeedDisabledIcon : nullptr,
-		isDefaultSpeed ? &st::mediaPlayerSpeedDisabledIconOver : nullptr);
-	_playbackSpeed->setRippleColorOverride(
-		isDefaultSpeed ? &st::mediaPlayerSpeedDisabledRippleBg : nullptr);
-}
-
 void Widget::checkForTypeChange() {
 	auto hasActiveType = [](AudioMsgId::Type type) {
 		const auto current = instance()->current(type);
@@ -420,21 +562,26 @@ void Widget::checkForTypeChange() {
 }
 
 bool Widget::hasPlaybackSpeedControl() const {
-	return (_type == AudioMsgId::Type::Voice)
+	return _lastSongId.changeablePlaybackSpeed()
 		&& Media::Audio::SupportsSpeedControl();
+}
+
+void Widget::updateControlsVisibility() {
+	_repeatTrack->setVisible(_type == AudioMsgId::Type::Song);
+	_volumeToggle->setVisible(_type == AudioMsgId::Type::Song);
+	_playbackSpeed->setVisible(hasPlaybackSpeedControl());
+	if (!_shadow->isHidden()) {
+		_playbackSlider->setVisible(_type == AudioMsgId::Type::Song);
+	}
+	updateControlsGeometry();
 }
 
 void Widget::setType(AudioMsgId::Type type) {
 	if (_type != type) {
 		_type = type;
-		_repeatTrack->setVisible(_type == AudioMsgId::Type::Song);
-		_volumeToggle->setVisible(_type == AudioMsgId::Type::Song);
-		_playbackSpeed->setVisible(hasPlaybackSpeedControl());
-		if (!_shadow->isHidden()) {
-			_playbackSlider->setVisible(_type == AudioMsgId::Type::Song);
-		}
-		updateLabelsGeometry();
 		handleSongChange();
+		updateControlsVisibility();
+		updateLabelsGeometry();
 		handleSongUpdate(instance()->getState(_type));
 		updateOverLabelsState(_labelsOver);
 		_playlistChangesLifetime = instance()->playlistChanges(

@@ -270,12 +270,12 @@ std::unique_ptr<Launcher> Launcher::Create(int argc, char *argv[]) {
 	return std::make_unique<Platform::Launcher>(argc, argv);
 }
 
-Launcher::Launcher(
-	int argc,
-	char *argv[])
+Launcher::Launcher(int argc, char *argv[])
 : _argc(argc)
 , _argv(argv)
 , _baseIntegration(_argc, _argv) {
+	crl::toggle_fp_exceptions(true);
+
 	base::Integration::Set(&_baseIntegration);
 }
 
@@ -286,10 +286,7 @@ void Launcher::init() {
 	initQtMessageLogging();
 
 	QApplication::setApplicationName(qsl("TelegramDesktop"));
-
-#ifndef OS_MAC_OLD
 	QApplication::setAttribute(Qt::AA_DisableHighDpiScaling, true);
-#endif // OS_MAC_OLD
 
 	// fallback session management is useless for tdesktop since it doesn't have
 	// any "are you sure you want to close this window?" dialogs
@@ -333,7 +330,6 @@ int Launcher::exec() {
 
 	// Must be started before Sandbox is created.
 	Platform::start();
-
 	auto result = executeApplication();
 
 	DEBUG_LOG(("Telegram finished, result: %1").arg(result));
@@ -427,9 +423,17 @@ void Launcher::initQtMessageLogging() {
 			QtMsgType type,
 			const QMessageLogContext &context,
 			const QString &msg) {
-		if (OriginalMessageHandler) {
-			OriginalMessageHandler(type, context, msg);
-		}
+		const auto InvokeOriginal = [&] {
+#ifndef _DEBUG
+			if (Logs::DebugEnabled()) {
+				return;
+			}
+#endif // _DEBUG
+			if (OriginalMessageHandler) {
+				OriginalMessageHandler(type, context, msg);
+			}
+		};
+		InvokeOriginal();
 		if (Logs::DebugEnabled() || !Logs::started()) {
 			if (!Logs::WritingEntry()) {
 				// Sometimes Qt logs something inside our own logging.
@@ -450,7 +454,6 @@ void Launcher::processArguments() {
 		AllLeftValues,
 	};
 	auto parseMap = std::map<QByteArray, KeyFormat> {
-		{ "-testmode"       , KeyFormat::NoValues },
 		{ "-debug"          , KeyFormat::NoValues },
 		{ "-freetype"       , KeyFormat::NoValues },
 		{ "-many"           , KeyFormat::NoValues },
@@ -459,9 +462,9 @@ void Launcher::processArguments() {
 		{ "-fixprevious"    , KeyFormat::NoValues },
 		{ "-cleanup"        , KeyFormat::NoValues },
 		{ "-noupdate"       , KeyFormat::NoValues },
-		{ "-externalupdater", KeyFormat::NoValues },
 		{ "-tosettings"     , KeyFormat::NoValues },
 		{ "-startintray"    , KeyFormat::NoValues },
+		{ "-quit"           , KeyFormat::NoValues },
 		{ "-sendpath"       , KeyFormat::AllLeftValues },
 		{ "-workdir"        , KeyFormat::OneValue },
 		{ "--"              , KeyFormat::OneValue },
@@ -490,9 +493,6 @@ void Launcher::processArguments() {
 		}
 	}
 
-	if (parseResult.contains("-externalupdater")) {
-		SetUpdaterDisabledAtStartup();
-	}
 	gUseFreeType = parseResult.contains("-freetype");
 	gDebugMode = parseResult.contains("-debug");
 	gManyInstance = parseResult.contains("-many");
@@ -505,6 +505,7 @@ void Launcher::processArguments() {
 	gNoStartUpdate = parseResult.contains("-noupdate");
 	gStartToSettings = parseResult.contains("-tosettings");
 	gStartInTray = parseResult.contains("-startintray");
+	gQuit = parseResult.contains("-quit");
 	gSendPaths = parseResult.value("-sendpath", {});
 	gWorkingDir = parseResult.value("-workdir", {}).join(QString());
 	if (!gWorkingDir.isEmpty()) {

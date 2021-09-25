@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/image/image_prepare.h"
 #include "ui/toast/toast.h"
 #include "ui/text/format_values.h"
+#include "ui/style/style_palette_colorizer.h"
 #include "ui/special_fields.h"
 #include "ui/ui_utility.h"
 #include "main/main_account.h"
@@ -33,14 +34,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/base_file_utilities.h"
 #include "base/zlib_help.h"
 #include "base/unixtime.h"
-#include "base/openssl_help.h"
+#include "base/random.h"
 #include "data/data_session.h"
 #include "data/data_document.h"
 #include "data/data_cloud_themes.h"
 #include "storage/file_upload.h"
 #include "mainwindow.h"
 #include "apiwrap.h"
-#include "app.h"
 #include "styles/style_widgets.h"
 #include "styles/style_window.h"
 #include "styles/style_settings.h"
@@ -186,15 +186,14 @@ void BackgroundSelector::chooseBackgroundFromFile() {
 			}
 		}
 		if (!content.isEmpty()) {
-			auto format = QByteArray();
-			auto image = App::readImage(content, &format);
-			if (!image.isNull()
-				&& (format == "jpeg"
-					|| format == "jpg"
-					|| format == "png")) {
-				_background = image;
+			auto read = Images::Read({ .content = content });
+			if (!read.image.isNull()
+				&& (read.format == "jpeg"
+					|| read.format == "jpg"
+					|| read.format == "png")) {
+				_background = std::move(read.image);
 				_parsed.background = content;
-				_parsed.isPng = (format == "png");
+				_parsed.isPng = (read.format == "png");
 				const auto phrase = _parsed.isPng
 					? tr::lng_theme_editor_read_from_png
 					: tr::lng_theme_editor_read_from_jpg;
@@ -331,26 +330,6 @@ bool CopyColorsToPalette(
 	return true;
 }
 
-[[nodiscard]] QString GenerateSlug() {
-	const auto letters = uint8('Z' + 1 - 'A');
-	const auto digits = uint8('9' + 1 - '0');
-	const auto values = uint8(2 * letters + digits);
-
-	auto result = QString();
-	result.reserve(kRandomSlugSize);
-	for (auto i = 0; i != kRandomSlugSize; ++i) {
-		const auto value = openssl::RandomValue<uint8>() % values;
-		if (value < letters) {
-			result.append(char('A' + value));
-		} else if (value < 2 * letters) {
-			result.append(char('a' + (value - letters)));
-		} else {
-			result.append(char('0' + (value - 2 * letters)));
-		}
-	}
-	return result;
-}
-
 [[nodiscard]] QByteArray PackTheme(const ParsedTheme &parsed) {
 	zlib::FileToWrite zip;
 
@@ -444,7 +423,7 @@ SendMediaReady PrepareThemeMedia(
 	auto attributes = QVector<MTPDocumentAttribute>(
 		1,
 		MTP_documentAttributeFilename(MTP_string(filename)));
-	const auto id = openssl::RandomValue<DocumentId>();
+	const auto id = base::RandomValue<DocumentId>();
 	const auto document = MTP_document(
 		MTP_flags(0),
 		MTP_long(id),
@@ -1017,6 +996,26 @@ ParsedTheme ParseTheme(
 		return raw.background.isEmpty() ? ParsedTheme() : result();
 	}
 	return result();
+}
+
+[[nodiscard]] QString GenerateSlug() {
+	const auto letters = uint8('Z' + 1 - 'A');
+	const auto digits = uint8('9' + 1 - '0');
+	const auto values = uint8(2 * letters + digits);
+
+	auto result = QString();
+	result.reserve(kRandomSlugSize);
+	for (auto i = 0; i != kRandomSlugSize; ++i) {
+		const auto value = base::RandomValue<uint8>() % values;
+		if (value < letters) {
+			result.append(char('A' + value));
+		} else if (value < 2 * letters) {
+			result.append(char('a' + (value - letters)));
+		} else {
+			result.append(char('0' + (value - 2 * letters)));
+		}
+	}
+	return result;
 }
 
 } // namespace Theme

@@ -25,7 +25,7 @@ using UpdateFlag = Data::PeerUpdate::Flag;
 
 ChatData::ChatData(not_null<Data::Session*> owner, PeerId id)
 : PeerData(owner, id)
-, inputChat(MTP_int(peerToChat(id).bare)) {
+, inputChat(MTP_long(peerToChat(id).bare)) {
 	_flags.changes(
 	) | rpl::start_with_next([=](const Flags::Change &change) {
 		if (change.diff & ChatDataFlag::CallNotEmpty) {
@@ -428,6 +428,7 @@ void ApplyChatUpdate(not_null<ChatData*> chat, const MTPDchatFull &update) {
 		SetTopPinnedMessageId(chat, pinned->v);
 	}
 	chat->checkFolder(update.vfolder_id().value_or_empty());
+	chat->setThemeEmoji(qs(update.vtheme_emoticon().value_or_empty()));
 	chat->fullUpdated();
 	chat->setAbout(qs(update.vabout()));
 

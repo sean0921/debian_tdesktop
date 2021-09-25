@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/file_utilities.h"
 #include "core/mime_type.h"
 #include "base/unixtime.h"
+#include "base/random.h"
 #include "base/qt_adapters.h"
 #include "editor/scene/scene.h" // Editor::Scene::attachedStickers
 #include "media/audio/media_audio.h"
@@ -31,7 +32,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "main/main_session.h"
-#include "app.h"
 
 #include <QtCore/QBuffer>
 #include <QtGui/QImageWriter>
@@ -59,7 +59,7 @@ PreparedFileThumbnail PrepareFileThumbnail(QImage &&original) {
 		return {};
 	}
 	auto result = PreparedFileThumbnail();
-	result.id = openssl::RandomValue<uint64>();
+	result.id = base::RandomValue<uint64>();
 	const auto scaled = (width > kThumbnailSize || height > kThumbnailSize);
 	const auto scaledWidth = [&] {
 		return (width > height)
@@ -151,6 +151,56 @@ MTPInputSingleMedia PrepareAlbumItemMedia(
 
 } // namespace
 
+SendMediaPrepare::SendMediaPrepare(
+	const QString &file,
+	const PeerId &peer,
+	SendMediaType type,
+	MsgId replyTo)
+: id(base::RandomValue<PhotoId>())
+, file(file)
+, peer(peer)
+, type(type)
+, replyTo(replyTo) {
+}
+
+SendMediaPrepare::SendMediaPrepare(
+	const QImage &img,
+	const PeerId &peer,
+	SendMediaType type,
+	MsgId replyTo)
+: id(base::RandomValue<PhotoId>())
+, img(img)
+, peer(peer)
+, type(type)
+, replyTo(replyTo) {
+}
+
+SendMediaPrepare::SendMediaPrepare(
+	const QByteArray &data,
+	const PeerId &peer,
+	SendMediaType type,
+	MsgId replyTo)
+: id(base::RandomValue<PhotoId>())
+, data(data)
+, peer(peer)
+, type(type)
+, replyTo(replyTo) {
+}
+
+SendMediaPrepare::SendMediaPrepare(
+	const QByteArray &data,
+	int duration,
+	const PeerId &peer,
+	SendMediaType type,
+	MsgId replyTo)
+: id(base::RandomValue<PhotoId>())
+, data(data)
+, peer(peer)
+, type(type)
+, duration(duration)
+, replyTo(replyTo) {
+}
+
 SendMediaReady::SendMediaReady(
 	SendMediaType type,
 	const QString &file,
@@ -221,7 +271,7 @@ SendMediaReady PreparePeerPhoto(MTP::DcId dcId, PeerId peerId, QImage &&image) {
 	push("b", scaled(320));
 	push("c", std::move(image), jpeg);
 
-	const auto id = openssl::RandomValue<PhotoId>();
+	const auto id = base::RandomValue<PhotoId>();
 	const auto photo = MTP_photo(
 		MTP_flags(0),
 		MTP_long(id),
@@ -401,7 +451,7 @@ void TaskQueueWorker::onTaskAdded() {
 	_inTaskAdded = false;
 }
 
-SendingAlbum::SendingAlbum() : groupId(openssl::RandomValue<uint64>()) {
+SendingAlbum::SendingAlbum() : groupId(base::RandomValue<uint64>()) {
 }
 
 void SendingAlbum::fillMedia(
@@ -494,7 +544,7 @@ FileLoadTask::FileLoadTask(
 	const FileLoadTo &to,
 	const TextWithTags &caption,
 	std::shared_ptr<SendingAlbum> album)
-: _id(openssl::RandomValue<uint64>())
+: _id(base::RandomValue<uint64>())
 , _session(session)
 , _dcId(session->mainDcId())
 , _to(to)
@@ -515,7 +565,7 @@ FileLoadTask::FileLoadTask(
 	const VoiceWaveform &waveform,
 	const FileLoadTo &to,
 	const TextWithTags &caption)
-: _id(openssl::RandomValue<uint64>())
+: _id(base::RandomValue<uint64>())
 , _session(session)
 , _dcId(session->mainDcId())
 , _to(to)
@@ -642,25 +692,25 @@ bool FileLoadTask::CheckForImage(
 		const QString &filepath,
 		const QByteArray &content,
 		std::unique_ptr<Ui::PreparedFileInformation> &result) {
-	auto animated = false;
-	auto image = [&] {
+	auto read = [&] {
 		if (filepath.endsWith(qstr(".tgs"), Qt::CaseInsensitive)) {
 			auto image = Lottie::ReadThumbnail(
 				Lottie::ReadContent(content, filepath));
-			if (!image.isNull()) {
-				animated = true;
+			const auto success = !image.isNull();
+			if (success) {
 				result->filemime = qstr("application/x-tgsticker");
 			}
-			return image;
+			return Images::ReadResult{
+				.image = std::move(image),
+				.animated = success,
+			};
 		}
-		if (!content.isEmpty()) {
-			return App::readImage(content, nullptr, false, &animated);
-		} else if (!filepath.isEmpty()) {
-			return App::readImage(filepath, nullptr, false, &animated);
-		}
-		return QImage();
+		return Images::Read({
+			.path = filepath,
+			.content = content,
+		});
 	}();
-	return FillImageInformation(std::move(image), animated, result);
+	return FillImageInformation(std::move(read.image), read.animated, result);
 }
 
 bool FileLoadTask::FillImageInformation(

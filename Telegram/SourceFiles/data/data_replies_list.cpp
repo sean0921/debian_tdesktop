@@ -101,6 +101,15 @@ rpl::producer<MessagesSlice> RepliesList::source(
 		_partLoaded.events(
 		) | rpl::start_with_next(pushDelayed, lifetime);
 
+		_history->session().data().channelDifferenceTooLong(
+		) | rpl::filter([=](not_null<ChannelData*> channel) {
+			if (_history->peer != channel || !_skippedAfter.has_value()) {
+				return false;
+			}
+			_skippedAfter = std::nullopt;
+			return true;
+		}) | rpl::start_with_next(pushDelayed, lifetime);
+
 		push();
 		return lifetime;
 	};
@@ -115,7 +124,7 @@ void RepliesList::appendLocalMessages(MessagesSlice &slice) {
 			return;
 		}
 		slice.ids.reserve(local.size());
-		for (const auto item : local) {
+		for (const auto &item : local) {
 			if (item->replyToTop() != _rootId) {
 				continue;
 			}
@@ -133,7 +142,7 @@ void RepliesList::appendLocalMessages(MessagesSlice &slice) {
 
 		dates.push_back(message->date());
 	}
-	for (const auto item : local) {
+	for (const auto &item : local) {
 		if (item->replyToTop() != _rootId) {
 			continue;
 		}
@@ -169,6 +178,64 @@ rpl::producer<int> RepliesList::fullCount() const {
 	return _fullCount.value() | rpl::filter_optional();
 }
 
+std::optional<int> RepliesList::fullUnreadCountAfter(
+		MsgId readTillId,
+		MsgId wasReadTillId,
+		std::optional<int> wasUnreadCountAfter) const {
+	Expects(readTillId >= wasReadTillId);
+
+	readTillId = std::max(readTillId, _rootId);
+	wasReadTillId = std::max(wasReadTillId, _rootId);
+	const auto backLoaded = (_skippedBefore == 0);
+	const auto frontLoaded = (_skippedAfter == 0);
+	const auto fullLoaded = backLoaded && frontLoaded;
+	const auto allUnread = (readTillId == _rootId)
+		|| (fullLoaded && _list.empty());
+	const auto countIncoming = [&](auto from, auto till) {
+		auto &owner = _history->owner();
+		const auto channelId = _history->channelId();
+		auto count = 0;
+		for (auto i = from; i != till; ++i) {
+			if (!owner.message(channelId, *i)->out()) {
+				++count;
+			}
+		}
+		return count;
+	};
+	if (allUnread && fullLoaded) {
+		// Should not happen too often unless the list is empty.
+		return countIncoming(begin(_list), end(_list));
+	} else if (frontLoaded && !_list.empty() && readTillId >= _list.front()) {
+		// Always "count by local data" if read till the end.
+		return 0;
+	} else if (wasReadTillId == readTillId) {
+		// Otherwise don't recount the same value over and over.
+		return wasUnreadCountAfter;
+	} else if (frontLoaded && !_list.empty() && readTillId >= _list.back()) {
+		// And count by local data if it is available and read-till changed.
+		return countIncoming(
+			begin(_list),
+			ranges::lower_bound(_list, readTillId, std::greater<>()));
+	} else if (_list.empty()) {
+		return std::nullopt;
+	} else if (wasUnreadCountAfter.has_value()
+		&& (frontLoaded || readTillId <= _list.front())
+		&& (backLoaded || wasReadTillId >= _list.back())) {
+		// Count how many were read since previous value.
+		const auto from = ranges::lower_bound(
+			_list,
+			readTillId,
+			std::greater<>());
+		const auto till = ranges::lower_bound(
+			from,
+			end(_list),
+			wasReadTillId,
+			std::greater<>());
+		return std::max(*wasUnreadCountAfter - countIncoming(from, till), 0);
+	}
+	return std::nullopt;
+}
+
 void RepliesList::injectRootMessageAndReverse(not_null<Viewer*> viewer) {
 	injectRootMessage(viewer);
 	ranges::reverse(viewer->slice.ids);
@@ -187,7 +254,7 @@ void RepliesList::injectRootMessage(not_null<Viewer*> viewer) {
 	injectRootDivider(root, slice);
 
 	if (const auto group = _history->owner().groups().find(root)) {
-		for (const auto item : ranges::views::reverse(group->items)) {
+		for (const auto &item : ranges::views::reverse(group->items)) {
 			slice->ids.push_back(item->fullId());
 		}
 		viewer->injectedForRoot = group->items.size();
@@ -372,7 +439,7 @@ void RepliesList::loadAround(MsgId id) {
 			MTP_int(kMessagesPerPage), // limit
 			MTP_int(0), // max_id
 			MTP_int(0), // min_id
-			MTP_int(0) // hash
+			MTP_long(0) // hash
 		)).done([=](const MTPmessages_Messages &result) {
 			_beforeId = 0;
 			_loadingAround = std::nullopt;
@@ -428,7 +495,7 @@ void RepliesList::loadBefore() {
 			MTP_int(kMessagesPerPage), // limit
 			MTP_int(0), // min_id
 			MTP_int(0), // max_id
-			MTP_int(0) // hash
+			MTP_long(0) // hash
 		)).done([=](const MTPmessages_Messages &result) {
 			_beforeId = 0;
 			finish();
@@ -472,7 +539,7 @@ void RepliesList::loadAfter() {
 			MTP_int(kMessagesPerPage), // limit
 			MTP_int(0), // min_id
 			MTP_int(0), // max_id
-			MTP_int(0) // hash
+			MTP_long(0) // hash
 		)).done([=](const MTPmessages_Messages &result) {
 			_afterId = 0;
 			finish();

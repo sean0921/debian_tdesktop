@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "support/support_autocomplete.h"
 
+#include "ui/chat/chat_theme.h"
+#include "ui/chat/chat_style.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/widgets/buttons.h"
@@ -24,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "apiwrap.h"
+#include "window/window_session_controller.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_window.h"
 #include "styles/style_layers.h"
@@ -317,7 +320,7 @@ AdminLog::OwnedItem GenerateContactItem(
 			MTP_string(data.firstName),
 			MTP_string(data.lastName),
 			MTP_string(), // vcard
-			MTP_int(0)), // user_id
+			MTP_long(0)), // user_id
 		MTPReplyMarkup(),
 		groupedId);
 	return AdminLog::OwnedItem(delegate, item);
@@ -501,9 +504,11 @@ ConfirmContactBox::ConfirmContactBox(
 	const Contact &data,
 	Fn<void(Qt::KeyboardModifiers)> submit)
 : SimpleElementDelegate(controller, [=] { update(); })
+, _chatStyle(std::make_unique<Ui::ChatStyle>())
 , _comment(GenerateCommentItem(this, history, data))
 , _contact(GenerateContactItem(this, history, data))
 , _submit(submit) {
+	_chatStyle->apply(controller->defaultChatTheme().get());
 }
 
 void ConfirmContactBox::prepare() {
@@ -564,13 +569,19 @@ void ConfirmContactBox::paintEvent(QPaintEvent *e) {
 
 	p.fillRect(e->rect(), st::boxBg);
 
-	const auto ms = crl::now();
+	const auto theme = controller()->defaultChatTheme().get();
+	auto context = theme->preparePaintContext(
+		_chatStyle.get(),
+		rect(),
+		rect());
 	p.translate(st::boxPadding.left(), 0);
 	if (_comment) {
-		_comment->draw(p, rect(), TextSelection(), ms);
+		context.outbg = _comment->hasOutLayout();
+		_comment->draw(p, context);
 		p.translate(0, _comment->height());
 	}
-	_contact->draw(p, rect(), TextSelection(), ms);
+	context.outbg = _contact->hasOutLayout();
+	_contact->draw(p, context);
 }
 
 HistoryView::Context ConfirmContactBox::elementContext() {

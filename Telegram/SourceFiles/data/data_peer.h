@@ -340,18 +340,6 @@ public:
 			int size) const {
 		paintUserpic(p, view, rtl() ? (w - x - size) : x, y, size);
 	}
-	void paintUserpicRounded(
-		Painter &p,
-		std::shared_ptr<Data::CloudImageView> &view,
-		int x,
-		int y,
-		int size) const;
-	void paintUserpicSquare(
-		Painter &p,
-		std::shared_ptr<Data::CloudImageView> &view,
-		int x,
-		int y,
-		int size) const;
 	void loadUserpic();
 	[[nodiscard]] bool hasUserpic() const;
 	[[nodiscard]] std::shared_ptr<Data::CloudImageView> activeUserpicView();
@@ -371,9 +359,13 @@ public:
 	[[nodiscard]] QPixmap genUserpic(
 		std::shared_ptr<Data::CloudImageView> &view,
 		int size) const;
-	[[nodiscard]] QPixmap genUserpicRounded(
+	[[nodiscard]] QImage generateUserpicImage(
 		std::shared_ptr<Data::CloudImageView> &view,
 		int size) const;
+	[[nodiscard]] QImage generateUserpicImage(
+		std::shared_ptr<Data::CloudImageView> &view,
+		int size,
+		ImageRoundRadius radius) const;
 	[[nodiscard]] ImageLocation userpicLocation() const {
 		return _userpic.location();
 	}
@@ -405,9 +397,6 @@ public:
 
 	[[nodiscard]] bool canPinMessages() const;
 	[[nodiscard]] bool canEditMessagesIndefinitely() const;
-
-	[[nodiscard]] bool hasPinnedMessages() const;
-	void setHasPinnedMessages(bool has);
 
 	[[nodiscard]] bool canExportChatHistory() const;
 
@@ -470,6 +459,9 @@ public:
 	[[nodiscard]] Data::GroupCall *groupCall() const;
 	[[nodiscard]] PeerId groupCallDefaultJoinAs() const;
 
+	void setThemeEmoji(const QString &emoji);
+	[[nodiscard]] const QString &themeEmoji() const;
+
 	const PeerId id;
 	QString name;
 	MTPinputPeer input = MTP_inputPeerEmpty();
@@ -508,13 +500,13 @@ private:
 	crl::time _lastFullUpdate = 0;
 
 	TimeId _ttlPeriod = 0;
-	bool _hasPinnedMessages = false;
 
 	Settings _settings = PeerSettings(PeerSetting::Unknown);
 	BlockStatus _blockStatus = BlockStatus::Unknown;
 	LoadedStatus _loadedStatus = LoadedStatus::Not;
 
 	QString _about;
+	QString _themeEmoji;
 
 };
 

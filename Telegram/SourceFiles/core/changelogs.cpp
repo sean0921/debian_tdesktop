@@ -22,72 +22,43 @@ namespace {
 std::map<int, const char*> BetaLogs() {
 	return {
 	{
-		2007005,
-		"- Add \"Voice chats\" filter in \"Recent actions\" for channels.\n"
-
-		"- Write local drafts to disk on a background thread.\n"
-
-		"- Support autoupdate for Telegram in write-protected folders on Linux.\n"
-
-		"- Fix crash in native notifications on Linux.\n"
-
-		"- Fix crash in file dialog on Linux.\n"
+		2009004,
+		"- Choose one from dozens of new gorgeous animated backgrounds"
+		" in Chat Settings > Chat background.\n"
 	},
 	{
-		2007007,
-		"- Optimized video playback in media viewer and Picture-in-Picture mode.\n"
+		2009005,
+		"- Tile chat background patterns horizontally.\n"
 
-		"- Added integration with System Media Transport Controls on Windows 10.\n"
+		"- Fix a rare crash in spellchecker on Windows.\n"
 
-		"- Added \"Now Playing\" integration for music playback on macOS.\n"
+		"- Fix animated chat backgrounds in Saved Messages.\n"
 
-		"- Added \"Archive Sticker\" into the \"...\" menu of the Sticker Set Box.\n"
-
-		"- Fixed memory not being freed on Linux.\n"
-
-		"- Several crash fixes.\n"
+		"- Fix \"Sorry, group is inaccessible\" message "
+		"in scheduled voice chats.\n",
 	},
 	{
-		2007009,
-		"- Added \"Enable noise suppression\" option to group calls Settings.\n"
-
-		"- Fix media viewer with Retina + Non-Retina dual monitor setup on macOS.\n"
-
-		"- Several bug and crash fixes.\n"
+		2009013,
+		"- See unread comments count when scrolling discussions in channels."
 	},
 	{
-		2007010,
-		"- Added ability to mix together bold, italic and other formatting.\n"
+		3000002,
+		"- Check who've seen your message in small groups "
+		"from the context menu.\n"
 
-		"- Fix voice chats and video calls OpenGL with some drivers on Windows.\n"
-
-		"- Several bug fixes.\n"
+		"- Enable recording with video in live streams and video chats."
 	},
 	{
-		2008006,
-		"- Added a simple image editor. "
-		"Crop photos or highlight parts of screenshots before sending.\n"
+		3000004,
+		"- Fix a crash when joining video chat or live broadcast.\n"
 
-		"- Use Direct3D 9 backend in ANGLE by default (Windows).\n"
-
-		"- Fix \"Show in Finder\" not focusing the Finder window (macOS).\n"
-
-		"- Use GTK from a child process (Linux).\n"
+		"- Add a \"Close to Taskbar\" option when tray icon is disabled "
+		"(Windows and Linux)."
 	},
 	{
-		2008012,
-		"- Change the default chat background.\n"
-
-		"- Add GIFs overview section in chats.\n"
-
-		"- Add a simple new messages animation.\n"
-
-		"- Use modern Telegram application icon.\n"
-
-		"- Use Direct3D 11 by default on Windows.\n"
-
-		"- Fix Direct3D acceleration on basic Windows 7 setup.\n"
-	},
+		3000005,
+		"- Add support for Emoji 13.1."
+	}
 	};
 };
 
@@ -172,7 +143,7 @@ void Changelogs::addLocalLog(const QString &text) {
 };
 
 void Changelogs::addBetaLogs() {
-	for (const auto [version, changes] : BetaLogs()) {
+	for (const auto &[version, changes] : BetaLogs()) {
 		addBetaLog(version, changes);
 	}
 }

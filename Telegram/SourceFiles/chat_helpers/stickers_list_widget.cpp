@@ -970,6 +970,11 @@ StickersListWidget::StickersListWidget(
 		}
 		refreshRecent();
 	}, lifetime());
+
+	positionValue(
+	) | rpl::skip(1) | rpl::map_to(
+		TabbedSelector::Action::Update
+	) | rpl::start_to_stream(_choosingUpdated, lifetime());
 }
 
 Main::Session &StickersListWidget::session() const {
@@ -986,6 +991,11 @@ rpl::producer<> StickersListWidget::scrollUpdated() const {
 
 rpl::producer<> StickersListWidget::checkForHide() const {
 	return _checkForHide.events();
+}
+
+auto StickersListWidget::choosingUpdated() const
+-> rpl::producer<TabbedSelector::Action> {
+	return _choosingUpdated.events();
 }
 
 object_ptr<TabbedSelector::InnerFooter> StickersListWidget::createFooter() {
@@ -1051,7 +1061,7 @@ void StickersListWidget::preloadMoreOfficial() {
 	_officialRequestId = _api.request(MTPmessages_GetOldFeaturedStickers(
 		MTP_int(_officialOffset),
 		MTP_int(kOfficialLoadLimit),
-		MTP_int(0)
+		MTP_long(0) // hash
 	)).done([=](const MTPmessages_FeaturedStickers &result) {
 		_officialRequestId = 0;
 		result.match([&](const MTPDmessages_featuredStickersNotModified &d) {
@@ -1259,14 +1269,14 @@ void StickersListWidget::sendSearchRequest() {
 	}
 
 	_footer->setLoading(true);
-	const auto hash = int32(0);
+	const auto hash = uint64(0);
 	_searchRequestId = _api.request(MTPmessages_SearchStickerSets(
 		MTP_flags(0),
 		MTP_string(_searchQuery),
-		MTP_int(hash)
+		MTP_long(hash)
 	)).done([=](const MTPmessages_FoundStickerSets &result) {
 		searchResultsDone(result);
-	}).fail([this](const MTP::Error &error) {
+	}).fail([=](const MTP::Error &error) {
 		// show error?
 		_footer->setLoading(false);
 		_searchRequestId = 0;
@@ -2361,6 +2371,7 @@ TabbedSelector::InnerFooter *StickersListWidget::getFooter() const {
 }
 
 void StickersListWidget::processHideFinished() {
+	_choosingUpdated.fire(TabbedSelector::Action::Cancel);
 	clearSelection();
 	clearHeavyData();
 	if (_footer) {
@@ -3180,11 +3191,11 @@ void StickersListWidget::removeSet(uint64 setId) {
 		const auto it = sets.find(_removingSetId);
 		if (it != sets.cend()) {
 			const auto set = it->second.get();
-			if (set->id && set->access) {
+			if (set->id && set->accessHash) {
 				_api.request(MTPmessages_UninstallStickerSet(
 					MTP_inputStickerSetID(
 						MTP_long(set->id),
-						MTP_long(set->access)))
+						MTP_long(set->accessHash)))
 				).send();
 			} else if (!set->shortName.isEmpty()) {
 				_api.request(MTPmessages_UninstallStickerSet(

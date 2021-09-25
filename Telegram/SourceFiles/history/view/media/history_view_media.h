@@ -29,6 +29,11 @@ class SinglePlayer;
 struct ColorReplacements;
 } // namespace Lottie
 
+namespace Ui {
+struct BubbleSelectionInterval;
+struct ChatPaintContext;
+} // namespace Ui
+
 namespace HistoryView {
 
 enum class PointState : char;
@@ -38,16 +43,13 @@ struct TextState;
 struct StateRequest;
 class Element;
 
+using PaintContext = Ui::ChatPaintContext;
+
 enum class MediaInBubbleState {
 	None,
 	Top,
 	Middle,
 	Bottom,
-};
-
-struct BubbleSelectionInterval {
-	int top = 0;
-	int height = 0;
 };
 
 [[nodiscard]] QString DocumentTimestampLinkBase(
@@ -84,13 +86,12 @@ public:
 	}
 	virtual void refreshParentId(not_null<HistoryItem*> realParent) {
 	}
-	virtual void drawHighlight(Painter &p, int top) const {
-	}
-	virtual void draw(
+	virtual void drawHighlight(
 		Painter &p,
-		const QRect &r,
-		TextSelection selection,
-		crl::time ms) const = 0;
+		const PaintContext &context,
+		int top) const {
+	}
+	virtual void draw(Painter &p, const PaintContext &context) const = 0;
 	[[nodiscard]] virtual PointState pointState(QPoint point) const;
 	[[nodiscard]] virtual TextState textState(
 		QPoint point,
@@ -125,9 +126,7 @@ public:
 
 	[[nodiscard]] virtual auto getBubbleSelectionIntervals(
 		TextSelection selection) const
-	-> std::vector<BubbleSelectionInterval> {
-		return {};
-	}
+	-> std::vector<Ui::BubbleSelectionInterval>;
 
 	// if we press and drag this link should we drag the item
 	[[nodiscard]] virtual bool dragItemByHandler(
@@ -173,9 +172,7 @@ public:
 	}
 	virtual void drawGrouped(
 			Painter &p,
-			const QRect &clip,
-			TextSelection selection,
-			crl::time ms,
+			const PaintContext &context,
 			const QRect &geometry,
 			RectParts sides,
 			RectParts corners,
@@ -201,9 +198,6 @@ public:
 	[[nodiscard]] virtual bool customInfoLayout() const = 0;
 	[[nodiscard]] virtual QMargins bubbleMargins() const {
 		return QMargins();
-	}
-	[[nodiscard]] virtual bool hideForwardedFrom() const {
-		return false;
 	}
 
 	[[nodiscard]] virtual bool overrideEditedDate() const {
@@ -236,10 +230,6 @@ public:
 	}
 	[[nodiscard]] bool isRoundedInBubbleBottom() const;
 	[[nodiscard]] virtual bool skipBubbleTail() const {
-		return false;
-	}
-
-	[[nodiscard]] virtual bool hidesForwardedInfo() const {
 		return false;
 	}
 
@@ -304,6 +294,8 @@ protected:
 
 	virtual void playAnimation(bool autoplay) {
 	}
+
+	[[nodiscard]] bool usesBubblePattern(const PaintContext &context) const;
 
 	const not_null<Element*> _parent;
 	MediaInBubbleState _inBubbleState = MediaInBubbleState::None;

@@ -29,6 +29,7 @@ class Session;
 namespace Data {
 struct UpdatedFileReferences;
 class WallPaper;
+struct ResolvedForwardDraft;
 } // namespace Data
 
 namespace InlineBots {
@@ -319,7 +320,7 @@ public:
 	void sendAction(const SendAction &action);
 	void finishForwarding(const SendAction &action);
 	void forwardMessages(
-		HistoryItemsList &&items,
+		Data::ResolvedForwardDraft &&draft,
 		const SendAction &action,
 		FnMut<void()> &&successCallback = nullptr);
 	void shareContact(
@@ -415,16 +416,17 @@ public:
 
 private:
 	struct MessageDataRequest {
-		using Callbacks = QList<RequestMessageDataCallback>;
+		using Callbacks = std::vector<RequestMessageDataCallback>;
+
 		mtpRequestId requestId = 0;
 		Callbacks callbacks;
 	};
-	using MessageDataRequests = QMap<MsgId, MessageDataRequest>;
+	using MessageDataRequests = base::flat_map<MsgId, MessageDataRequest>;
 	using SharedMediaType = Storage::SharedMediaType;
 
 	struct StickersByEmoji {
 		std::vector<not_null<DocumentData*>> list;
-		int32 hash = 0;
+		uint64 hash = 0;
 		crl::time received = 0;
 	};
 
@@ -459,8 +461,11 @@ private:
 		ChannelData *channel,
 		mtpRequestId requestId);
 
-	QVector<MTPInputMessage> collectMessageIds(const MessageDataRequests &requests);
-	MessageDataRequests *messageDataRequests(ChannelData *channel, bool onlyExisting = false);
+	[[nodiscard]] QVector<MTPInputMessage> collectMessageIds(
+		const MessageDataRequests &requests);
+	[[nodiscard]] MessageDataRequests *messageDataRequests(
+		ChannelData *channel,
+		bool onlyExisting = false);
 
 	void gotChatFull(
 		not_null<PeerData*> peer,
@@ -485,9 +490,10 @@ private:
 		mtpRequestId req);
 	void gotStickerSet(uint64 setId, const MTPmessages_StickerSet &result);
 
-	void requestStickers(TimeId now, bool masks = false);
+	void requestStickers(TimeId now);
+	void requestMasks(TimeId now);
 	void requestRecentStickers(TimeId now, bool attached = false);
-	void requestRecentStickersWithHash(int32 hash, bool attached = false);
+	void requestRecentStickersWithHash(uint64 hash, bool attached = false);
 	void requestFavedStickers(TimeId now);
 	void requestFeaturedStickers(TimeId now);
 	void requestSavedGifs(TimeId now);
@@ -579,7 +585,9 @@ private:
 	base::flat_map<QString, int> _modifyRequests;
 
 	MessageDataRequests _messageDataRequests;
-	QMap<ChannelData*, MessageDataRequests> _channelMessageDataRequests;
+	base::flat_map<
+		ChannelData*,
+		MessageDataRequests> _channelMessageDataRequests;
 	SingleQueuedInvokation _messageDataResolveDelayed;
 
 	using PeerRequests = QMap<PeerData*, mtpRequestId>;

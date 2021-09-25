@@ -7,8 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/mac/touchbar/items/mac_scrubber_item.h"
 
-#ifndef OS_OSX
-
 #include "api/api_common.h"
 #include "api/api_sending.h"
 #include "base/call_delayed.h"
@@ -239,7 +237,7 @@ void AppendRecentStickers(
 			to.emplace_back(PickerScrubberItem(document));
 		}
 	}
-	for (const auto recent : recentPack) {
+	for (const auto &recent : recentPack) {
 		to.emplace_back(PickerScrubberItem(recent.first));
 	}
 }
@@ -683,5 +681,3 @@ void AppendEmojiPacks(
 }
 
 @end // @implementation StickerEmojiPopover
-
-#endif // OS_OSX

@@ -21,6 +21,7 @@ class CloudImageView;
 
 namespace HistoryView {
 class ElementDelegate;
+class EmojiInteractions;
 struct TextState;
 struct StateRequest;
 enum class CursorState : char;
@@ -34,6 +35,8 @@ class SessionController;
 } // namespace Window
 
 namespace Ui {
+class ChatTheme;
+class ChatStyle;
 class PopupMenu;
 enum class ReportReason;
 class PathShiftGradient;
@@ -55,7 +58,10 @@ public:
 		not_null<Window::SessionController*> controller,
 		not_null<History*> history);
 
-	Main::Session &session() const;
+	[[nodiscard]] Main::Session &session() const;
+	[[nodiscard]] not_null<Ui::ChatTheme*> theme() const {
+		return _theme.get();
+	}
 
 	void messagesReceived(PeerData *peer, const QVector<MTPMessage> &messages);
 	void messagesReceivedDown(PeerData *peer, const QVector<MTPMessage> &messages);
@@ -110,6 +116,7 @@ public:
 	bool elementIsChatWide();
 	not_null<Ui::PathShiftGradient*> elementPathShiftGradient();
 	void elementReplyTo(const FullMsgId &to);
+	void elementStartInteraction(not_null<const Element*> view);
 
 	void updateBotInfo(bool recount = true);
 
@@ -242,7 +249,11 @@ private:
 	std::unique_ptr<QMimeData> prepareDrag();
 	void performDrag();
 
-	void paintEmpty(Painter &p, int width, int height);
+	void paintEmpty(
+		Painter &p,
+		not_null<const Ui::ChatStyle*> st,
+		int width,
+		int height);
 
 	QPoint mapPointToItem(QPoint p, const Element *view) const;
 	QPoint mapPointToItem(QPoint p, const HistoryItem *item) const;
@@ -344,6 +355,8 @@ private:
 	const not_null<Window::SessionController*> _controller;
 	const not_null<PeerData*> _peer;
 	const not_null<History*> _history;
+	const std::unique_ptr<HistoryView::EmojiInteractions> _emojiInteractions;
+	std::shared_ptr<Ui::ChatTheme> _theme;
 
 	History *_migrated = nullptr;
 	int _contentWidth = 0;

@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_message.h"
 
-#include "base/openssl_help.h"
+#include "base/random.h"
 #include "base/unixtime.h"
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
@@ -45,7 +45,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_channel.h"
 #include "data/data_user.h"
 #include "data/data_histories.h"
-#include "app.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_widgets.h"
 #include "styles/style_chat.h"
@@ -105,7 +104,7 @@ namespace {
 }
 
 [[nodiscard]] bool HasInlineItems(const HistoryItemsList &items) {
-	for (const auto item : items) {
+	for (const auto &item : items) {
 		if (item->viaBot()) {
 			return true;
 		}
@@ -132,7 +131,7 @@ QString GetErrorTextForSending(
 		return tr::lng_forward_cant(tr::now);
 	}
 
-	for (const auto item : items) {
+	for (const auto &item : items) {
 		if (const auto media = item->media()) {
 			const auto error = media->errorTextForForward(peer);
 			if (!error.isEmpty() && error != qstr("skip")) {
@@ -162,7 +161,7 @@ QString GetErrorTextForSending(
 		} else if (items.size() > 1) {
 			const auto albumForward = [&] {
 				if (const auto groupId = items.front()->groupId()) {
-					for (const auto item : items) {
+					for (const auto &item : items) {
 						if (item->groupId() != groupId) {
 							return false;
 						}
@@ -277,13 +276,13 @@ void FastShareMessage(not_null<HistoryItem*> item) {
 				: MTPmessages_ForwardMessages::Flag(0));
 		auto msgIds = QVector<MTPint>();
 		msgIds.reserve(data->msgIds.size());
-		for (const auto fullId : data->msgIds) {
+		for (const auto &fullId : data->msgIds) {
 			msgIds.push_back(MTP_int(fullId.msg));
 		}
-		auto generateRandom = [&] {
+		const auto generateRandom = [&] {
 			auto result = QVector<MTPlong>(data->msgIds.size());
 			for (auto &value : result) {
-				value = openssl::RandomValue<MTPlong>();
+				value = base::RandomValue<MTPlong>();
 			}
 			return result;
 		};
@@ -563,8 +562,14 @@ HistoryMessage::HistoryMessage(
 
 	auto config = CreateConfig();
 
-	if (original->Has<HistoryMessageForwarded>() || !original->history()->peer->isSelf()) {
-		// Server doesn't add "fwd_from" to non-forwarded messages from chat with yourself.
+	const auto originalMedia = original->media();
+	const auto dropForwardInfo = (originalMedia
+		&& originalMedia->dropForwardedInfo())
+		|| (original->history()->peer->isSelf()
+			&& !history->peer->isSelf()
+			&& !original->Has<HistoryMessageForwarded>()
+			&& (!originalMedia || !originalMedia->forceForwardedInfo()));
+	if (!dropForwardInfo) {
 		config.originalDate = original->dateOriginal();
 		if (const auto info = original->hiddenForwardedInfo()) {
 			config.senderNameOriginal = info->name;
@@ -596,6 +601,14 @@ HistoryMessage::HistoryMessage(
 	}
 	if (const auto fwdViaBot = original->viaBot()) {
 		config.viaBotId = peerToUser(fwdViaBot->id);
+	} else if (originalMedia && originalMedia->game()) {
+		if (const auto sender = original->senderOriginal()) {
+			if (const auto user = sender->asUser()) {
+				if (user->isBot()) {
+					config.viaBotId = peerToUser(user->id);
+				}
+			}
+		}
 	}
 	const auto fwdViewsCount = original->viewsCount();
 	if (fwdViewsCount > 0) {
@@ -803,15 +816,29 @@ MsgId HistoryMessage::repliesInboxReadTill() const {
 	return 0;
 }
 
-void HistoryMessage::setRepliesInboxReadTill(MsgId readTillId) {
+void HistoryMessage::setRepliesInboxReadTill(
+		MsgId readTillId,
+		std::optional<int> unreadCount) {
 	if (const auto views = Get<HistoryMessageViews>()) {
 		const auto newReadTillId = std::max(readTillId, 1);
-		if (newReadTillId > views->repliesInboxReadTillId) {
+		const auto ignore = (newReadTillId < views->repliesInboxReadTillId);
+		if (ignore) {
+			return;
+		}
+		const auto changed = (newReadTillId > views->repliesInboxReadTillId);
+		if (changed) {
 			const auto wasUnread = repliesAreComments() && areRepliesUnread();
 			views->repliesInboxReadTillId = newReadTillId;
 			if (wasUnread && !areRepliesUnread()) {
 				history()->owner().requestItemRepaint(this);
 			}
+		}
+		const auto wasUnreadCount = (views->repliesUnreadCount >= 0)
+			? std::make_optional(views->repliesUnreadCount)
+			: std::nullopt;
+		if (unreadCount != wasUnreadCount
+			&& (changed || unreadCount.has_value())) {
+			setUnreadRepliesCount(views, unreadCount.value_or(-1));
 		}
 	}
 }
@@ -1077,7 +1104,7 @@ void HistoryMessage::createComponents(const CreateConfig &config) {
 						MTP_int(0),
 						MTP_int(0),
 						MTPVector<MTPPeer>(), // recent_repliers
-						MTP_int(peerToChannel(linked->id).bare),
+						MTP_long(peerToChannel(linked->id).bare),
 						MTP_int(0), // max_id
 						MTP_int(0))); // read_max_id
 				}
@@ -1795,10 +1822,27 @@ void HistoryMessage::refreshRepliesText(
 	}
 }
 
-void HistoryMessage::changeRepliesCount(int delta, PeerId replier) {
+void HistoryMessage::changeRepliesCount(
+		int delta,
+		PeerId replier,
+		std::optional<bool> unread) {
 	const auto views = Get<HistoryMessageViews>();
 	const auto limit = HistoryMessageViews::kMaxRecentRepliers;
-	if (!views || views->replies.count < 0) {
+	if (!views) {
+		return;
+	}
+
+	// Update unread count.
+	if (!unread) {
+		setUnreadRepliesCount(views, -1);
+	} else if (views->repliesUnreadCount >= 0 && *unread) {
+		setUnreadRepliesCount(
+			views,
+			std::max(views->repliesUnreadCount + delta, 0));
+	}
+
+	// Update full count.
+	if (views->replies.count < 0) {
 		return;
 	}
 	views->replies.count = std::max(views->replies.count + delta, 0);
@@ -1815,6 +1859,19 @@ void HistoryMessage::changeRepliesCount(int delta, PeerId replier) {
 		}
 	}
 	refreshRepliesText(views);
+}
+
+void HistoryMessage::setUnreadRepliesCount(
+		not_null<HistoryMessageViews*> views,
+		int count) {
+	// Track unread count in discussion forwards, not in the channel posts.
+	if (views->repliesUnreadCount == count || views->commentsMegagroupId) {
+		return;
+	}
+	views->repliesUnreadCount = count;
+	history()->session().changes().messageUpdated(
+		this,
+		Data::MessageUpdate::Flag::RepliesUnreadCount);
 }
 
 void HistoryMessage::setReplyToTop(MsgId replyToTop) {
@@ -1864,19 +1921,23 @@ void HistoryMessage::changeReplyToTopCounter(
 	if (!top) {
 		return;
 	}
-	const auto changeFor = [&](not_null<HistoryItem*> item) {
-		if (const auto from = displayFrom()) {
-			item->changeRepliesCount(delta, from->id);
-			return;
-		}
-		item->changeRepliesCount(delta, PeerId());
-	};
+	auto unread = out() ? std::make_optional(false) : std::nullopt;
 	if (const auto views = top->Get<HistoryMessageViews>()) {
 		if (views->commentsMegagroupId) {
 			// This is a post in channel, we don't track its replies.
 			return;
 		}
+		if (views->repliesInboxReadTillId > 0) {
+			unread = !out() && (id > views->repliesInboxReadTillId);
+		}
 	}
+	const auto changeFor = [&](not_null<HistoryItem*> item) {
+		if (const auto from = displayFrom()) {
+			item->changeRepliesCount(delta, from->id, unread);
+		} else {
+			item->changeRepliesCount(delta, PeerId(), unread);
+		}
+	};
 	changeFor(top);
 	if (const auto original = top->lookupDiscussionPostOriginal()) {
 		changeFor(original);

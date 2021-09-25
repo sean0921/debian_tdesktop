@@ -48,7 +48,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/unixtime.h"
 #include "base/qt_signal_producer.h"
 #include "base/timer_rpl.h"
-#include "app.h"
 #include "apiwrap.h" // api().kickParticipant.
 #include "webrtc/webrtc_video_track.h"
 #include "webrtc/webrtc_media_devices.h" // UniqueDesktopCaptureSource.
@@ -268,11 +267,16 @@ void Panel::initWindow() {
 			0,
 			widget()->width(),
 			st::groupCallMembersTop);
-		return (titleRect.contains(widgetPoint)
+		const auto moveable = (titleRect.contains(widgetPoint)
 			&& (!_menuToggle || !_menuToggle->geometry().contains(widgetPoint))
 			&& (!_menu || !_menu->geometry().contains(widgetPoint))
 			&& (!_recordingMark || !_recordingMark->geometry().contains(widgetPoint))
-			&& (!_joinAsToggle || !_joinAsToggle->geometry().contains(widgetPoint)))
+			&& (!_joinAsToggle || !_joinAsToggle->geometry().contains(widgetPoint)));
+		if (!moveable) {
+			return (Flag::None | Flag(0));
+		}
+		const auto shown = _layerBg->topShownLayer();
+		return (!shown || !shown->geometry().contains(widgetPoint))
 			? (Flag::Move | Flag::Maximize)
 			: Flag::None;
 	});
@@ -308,7 +312,7 @@ void Panel::endCall() {
 		_call->hangup();
 		return;
 	}
-	_layerBg->showBox(Box(
+	showBox(Box(
 		LeaveBox,
 		_call,
 		false,
@@ -331,12 +335,14 @@ void Panel::startScheduledNow() {
 			_call->startScheduledNow();
 		};
 		auto owned = ConfirmBox({
-			.text = { tr::lng_group_call_start_now_sure(tr::now) },
+			.text = { (_call->peer()->isBroadcast()
+				? tr::lng_group_call_start_now_sure_channel
+				: tr::lng_group_call_start_now_sure)(tr::now) },
 			.button = tr::lng_group_call_start_now(),
 			.callback = done,
 		});
 		*box = owned.data();
-		_layerBg->showBox(std::move(owned));
+		showBox(std::move(owned));
 	}
 }
 
@@ -453,7 +459,7 @@ void Panel::refreshLeftButton() {
 		_callShare.destroy();
 		_settings.create(widget(), st::groupCallSettings);
 		_settings->setClickedCallback([=] {
-			_layerBg->showBox(Box(SettingsBox, _call));
+			showBox(Box(SettingsBox, _call));
 		});
 	}
 	const auto raw = _callShare ? _callShare.data() : _settings.data();
@@ -533,6 +539,7 @@ void Panel::refreshVideoButtons(std::optional<bool> overrideWideMode) {
 	}
 	updateButtonsStyles();
 	updateButtonsGeometry();
+	raiseControls();
 }
 
 void Panel::hideStickedTooltip(StickedTooltipHide hide) {
@@ -577,7 +584,7 @@ void Panel::hideNiceTooltip() {
 
 void Panel::initShareAction() {
 	const auto showBoxCallback = [=](object_ptr<Ui::BoxContent> next) {
-		_layerBg->showBox(std::move(next));
+		showBox(std::move(next));
 	};
 	const auto showToastCallback = [=](QString text) {
 		showToast({ text });
@@ -775,10 +782,14 @@ void Panel::setupMembers() {
 
 	_members->addMembersRequests(
 	) | rpl::start_with_next([=] {
-		if (_peer->isBroadcast() && _peer->asChannel()->hasUsername()) {
-			_callShareLinkCallback();
-		} else {
+		if (!_peer->isBroadcast()
+			&& _peer->canWrite()
+			&& _call->joinAs()->isSelf()) {
 			addMembers();
+		} else if (const auto channel = _peer->asChannel()) {
+			if (channel->hasUsername()) {
+				_callShareLinkCallback();
+			}
 		}
 	}, _callLifetime);
 
@@ -877,6 +888,7 @@ void Panel::raiseControls() {
 		}
 	}
 	_mute->raise();
+	_layerBg->raise();
 	if (_niceTooltip) {
 		_niceTooltip->raise();
 	}
@@ -969,6 +981,7 @@ void Panel::updateWideControlsVisibility() {
 }
 
 void Panel::subscribeToChanges(not_null<Data::GroupCall*> real) {
+	const auto livestream = real->peer()->isBroadcast();
 	const auto validateRecordingMark = [=](bool recording) {
 		if (!recording && _recordingMark) {
 			_recordingMark.destroy();
@@ -985,7 +998,11 @@ void Panel::subscribeToChanges(not_null<Data::GroupCall*> real) {
 			const auto skip = st::groupCallRecordingMarkSkip;
 			_recordingMark->resize(size + 2 * skip, size + 2 * skip);
 			_recordingMark->setClickedCallback([=] {
-				showToast({ tr::lng_group_call_is_recorded(tr::now) });
+				showToast({ (livestream
+					? tr::lng_group_call_is_recorded_channel
+					: real->recordVideo()
+					? tr::lng_group_call_is_recorded_video
+					: tr::lng_group_call_is_recorded)(tr::now) });
 			});
 			const auto animate = [=] {
 				const auto opaque = state->opaque;
@@ -1015,17 +1032,31 @@ void Panel::subscribeToChanges(not_null<Data::GroupCall*> real) {
 	};
 
 	using namespace rpl::mappers;
+	const auto startedAsVideo = std::make_shared<bool>(real->recordVideo());
 	real->recordStartDateChanges(
 	) | rpl::map(
 		_1 != 0
 	) | rpl::distinct_until_changed(
 	) | rpl::start_with_next([=](bool recorded) {
+		const auto livestream = _call->peer()->isBroadcast();
+		const auto isVideo = real->recordVideo();
+		if (recorded) {
+			*startedAsVideo = isVideo;
+		}
 		validateRecordingMark(recorded);
 		showToast((recorded
-			? tr::lng_group_call_recording_started
+			? (livestream
+				? tr::lng_group_call_recording_started_channel
+				: isVideo
+				? tr::lng_group_call_recording_started_video
+				: tr::lng_group_call_recording_started)
 			: _call->recordingStoppedByMe()
-			? tr::lng_group_call_recording_saved
-			: tr::lng_group_call_recording_stopped)(
+			? ((*startedAsVideo)
+				? tr::lng_group_call_recording_saved_video
+				: tr::lng_group_call_recording_saved)
+			: (livestream
+				? tr::lng_group_call_recording_stopped_channel
+				: tr::lng_group_call_recording_stopped))(
 				tr::now,
 				Ui::Text::RichLangValue));
 	}, lifetime());
@@ -1109,7 +1140,7 @@ void Panel::refreshTopButton() {
 
 void Panel::screenSharingPrivacyRequest() {
 	if (auto box = ScreenSharingPrivacyRequestBox()) {
-		_layerBg->showBox(std::move(box));
+		showBox(std::move(box));
 	}
 }
 
@@ -1159,7 +1190,7 @@ void Panel::chooseShareScreenSource() {
 		.callback = done,
 	});
 	*shared = box.data();
-	_layerBg->showBox(std::move(box));
+	showBox(std::move(box));
 }
 
 void Panel::chooseJoinAs() {
@@ -1168,7 +1199,7 @@ void Panel::chooseJoinAs() {
 		_call->rejoinAs(info);
 	};
 	const auto showBoxCallback = [=](object_ptr<Ui::BoxContent> next) {
-		_layerBg->showBox(std::move(next));
+		showBox(std::move(next));
 	};
 	const auto showToastCallback = [=](QString text) {
 		showToast({ text });
@@ -1198,7 +1229,7 @@ void Panel::showMainMenu() {
 		wide,
 		[=] { chooseJoinAs(); },
 		[=] { chooseShareScreenSource(); },
-		[=](auto box) { _layerBg->showBox(std::move(box)); });
+		[=](auto box) { showBox(std::move(box)); });
 	if (_menu->empty()) {
 		_wideMenuShown = false;
 		_menu.destroy();
@@ -1263,26 +1294,28 @@ void Panel::addMembers() {
 		showToast(std::move(text));
 	};
 	if (auto box = PrepareInviteBox(_call, showToastCallback)) {
-		_layerBg->showBox(std::move(box));
+		showBox(std::move(box));
 	}
 }
 
 void Panel::kickParticipant(not_null<PeerData*> participantPeer) {
-	_layerBg->showBox(Box([=](not_null<Ui::GenericBox*> box) {
+	showBox(Box([=](not_null<Ui::GenericBox*> box) {
 		box->addRow(
 			object_ptr<Ui::FlatLabel>(
 				box.get(),
 				(!participantPeer->isUser()
-					? tr::lng_group_call_remove_channel(
-						tr::now,
-						lt_channel,
-						participantPeer->name)
+					? (_peer->isBroadcast()
+						? tr::lng_group_call_remove_channel_from_channel
+						: tr::lng_group_call_remove_channel)(
+							tr::now,
+							lt_channel,
+							participantPeer->name)
 					: (_peer->isBroadcast()
 						? tr::lng_profile_sure_kick_channel
 						: tr::lng_profile_sure_kick)(
-						tr::now,
-						lt_user,
-						participantPeer->asUser()->firstName)),
+							tr::now,
+							lt_user,
+							participantPeer->asUser()->firstName)),
 				st::groupCallBoxLabel),
 			style::margins(
 				st::boxRowPadding.left(),
@@ -1295,6 +1328,18 @@ void Panel::kickParticipant(not_null<PeerData*> participantPeer) {
 		});
 		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 	}));
+}
+
+void Panel::showBox(object_ptr<Ui::BoxContent> box) {
+	showBox(std::move(box), Ui::LayerOption::KeepOther, anim::type::normal);
+}
+
+void Panel::showBox(
+		object_ptr<Ui::BoxContent> box,
+		Ui::LayerOptions options,
+		anim::type animated) {
+	hideStickedTooltip(StickedTooltipHide::Unavailable);
+	_layerBg->showBox(std::move(box), options, animated);
 }
 
 void Panel::kickParticipantSure(not_null<PeerData*> participantPeer) {
@@ -1635,7 +1680,8 @@ void Panel::showStickedTooltip() {
 	if (!(_stickedTooltipsShown & StickedTooltip::Microphone)
 		&& callReady
 		&& _mute
-		&& !_call->mutedByAdmin()) {
+		&& !_call->mutedByAdmin()
+		&& !_layerBg->topShownLayer()) {
 		if (_stickedTooltipClose) {
 			// Showing already.
 			return;
@@ -2135,7 +2181,7 @@ void Panel::paint(QRect clip) {
 	Painter p(widget());
 
 	auto region = QRegion(clip);
-	for (const auto rect : region) {
+	for (const auto &rect : region) {
 		p.fillRect(rect, st::groupCallBg);
 	}
 }

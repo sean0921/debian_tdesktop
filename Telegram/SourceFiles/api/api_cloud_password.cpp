@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_cloud_password.h"
 
-#include "base/openssl_help.h"
+#include "base/random.h"
 #include "core/core_cloud_password.h"
 #include "apiwrap.h"
 
@@ -27,7 +27,7 @@ void CloudPassword::reload() {
 	)).done([=](const MTPaccount_Password &result) {
 		_requestId = 0;
 		result.match([&](const MTPDaccount_password &data) {
-			openssl::AddRandomSeed(bytes::make_span(data.vsecure_random().v));
+			base::RandomAddSeed(bytes::make_span(data.vsecure_random().v));
 			if (_state) {
 				*_state = Core::ParseCloudPasswordState(data);
 			} else {
@@ -39,24 +39,6 @@ void CloudPassword::reload() {
 	}).fail([=](const MTP::Error &error) {
 		_requestId = 0;
 	}).send();
-}
-
-void CloudPassword::applyPendingReset(
-		const MTPaccount_ResetPasswordResult &data) {
-	if (!_state) {
-		reload();
-		return;
-	}
-	data.match([&](const MTPDaccount_resetPasswordOk &data) {
-		reload();
-	}, [&](const MTPDaccount_resetPasswordRequestedWait &data) {
-		const auto until = data.vuntil_date().v;
-		if (_state->pendingResetDate != until) {
-			_state->pendingResetDate = until;
-			_stateChanges.fire_copy(*_state);
-		}
-	}, [&](const MTPDaccount_resetPasswordFailedWait &data) {
-	});
 }
 
 void CloudPassword::clearUnconfirmedPassword() {
@@ -81,6 +63,50 @@ auto CloudPassword::stateCurrent() const
 	return _state
 		? base::make_optional(*_state)
 		: std::nullopt;
+}
+
+auto CloudPassword::resetPassword()
+-> rpl::producer<CloudPassword::ResetRetryDate, QString> {
+	return [=](auto consumer) {
+		_api.request(MTPaccount_ResetPassword(
+		)).done([=](const MTPaccount_ResetPasswordResult &result) {
+			result.match([&](const MTPDaccount_resetPasswordOk &data) {
+				reload();
+			}, [&](const MTPDaccount_resetPasswordRequestedWait &data) {
+				if (!_state) {
+					reload();
+					return;
+				}
+				const auto until = data.vuntil_date().v;
+				if (_state->pendingResetDate != until) {
+					_state->pendingResetDate = until;
+					_stateChanges.fire_copy(*_state);
+				}
+			}, [&](const MTPDaccount_resetPasswordFailedWait &data) {
+				consumer.put_next_copy(data.vretry_date().v);
+			});
+			consumer.put_done();
+		}).fail([=](const MTP::Error &error) {
+			consumer.put_error_copy(error.type());
+		}).send();
+
+		return rpl::lifetime();
+	};
+}
+
+auto CloudPassword::cancelResetPassword()
+-> rpl::producer<rpl::no_value, QString> {
+	return [=](auto consumer) {
+		_api.request(MTPaccount_DeclinePasswordReset(
+		)).done([=] {
+			reload();
+			consumer.put_done();
+		}).fail([=](const MTP::Error &error) {
+			consumer.put_error_copy(error.type());
+		}).send();
+
+		return rpl::lifetime();
+	};
 }
 
 } // namespace Api

@@ -30,7 +30,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_icon.h"
 #include "apiwrap.h"
 #include "facades.h" // Ui::showPeerHistory
-#include "app.h"
 #include "styles/style_boxes.h"
 
 namespace {
@@ -430,7 +429,7 @@ void AddSpecialBoxController::rebuildChatRows(not_null<ChatData*> chat) {
 			--count;
 		}
 	}
-	for (const auto user : participants) {
+	for (const auto &user : participants) {
 		if (auto row = createRow(user)) {
 			delegate()->peerListAppendRow(std::move(row));
 		}
@@ -452,7 +451,7 @@ void AddSpecialBoxController::loadMoreRows() {
 	const auto perPage = (_offset > 0)
 		? kParticipantsPerPage
 		: kParticipantsFirstPageCount;
-	const auto participantsHash = 0;
+	const auto participantsHash = uint64(0);
 	const auto channel = _peer->asChannel();
 
 	_loadRequestId = _api.request(MTPchannels_GetParticipants(
@@ -460,7 +459,7 @@ void AddSpecialBoxController::loadMoreRows() {
 		MTP_channelParticipantsRecent(),
 		MTP_int(_offset),
 		MTP_int(perPage),
-		MTP_int(participantsHash)
+		MTP_long(participantsHash)
 	)).done([=](const MTPchannels_ChannelParticipants &result) {
 		_loadRequestId = 0;
 		auto &session = channel->session();
@@ -677,7 +676,7 @@ void AddSpecialBoxController::editAdminDone(
 			MTP_flags(Flag::f_can_edit
 				| (rank.isEmpty() ? Flag(0) : Flag::f_rank)),
 			peerToBareMTPInt(user->id),
-			MTPint(), // inviter_id
+			MTPlong(), // inviter_id
 			peerToBareMTPInt(alreadyPromotedBy
 				? alreadyPromotedBy->id
 				: user->session().userPeerId()),
@@ -982,7 +981,7 @@ void AddSpecialBoxSearchController::requestParticipants() {
 	// (because we've waited for search request by timer already,
 	// so we don't expect it to be fast, but we want to fill cache).
 	const auto perPage = kParticipantsPerPage;
-	const auto participantsHash = 0;
+	const auto participantsHash = uint64(0);
 	const auto channel = _peer->asChannel();
 
 	_requestId = _api.request(MTPchannels_GetParticipants(
@@ -990,7 +989,7 @@ void AddSpecialBoxSearchController::requestParticipants() {
 		MTP_channelParticipantsSearch(MTP_string(_query)),
 		MTP_int(_offset),
 		MTP_int(perPage),
-		MTP_int(participantsHash)
+		MTP_long(participantsHash)
 	)).done([=](
 			const MTPchannels_ChannelParticipants &result,
 			mtpRequestId requestId) {
@@ -1156,7 +1155,7 @@ void AddSpecialBoxSearchController::addChatMembers(
 		return true;
 	};
 
-	for (const auto user : chat->participants) {
+	for (const auto &user : chat->participants) {
 		if (allWordsAreFound(user->nameWords())) {
 			delegate()->peerListSearchAddRow(user);
 		}
@@ -1211,7 +1210,7 @@ void AddSpecialBoxSearchController::addChatsContacts() {
 		if (!index) {
 			return;
 		}
-		for (const auto row : *index) {
+		for (const auto &row : *index) {
 			if (const auto history = row->history()) {
 				if (const auto user = history->peer->asUser()) {
 					if (allWordsAreFound(user->nameWords())) {

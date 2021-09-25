@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "data/data_audio_msg_id.h"
 #include "ui/rp_widget.h"
 #include "base/object_ptr.h"
 
@@ -34,6 +35,7 @@ namespace Media {
 namespace Player {
 
 class PlayButton;
+class SpeedButton;
 class VolumeWidget;
 struct TrackState;
 
@@ -74,7 +76,8 @@ private:
 	void updatePlayPrevNextPositions();
 	void updateLabelsGeometry();
 	void updateRepeatTrackIcon();
-	void updatePlaybackSpeedIcon();
+	void updateControlsVisibility();
+	void updateControlsGeometry();
 	void createPrevNextButtons();
 	void destroyPrevNextButtons();
 
@@ -110,6 +113,7 @@ private:
 	bool _labelsDown = false;
 
 	class PlayButton;
+	class SpeedButton;
 	object_ptr<Ui::FlatLabel> _nameLabel;
 	object_ptr<Ui::LabelSimple> _timeLabel;
 	object_ptr<Ui::IconButton> _previousTrack = { nullptr };
@@ -117,7 +121,7 @@ private:
 	object_ptr<Ui::IconButton> _nextTrack = { nullptr };
 	object_ptr<Ui::IconButton> _volumeToggle;
 	object_ptr<Ui::IconButton> _repeatTrack;
-	object_ptr<Ui::IconButton> _playbackSpeed;
+	object_ptr<SpeedButton> _playbackSpeed;
 	object_ptr<Ui::IconButton> _close;
 	object_ptr<Ui::PlainShadow> _shadow = { nullptr };
 	object_ptr<Ui::FilledSlider> _playbackSlider;
