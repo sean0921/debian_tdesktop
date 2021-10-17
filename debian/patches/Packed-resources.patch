@@ -6,8 +6,8 @@ Last-Update: Thu, 01 Oct 2020 08:59:43 +0300
 
 --- a/Telegram/CMakeLists.txt
 +++ b/Telegram/CMakeLists.txt
-@@ -42,7 +42,21 @@ if (WIN32)
-     generate_midl(Telegram ${src_loc}/platform/win/windows_quiethours.idl)
+@@ -47,7 +47,21 @@ if (WIN32)
+     nuget_add_winrt(Telegram)
  endif()
  
 -set_target_properties(Telegram PROPERTIES AUTOMOC ON AUTORCC ON)
@@ -29,7 +29,7 @@ Last-Update: Thu, 01 Oct 2020 08:59:43 +0300
  
  target_link_libraries(Telegram
  PRIVATE
-@@ -1437,7 +1451,11 @@ if (LINUX AND DESKTOP_APP_USE_PACKAGED)
+@@ -1463,7 +1477,11 @@ if (LINUX AND DESKTOP_APP_USE_PACKAGED)
      include(GNUInstallDirs)
      configure_file("../lib/xdg/telegramdesktop.appdata.xml.in" "${CMAKE_CURRENT_BINARY_DIR}/telegramdesktop.appdata.xml" @ONLY)
      generate_appdata_changelog(Telegram "${CMAKE_SOURCE_DIR}/changelog.txt" "${CMAKE_CURRENT_BINARY_DIR}/telegramdesktop.appdata.xml")

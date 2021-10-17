@@ -188,17 +188,37 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  					&Participant::peer);
  				if (isParticipant) {
  					applyActiveUpdate(id, when, participantPeer);
---- a/Telegram/SourceFiles/data/data_peer.cpp
-+++ b/Telegram/SourceFiles/data/data_peer.cpp
-@@ -183,7 +183,7 @@ void PeerClickHandler::onClick(ClickCont
- 			&& !clickedChannel->amIn()
- 			&& (!currentPeer->isChannel()
- 				|| currentPeer->asChannel()->linkedChat() != clickedChannel)) {
--			Ui::ShowMultilineToast({
-+			Ui::ShowMultilineToast(Ui::MultilineToastArgs{
- 				.text = { _peer->isMegagroup()
- 					? tr::lng_group_not_accessible(tr::now)
- 					: tr::lng_channel_not_accessible(tr::now) },
+--- a/Telegram/SourceFiles/data/data_media_types.cpp
++++ b/Telegram/SourceFiles/data/data_media_types.cpp
+@@ -575,7 +575,7 @@ ItemPreview MediaPhoto::toPreview(ToPrev
+ 	const auto caption = options.hideCaption
+ 		? QString()
+ 		: parent()->originalText().text;
+-	return {
++	return ItemPreview{
+ 		.text = WithCaptionDialogsText(type, caption, !images.empty()),
+ 		.images = std::move(images),
+ 		.loadingContext = std::move(context),
+@@ -794,7 +794,7 @@ ItemPreview MediaFile::toPreview(ToPrevi
+ 	const auto caption = options.hideCaption
+ 		? QString()
+ 		: parent()->originalText().text;
+-	return {
++	return ItemPreview{
+ 		.text = WithCaptionDialogsText(type, caption, !images.empty()),
+ 		.images = std::move(images),
+ 		.loadingContext = std::move(context),
+--- a/Telegram/SourceFiles/dialogs/ui/dialogs_layout.cpp
++++ b/Telegram/SourceFiles/dialogs/ui/dialogs_layout.cpp
+@@ -848,7 +848,7 @@ void RowPainter::paint(
+ 		if (const auto searchChat = row->searchInChat()) {
+ 			if (const auto peer = searchChat.peer()) {
+ 				if (!peer->isChannel() || peer->isMegagroup()) {
+-					return { .hideSender = true };
++					return HistoryView::ToPreviewOptions{ .hideSender = true };
+ 				}
+ 			}
+ 		}
 --- a/Telegram/SourceFiles/editor/photo_editor_layer_widget.cpp
 +++ b/Telegram/SourceFiles/editor/photo_editor_layer_widget.cpp
 @@ -79,7 +79,7 @@ void PrepareProfilePhoto(
@@ -223,7 +243,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		.visibleAreaTopGlobal = mapToGlobal(QPoint(0, _visibleTop)).y(),
 --- a/Telegram/SourceFiles/history/history.cpp
 +++ b/Telegram/SourceFiles/history/history.cpp
-@@ -1072,7 +1072,7 @@ void History::applyServiceChanges(
+@@ -1077,7 +1077,7 @@ void History::applyServiceChanges(
  						using Payments::CheckoutProcess;
  						if (CheckoutProcess::TakePaymentStarted(message)) {
  							// Toast on a current active window.
@@ -232,9 +252,29 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  								.text = tr::lng_payments_success(
  									tr::now,
  									lt_amount,
+@@ -2276,7 +2276,7 @@ void History::setChatListMessage(History
+ 
+ 		// If we have a single message from a group, request the full album.
+ 		if (hasOrphanMediaGroupPart()
+-			&& !item->toPreview({
++			&& !item->toPreview(HistoryView::ToPreviewOptions{
+ 				.hideSender = true,
+ 				.hideCaption = true }).images.empty()) {
+ 			owner().histories().requestGroupAround(item);
+@@ -2459,8 +2459,8 @@ void History::applyChatListGroup(
+ 				items.push_back(message);
+ 			}
+ 		}
+-		if (!ranges::contains(items, not_null(*_lastMessage))
+-			|| !ranges::contains(items, not_null(*_chatListMessage))) {
++		if (!ranges::contains(items, not_null<HistoryItem*>(*_lastMessage))
++			|| !ranges::contains(items, not_null<HistoryItem*>(*_chatListMessage))) {
+ 			return;
+ 		}
+ 		_loadedAtBottom = true;
 --- a/Telegram/SourceFiles/history/history_inner_widget.cpp
 +++ b/Telegram/SourceFiles/history/history_inner_widget.cpp
-@@ -600,7 +600,7 @@ void HistoryInner::paintEvent(QPaintEven
+@@ -596,7 +596,7 @@ void HistoryInner::paintEvent(QPaintEven
  
  	const auto visibleAreaTopGlobal = mapToGlobal(
  		QPoint(0, _visibleAreaTop)).y();
@@ -243,9 +283,29 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		.theme = _theme.get(),
  		.visibleAreaTop = _visibleAreaTop,
  		.visibleAreaTopGlobal = visibleAreaTopGlobal,
+--- a/Telegram/SourceFiles/history/history_item.h
++++ b/Telegram/SourceFiles/history/history_item.h
+@@ -323,7 +323,7 @@ public:
+ 	[[nodiscard]] virtual ItemPreview toPreview(
+ 		ToPreviewOptions options) const;
+ 	[[nodiscard]] virtual QString inReplyText() const {
+-		return toPreview({
++		return toPreview(ToPreviewOptions{
+ 			.hideSender = true,
+ 			.generateImages = false,
+ 		}).text;
 --- a/Telegram/SourceFiles/history/history_widget.cpp
 +++ b/Telegram/SourceFiles/history/history_widget.cpp
-@@ -2618,7 +2618,7 @@ void HistoryWidget::messagesFailed(const
+@@ -1477,7 +1477,7 @@ void HistoryWidget::toggleChooseChatThem
+ 		}
+ 		return;
+ 	} else if (_voiceRecordBar->isActive()) {
+-		Ui::ShowMultilineToast({
++		Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 			.text = { tr::lng_chat_theme_cant_voice(tr::now) },
+ 		});
+ 		return;
+@@ -2706,7 +2706,7 @@ void HistoryWidget::messagesFailed(const
  		|| error.type() == qstr("USER_BANNED_IN_CHANNEL")) {
  		auto was = _peer;
  		controller()->showBackFromStack();
@@ -254,7 +314,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			.text = { (was && was->isMegagroup())
  				? tr::lng_group_not_accessible(tr::now)
  				: tr::lng_channel_not_accessible(tr::now) },
-@@ -3342,7 +3342,7 @@ void HistoryWidget::send(Api::SendOption
+@@ -3433,7 +3433,7 @@ void HistoryWidget::send(Api::SendOption
  			message.textWithTags,
  			options.scheduled);
  		if (!error.isEmpty()) {
@@ -263,7 +323,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  				.text = { error },
  			});
  			return;
-@@ -3649,7 +3649,7 @@ void HistoryWidget::chooseAttach() {
+@@ -3740,7 +3740,7 @@ void HistoryWidget::chooseAttach() {
  	} else if (const auto error = Data::RestrictionError(
  			_peer,
  			ChatRestriction::SendMedia)) {
@@ -272,7 +332,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			.text = { *error },
  		});
  		return;
-@@ -4438,7 +4438,7 @@ bool HistoryWidget::showSendingFilesErro
+@@ -4516,7 +4516,7 @@ bool HistoryWidget::showSendingFilesErro
  		return false;
  	}
  
@@ -281,7 +341,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		.text = { text },
  	});
  	return true;
-@@ -5608,7 +5608,7 @@ bool HistoryWidget::showSlowmodeError()
+@@ -5693,7 +5693,7 @@ bool HistoryWidget::showSlowmodeError()
  	if (text.isEmpty()) {
  		return false;
  	}
@@ -290,6 +350,15 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		.text = { text },
  	});
  	return true;
+@@ -6887,7 +6887,7 @@ void HistoryWidget::updateForwardingText
+ 		}
+ 
+ 		if (count < 2) {
+-			text = _toForward.items.front()->toPreview({
++			text = _toForward.items.front()->toPreview(HistoryView::ToPreviewOptions{
+ 				.hideSender = true,
+ 				.hideCaption = !keepCaptions,
+ 				.generateImages = false,
 --- a/Telegram/SourceFiles/history/view/controls/history_view_ttl_button.cpp
 +++ b/Telegram/SourceFiles/history/view/controls/history_view_ttl_button.cpp
 @@ -45,7 +45,7 @@ void ShowAutoDeleteToast(not_null<PeerDa
@@ -314,7 +383,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			});
 --- a/Telegram/SourceFiles/history/view/history_view_list_widget.cpp
 +++ b/Telegram/SourceFiles/history/view/history_view_list_widget.cpp
-@@ -569,7 +569,7 @@ void ListWidget::checkUnreadBarCreation(
+@@ -570,7 +570,7 @@ void ListWidget::checkUnreadBarCreation(
  			_barText = std::move(data.text);
  			if (!_bar.hidden) {
  				_bar.element->createUnreadBar(_barText.value());
@@ -323,7 +392,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  				Assert(i != end(_items));
  				refreshAttachmentsAtIndex(i - begin(_items));
  			}
-@@ -1624,7 +1624,7 @@ void ListWidget::paintEvent(QPaintEvent
+@@ -1625,7 +1625,7 @@ void ListWidget::paintEvent(QPaintEvent
  
  	if (from != end(_items)) {
  		auto top = itemTop(from->get());
@@ -334,7 +403,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			.visibleAreaTopGlobal = mapToGlobal(QPoint(0, _visibleTop)).y(),
 --- a/Telegram/SourceFiles/history/view/history_view_replies_section.cpp
 +++ b/Telegram/SourceFiles/history/view/history_view_replies_section.cpp
-@@ -607,7 +607,7 @@ void RepliesWidget::chooseAttach() {
+@@ -610,7 +610,7 @@ void RepliesWidget::chooseAttach() {
  	if (const auto error = Data::RestrictionError(
  			_history->peer,
  			ChatRestriction::SendMedia)) {
@@ -343,7 +412,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			.text = { *error },
  		});
  		return;
-@@ -798,7 +798,7 @@ bool RepliesWidget::showSlowmodeError()
+@@ -801,7 +801,7 @@ bool RepliesWidget::showSlowmodeError()
  	if (text.isEmpty()) {
  		return false;
  	}
@@ -352,7 +421,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		.text = { text },
  	});
  	return true;
-@@ -908,7 +908,7 @@ bool RepliesWidget::showSendingFilesErro
+@@ -911,7 +911,7 @@ bool RepliesWidget::showSendingFilesErro
  		return false;
  	}
  
@@ -374,7 +443,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			: tr::lng_schedule_title()),
 --- a/Telegram/SourceFiles/history/view/history_view_scheduled_section.cpp
 +++ b/Telegram/SourceFiles/history/view/history_view_scheduled_section.cpp
-@@ -301,7 +301,7 @@ void ScheduledWidget::chooseAttach() {
+@@ -304,7 +304,7 @@ void ScheduledWidget::chooseAttach() {
  	if (const auto error = Data::RestrictionError(
  			_history->peer,
  			ChatRestriction::SendMedia)) {
@@ -383,7 +452,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			.text = { *error },
  		});
  		return;
-@@ -508,7 +508,7 @@ bool ScheduledWidget::showSendingFilesEr
+@@ -511,7 +511,7 @@ bool ScheduledWidget::showSendingFilesEr
  		return false;
  	}
  
@@ -478,7 +547,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  
 --- a/Telegram/SourceFiles/mainwidget.cpp
 +++ b/Telegram/SourceFiles/mainwidget.cpp
-@@ -1344,7 +1344,7 @@ void MainWidget::showChooseReportMessage
+@@ -1239,7 +1239,7 @@ void MainWidget::showChooseReportMessage
  		peer->id,
  		SectionShow::Way::Forward,
  		ShowForChooseMessagesMsgId);
@@ -500,7 +569,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  					});
 --- a/Telegram/SourceFiles/media/streaming/media_streaming_video_track.cpp
 +++ b/Telegram/SourceFiles/media/streaming/media_streaming_video_track.cpp
-@@ -1175,7 +1175,7 @@ FrameWithInfo VideoTrack::frameWithInfo(
+@@ -1148,7 +1148,7 @@ FrameWithInfo VideoTrack::frameWithInfo(
  		_wrapped.with([=](Implementation &unwrapped) {
  			unwrapped.updateFrameRequest(
  				instance,
@@ -654,7 +723,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			.value = _information.phone,
 --- a/Telegram/SourceFiles/settings/settings_chat.cpp
 +++ b/Telegram/SourceFiles/settings/settings_chat.cpp
-@@ -648,7 +648,7 @@ void ChooseFromFile(
+@@ -649,7 +649,7 @@ void ChooseFromFile(
  			}
  		}
  
@@ -676,7 +745,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  				.done = save,
 --- a/Telegram/SourceFiles/ui/chat/chat_theme.cpp
 +++ b/Telegram/SourceFiles/ui/chat/chat_theme.cpp
-@@ -384,7 +384,7 @@ style::colorizer ChatTheme::bubblesAccen
+@@ -383,7 +383,7 @@ style::colorizer ChatTheme::bubblesAccen
  		value.getHsv(&hue, &saturation, &lightness);
  		return style::colorizer::Color{ hue, saturation, lightness };
  	};
@@ -685,7 +754,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		.hueThreshold = 255,
  		.was = color(_palette->msgFileOutBg()->c),
  		.now = color(accent),
-@@ -477,7 +477,7 @@ ChatPaintContext ChatTheme::preparePaint
+@@ -478,7 +478,7 @@ ChatPaintContext ChatTheme::preparePaint
  			_cacheBubblesTimer->callOnce(kCacheBackgroundFastTimeout);
  		}
  	}
@@ -694,6 +763,26 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		.st = st,
  		.bubblesPattern = _bubblesBackgroundPattern.get(),
  		.viewport = viewport,
+--- a/Telegram/SourceFiles/ui/chat/choose_theme_controller.cpp
++++ b/Telegram/SourceFiles/ui/chat/choose_theme_controller.cpp
+@@ -504,7 +504,7 @@ void ChooseThemeController::fill(
+ 		_cachingLifetime.destroy();
+ 		const auto old = base::take(_entries);
+ 		auto x = skip * 2;
+-		_entries.push_back({
++		_entries.push_back(Entry{
+ 			.preview = GenerateEmptyPreview(),
+ 			.emoji = Ui::Emoji::Find(QString::fromUtf8("\xe2\x9d\x8c")),
+ 			.geometry = QRect(QPoint(x, skip), single),
+@@ -525,7 +525,7 @@ void ChooseThemeController::fill(
+ 			const auto &used = dark ? theme.dark : theme.light;
+ 			const auto id = used.id;
+ 			const auto isChosen = (_chosen == emoji->text());
+-			_entries.push_back({
++			_entries.push_back(Entry{
+ 				.id = id,
+ 				.emoji = emoji,
+ 				.geometry = QRect(QPoint(x, skip), single),
 --- a/Telegram/SourceFiles/ui/widgets/separate_panel.cpp
 +++ b/Telegram/SourceFiles/ui/widgets/separate_panel.cpp
 @@ -273,7 +273,7 @@ void SeparatePanel::showBox(
@@ -705,9 +794,20 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		.parentOverride = this,
  		.text = text,
  	});
+--- a/Telegram/SourceFiles/window/notifications_manager_default.cpp
++++ b/Telegram/SourceFiles/window/notifications_manager_default.cpp
+@@ -805,7 +805,7 @@ void Notification::updateNotifyDisplay()
+ 			p.setPen(st::dialogsTextFg);
+ 			p.setFont(st::dialogsTextFont);
+ 			const auto text = _item
+-				? _item->toPreview({
++				? _item->toPreview(HistoryView::ToPreviewOptions{
+ 					.hideSender = reminder,
+ 					.generateImages = false,
+ 				}).text
 --- a/Telegram/SourceFiles/window/themes/window_theme.cpp
 +++ b/Telegram/SourceFiles/window/themes/window_theme.cpp
-@@ -322,7 +322,7 @@ bool LoadTheme(
+@@ -323,7 +323,7 @@ bool LoadTheme(
  				LOG(("Theme Error: bad background image size in the theme file."));
  				return false;
  			}
@@ -729,7 +829,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		}).image;
 --- a/Telegram/SourceFiles/window/window_peer_menu.cpp
 +++ b/Telegram/SourceFiles/window/window_peer_menu.cpp
-@@ -1033,7 +1033,7 @@ QPointer<Ui::RpWidget> ShowSendNowMessag
+@@ -1038,7 +1038,7 @@ QPointer<Ui::RpWidget> ShowSendNowMessag
  		session->data().idsToItems(items),
  		TextWithTags());
  	if (!error.isEmpty()) {
@@ -740,7 +840,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  		return { nullptr };
 --- a/Telegram/SourceFiles/window/window_session_controller.cpp
 +++ b/Telegram/SourceFiles/window/window_session_controller.cpp
-@@ -207,7 +207,7 @@ void SessionNavigation::resolveChannelBy
+@@ -215,7 +215,7 @@ void SessionNavigation::resolveChannelBy
  		return;
  	}
  	const auto fail = [=] {
@@ -749,7 +849,7 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  			.text = { tr::lng_error_post_link_invalid(tr::now) }
  		});
  	};
-@@ -247,7 +247,7 @@ void SessionNavigation::showPeerByLinkRe
+@@ -255,7 +255,7 @@ void SessionNavigation::showPeerByLinkRe
  
  		// Then try to join the voice chat.
  		const auto bad = [=] {
@@ -758,6 +858,15 @@ Last-Update: Thu, 12 Aug 2021 23:09:51 +0300
  				.text = { tr::lng_group_invite_bad_link(tr::now) }
  			});
  		};
+@@ -1083,7 +1083,7 @@ void SessionController::showPeer(not_nul
+ 			&& (!currentPeer->isChannel()
+ 				|| currentPeer->asChannel()->linkedChat()
+ 					!= clickedChannel)) {
+-			Ui::ShowMultilineToast({
++			Ui::ShowMultilineToast(Ui::MultilineToastArgs{
+ 				.text = {
+ 					.text = peer->isMegagroup()
+ 						? tr::lng_group_not_accessible(tr::now)
 --- a/Telegram/lib_base/base/global_shortcuts_generic.cpp
 +++ b/Telegram/lib_base/base/global_shortcuts_generic.cpp
 @@ -105,7 +105,10 @@ GlobalShortcutManagerGeneric::GlobalShor

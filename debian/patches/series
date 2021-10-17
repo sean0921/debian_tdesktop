@@ -4,7 +4,6 @@ Do-not-sync-wallpaper.patch
 Exclude-QWaylandXdgShellIntegration.patch
 Ignore-emoji-pack.patch
 Link-atomic.patch
-Missing-includes.patch
 No-random-popups.patch
 Packed-resources.patch
 Really-disable-crash-reports.patch
