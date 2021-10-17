@@ -18,6 +18,10 @@ DEB_CPPFLAGS_MAINT_APPEND += -Werror=invalid-pch
 # Print full stack trace of template instantiations.
 DEB_CXXFLAGS_MAINT_APPEND += -ftemplate-backtrace-limit=0
 
+# Build scripts do not require compiled object code. This also shrinks result
+# binary by 50 kB.
+DEB_CXXFLAGS_MAINT_STRIP += -ffat-lto-objects
+
 ifeq ($(filter terse,$(DEB_BUILD_OPTIONS)),)
  # Print entire arguments of moc invocation.
  EXTRA_CMAKE_VARIABLES += CMAKE_AUTOGEN_VERBOSE=ON
@@ -46,11 +50,11 @@ endif
 ifdef ATTEMPT_SAVE_MEMORY
  # Less debug info by default to fit small address space.
  ifneq ($(filter -g,$(CXXFLAGS)),)
-  DEB_CXXFLAGS_MAINT_STRIP = -g
-  DEB_CXXFLAGS_MAINT_PREPEND = -g1
+  DEB_CXXFLAGS_MAINT_STRIP += -g
+  DEB_CXXFLAGS_MAINT_PREPEND += -g1
  endif
  # Attempt to reduce RAM consumption even more.
- DEB_LDFLAGS_MAINT_APPEND = -Wl,--no-keep-memory
+ DEB_LDFLAGS_MAINT_APPEND += -Wl,--no-keep-memory
 endif
 
 CPPLIBS_PACKAGES = libexpected-dev libmsgsl-dev librange-v3-dev libtgowt-dev
