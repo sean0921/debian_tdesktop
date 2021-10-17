@@ -1,3 +1,11 @@
+telegram-desktop (3.1.8+ds-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Update patches.
+  * Strip -ffat-lto-objects compiler flag.
+
+ -- Nicholas Guriev <guriev-ns@ya.ru>  Sun, 17 Oct 2021 21:37:39 +0300
+
 telegram-desktop (3.1.1+ds-1) unstable; urgency=medium
 
   * New upstream release. (Closes: #993972)
