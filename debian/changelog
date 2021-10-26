@@ -1,3 +1,15 @@
+telegram-desktop (3.1.9+ds-sean00~bpo11+1) bullseye-backports; urgency=medium
+
+  * Rebuild for bullseye-backports.
+
+ -- Sean Ho <sean.li.shin.ho@gmail.com>  Tue, 26 Oct 2021 14:39:46 +0800
+
+telegram-desktop (3.1.9+ds-0) unstable; urgency=medium
+
+  * New upstream version 3.1.9+ds
+
+ -- Sean Ho <sean.li.shin.ho@gmail.com>  Tue, 26 Oct 2021 14:37:36 +0800
+
 telegram-desktop (3.1.8+ds-1) unstable; urgency=medium
 
   * New upstream release.
