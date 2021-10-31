@@ -4,10 +4,14 @@
 # For license and copyright information please follow this link:
 # https://github.com/desktop-app/legal/blob/master/LEGAL
 
+add_subdirectory(qt_static_plugins)
+if (DESKTOP_APP_QT6)
+    add_subdirectory(qt6)
+    return()
+endif()
+
 add_library(external_qt INTERFACE IMPORTED GLOBAL)
 add_library(desktop-app::external_qt ALIAS external_qt)
-
-add_subdirectory(qt_static_plugins)
 
 if (DESKTOP_APP_USE_PACKAGED)
     target_link_libraries(external_qt
@@ -38,7 +42,7 @@ if (DESKTOP_APP_USE_PACKAGED)
         )
     endif()
 
-    if (Qt5WaylandClient_FOUND)
+    if (LINUX AND NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
         target_link_libraries(external_qt INTERFACE Qt5::WaylandClient)
 
         target_include_directories(external_qt SYSTEM
@@ -76,7 +80,7 @@ else()
         )
     endif()
 
-    if (Qt5WaylandClient_FOUND)
+    if (LINUX AND NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
         target_include_directories(external_qt SYSTEM
         INTERFACE
             ${qt_loc}/include/QtWaylandClient
@@ -111,7 +115,7 @@ else()
         )
     endif()
 
-    if (Qt5WaylandClient_FOUND)
+    if (LINUX AND NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
         target_compile_definitions(external_qt
         INTERFACE
             QT_WAYLANDCLIENT_LIB
@@ -202,13 +206,12 @@ else()
         endif()
         set(qt_libs_waylandclient)
         set(qt_libs_waylandclient_plugins)
-        if (Qt5WaylandClient_FOUND)
+        if (NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
             set(qt_libs_waylandclient lib/${qt_lib_prefix}Qt5WaylandClient)
             set(qt_libs_waylandclient_plugins
                 plugins/platforms/${qt_lib_prefix}qwayland-generic
                 plugins/platforms/${qt_lib_prefix}qwayland-egl
                 plugins/wayland-graphics-integration-client/${qt_lib_prefix}qt-plugin-wayland-egl
-                plugins/wayland-shell-integration/${qt_lib_prefix}wl-shell
                 plugins/wayland-decoration-client/${qt_lib_prefix}bradient
             )
         endif()
@@ -278,7 +281,7 @@ else()
             xcb-keysyms
             z
         )
-        if (Qt5WaylandClient_FOUND)
+        if (NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
             target_link_libraries(external_qt
             INTERFACE
                 desktop-app::linux_wayland_helper
